@@ -44,6 +44,12 @@
         .touch-target { min-height: 48px; min-width: 48px; }
         .nav-arrow { transition: all 0.15s; }
         .nav-arrow:active { transform: scale(0.95); }
+        .recording { animation: recording-pulse 1s infinite; }
+        @keyframes recording-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } }
+        .ranking-item { cursor: grab; }
+        .ranking-item:active { cursor: grabbing; }
+        .ranking-item.dragging { opacity: 0.5; transform: scale(1.02); }
+        .ranking-item.drag-over { border-top: 3px solid #f59e0b; }
     </style>
 </head>
 <body class="bg-bark-100 min-h-screen">
@@ -63,6 +69,12 @@
 
             <div class="space-y-4">
                 <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Ditt navn</label>
+                    <input type="text" id="judgeName" placeholder="F.eks. Kari Nordmann"
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-lg">
+                </div>
+
+                <div>
                     <label class="block text-sm font-medium text-bark-700 mb-2">Dommerkode</label>
                     <input type="text" id="judgeCode" placeholder="Skriv inn din kode"
                         class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-lg">
@@ -70,19 +82,34 @@
 
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-2">Velg parti</label>
-                    <select id="partySelect" class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-lg bg-white">
+                    <select id="partySelect" onchange="updateJudgeRoleVisibility()" class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-lg bg-white">
                         <option value="">-- Velg parti --</option>
-                        <optgroup label="UK/AK Partier">
+                        <optgroup label="UK/AK Partier (1 dommer)">
                             <option value="ukak1">UK/AK Parti 1 (15 hunder)</option>
                             <option value="ukak2">UK/AK Parti 2 (15 hunder)</option>
                             <option value="ukak3">UK/AK Parti 3 (15 hunder)</option>
                             <option value="ukak4">UK/AK Parti 4 (15 hunder)</option>
                         </optgroup>
-                        <optgroup label="VK Partier">
-                            <option value="vk1">VK Parti 1 (18 hunder)</option>
+                        <optgroup label="VK Partier (2 dommere)">
+                            <option value="vk1">VK Kval Parti 1 (18 hunder)</option>
+                            <option value="vk2">VK Kval Parti 2 (18 hunder)</option>
                             <option value="vkfinale">VK Finale (12 hunder)</option>
                         </optgroup>
                     </select>
+                </div>
+
+                <!-- Judge Role (only for VK parties) -->
+                <div id="judgeRoleContainer" class="hidden">
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Din rolle</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button type="button" onclick="selectJudgeRole(1)" id="judgeRole1" class="py-3 px-4 rounded-xl border-2 border-bark-200 text-bark-700 font-medium transition hover:border-earth-400">
+                            Dommer 1
+                        </button>
+                        <button type="button" onclick="selectJudgeRole(2)" id="judgeRole2" class="py-3 px-4 rounded-xl border-2 border-bark-200 text-bark-700 font-medium transition hover:border-earth-400">
+                            Dommer 2
+                        </button>
+                    </div>
+                    <p class="text-xs text-bark-500 mt-2">VK har alltid to dommere. Velg hvilken du er.</p>
                 </div>
 
                 <button onclick="login()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-semibold py-4 rounded-xl text-lg transition touch-target">
@@ -214,12 +241,13 @@
 
         // Party configurations
         const PARTIES = {
-            ukak1: { name: 'UK/AK Parti 1', color: 'forest', dogCount: 15 },
-            ukak2: { name: 'UK/AK Parti 2', color: 'forest', dogCount: 15 },
-            ukak3: { name: 'UK/AK Parti 3', color: 'forest', dogCount: 15 },
-            ukak4: { name: 'UK/AK Parti 4', color: 'forest', dogCount: 15 },
-            vk1: { name: 'VK Parti 1', color: 'earth', dogCount: 18 },
-            vkfinale: { name: 'VK Finale', color: 'amber', dogCount: 12 }
+            ukak1: { name: 'UK/AK Parti 1', color: 'forest', dogCount: 15, judges: 1 },
+            ukak2: { name: 'UK/AK Parti 2', color: 'forest', dogCount: 15, judges: 1 },
+            ukak3: { name: 'UK/AK Parti 3', color: 'forest', dogCount: 15, judges: 1 },
+            ukak4: { name: 'UK/AK Parti 4', color: 'forest', dogCount: 15, judges: 1 },
+            vk1: { name: 'VK Kval Parti 1', color: 'earth', dogCount: 18, judges: 2 },
+            vk2: { name: 'VK Kval Parti 2', color: 'earth', dogCount: 18, judges: 2 },
+            vkfinale: { name: 'VK Finale', color: 'amber', dogCount: 12, judges: 2 }
         };
 
         // Sample dogs data (would come from server in production)
@@ -563,22 +591,37 @@
                             `).join('')}
                         </div>
 
-                        <!-- Private Notes -->
+                        <!-- Private Notes with Voice Recording -->
                         <div class="mt-4">
-                            <label class="block text-xs font-medium text-bark-500 mb-1">
-                                <span class="flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs font-medium text-bark-500">
+                                    <span class="flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                        </svg>
+                                        Stikkord (kun for deg - publiseres ikke)
+                                    </span>
+                                </label>
+                                <button onclick="toggleVoiceRecording(${dog.id})" id="voiceBtn-${dog.id}"
+                                    class="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
                                     </svg>
-                                    Stikkord (kun for deg - publiseres ikke)
-                                </span>
-                            </label>
-                            <textarea
-                                id="notes-${dog.id}"
-                                rows="2"
-                                onchange="updateNotes(${dog.id}, this.value)"
-                                placeholder="Skriv stikkord for kritikk..."
-                                class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-sm resize-none bg-yellow-50">${dog.notes || ''}</textarea>
+                                    <span id="voiceBtnText-${dog.id}">Dikter</span>
+                                </button>
+                            </div>
+                            <div class="relative">
+                                <textarea
+                                    id="notes-${dog.id}"
+                                    rows="2"
+                                    onchange="updateNotes(${dog.id}, this.value)"
+                                    placeholder="Skriv eller dikter stikkord..."
+                                    class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-sm resize-none bg-yellow-50">${dog.notes || ''}</textarea>
+                                <div id="voiceStatus-${dog.id}" class="hidden absolute right-2 top-2 text-xs text-red-600 flex items-center gap-1">
+                                    <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
+                                    Lytter...
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Quick Actions -->
@@ -704,6 +747,18 @@
                 return totalB - totalA;
             });
 
+            // Store ranking order
+            if (!state.rankingOrder || state.rankingOrder.length !== activeDogs.length) {
+                state.rankingOrder = activeDogs.map(d => d.id);
+            }
+
+            // Sort by manual ranking order
+            activeDogs.sort((a, b) => {
+                const idxA = state.rankingOrder.indexOf(a.id);
+                const idxB = state.rankingOrder.indexOf(b.id);
+                return idxA - idxB;
+            });
+
             const rankingContainer = document.getElementById('rankingList');
             rankingContainer.innerHTML = activeDogs.map((dog, idx) => {
                 const rank = idx + 1;
@@ -711,8 +766,29 @@
                 const latestRound = dog.rounds[dog.rounds.length - 1];
 
                 return `
-                    <div class="flex items-center gap-3 bg-bark-50 rounded-xl p-3">
-                        <div class="w-8 h-8 ${medalClass} text-white rounded-full flex items-center justify-center font-bold text-sm">
+                    <div class="ranking-item flex items-center gap-2 bg-bark-50 rounded-xl p-3 transition-all"
+                         draggable="true"
+                         data-dog-id="${dog.id}"
+                         ondragstart="handleDragStart(event, ${dog.id})"
+                         ondragover="handleDragOver(event)"
+                         ondragenter="handleDragEnter(event)"
+                         ondragleave="handleDragLeave(event)"
+                         ondrop="handleDrop(event, ${dog.id})"
+                         ondragend="handleDragEnd(event)">
+                        <!-- Move buttons -->
+                        <div class="flex flex-col gap-1">
+                            <button onclick="moveRanking(${dog.id}, -1)" class="p-1 rounded hover:bg-bark-200 text-bark-400 hover:text-bark-700 transition ${idx === 0 ? 'opacity-30 pointer-events-none' : ''}">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                                </svg>
+                            </button>
+                            <button onclick="moveRanking(${dog.id}, 1)" class="p-1 rounded hover:bg-bark-200 text-bark-400 hover:text-bark-700 transition ${idx === activeDogs.length - 1 ? 'opacity-30 pointer-events-none' : ''}">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="w-8 h-8 ${medalClass} text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
                             ${rank}
                         </div>
                         <div class="flex-1 min-w-0">
@@ -727,6 +803,11 @@
                                     </span>
                                 `).join('')}
                             </div>
+                        </div>
+                        <div class="text-bark-300 cursor-grab">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                            </svg>
                         </div>
                     </div>
                 `;
@@ -768,6 +849,235 @@
                 hideRanking();
             }
         }
+
+        // ===== RANKING DRAG AND DROP =====
+        let draggedDogId = null;
+
+        function handleDragStart(e, dogId) {
+            draggedDogId = dogId;
+            e.target.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleDragEnter(e) {
+            e.preventDefault();
+            const item = e.target.closest('.ranking-item');
+            if (item) item.classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            const item = e.target.closest('.ranking-item');
+            if (item) item.classList.remove('drag-over');
+        }
+
+        function handleDrop(e, targetDogId) {
+            e.preventDefault();
+            const item = e.target.closest('.ranking-item');
+            if (item) item.classList.remove('drag-over');
+
+            if (draggedDogId && draggedDogId !== targetDogId) {
+                const fromIdx = state.rankingOrder.indexOf(draggedDogId);
+                const toIdx = state.rankingOrder.indexOf(targetDogId);
+
+                // Remove from old position and insert at new
+                state.rankingOrder.splice(fromIdx, 1);
+                state.rankingOrder.splice(toIdx, 0, draggedDogId);
+
+                renderRankingList();
+                saveLive();
+            }
+        }
+
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.ranking-item').forEach(el => el.classList.remove('drag-over'));
+            draggedDogId = null;
+        }
+
+        function moveRanking(dogId, direction) {
+            const idx = state.rankingOrder.indexOf(dogId);
+            const newIdx = idx + direction;
+
+            if (newIdx >= 0 && newIdx < state.rankingOrder.length) {
+                // Swap
+                [state.rankingOrder[idx], state.rankingOrder[newIdx]] = [state.rankingOrder[newIdx], state.rankingOrder[idx]];
+                renderRankingList();
+                saveLive();
+            }
+        }
+
+        // ===== VOICE RECORDING =====
+        let recognition = null;
+        let activeRecordingDogId = null;
+
+        // Initialize Speech Recognition
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'nb-NO';
+
+            recognition.onresult = function(event) {
+                if (!activeRecordingDogId) return;
+
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript + ' ';
+                    }
+                }
+
+                if (finalTranscript) {
+                    const textarea = document.getElementById('notes-' + activeRecordingDogId);
+                    if (textarea) {
+                        textarea.value += finalTranscript;
+                        updateNotes(activeRecordingDogId, textarea.value);
+                    }
+                }
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Speech recognition error:', event.error);
+                stopVoiceRecording();
+            };
+
+            recognition.onend = function() {
+                if (activeRecordingDogId) {
+                    // Restart if still recording
+                    try { recognition.start(); } catch (e) {}
+                }
+            };
+        }
+
+        function toggleVoiceRecording(dogId) {
+            if (activeRecordingDogId === dogId) {
+                stopVoiceRecording();
+            } else {
+                startVoiceRecording(dogId);
+            }
+        }
+
+        function startVoiceRecording(dogId) {
+            if (!recognition) {
+                alert('Talegjenkjenning støttes ikke i denne nettleseren. Prøv Chrome, Edge eller Safari.');
+                return;
+            }
+
+            // Stop any existing recording
+            if (activeRecordingDogId) {
+                stopVoiceRecording();
+            }
+
+            activeRecordingDogId = dogId;
+            try {
+                recognition.start();
+            } catch (e) {}
+
+            // Update UI
+            const btn = document.getElementById('voiceBtn-' + dogId);
+            const btnText = document.getElementById('voiceBtnText-' + dogId);
+            const status = document.getElementById('voiceStatus-' + dogId);
+
+            if (btn) {
+                btn.classList.remove('bg-red-100', 'hover:bg-red-200', 'text-red-700');
+                btn.classList.add('bg-red-500', 'text-white', 'recording');
+            }
+            if (btnText) btnText.textContent = 'Stopp';
+            if (status) status.classList.remove('hidden');
+        }
+
+        function stopVoiceRecording() {
+            const dogId = activeRecordingDogId;
+            activeRecordingDogId = null;
+
+            if (recognition) {
+                try { recognition.stop(); } catch (e) {}
+            }
+
+            if (dogId) {
+                const btn = document.getElementById('voiceBtn-' + dogId);
+                const btnText = document.getElementById('voiceBtnText-' + dogId);
+                const status = document.getElementById('voiceStatus-' + dogId);
+
+                if (btn) {
+                    btn.classList.add('bg-red-100', 'hover:bg-red-200', 'text-red-700');
+                    btn.classList.remove('bg-red-500', 'text-white', 'recording');
+                }
+                if (btnText) btnText.textContent = 'Dikter';
+                if (status) status.classList.add('hidden');
+            }
+        }
+
+        // ===== TWO JUDGES FOR VK =====
+        let selectedJudgeRole = null;
+
+        function updateJudgeRoleVisibility() {
+            const party = document.getElementById('partySelect').value;
+            const container = document.getElementById('judgeRoleContainer');
+            const isVK = party.startsWith('vk');
+
+            if (isVK) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+                selectedJudgeRole = null;
+            }
+        }
+
+        function selectJudgeRole(role) {
+            selectedJudgeRole = role;
+            const btn1 = document.getElementById('judgeRole1');
+            const btn2 = document.getElementById('judgeRole2');
+
+            btn1.classList.remove('border-earth-500', 'bg-earth-100', 'text-earth-800');
+            btn2.classList.remove('border-earth-500', 'bg-earth-100', 'text-earth-800');
+            btn1.classList.add('border-bark-200', 'text-bark-700');
+            btn2.classList.add('border-bark-200', 'text-bark-700');
+
+            if (role === 1) {
+                btn1.classList.remove('border-bark-200', 'text-bark-700');
+                btn1.classList.add('border-earth-500', 'bg-earth-100', 'text-earth-800');
+            } else {
+                btn2.classList.remove('border-bark-200', 'text-bark-700');
+                btn2.classList.add('border-earth-500', 'bg-earth-100', 'text-earth-800');
+            }
+        }
+
+        // Override login to include judge role
+        const originalLogin = login;
+        login = function() {
+            const party = document.getElementById('partySelect').value;
+            const isVK = party.startsWith('vk');
+            const nameInput = document.getElementById('judgeName');
+
+            if (nameInput && nameInput.value) {
+                state.judgeName = nameInput.value;
+            }
+
+            if (isVK && !selectedJudgeRole) {
+                alert('Velg din rolle (Dommer 1 eller Dommer 2)');
+                return;
+            }
+
+            state.judgeRole = selectedJudgeRole;
+            originalLogin();
+
+            // Update header with judge info
+            const headerJudge = document.getElementById('headerJudgeName');
+            if (headerJudge) {
+                if (isVK) {
+                    headerJudge.textContent = `Dommer ${state.judgeRole}: ${state.judgeName}`;
+                } else {
+                    headerJudge.textContent = `Dommer: ${state.judgeName}`;
+                }
+            }
+        };
     </script>
 </body>
 </html>

@@ -53,7 +53,8 @@
                         <span class="font-rockwell font-bold">Fuglehundprøver</span>
                     </a>
                 </div>
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <!-- Search button injected by dog-search.js -->
                     <button onclick="logout()" class="bg-forest-700 hover:bg-forest-600 px-4 py-2 rounded-lg text-sm font-medium transition">
                         Logg ut
                     </button>
@@ -288,6 +289,16 @@
         let currentDogPhoto = null;
         let dogToDelete = null;
 
+        // Score field definitions (same as judge panel - dommer-vk.html)
+        const SCORE_FIELDS = [
+            { key: 'FMR', label: 'FMR', title: 'Fuglearbeid m/reis' },
+            { key: 'FUR', label: 'FUR', title: 'Fuglearbeid u/reis' },
+            { key: 'MS', label: 'MS', title: 'Makker stand' },
+            { key: 'TS', label: 'TS', title: 'Tomstand' },
+            { key: 'SJ', label: 'SJ', title: 'Sjanse på fugl' },
+            { key: 'SL', label: 'SL', title: 'Slipptid (min)' }
+        ];
+
         // Sample critique data for demo
         const sampleCritiques = [
             {
@@ -300,15 +311,7 @@
                 party: 'UK/AK Parti 1',
                 judge: 'Bjørn Haugen',
                 prize: '1. premie',
-                scores: {
-                    fpiForm: 8, fpiInnhold: 9, fpiStil: 8,
-                    jlFart: 9, jlStil: 8, jlFormat: 9, jlSelvstendighet: 8,
-                    samarbeid: 9,
-                    fuglbehandling: 8,
-                    vilje: 9,
-                    total: 85
-                },
-                fieldNotes: 'Meget lovende unghund med fremragende fart og stil. Dekker terrenget godt med systematisk søk. God kontakt med fører.',
+                scores: { FMR: 8, FUR: 9, MS: 7, TS: 8, SJ: 9, SL: 45 },
                 critique: 'Meget fin hund med godt format og utstråling. Viser svært god jaktlyst og fart i terrenget. Søket er systematisk og effektivt med god bredde og dybde. Hunden viser fin selvstendighet samtidig som samarbeidet med fører er utmerket. Ved fuglkontakt viser hunden fast og sikker stand med god marking. Reiser villig på kommando. Apporten er ikke testet. En meget lovende unghund med stort potensial for videre arbeid.'
             },
             {
@@ -321,15 +324,7 @@
                 party: 'UK/AK Parti 2',
                 judge: 'Anne Kristiansen',
                 prize: '2. premie',
-                scores: {
-                    fpiForm: 7, fpiInnhold: 8, fpiStil: 7,
-                    jlFart: 8, jlStil: 7, jlFormat: 8, jlSelvstendighet: 7,
-                    samarbeid: 8,
-                    fuglbehandling: 7,
-                    vilje: 8,
-                    total: 75
-                },
-                fieldNotes: 'God unghund. Noe urolig i starten men fant seg fint til rette. Bra fuglkontakt.',
+                scores: { FMR: 7, FUR: 8, MS: 6, TS: 7, SJ: 8, SL: 42 },
                 critique: 'Fin hund som viser god jaktlyst. Noe forsiktig start men kom godt i gang utover i slippet. Søket har bra bredde, men kunne vært mer systematisk i enkelte partier. God fart når hunden er i gang. Samarbeid med fører er tilfredsstillende. Står fint ved fuglkontakt med sikker marking. En hund med potensial som vil utvikle seg videre med mer erfaring.'
             }
         ];
@@ -516,7 +511,7 @@
             // Close details modal
             closeDogDetailsModal();
 
-            // Render PDF-style critique
+            // Render PDF-style critique (updated: removed totalpoeng, field notes, renamed Poengscore to Kritikk)
             document.getElementById('critiqueContent').innerHTML = `
                 <div id="critiquePrintArea" class="bg-white rounded-lg shadow-lg max-w-2xl mx-auto">
                     <!-- Header -->
@@ -557,93 +552,30 @@
                     </div>
 
                     <!-- Prize -->
-                    <div class="p-6 bg-gradient-to-r ${critique.prize.includes('1.') ? 'from-amber-50 to-amber-100' : critique.prize.includes('2.') ? 'from-gray-50 to-gray-100' : 'from-orange-50 to-orange-100'} border-b border-bark-200">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Oppnådd premie</h3>
-                                <p class="text-2xl font-bold ${critique.prize.includes('1.') ? 'text-amber-700' : critique.prize.includes('2.') ? 'text-gray-700' : 'text-orange-700'}">${critique.prize}</p>
-                            </div>
-                            <div class="text-right">
-                                <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Totalpoeng</h3>
-                                <p class="text-3xl font-bold text-bark-800">${critique.scores.total}</p>
-                            </div>
+                    <div class="p-6 bg-gradient-to-r ${critique.prize.includes('1') ? 'from-amber-50 to-amber-100' : critique.prize.includes('2') ? 'from-gray-50 to-gray-100' : 'from-orange-50 to-orange-100'} border-b border-bark-200">
+                        <div class="text-center">
+                            <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Oppnådd premie</h3>
+                            <p class="text-3xl font-bold ${critique.prize.includes('1') ? 'text-amber-700' : critique.prize.includes('2') ? 'text-gray-700' : 'text-orange-700'}">${critique.prize}</p>
                         </div>
                     </div>
 
-                    <!-- Scores -->
+                    <!-- Scores (renamed to Kritikk) - synced with judge panel fields -->
                     <div class="p-6 border-b border-bark-200">
-                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-4">Poengscore</h3>
-
-                        <div class="space-y-4">
-                            <!-- FPI -->
-                            <div>
-                                <h4 class="text-xs font-medium text-bark-500 mb-2">Fysisk og Psykisk Inntrykk (FPI)</h4>
-                                <div class="grid grid-cols-3 gap-3">
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.fpiForm}</p>
-                                        <p class="text-xs text-bark-500">Form</p>
-                                    </div>
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.fpiInnhold}</p>
-                                        <p class="text-xs text-bark-500">Innhold</p>
-                                    </div>
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.fpiStil}</p>
-                                        <p class="text-xs text-bark-500">Stil</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Jaktlyst -->
-                            <div>
-                                <h4 class="text-xs font-medium text-bark-500 mb-2">Jaktlyst (JL)</h4>
-                                <div class="grid grid-cols-4 gap-3">
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.jlFart}</p>
-                                        <p class="text-xs text-bark-500">Fart</p>
-                                    </div>
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.jlStil}</p>
-                                        <p class="text-xs text-bark-500">Stil</p>
-                                    </div>
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.jlFormat}</p>
-                                        <p class="text-xs text-bark-500">Format</p>
-                                    </div>
-                                    <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                        <p class="text-2xl font-bold text-bark-800">${critique.scores.jlSelvstendighet}</p>
-                                        <p class="text-xs text-bark-500">Selvst.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Other scores -->
-                            <div class="grid grid-cols-3 gap-3">
+                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-4">Kritikk</h3>
+                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                            ${SCORE_FIELDS.map(field => `
                                 <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                    <p class="text-2xl font-bold text-bark-800">${critique.scores.samarbeid}</p>
-                                    <p class="text-xs text-bark-500">Samarbeid</p>
+                                    <p class="text-2xl font-bold text-bark-800">${critique.scores[field.key] !== null && critique.scores[field.key] !== undefined ? critique.scores[field.key] : '-'}</p>
+                                    <p class="text-xs text-bark-500" title="${field.title}">${field.label}</p>
+                                    <p class="text-[10px] text-bark-400 mt-1">${field.title}</p>
                                 </div>
-                                <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                    <p class="text-2xl font-bold text-bark-800">${critique.scores.fuglbehandling}</p>
-                                    <p class="text-xs text-bark-500">Fuglbeh.</p>
-                                </div>
-                                <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                    <p class="text-2xl font-bold text-bark-800">${critique.scores.vilje}</p>
-                                    <p class="text-xs text-bark-500">Vilje</p>
-                                </div>
-                            </div>
+                            `).join('')}
                         </div>
-                    </div>
-
-                    <!-- Field Notes -->
-                    <div class="p-6 border-b border-bark-200 bg-earth-50">
-                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-2">Notater fra fjellet</h3>
-                        <p class="text-bark-700 italic">"${critique.fieldNotes}"</p>
                     </div>
 
                     <!-- Full Critique -->
                     <div class="p-6">
-                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-3">Kritikk</h3>
+                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-3">Dommerens vurdering</h3>
                         <p class="text-bark-700 leading-relaxed">${critique.critique}</p>
                     </div>
 
@@ -843,5 +775,6 @@
         // Initialize
         init();
     </script>
+<script src="dog-search.js"></script>
 </body>
 </html>

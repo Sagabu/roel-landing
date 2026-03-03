@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hundeprofil - Fuglehundprøver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rockwell&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: {
+                            50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac',
+                            400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d',
+                            800: '#166534', 900: '#14532d',
+                        },
+                        earth: {
+                            50: '#faf6f1', 100: '#f5ede3', 200: '#e8d5c4', 300: '#d4b896',
+                            400: '#c49a6c', 500: '#b8834d', 600: '#a16b3d', 700: '#865434',
+                            800: '#6e4530', 900: '#5a3a2a',
+                        },
+                        bark: {
+                            50: '#f8f6f4', 100: '#e8e2dc', 200: '#d4c8bc', 300: '#b9a594',
+                            400: '#a18a74', 500: '#8f7761', 600: '#7a6352', 700: '#635045',
+                            800: '#54443c', 900: '#493c35',
+                        }
+                    },
+                    fontFamily: { 'rockwell': ['Rockwell', 'Georgia', 'serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        .font-rockwell { font-family: 'Rockwell', Georgia, serif; }
+    </style>
+</head>
+<body class="bg-bark-100 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-forest-800 text-white shadow-lg">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="index.html" class="flex items-center gap-2 hover:opacity-80 transition">
+                        <svg class="w-8 h-8 text-forest-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        </svg>
+                        <span class="font-rockwell font-bold">Fuglehundprøver</span>
+                    </a>
+                </div>
+                <div class="flex items-center gap-3">
+                    <!-- Search button will be injected here by dog-search.js -->
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Back button -->
+        <a href="javascript:history.back()" class="inline-flex items-center gap-2 text-bark-600 hover:text-bark-800 mb-6 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Tilbake
+        </a>
+
+        <!-- Dog Profile Card -->
+        <div id="dogProfile" class="bg-white rounded-2xl shadow-sm border border-earth-200 overflow-hidden mb-6">
+            <!-- Loading state -->
+            <div class="p-8 text-center text-bark-500">
+                Laster hundeprofil...
+            </div>
+        </div>
+
+        <!-- Critiques List -->
+        <div id="critiquesList" class="space-y-4">
+            <!-- Critiques will be rendered here -->
+        </div>
+    </main>
+
+    <!-- Critique PDF Modal -->
+    <div id="critiqueModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-bark-200 flex items-center justify-between">
+                <h3 class="text-lg font-bold font-rockwell text-bark-800">Kritikkskjema</h3>
+                <div class="flex items-center gap-2">
+                    <button onclick="printCritique()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                        </svg>
+                        Skriv ut / Last ned PDF
+                    </button>
+                    <button onclick="closeCritiqueModal()" class="text-bark-400 hover:text-bark-600 p-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div id="critiqueContent" class="flex-1 overflow-y-auto p-6 bg-gray-100">
+                <!-- PDF preview rendered here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="dog-search.js"></script>
+    <script>
+        // Score field definitions (same as judge panel)
+        const SCORE_FIELDS = [
+            { key: 'FMR', label: 'FMR', title: 'Fuglearbeid m/reis' },
+            { key: 'FUR', label: 'FUR', title: 'Fuglearbeid u/reis' },
+            { key: 'MS', label: 'MS', title: 'Makker stand' },
+            { key: 'TS', label: 'TS', title: 'Tomstand' },
+            { key: 'SJ', label: 'SJ', title: 'Sjanse på fugl' },
+            { key: 'SL', label: 'SL', title: 'Slipptid (min)' }
+        ];
+
+        // Sample dog database with full critique data
+        const dogDatabase = {
+            '1': {
+                id: '1',
+                name: "Fjelljeger's Storm",
+                regNumber: 'NO45678/22',
+                breed: 'Engelsk Setter',
+                gender: 'male',
+                owner: 'Kari Nordmann',
+                critiques: [
+                    {
+                        id: 'crit1',
+                        trial: 'Høgkjølprøven 2025',
+                        date: '2025-09-20',
+                        location: 'Høgkjølen, Tynset',
+                        class: 'UK',
+                        party: 'UK/AK Parti 1',
+                        judge: 'Bjørn Haugen',
+                        prize: '1. premie',
+                        scores: { FMR: 8, FUR: 9, MS: 7, TS: 8, SJ: 9, SL: 45 },
+                        critique: 'Meget fin hund med godt format og utstråling. Viser svært god jaktlyst og fart i terrenget. Søket er systematisk og effektivt med god bredde og dybde. Hunden viser fin selvstendighet samtidig som samarbeidet med fører er utmerket. Ved fuglkontakt viser hunden fast og sikker stand med god marking. Reiser villig på kommando. Apporten er ikke testet. En meget lovende unghund med stort potensial for videre arbeid.'
+                    },
+                    {
+                        id: 'crit2',
+                        trial: 'Rørosprøven 2025',
+                        date: '2025-08-15',
+                        location: 'Røros',
+                        class: 'UK',
+                        party: 'UK/AK Parti 2',
+                        judge: 'Anne Kristiansen',
+                        prize: '2. premie',
+                        scores: { FMR: 7, FUR: 8, MS: 6, TS: 7, SJ: 8, SL: 42 },
+                        critique: 'Fin hund som viser god jaktlyst. Noe forsiktig start men kom godt i gang utover i slippet. Søket har bra bredde, men kunne vært mer systematisk i enkelte partier. God fart når hunden er i gang. Samarbeid med fører er tilfredsstillende. Står fint ved fuglkontakt med sikker marking. En hund med potensial som vil utvikle seg videre med mer erfaring.'
+                    }
+                ]
+            },
+            '2': {
+                id: '2',
+                name: "Villmarkens Troll",
+                regNumber: 'NO34521/21',
+                breed: 'Gordon Setter',
+                gender: 'male',
+                owner: 'Per Hansen',
+                critiques: [
+                    {
+                        id: 'crit3',
+                        trial: 'Høgkjølprøven 2025',
+                        date: '2025-09-20',
+                        location: 'Høgkjølen, Tynset',
+                        class: 'VK',
+                        party: 'VK Kval Parti 1',
+                        judge: 'Ole Berg',
+                        prize: '2.VK',
+                        scores: { FMR: 8, FUR: 8, MS: 7, TS: 7, SJ: 8, SL: 50 },
+                        critique: 'Solid hund som viser meget god arbeidsvilje gjennom hele slippet. Godt tilpasset terreng med effektivt søk. Noe variert tempo, men holder god fart i de viktige øyeblikkene. Fuglarbeidet er stabilt og pålitelig. Viser god ro ved stand og reiser fint. Et godt VK-slipp som viser at hunden har kvaliteter for videre avl.'
+                    }
+                ]
+            },
+            '3': {
+                id: '3',
+                name: "Skogsprinsessen",
+                regNumber: 'NO56789/23',
+                breed: 'Irsk Setter',
+                gender: 'female',
+                owner: 'Lise Johansen',
+                critiques: []
+            },
+            '4': {
+                id: '4',
+                name: "Nordlys av Fjellheim",
+                regNumber: 'NO12398/20',
+                breed: 'Pointer',
+                gender: 'male',
+                owner: 'Erik Svendsen',
+                critiques: [
+                    {
+                        id: 'crit4',
+                        trial: 'NM Fuglehund 2024',
+                        date: '2024-09-10',
+                        location: 'Lierne',
+                        class: 'VK',
+                        party: 'VK Finale',
+                        judge: 'Knut Moen',
+                        prize: '1.VK',
+                        scores: { FMR: 9, FUR: 9, MS: 8, TS: 9, SJ: 9, SL: 55 },
+                        critique: 'Eksepsjonell hund med imponerende arbeidskapasitet og stil. Dekker store områder med presisjon og intensitet. Fuglearbeidet er på høyeste nivå med fast, sikker stand og fin marking. Reiser elegant på kommando. Viser utmerket samarbeid med fører gjennom hele slippet. En verdig NM-vinner som representerer rasen på beste måte.'
+                    },
+                    {
+                        id: 'crit5',
+                        trial: 'Rørosprøven 2024',
+                        date: '2024-08-20',
+                        location: 'Røros',
+                        class: 'VK',
+                        party: 'VK Kval Parti 1',
+                        judge: 'Anne Kristiansen',
+                        prize: '1.VK',
+                        scores: { FMR: 9, FUR: 8, MS: 8, TS: 8, SJ: 9, SL: 48 },
+                        critique: 'Flott hund med god fart og stil. Viser målrettet og effektivt søk. Fuglearbeidet er meget bra med sikker stand og god marking. Samarbeidet med fører fungerer utmerket. En kvalitetshund som fortjener å gå videre til finale.'
+                    }
+                ]
+            },
+            '5': {
+                id: '5',
+                name: "Bella",
+                regNumber: 'NO78234/22',
+                breed: 'Breton',
+                gender: 'female',
+                owner: 'Marte Olsen',
+                critiques: [
+                    {
+                        id: 'crit6',
+                        trial: 'Høgkjølprøven 2025',
+                        date: '2025-09-20',
+                        location: 'Høgkjølen, Tynset',
+                        class: 'AK',
+                        party: 'UK/AK Parti 3',
+                        judge: 'Bjørn Haugen',
+                        prize: '1. premie',
+                        scores: { FMR: 8, FUR: 8, MS: 7, TS: 8, SJ: 8, SL: 40 },
+                        critique: 'Fin liten Breton med masse energi og arbeidsvilje. Dekker terrenget godt med effektivt søk tilpasset hundetype. Viser god fart og fin stil. Fuglearbeidet er pålitelig med fast stand og sikker marking. Reiser fint på kommando. En trivelig hund som viser gode jaktegenskaper.'
+                    }
+                ]
+            }
+        };
+
+        let currentDog = null;
+        let currentCritique = null;
+
+        function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const dogId = urlParams.get('id');
+
+            if (dogId && dogDatabase[dogId]) {
+                currentDog = dogDatabase[dogId];
+                renderDogProfile();
+                renderCritiques();
+            } else {
+                document.getElementById('dogProfile').innerHTML = `
+                    <div class="p-8 text-center">
+                        <div class="w-16 h-16 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-bark-700 mb-2">Hund ikke funnet</h3>
+                        <p class="text-bark-500">Beklager, vi fant ikke hunden du leter etter.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderDogProfile() {
+            document.getElementById('dogProfile').innerHTML = `
+                <div class="bg-gradient-to-r from-forest-700 to-forest-800 px-6 py-8">
+                    <div class="flex flex-col sm:flex-row items-center gap-6">
+                        <div class="w-24 h-24 bg-white rounded-xl flex items-center justify-center">
+                            <svg class="w-12 h-12 text-forest-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                            </svg>
+                        </div>
+                        <div class="text-center sm:text-left">
+                            <h1 class="text-2xl sm:text-3xl font-bold font-rockwell text-white">${currentDog.name}</h1>
+                            <p class="text-forest-200 mt-1">${currentDog.breed} • ${currentDog.gender === 'male' ? 'Hannhund' : 'Tispe'}</p>
+                            <p class="text-forest-300 text-sm mt-2">${currentDog.regNumber}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-2 gap-6">
+                        <div>
+                            <p class="text-xs text-bark-500 uppercase mb-1">Eier</p>
+                            <p class="font-medium text-bark-700">${currentDog.owner}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 uppercase mb-1">Antall prøver</p>
+                            <p class="font-medium text-bark-700">${currentDog.critiques.length} registrert${currentDog.critiques.length !== 1 ? 'e' : ''}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCritiques() {
+            const container = document.getElementById('critiquesList');
+
+            if (currentDog.critiques.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-2xl border border-earth-200 p-8 text-center">
+                        <div class="w-16 h-16 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-bark-700 mb-2">Ingen kritikker ennå</h3>
+                        <p class="text-bark-500">Denne hunden har ikke deltatt på noen prøver ennå.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <h2 class="text-lg font-bold font-rockwell text-bark-800 mb-4">Jaktprøver og kritikker</h2>
+                ${currentDog.critiques.map(c => `
+                    <div class="bg-white rounded-2xl border border-earth-200 overflow-hidden cursor-pointer hover:shadow-md transition"
+                         onclick="viewCritique('${c.id}')">
+                        <div class="p-5">
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 class="font-bold text-bark-800">${c.trial}</h3>
+                                    <p class="text-sm text-bark-500">${formatDate(c.date)} • ${c.location}</p>
+                                </div>
+                                <span class="px-3 py-1 rounded-full text-sm font-bold ${getPrizeClass(c.prize)}">${c.prize}</span>
+                            </div>
+                            <div class="flex items-center gap-4 text-sm text-bark-600">
+                                <span>Klasse: ${c.class}</span>
+                                <span class="text-bark-300">•</span>
+                                <span>Dommer: ${c.judge}</span>
+                            </div>
+                        </div>
+                        <div class="bg-bark-50 px-5 py-3 border-t border-bark-100 flex items-center justify-between">
+                            <div class="flex gap-2">
+                                ${SCORE_FIELDS.map(f => `
+                                    <span class="text-xs bg-white border border-bark-200 rounded px-2 py-1">
+                                        <span class="text-bark-400">${f.label}:</span>
+                                        <span class="font-medium text-bark-700">${c.scores[f.key] !== null ? c.scores[f.key] : '-'}</span>
+                                    </span>
+                                `).join('')}
+                            </div>
+                            <span class="text-forest-600 text-sm font-medium flex items-center gap-1">
+                                Se kritikk
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </span>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function viewCritique(critiqueId) {
+            currentCritique = currentDog.critiques.find(c => c.id === critiqueId);
+            if (!currentCritique) return;
+
+            document.getElementById('critiqueContent').innerHTML = `
+                <div id="critiquePrintArea" class="bg-white rounded-lg shadow-lg max-w-2xl mx-auto">
+                    <!-- Header -->
+                    <div class="bg-forest-800 text-white p-6 rounded-t-lg">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h1 class="text-2xl font-bold font-rockwell">KRITIKKSKJEMA</h1>
+                                <p class="text-forest-200">Fuglehundprøve - Jaktprøve</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xl font-bold">${currentCritique.trial}</p>
+                                <p class="text-forest-200">${formatDate(currentCritique.date)}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dog & Handler Info -->
+                    <div class="p-6 border-b border-bark-200">
+                        <div class="grid grid-cols-2 gap-6">
+                            <div>
+                                <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Hund</h3>
+                                <p class="text-lg font-bold text-bark-800">${currentDog.name}</p>
+                                <p class="text-sm text-bark-600">${currentDog.breed}</p>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Registreringsnummer</h3>
+                                <p class="text-lg font-bold text-bark-800">${currentDog.regNumber}</p>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Klasse / Parti</h3>
+                                <p class="font-medium text-bark-700">${currentCritique.class} - ${currentCritique.party}</p>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Dommer</h3>
+                                <p class="font-medium text-bark-700">${currentCritique.judge}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Prize -->
+                    <div class="p-6 bg-gradient-to-r ${currentCritique.prize.includes('1') ? 'from-amber-50 to-amber-100' : currentCritique.prize.includes('2') ? 'from-gray-50 to-gray-100' : 'from-orange-50 to-orange-100'} border-b border-bark-200">
+                        <div class="text-center">
+                            <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Oppnådd premie</h3>
+                            <p class="text-3xl font-bold ${currentCritique.prize.includes('1') ? 'text-amber-700' : currentCritique.prize.includes('2') ? 'text-gray-700' : 'text-orange-700'}">${currentCritique.prize}</p>
+                        </div>
+                    </div>
+
+                    <!-- Scores - renamed to Kritikk -->
+                    <div class="p-6 border-b border-bark-200">
+                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-4">Kritikk</h3>
+                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                            ${SCORE_FIELDS.map(field => `
+                                <div class="bg-bark-50 rounded-lg p-3 text-center">
+                                    <p class="text-2xl font-bold text-bark-800">${currentCritique.scores[field.key] !== null ? currentCritique.scores[field.key] : '-'}</p>
+                                    <p class="text-xs text-bark-500" title="${field.title}">${field.label}</p>
+                                    <p class="text-[10px] text-bark-400 mt-1">${field.title}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Full Critique -->
+                    <div class="p-6">
+                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-3">Dommerens vurdering</h3>
+                        <p class="text-bark-700 leading-relaxed">${currentCritique.critique}</p>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="bg-bark-100 p-4 rounded-b-lg">
+                        <div class="flex items-center justify-between text-sm text-bark-500">
+                            <p>Sted: ${currentCritique.location}</p>
+                            <p>Dommer: ${currentCritique.judge}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('critiqueModal').classList.remove('hidden');
+        }
+
+        function closeCritiqueModal() {
+            document.getElementById('critiqueModal').classList.add('hidden');
+        }
+
+        function printCritique() {
+            const printContent = document.getElementById('critiquePrintArea').innerHTML;
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Kritikkskjema - ${currentDog.name}</title>
+                    <script src="https://cdn.tailwindcss.com"><\/script>
+                    <style>
+                        @media print {
+                            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        }
+                        .font-rockwell { font-family: 'Rockwell', Georgia, serif; }
+                    </style>
+                </head>
+                <body class="p-8 bg-white">
+                    ${printContent}
+                    <script>
+                        setTimeout(() => { window.print(); window.close(); }, 500);
+                    <\/script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+        }
+
+        function getPrizeClass(prize) {
+            if (prize.includes('1')) return 'bg-amber-100 text-amber-700';
+            if (prize.includes('2')) return 'bg-gray-100 text-gray-600';
+            if (prize.includes('3')) return 'bg-orange-100 text-orange-700';
+            return 'bg-bark-100 text-bark-600';
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        // Initialize
+        init();
+    </script>
+</body>
+</html>

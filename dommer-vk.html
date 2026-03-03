@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VK Finale Dommer - Fuglehundprøve</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rockwell&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: {
+                            50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac',
+                            400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d',
+                            800: '#166534', 900: '#14532d',
+                        },
+                        earth: {
+                            50: '#faf6f1', 100: '#f5ede3', 200: '#e8d5c4', 300: '#d4b896',
+                            400: '#c49a6c', 500: '#b8834d', 600: '#a16b3d', 700: '#865434',
+                            800: '#6e4530', 900: '#5a3a2a',
+                        },
+                        bark: {
+                            50: '#f8f6f4', 100: '#e8e2dc', 200: '#d4c8bc', 300: '#b9a594',
+                            400: '#a18a74', 500: '#8f7761', 600: '#7a6352', 700: '#635045',
+                            800: '#54443c', 900: '#493c35',
+                        }
+                    },
+                    fontFamily: { 'rockwell': ['Rockwell', 'Georgia', 'serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        .font-rockwell { font-family: 'Rockwell', Georgia, serif; }
+        .score-input:focus { transform: scale(1.05); }
+        .card-active { box-shadow: 0 0 0 3px #f59e0b; }
+        .live-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        /* Prevent zoom on iOS */
+        input[type="number"] { font-size: 16px; }
+        /* Large touch targets for mobile */
+        .touch-target { min-height: 48px; min-width: 48px; }
+    </style>
+</head>
+<body class="bg-bark-100 min-h-screen">
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-amber-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold font-rockwell text-bark-800">VK Finale</h1>
+                <p class="text-bark-500 mt-1">Dommerinnlogging</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Dommerkode</label>
+                    <input type="text" id="judgeCode" placeholder="Skriv inn din kode"
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-amber-500 focus:ring-0 outline-none text-lg">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Velg parti</label>
+                    <select id="partySelect" class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-amber-500 focus:ring-0 outline-none text-lg bg-white">
+                        <option value="">-- Velg parti --</option>
+                        <option value="vkfinale">VK Finale (12 hunder)</option>
+                        <option value="vk1">VK Parti 1 (18 hunder)</option>
+                    </select>
+                </div>
+
+                <button onclick="login()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-4 rounded-xl text-lg transition touch-target">
+                    Logg inn
+                </button>
+            </div>
+
+            <p class="text-center text-bark-400 text-sm mt-6">Høgkjølprøven 2026 • VK Finale</p>
+        </div>
+    </div>
+
+    <!-- Main Judge Interface -->
+    <div id="mainInterface" class="hidden">
+        <!-- Sticky Header -->
+        <header class="bg-gradient-to-r from-amber-500 to-amber-600 text-white sticky top-0 z-50 shadow-lg">
+            <div class="px-4 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                        </svg>
+                        <div>
+                            <p class="font-bold font-rockwell">VK Finale</p>
+                            <p class="text-amber-100 text-xs">Dommer: Kari Nordmann</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 bg-green-300 rounded-full live-pulse"></span>
+                        <span class="text-xs">Live</span>
+                        <button onclick="showRanking()" class="ml-3 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                            Rangering
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- View Toggle -->
+        <div class="bg-white border-b border-bark-200 px-4 py-2 flex gap-2">
+            <button onclick="setView('single')" id="viewSingle" class="flex-1 py-2 rounded-lg text-sm font-medium bg-amber-100 text-amber-700">
+                Ett kort
+            </button>
+            <button onclick="setView('dual')" id="viewDual" class="flex-1 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-600">
+                To kort
+            </button>
+        </div>
+
+        <!-- Dog Cards Container -->
+        <main id="cardsContainer" class="p-4 space-y-4">
+            <!-- Cards will be inserted here -->
+        </main>
+
+        <!-- Bottom Navigation - Dog Selector -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 shadow-lg z-40">
+            <div class="px-4 py-2">
+                <p class="text-xs text-bark-500 mb-2">Velg hund(er):</p>
+                <div id="dogSelector" class="flex gap-2 overflow-x-auto pb-2">
+                    <!-- Dog buttons inserted here -->
+                </div>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Ranking Modal -->
+    <div id="rankingModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
+        <div class="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
+                <h2 class="font-bold font-rockwell">Rangering</h2>
+                <button onclick="hideRanking()" class="p-2 hover:bg-white/20 rounded-lg transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4">
+                <!-- Editable Ranking -->
+                <div class="space-y-2" id="rankingList">
+                    <!-- Ranking items inserted here -->
+                </div>
+
+                <!-- Utslått section -->
+                <div class="mt-6">
+                    <h3 class="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        Utslått
+                    </h3>
+                    <div id="knockedOutList" class="space-y-2">
+                        <!-- Knocked out items -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-bark-200 space-y-2">
+                <button onclick="publishRanking()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Publiser rangering
+                </button>
+                <p class="text-xs text-bark-500 text-center">Rangeringen blir synlig for alle på partilister-siden</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // App State
+        let state = {
+            loggedIn: false,
+            party: null,
+            judgeName: 'Kari Nordmann',
+            viewMode: 'single', // 'single' or 'dual'
+            selectedDogs: [1],
+            dogs: [
+                { id: 1, nr: 1, name: 'Champion Dovre', breed: 'ES', handler: 'Fjell, S.', owner: 'Fjell, S.', status: 'active', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 2, nr: 2, name: 'NJCh Nordstjernen', breed: 'GS', handler: 'Skog, E.', owner: 'Skog, E.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 3, nr: 3, name: 'FTCh Villmarksjansen', breed: 'PT', handler: 'Elvrum, D.', owner: 'Elvrum, D.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 4, nr: 4, name: 'NJCh Kongeørnen', breed: 'IS', handler: 'Sørensen, L.', owner: 'Brekken, M.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 5, nr: 5, name: 'Champion Rypedrotten', breed: 'ES', handler: 'Vang, K.', owner: 'Vang, K.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 6, nr: 6, name: 'FTCh Fjelldansen', breed: 'GS', handler: 'Aune, B.', owner: 'Aune, B.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 7, nr: 7, name: 'NJCh Stormvinden', breed: 'PT', handler: 'Dahl, R.', owner: 'Dahl, R.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 8, nr: 8, name: 'Champion Seterkongen', breed: 'IS', handler: 'Nes, S.', owner: 'Nes, S.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 9, nr: 9, name: 'FTCh Nordlyskongen', breed: 'ES', handler: 'Lund, I.', owner: 'Lund, I.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 10, nr: 10, name: 'NJCh Viddejansen', breed: 'GS', handler: 'Berg, T.', owner: 'Berg, T.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 11, nr: 11, name: 'Champion Høgfjellsjansen', breed: 'PT', handler: 'Mo, B.', owner: 'Mo, B.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+                { id: 12, nr: 12, name: 'FTCh Tundradansen', breed: 'IS', handler: 'Lie, J.', owner: 'Lie, J.', status: 'waiting', scores: { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null }, knocked: false },
+            ],
+            ranking: []
+        };
+
+        // Login
+        function login() {
+            const code = document.getElementById('judgeCode').value;
+            const party = document.getElementById('partySelect').value;
+
+            if (!party) {
+                alert('Velg et parti');
+                return;
+            }
+
+            state.loggedIn = true;
+            state.party = party;
+
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('mainInterface').classList.remove('hidden');
+
+            renderDogSelector();
+            renderCards();
+        }
+
+        // View Mode
+        function setView(mode) {
+            state.viewMode = mode;
+            document.getElementById('viewSingle').className = mode === 'single'
+                ? 'flex-1 py-2 rounded-lg text-sm font-medium bg-amber-100 text-amber-700'
+                : 'flex-1 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-600';
+            document.getElementById('viewDual').className = mode === 'dual'
+                ? 'flex-1 py-2 rounded-lg text-sm font-medium bg-amber-100 text-amber-700'
+                : 'flex-1 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-600';
+
+            if (mode === 'single') {
+                state.selectedDogs = [state.selectedDogs[0]];
+            }
+            renderCards();
+            renderDogSelector();
+        }
+
+        // Select Dog
+        function selectDog(dogId) {
+            if (state.viewMode === 'single') {
+                state.selectedDogs = [dogId];
+            } else {
+                // Dual mode - max 2 dogs
+                const idx = state.selectedDogs.indexOf(dogId);
+                if (idx > -1) {
+                    if (state.selectedDogs.length > 1) {
+                        state.selectedDogs.splice(idx, 1);
+                    }
+                } else {
+                    if (state.selectedDogs.length >= 2) {
+                        state.selectedDogs.shift();
+                    }
+                    state.selectedDogs.push(dogId);
+                }
+            }
+            renderDogSelector();
+            renderCards();
+        }
+
+        // Render Dog Selector
+        function renderDogSelector() {
+            const container = document.getElementById('dogSelector');
+            container.innerHTML = state.dogs.map(dog => {
+                const isSelected = state.selectedDogs.includes(dog.id);
+                const statusClass = dog.knocked ? 'bg-red-100 text-red-600 border-red-300'
+                    : dog.status === 'done' ? 'bg-green-100 text-green-700 border-green-300'
+                    : isSelected ? 'bg-amber-500 text-white border-amber-500'
+                    : 'bg-white text-bark-700 border-bark-300';
+
+                return `
+                    <button onclick="selectDog(${dog.id})"
+                        class="flex-shrink-0 w-12 h-12 rounded-xl border-2 font-bold transition ${statusClass} touch-target">
+                        ${dog.nr}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // Render Cards
+        function renderCards() {
+            const container = document.getElementById('cardsContainer');
+            const selectedDogs = state.dogs.filter(d => state.selectedDogs.includes(d.id));
+
+            container.innerHTML = selectedDogs.map((dog, idx) => `
+                <div class="bg-white rounded-2xl shadow-lg overflow-hidden ${state.selectedDogs.length > 1 && idx === 0 ? 'card-active' : ''}">
+                    <!-- Card Header -->
+                    <div class="bg-gradient-to-r from-bark-700 to-bark-800 text-white px-4 py-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="bg-white/20 px-2 py-0.5 rounded text-sm font-bold">${dog.nr}</span>
+                                    <span class="font-bold font-rockwell">${dog.name}</span>
+                                </div>
+                                <p class="text-bark-300 text-sm mt-1">${dog.breed} • ${dog.handler}</p>
+                            </div>
+                            <button onclick="toggleKnockout(${dog.id})"
+                                class="px-3 py-2 rounded-lg text-sm font-medium transition ${dog.knocked ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-red-500 text-white'}">
+                                ${dog.knocked ? 'Utslått ✓' : 'Slå ut'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Score Inputs -->
+                    <div class="p-4 ${dog.knocked ? 'opacity-50 pointer-events-none' : ''}">
+                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                            ${['FMR', 'FUR', 'MS', 'TS', 'SJ', 'SL'].map(field => `
+                                <div class="text-center">
+                                    <label class="block text-xs font-medium text-bark-500 mb-1">${field}</label>
+                                    <input type="number"
+                                        id="score-${dog.id}-${field}"
+                                        min="0"
+                                        max="${field === 'SL' ? '99' : '9'}"
+                                        value="${dog.scores[field] !== null ? dog.scores[field] : ''}"
+                                        onchange="updateScore(${dog.id}, '${field}', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-14 text-center text-2xl font-bold rounded-xl border-2 border-bark-200 focus:border-amber-500 focus:ring-0 outline-none transition ${field === 'SL' ? 'bg-amber-50' : 'bg-bark-50'}">
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="flex gap-2 mt-4">
+                            <button onclick="markDone(${dog.id})"
+                                class="flex-1 py-3 rounded-xl font-medium transition ${dog.status === 'done' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
+                                ${dog.status === 'done' ? '✓ Ferdig' : 'Marker ferdig'}
+                            </button>
+                            <button onclick="clearScores(${dog.id})"
+                                class="px-4 py-3 rounded-xl bg-bark-100 text-bark-600 hover:bg-bark-200 font-medium transition">
+                                Nullstill
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Add padding at bottom for fixed nav
+            container.innerHTML += '<div class="h-24"></div>';
+        }
+
+        // Update Score
+        function updateScore(dogId, field, value) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                dog.scores[field] = value === '' ? null : parseInt(value);
+                // Simulate live update
+                saveLive();
+            }
+        }
+
+        // Mark Done
+        function markDone(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                dog.status = dog.status === 'done' ? 'active' : 'done';
+                renderCards();
+                renderDogSelector();
+                saveLive();
+            }
+        }
+
+        // Toggle Knockout
+        function toggleKnockout(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                dog.knocked = !dog.knocked;
+                renderCards();
+                renderDogSelector();
+                saveLive();
+            }
+        }
+
+        // Clear Scores
+        function clearScores(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog && confirm('Nullstille alle poeng for denne hunden?')) {
+                dog.scores = { FMR: null, FUR: null, MS: null, TS: null, SJ: null, SL: null };
+                renderCards();
+                saveLive();
+            }
+        }
+
+        // Save Live (simulated)
+        function saveLive() {
+            // In production, this would send to server via WebSocket/fetch
+            console.log('Live update:', state.dogs);
+
+            // Save to localStorage for demo
+            localStorage.setItem('vkFinaleScores', JSON.stringify(state.dogs));
+        }
+
+        // Show Ranking
+        function showRanking() {
+            const modal = document.getElementById('rankingModal');
+            modal.classList.remove('hidden');
+            renderRankingList();
+        }
+
+        // Hide Ranking
+        function hideRanking() {
+            document.getElementById('rankingModal').classList.add('hidden');
+        }
+
+        // Render Ranking List
+        function renderRankingList() {
+            const activeDogs = state.dogs.filter(d => !d.knocked && d.status === 'done');
+            const knockedDogs = state.dogs.filter(d => d.knocked);
+
+            // Sort by some criteria (total score for demo)
+            activeDogs.sort((a, b) => {
+                const totalA = Object.values(a.scores).reduce((sum, v) => sum + (v || 0), 0);
+                const totalB = Object.values(b.scores).reduce((sum, v) => sum + (v || 0), 0);
+                return totalB - totalA;
+            });
+
+            const rankingContainer = document.getElementById('rankingList');
+            rankingContainer.innerHTML = activeDogs.map((dog, idx) => {
+                const rank = idx + 1;
+                const medalClass = rank === 1 ? 'bg-amber-500' : rank === 2 ? 'bg-gray-400' : rank === 3 ? 'bg-amber-700' : 'bg-bark-300';
+                return `
+                    <div class="flex items-center gap-3 bg-bark-50 rounded-xl p-3" draggable="true" data-dog-id="${dog.id}">
+                        <div class="w-8 h-8 ${medalClass} text-white rounded-full flex items-center justify-center font-bold text-sm">
+                            ${rank}
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-semibold text-bark-800">${dog.name}</p>
+                            <p class="text-xs text-bark-500">${dog.breed} • ${dog.handler}</p>
+                        </div>
+                        <div class="text-right text-xs text-bark-500">
+                            <div class="grid grid-cols-6 gap-1">
+                                ${['FMR', 'FUR', 'MS', 'TS', 'SJ', 'SL'].map(f => `
+                                    <span class="w-6 h-6 bg-white border border-bark-200 rounded flex items-center justify-center">
+                                        ${dog.scores[f] !== null ? dog.scores[f] : '-'}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <button class="p-2 text-bark-400 hover:text-bark-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            if (activeDogs.length === 0) {
+                rankingContainer.innerHTML = '<p class="text-center text-bark-500 py-4">Ingen hunder er ferdig ennå</p>';
+            }
+
+            // Knocked out list
+            const knockedContainer = document.getElementById('knockedOutList');
+            knockedContainer.innerHTML = knockedDogs.map(dog => `
+                <div class="flex items-center gap-3 bg-red-50 rounded-xl p-3">
+                    <div class="w-8 h-8 bg-red-200 text-red-600 rounded-full flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-medium text-red-800">${dog.name}</p>
+                        <p class="text-xs text-red-600">${dog.breed} • ${dog.handler}</p>
+                    </div>
+                    <button onclick="toggleKnockout(${dog.id}); renderRankingList();"
+                        class="text-xs text-red-600 hover:text-red-800 underline">
+                        Angre
+                    </button>
+                </div>
+            `).join('');
+
+            if (knockedDogs.length === 0) {
+                knockedContainer.innerHTML = '<p class="text-center text-bark-400 text-sm py-2">Ingen utslåtte hunder</p>';
+            }
+        }
+
+        // Publish Ranking
+        function publishRanking() {
+            if (confirm('Er du sikker på at du vil publisere rangeringen?\n\nDette blir synlig for alle.')) {
+                saveLive();
+                alert('Rangering publisert!');
+                hideRanking();
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load saved scores if any
+            const saved = localStorage.getItem('vkFinaleScores');
+            if (saved) {
+                try {
+                    const savedDogs = JSON.parse(saved);
+                    state.dogs = savedDogs;
+                } catch (e) {}
+            }
+        });
+    </script>
+</body>
+</html>

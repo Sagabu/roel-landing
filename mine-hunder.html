@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mine hunder - Fuglehundprøver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rockwell&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: {
+                            50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac',
+                            400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d',
+                            800: '#166534', 900: '#14532d',
+                        },
+                        earth: {
+                            50: '#faf6f1', 100: '#f5ede3', 200: '#e8d5c4', 300: '#d4b896',
+                            400: '#c49a6c', 500: '#b8834d', 600: '#a16b3d', 700: '#865434',
+                            800: '#6e4530', 900: '#5a3a2a',
+                        },
+                        bark: {
+                            50: '#f8f6f4', 100: '#e8e2dc', 200: '#d4c8bc', 300: '#b9a594',
+                            400: '#a18a74', 500: '#8f7761', 600: '#7a6352', 700: '#635045',
+                            800: '#54443c', 900: '#493c35',
+                        }
+                    },
+                    fontFamily: { 'rockwell': ['Rockwell', 'Georgia', 'serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        .font-rockwell { font-family: 'Rockwell', Georgia, serif; }
+        .tab-active { border-bottom: 3px solid #16a34a; color: #16a34a; }
+    </style>
+</head>
+<body class="bg-bark-100 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-forest-800 text-white shadow-lg">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="index.html" class="flex items-center gap-2 hover:opacity-80 transition">
+                        <svg class="w-8 h-8 text-forest-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        </svg>
+                        <span class="font-rockwell font-bold">Fuglehundprøver</span>
+                    </a>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button onclick="logout()" class="bg-forest-700 hover:bg-forest-600 px-4 py-2 rounded-lg text-sm font-medium transition">
+                        Logg ut
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="bg-white border-b border-bark-200 shadow-sm sticky top-0 z-10">
+        <div class="max-w-4xl mx-auto px-4">
+            <div class="flex overflow-x-auto">
+                <a href="profil.html" class="px-5 py-4 text-sm font-medium text-bark-600 whitespace-nowrap border-b-3 border-transparent transition hover:bg-bark-50 hover:text-bark-800">
+                    Min profil
+                </a>
+                <a href="mine-hunder.html" class="tab-active px-5 py-4 text-sm font-medium whitespace-nowrap transition hover:bg-bark-50">
+                    Mine hunder
+                </a>
+                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-600 whitespace-nowrap border-b-3 border-transparent transition hover:bg-bark-50 hover:text-bark-800">
+                    Jaktprøver
+                </a>
+                <a href="fullmakter.html" class="px-5 py-4 text-sm font-medium text-bark-600 whitespace-nowrap border-b-3 border-transparent transition hover:bg-bark-50 hover:text-bark-800">
+                    Tildelte fullmakter
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Header Section -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold font-rockwell text-bark-800">Mine hunder</h1>
+                <p class="text-bark-500 mt-1">Administrer hundene dine og se deres resultater</p>
+            </div>
+            <button onclick="openAddDogModal()" class="bg-forest-600 hover:bg-forest-700 text-white font-semibold px-5 py-3 rounded-xl transition flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Legg til hund
+            </button>
+        </div>
+
+        <!-- Dogs List -->
+        <div id="dogsList" class="space-y-4">
+            <!-- Dogs will be rendered here -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="hidden bg-white rounded-2xl border border-earth-200 p-12 text-center">
+            <div class="w-20 h-20 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-10 h-10 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                </svg>
+            </div>
+            <h3 class="text-lg font-semibold text-bark-700 mb-2">Ingen hunder registrert</h3>
+            <p class="text-bark-500 mb-6">Legg til din første hund for å komme i gang</p>
+            <button onclick="openAddDogModal()" class="bg-forest-600 hover:bg-forest-700 text-white font-semibold px-6 py-3 rounded-xl transition">
+                Legg til hund
+            </button>
+        </div>
+    </main>
+
+    <!-- Add/Edit Dog Modal -->
+    <div id="dogModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-bark-200">
+                <div class="flex items-center justify-between">
+                    <h3 id="modalTitle" class="text-xl font-bold font-rockwell text-bark-800">Legg til hund</h3>
+                    <button onclick="closeDogModal()" class="text-bark-400 hover:text-bark-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <form id="dogForm" class="p-6 space-y-5">
+                <input type="hidden" id="dogId">
+
+                <!-- Dog Photo -->
+                <div class="text-center">
+                    <div class="relative inline-block group">
+                        <div id="dogImageContainer" class="w-24 h-24 rounded-full bg-bark-100 border-2 border-bark-200 overflow-hidden flex items-center justify-center mx-auto">
+                            <img id="dogImage" src="" alt="Hundebilde" class="w-full h-full object-cover hidden">
+                            <svg id="dogImagePlaceholder" class="w-10 h-10 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </div>
+                        <label for="dogPhotoUpload" class="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                        </label>
+                        <input type="file" id="dogPhotoUpload" accept="image/*" class="hidden" onchange="handleDogPhotoUpload(event)">
+                    </div>
+                    <p class="text-xs text-bark-400 mt-2">Klikk for å legge til bilde</p>
+                </div>
+
+                <!-- Name -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Hundens navn *</label>
+                    <input type="text" id="dogName" required
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none">
+                </div>
+
+                <!-- Breed -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Rase</label>
+                    <select id="dogBreed"
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none bg-white">
+                        <option value="">Velg rase</option>
+                        <option value="Engelsk Setter">Engelsk Setter</option>
+                        <option value="Gordon Setter">Gordon Setter</option>
+                        <option value="Irsk Setter">Irsk Setter</option>
+                        <option value="Pointer">Pointer</option>
+                        <option value="Breton">Breton</option>
+                        <option value="Vorstehhund">Vorstehhund</option>
+                        <option value="Weimaraner">Weimaraner</option>
+                        <option value="Vizsla">Vizsla</option>
+                        <option value="Annen">Annen</option>
+                    </select>
+                </div>
+
+                <!-- Registration Number -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Registreringsnummer (NKK)</label>
+                    <input type="text" id="dogRegNumber" placeholder="f.eks. NO12345/21"
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none">
+                </div>
+
+                <!-- Birth Date -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Fødselsdato</label>
+                    <input type="date" id="dogBirthDate"
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none">
+                </div>
+
+                <!-- Gender -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Kjønn</label>
+                    <div class="flex gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="dogGender" value="male" class="w-4 h-4 text-forest-600">
+                            <span class="text-bark-700">Hannhund</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="dogGender" value="female" class="w-4 h-4 text-forest-600">
+                            <span class="text-bark-700">Tispe</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Chip Number -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Chipnummer</label>
+                    <input type="text" id="dogChipNumber" placeholder="15 siffer"
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none">
+                </div>
+
+                <!-- Buttons -->
+                <div class="flex gap-3 pt-4">
+                    <button type="submit" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white font-semibold py-3 rounded-xl transition">
+                        Lagre
+                    </button>
+                    <button type="button" onclick="closeDogModal()" class="px-6 bg-bark-200 hover:bg-bark-300 text-bark-700 font-semibold py-3 rounded-xl transition">
+                        Avbryt
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-bark-800 mb-2">Slette hund?</h3>
+                <p class="text-bark-500" id="deleteMessage">Er du sikker på at du vil slette denne hunden?</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="confirmDelete()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-xl transition">
+                    Ja, slett
+                </button>
+                <button onclick="closeDeleteModal()" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-semibold py-3 rounded-xl transition">
+                    Avbryt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let dogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
+        let currentDogPhoto = null;
+        let dogToDelete = null;
+
+        // Initialize
+        function init() {
+            renderDogs();
+        }
+
+        function renderDogs() {
+            const container = document.getElementById('dogsList');
+            const emptyState = document.getElementById('emptyState');
+
+            if (dogs.length === 0) {
+                container.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+
+            container.innerHTML = dogs.map(dog => `
+                <div class="bg-white rounded-2xl border border-earth-200 overflow-hidden">
+                    <div class="p-5">
+                        <div class="flex items-start gap-4">
+                            <!-- Dog Photo -->
+                            <div class="w-20 h-20 rounded-xl bg-bark-100 overflow-hidden flex-shrink-0">
+                                ${dog.photo
+                                    ? `<img src="${dog.photo}" alt="${dog.name}" class="w-full h-full object-cover">`
+                                    : `<div class="w-full h-full flex items-center justify-center">
+                                        <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                                        </svg>
+                                       </div>`
+                                }
+                            </div>
+                            <!-- Dog Info -->
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-bark-800">${dog.name}</h3>
+                                        <p class="text-sm text-bark-500">${dog.breed || 'Rase ikke angitt'}</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="editDog('${dog.id}')" class="p-2 text-bark-400 hover:text-forest-600 hover:bg-forest-50 rounded-lg transition">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                            </svg>
+                                        </button>
+                                        <button onclick="deleteDog('${dog.id}')" class="p-2 text-bark-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    ${dog.regNumber ? `<span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full">${dog.regNumber}</span>` : ''}
+                                    ${dog.gender ? `<span class="text-xs bg-bark-100 text-bark-600 px-2 py-1 rounded-full">${dog.gender === 'male' ? 'Hannhund' : 'Tispe'}</span>` : ''}
+                                    ${dog.birthDate ? `<span class="text-xs bg-earth-100 text-earth-700 px-2 py-1 rounded-full">${formatAge(dog.birthDate)}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Results Summary -->
+                    <div class="bg-bark-50 px-5 py-3 border-t border-bark-100">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-bark-500">Prøveresultater</span>
+                            <span class="font-medium text-bark-700">${dog.results?.length || 0} prøver</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function formatAge(birthDate) {
+            const birth = new Date(birthDate);
+            const today = new Date();
+            let years = today.getFullYear() - birth.getFullYear();
+            let months = today.getMonth() - birth.getMonth();
+
+            if (months < 0) {
+                years--;
+                months += 12;
+            }
+
+            if (years === 0) {
+                return `${months} mnd`;
+            } else if (years < 2) {
+                return `${years} år ${months} mnd`;
+            }
+            return `${years} år`;
+        }
+
+        function openAddDogModal() {
+            document.getElementById('modalTitle').textContent = 'Legg til hund';
+            document.getElementById('dogForm').reset();
+            document.getElementById('dogId').value = '';
+            document.getElementById('dogImage').classList.add('hidden');
+            document.getElementById('dogImagePlaceholder').classList.remove('hidden');
+            currentDogPhoto = null;
+            document.getElementById('dogModal').classList.remove('hidden');
+        }
+
+        function editDog(id) {
+            const dog = dogs.find(d => d.id === id);
+            if (!dog) return;
+
+            document.getElementById('modalTitle').textContent = 'Rediger hund';
+            document.getElementById('dogId').value = dog.id;
+            document.getElementById('dogName').value = dog.name || '';
+            document.getElementById('dogBreed').value = dog.breed || '';
+            document.getElementById('dogRegNumber').value = dog.regNumber || '';
+            document.getElementById('dogBirthDate').value = dog.birthDate || '';
+            document.getElementById('dogChipNumber').value = dog.chipNumber || '';
+
+            if (dog.gender) {
+                document.querySelector(`input[name="dogGender"][value="${dog.gender}"]`).checked = true;
+            }
+
+            if (dog.photo) {
+                document.getElementById('dogImage').src = dog.photo;
+                document.getElementById('dogImage').classList.remove('hidden');
+                document.getElementById('dogImagePlaceholder').classList.add('hidden');
+                currentDogPhoto = dog.photo;
+            } else {
+                document.getElementById('dogImage').classList.add('hidden');
+                document.getElementById('dogImagePlaceholder').classList.remove('hidden');
+                currentDogPhoto = null;
+            }
+
+            document.getElementById('dogModal').classList.remove('hidden');
+        }
+
+        function closeDogModal() {
+            document.getElementById('dogModal').classList.add('hidden');
+        }
+
+        function handleDogPhotoUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentDogPhoto = e.target.result;
+                    document.getElementById('dogImage').src = currentDogPhoto;
+                    document.getElementById('dogImage').classList.remove('hidden');
+                    document.getElementById('dogImagePlaceholder').classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Form submit
+        document.getElementById('dogForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const id = document.getElementById('dogId').value || Date.now().toString();
+            const genderInput = document.querySelector('input[name="dogGender"]:checked');
+
+            const dogData = {
+                id: id,
+                name: document.getElementById('dogName').value,
+                breed: document.getElementById('dogBreed').value,
+                regNumber: document.getElementById('dogRegNumber').value,
+                birthDate: document.getElementById('dogBirthDate').value,
+                gender: genderInput ? genderInput.value : null,
+                chipNumber: document.getElementById('dogChipNumber').value,
+                photo: currentDogPhoto,
+                results: []
+            };
+
+            const existingIndex = dogs.findIndex(d => d.id === id);
+            if (existingIndex >= 0) {
+                // Keep existing results
+                dogData.results = dogs[existingIndex].results || [];
+                dogs[existingIndex] = dogData;
+            } else {
+                dogs.push(dogData);
+            }
+
+            localStorage.setItem('userDogs', JSON.stringify(dogs));
+            closeDogModal();
+            renderDogs();
+            showToast(existingIndex >= 0 ? 'Hund oppdatert' : 'Hund lagt til');
+        });
+
+        function deleteDog(id) {
+            dogToDelete = id;
+            const dog = dogs.find(d => d.id === id);
+            document.getElementById('deleteMessage').textContent = `Er du sikker på at du vil slette ${dog?.name || 'denne hunden'}?`;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+            dogToDelete = null;
+        }
+
+        function confirmDelete() {
+            if (dogToDelete) {
+                dogs = dogs.filter(d => d.id !== dogToDelete);
+                localStorage.setItem('userDogs', JSON.stringify(dogs));
+                renderDogs();
+                showToast('Hund slettet');
+            }
+            closeDeleteModal();
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-bark-800 text-white px-6 py-3 rounded-xl shadow-lg z-50';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 2000);
+        }
+
+        function logout() {
+            if (confirm('Er du sikker på at du vil logge ut?')) {
+                localStorage.removeItem('judgeSession');
+                window.location.href = 'index.html';
+            }
+        }
+
+        // Initialize
+        init();
+    </script>
+</body>
+</html>

@@ -362,6 +362,168 @@
         </div>
     </main>
 
+    <!-- Cancellation Modal (Late Cancellation) -->
+    <div id="cancelModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div class="px-6 py-4 border-b border-earth-200 flex items-center justify-between">
+                <h3 class="text-lg font-bold font-rockwell text-forest-800">Meld avbud</h3>
+                <button onclick="closeCancelModal()" class="text-bark-400 hover:text-bark-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Step 1: Warning about late cancellation -->
+            <div id="cancelStep1" class="p-6">
+                <div class="bg-yellow-50 border border-yellow-300 rounded-xl p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-6 h-6 text-yellow-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-yellow-800">Sen avmelding</p>
+                            <p class="text-yellow-700 text-sm mt-1">Avmeldingsfristen har passert. Vennligst oppgi årsaken til avmeldingen.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="text-bark-700 mb-4">Hva er årsaken til avmeldingen?</p>
+
+                <div class="space-y-3">
+                    <label class="flex items-start gap-3 p-4 rounded-xl border-2 border-earth-200 cursor-pointer hover:border-forest-400 transition has-[:checked]:border-forest-600 has-[:checked]:bg-forest-50">
+                        <input type="radio" name="cancelReason" value="medical" class="mt-1 w-5 h-5 text-forest-600 border-earth-300 focus:ring-forest-500">
+                        <div>
+                            <p class="font-medium text-bark-800">Hund skadet / syk / løpetid</p>
+                            <p class="text-sm text-bark-500">Krever veterinærattest for refusjon av deltakeravgift</p>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-4 rounded-xl border-2 border-earth-200 cursor-pointer hover:border-forest-400 transition has-[:checked]:border-forest-600 has-[:checked]:bg-forest-50">
+                        <input type="radio" name="cancelReason" value="other" class="mt-1 w-5 h-5 text-forest-600 border-earth-300 focus:ring-forest-500">
+                        <div>
+                            <p class="font-medium text-bark-800">Annet</p>
+                            <p class="text-sm text-bark-500">Refusjon gis ikke ved sen avmelding uten medisinsk grunn</p>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="mt-6 flex gap-3">
+                    <button onclick="closeCancelModal()" class="flex-1 bg-white border border-earth-300 hover:bg-earth-50 text-bark-700 py-3 rounded-lg font-medium transition">
+                        Avbryt
+                    </button>
+                    <button onclick="goToCancelStep2()" id="cancelNextBtn" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white py-3 rounded-lg font-medium transition opacity-50 cursor-not-allowed" disabled>
+                        Neste
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Medical - Upload veterinary certificate -->
+            <div id="cancelStep2Medical" class="hidden p-6">
+                <div class="bg-blue-50 border border-blue-300 rounded-xl p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-6 h-6 text-blue-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-blue-800">Refusjon mulig</p>
+                            <p class="text-blue-700 text-sm mt-1">Ved sykdom/skade kan du få refundert deltakeravgiften. Du vil motta en e-post med informasjon om dokumentasjonskrav.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-2">Beskriv situasjonen (valgfritt)</label>
+                        <textarea id="medicalComment" rows="3" placeholder="F.eks: Bella ble syk i går kveld og veterinær har bekreftet at hun må holdes i ro."
+                            class="w-full px-4 py-3 rounded-lg border border-earth-300 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none resize-none"></textarea>
+                    </div>
+
+                    <div class="bg-earth-50 rounded-lg p-4">
+                        <h4 class="font-medium text-bark-800 mb-2">Hva skjer nå?</h4>
+                        <ol class="text-sm text-bark-600 space-y-2">
+                            <li class="flex items-start gap-2">
+                                <span class="w-5 h-5 bg-forest-600 text-white rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5">1</span>
+                                <span>Du mottar en e-post med instruksjoner for refusjon</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="w-5 h-5 bg-earth-400 text-white rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5">2</span>
+                                <span>Send veterinærattest til arrangør innen <strong>3 dager</strong></span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="w-5 h-5 bg-earth-400 text-white rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5">3</span>
+                                <span>Refusjon behandles etter mottatt dokumentasjon</span>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex gap-3">
+                    <button onclick="goBackToStep1()" class="flex-1 bg-white border border-earth-300 hover:bg-earth-50 text-bark-700 py-3 rounded-lg font-medium transition">
+                        Tilbake
+                    </button>
+                    <button onclick="submitMedicalCancellation()" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition">
+                        Bekreft avmelding
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Other reason -->
+            <div id="cancelStep2Other" class="hidden p-6">
+                <div class="bg-red-50 border border-red-300 rounded-xl p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-6 h-6 text-red-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-red-800">Ingen refusjon</p>
+                            <p class="text-red-700 text-sm mt-1">Ved sen avmelding uten medisinsk grunn gis det ikke refusjon av deltakeravgiften.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-2">Kommentar (valgfritt)</label>
+                        <textarea id="otherComment" rows="3" placeholder="Gi gjerne en kort forklaring..."
+                            class="w-full px-4 py-3 rounded-lg border border-earth-300 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none resize-none"></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex gap-3">
+                    <button onclick="goBackToStep1()" class="flex-1 bg-white border border-earth-300 hover:bg-earth-50 text-bark-700 py-3 rounded-lg font-medium transition">
+                        Tilbake
+                    </button>
+                    <button onclick="submitOtherCancellation()" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-medium transition">
+                        Bekreft avmelding
+                    </button>
+                </div>
+            </div>
+
+            <!-- Confirmation step -->
+            <div id="cancelConfirmation" class="hidden p-6 text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold font-rockwell text-forest-800 mb-2">Avmelding registrert</h3>
+                <p class="text-bark-600 mb-4" id="confirmationMessage">Din avmelding er nå registrert.</p>
+
+                <div id="refundNote" class="hidden bg-blue-50 rounded-lg p-4 mb-6 text-left">
+                    <p class="text-sm text-blue-800">
+                        <strong>Viktig:</strong> Du vil motta en e-post med informasjon om refusjon.
+                        Husk å sende inn veterinærattest innen <strong>3 dager</strong> for å få refundert deltakeravgiften.
+                    </p>
+                </div>
+
+                <button onclick="closeCancelModal(); location.reload();" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-lg font-medium transition">
+                    Lukk
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="bg-forest-900 py-8 px-4 mt-auto">
         <div class="max-w-6xl mx-auto text-center text-forest-500 text-sm">
@@ -446,24 +608,116 @@
             document.getElementById('confirmBtn').classList.add('opacity-50', 'cursor-not-allowed');
         });
 
-        // Cancel participation
+        // Cancel participation - check if late cancellation
         document.getElementById('cancelBtn').addEventListener('click', () => {
-            if (confirm('Er du sikker på at du vil melde avbud? Neste person på ventelisten vil få plassen din.')) {
-                const alert = document.getElementById('statusAlert');
-                alert.className = 'bg-red-100 border border-red-300 rounded-xl p-4 flex items-center gap-4';
-                alert.innerHTML = `
-                    <div class="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <p class="font-semibold text-red-800">Avbud registrert</p>
-                        <p class="text-red-700 text-sm">Du er nå meldt av prøven.</p>
-                    </div>
-                `;
+            // Demo: Assume it's a late cancellation (after deadline)
+            const isLateCancellation = true; // In production, check against deadline
+
+            if (isLateCancellation) {
+                // Show late cancellation modal
+                document.getElementById('cancelModal').classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+            } else {
+                // Normal cancellation (before deadline)
+                if (confirm('Er du sikker på at du vil melde avbud? Neste person på ventelisten vil få plassen din.')) {
+                    updateStatusToCancelled();
+                }
             }
         });
+
+        // Cancel modal functions
+        function closeCancelModal() {
+            document.getElementById('cancelModal').classList.add('hidden');
+            document.body.style.overflow = '';
+            resetCancelModal();
+        }
+
+        function resetCancelModal() {
+            document.getElementById('cancelStep1').classList.remove('hidden');
+            document.getElementById('cancelStep2Medical').classList.add('hidden');
+            document.getElementById('cancelStep2Other').classList.add('hidden');
+            document.getElementById('cancelConfirmation').classList.add('hidden');
+            document.querySelectorAll('input[name="cancelReason"]').forEach(r => r.checked = false);
+            document.getElementById('cancelNextBtn').disabled = true;
+            document.getElementById('cancelNextBtn').classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        // Enable next button when reason is selected
+        document.querySelectorAll('input[name="cancelReason"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                document.getElementById('cancelNextBtn').disabled = false;
+                document.getElementById('cancelNextBtn').classList.remove('opacity-50', 'cursor-not-allowed');
+            });
+        });
+
+        function goToCancelStep2() {
+            const reason = document.querySelector('input[name="cancelReason"]:checked')?.value;
+            document.getElementById('cancelStep1').classList.add('hidden');
+
+            if (reason === 'medical') {
+                document.getElementById('cancelStep2Medical').classList.remove('hidden');
+            } else {
+                document.getElementById('cancelStep2Other').classList.remove('hidden');
+            }
+        }
+
+        function goBackToStep1() {
+            document.getElementById('cancelStep2Medical').classList.add('hidden');
+            document.getElementById('cancelStep2Other').classList.add('hidden');
+            document.getElementById('cancelStep1').classList.remove('hidden');
+        }
+
+        function submitMedicalCancellation() {
+            const comment = document.getElementById('medicalComment').value;
+
+            // Hide steps, show confirmation
+            document.getElementById('cancelStep2Medical').classList.add('hidden');
+            document.getElementById('cancelConfirmation').classList.remove('hidden');
+            document.getElementById('refundNote').classList.remove('hidden');
+            document.getElementById('confirmationMessage').textContent = 'Din avmelding er registrert. Sjekk e-posten din for informasjon om refusjon.';
+
+            // In production: Send SMS with reason selection, send email with refund instructions
+            console.log('Late cancellation - Medical reason:', comment);
+
+            updateStatusToCancelled();
+        }
+
+        function submitOtherCancellation() {
+            const comment = document.getElementById('otherComment').value;
+
+            // Hide steps, show confirmation
+            document.getElementById('cancelStep2Other').classList.add('hidden');
+            document.getElementById('cancelConfirmation').classList.remove('hidden');
+            document.getElementById('refundNote').classList.add('hidden');
+            document.getElementById('confirmationMessage').textContent = 'Din avmelding er registrert. Plassen din går til neste person på ventelisten.';
+
+            // In production: Send SMS with reason and comment
+            console.log('Late cancellation - Other reason:', comment);
+
+            updateStatusToCancelled();
+        }
+
+        function updateStatusToCancelled() {
+            const alert = document.getElementById('statusAlert');
+            alert.className = 'bg-red-100 border border-red-300 rounded-xl p-4 flex items-center gap-4';
+            alert.innerHTML = `
+                <div class="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="font-semibold text-red-800">Avbud registrert</p>
+                    <p class="text-red-700 text-sm">Du er nå meldt av prøven.</p>
+                </div>
+            `;
+
+            // Disable buttons
+            document.getElementById('confirmBtn').disabled = true;
+            document.getElementById('confirmBtn').classList.add('opacity-50', 'cursor-not-allowed');
+            document.getElementById('cancelBtn').disabled = true;
+            document.getElementById('cancelBtn').classList.add('opacity-50', 'cursor-not-allowed');
+        }
     </script>
 
 </body>

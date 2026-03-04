@@ -494,6 +494,7 @@
         function createEmptyRound(roundNum) {
             return {
                 roundNum,
+                notes: '', // Notes for this specific round/slip
                 scores: {
                     // Fuglebehandling
                     PRESISJON: null,
@@ -981,13 +982,26 @@
                                     <span id="voiceBtnText-${dog.id}">Dikter</span>
                                 </button>
                             </div>
+
+                            <!-- Previous slips notes (read-only) -->
+                            ${dog.rounds.length > 1 ? `
+                                <div class="mb-2 space-y-1">
+                                    ${dog.rounds.slice(0, -1).map(r => r.notes ? `
+                                        <div class="bg-bark-50 rounded-lg px-3 py-2 border border-bark-200">
+                                            <span class="text-[10px] font-semibold text-bark-400 uppercase">Slipp ${r.roundNum}:</span>
+                                            <p class="text-sm text-bark-500 italic">${r.notes}</p>
+                                        </div>
+                                    ` : '').join('')}
+                                </div>
+                            ` : ''}
+
                             <div class="relative">
                                 <textarea
                                     id="notes-${dog.id}"
                                     rows="2"
-                                    onchange="updateNotes(${dog.id}, this.value)"
-                                    placeholder="Skriv eller dikter notater..."
-                                    class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-sm resize-none bg-yellow-50">${dog.notes || ''}</textarea>
+                                    onchange="updateCurrentRoundNotes(${dog.id}, this.value)"
+                                    placeholder="Skriv eller dikter notater for slipp ${roundNum}..."
+                                    class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-sm resize-none bg-yellow-50">${currentRound.notes || ''}</textarea>
                                 <div id="voiceStatus-${dog.id}" class="hidden absolute right-2 top-2 text-xs text-red-600 flex items-center gap-1">
                                     <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
                                     Lytter...
@@ -997,13 +1011,19 @@
 
                         <!-- Quick Actions -->
                         <div class="flex gap-2 mt-4">
+                            <button onclick="saveSlipAndContinue(${dog.id})"
+                                class="flex-1 py-3 rounded-xl font-medium transition bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                Lagre ${roundNum}.slipp
+                            </button>
                             <button onclick="markDone(${dog.id})"
                                 class="flex-1 py-3 rounded-xl font-medium transition ${dog.status === 'done' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
-                                ${dog.status === 'done' ? '✓ Ferdig' : 'Marker ferdig'}
+                                ${dog.status === 'done' ? '✓ Avsluttet' : 'Lagre slipp og avslutt hund'}
                             </button>
+                        </div>
+                        <div class="flex gap-2 mt-2">
                             <button onclick="clearRound(${dog.id})"
-                                class="px-4 py-3 rounded-xl bg-bark-100 text-bark-600 hover:bg-bark-200 font-medium transition">
-                                Nullstill
+                                class="flex-1 py-2 rounded-xl bg-bark-100 text-bark-600 hover:bg-bark-200 text-sm font-medium transition">
+                                Nullstill slipp
                             </button>
                         </div>
                     </div>
@@ -1023,12 +1043,71 @@
             }
         }
 
-        // Update Notes
+        // Update Notes (legacy - for global dog notes)
         function updateNotes(dogId, value) {
             const dog = state.dogs.find(d => d.id === dogId);
             if (dog) {
                 dog.notes = value;
                 saveLive();
+            }
+        }
+
+        // Update notes for current round/slip
+        function updateCurrentRoundNotes(dogId, value) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                currentRound.notes = value;
+                saveLive();
+            }
+        }
+
+        // Save current slip and move to next dog (without marking as done)
+        function saveSlipAndContinue(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                // Mark current round as completed
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                currentRound.completed = true;
+
+                // Save
+                saveLive();
+
+                // Move to next dog in the list
+                const currentIdx = state.dogs.findIndex(d => d.id === dogId);
+                let nextIdx = currentIdx + 1;
+
+                // Find next dog that's not done and not knocked out
+                while (nextIdx < state.dogs.length) {
+                    if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                        break;
+                    }
+                    nextIdx++;
+                }
+
+                // If we reached the end, wrap around to find dogs that need more slips
+                if (nextIdx >= state.dogs.length) {
+                    nextIdx = 0;
+                    while (nextIdx <= currentIdx) {
+                        if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                            break;
+                        }
+                        nextIdx++;
+                    }
+                }
+
+                // If found a next dog, navigate to it
+                if (nextIdx < state.dogs.length && nextIdx !== currentIdx) {
+                    state.selectedDogs = [state.dogs[nextIdx].id];
+                    state.cardDogIndex = [nextIdx];
+                    renderCards();
+                    renderDogSelector();
+                } else {
+                    // All dogs have been assessed in this round, show message
+                    alert('Slipp ' + currentRound.roundNum + ' lagret for ' + dog.name + '.\n\nAlle hunder har vært gjennom dette slippet.');
+                    renderCards();
+                    renderDogSelector();
+                }
             }
         }
 

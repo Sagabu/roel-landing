@@ -703,7 +703,26 @@
                 : 'from-bark-700 to-bark-800';
 
             container.innerHTML = selectedDogs.map((dog, cardIdx) => {
-                const currentRound = dog.rounds[dog.rounds.length - 1];
+                // Check if we need to create a new round (previous was completed)
+                let currentRound = dog.rounds[dog.rounds.length - 1];
+                if (currentRound.completed && dog.rounds.length < 6) {
+                    // Create new round
+                    const newRound = {
+                        roundNum: dog.rounds.length + 1,
+                        scores: {
+                            PRESISJON: null, REISING: null, GODKJENT_REISING: false,
+                            STAND_M: null, STAND_U: null, TOMSTAND: null, MAKKER_STAND: null, SJANSE: null,
+                            SLIPPTID: null, JAKTLYST: null, FART: null, SELVSTENDIGHET: null,
+                            SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
+                            SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
+                        },
+                        notes: '',
+                        completed: false
+                    };
+                    dog.rounds.push(newRound);
+                    currentRound = newRound;
+                    saveLive();
+                }
                 const roundNum = currentRound.roundNum;
 
                 return `
@@ -1042,8 +1061,14 @@
         function saveSlipAndContinue(dogId) {
             const dog = state.dogs.find(d => d.id === dogId);
             if (dog) {
-                // Mark current round as completed
+                // Save current notes from textarea before marking as completed
+                const textarea = document.getElementById('notes-' + dogId);
                 const currentRound = dog.rounds[dog.rounds.length - 1];
+                if (textarea) {
+                    currentRound.notes = textarea.value;
+                }
+
+                // Mark current round as completed
                 currentRound.completed = true;
 
                 // Save

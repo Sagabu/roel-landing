@@ -181,9 +181,9 @@
             <div class="p-4 border-t border-bark-200 space-y-2">
                 <button onclick="submitCritique()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                     </svg>
-                    Ferdigstill kritikk
+                    Ferdigstill og send til NKK rep
                 </button>
                 <p class="text-xs text-bark-500 text-center">Kritikken sendes til NKK-representant for godkjenning</p>
             </div>
@@ -421,25 +421,105 @@
                 prizeBadge.classList.add('hidden');
             }
 
-            // Scores summary
+            // Scores - editable inputs
             const latestRound = dog.rounds[dog.rounds.length - 1];
             const s = latestRound.scores;
             document.getElementById('modalScores').innerHTML = `
-                <div class="grid grid-cols-2 gap-2 text-xs">
-                    <div>Presisjon: <b>${s.PRESISJON ?? '-'}</b></div>
-                    <div>Reising: <b>${s.REISING ?? '-'}</b> ${s.GODKJENT_REISING ? '(godkj.)' : ''}</div>
-                    <div>Stand m/makker: <b>${s.STAND_M ?? '-'}</b></div>
-                    <div>Stand u/makker: <b>${s.STAND_U ?? '-'}</b></div>
-                    <div>Tomstand: <b>${s.TOMSTAND ?? '-'}</b></div>
-                    <div>Slipptid: <b>${s.SLIPPTID ?? '-'}</b> min</div>
+                <p class="text-xs text-bark-500 mb-2 italic">Du kan justere tallene ved behov før innsending</p>
+                <!-- Fuglebehandling -->
+                <div class="bg-forest-50 rounded-lg p-2 mb-2">
+                    <span class="text-[10px] font-bold text-forest-700 uppercase">Fuglebehandling</span>
+                    <div class="grid grid-cols-3 gap-2 mt-1">
+                        <div class="text-center">
+                            <label class="block text-[9px] text-bark-500">Pres</label>
+                            <input type="number" min="1" max="4" id="edit_PRESISJON" value="${s.PRESISJON ?? ''}"
+                                class="w-full h-8 text-center text-sm font-bold rounded border border-forest-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] text-bark-500">Reis</label>
+                            <input type="number" min="1" max="6" id="edit_REISING" value="${s.REISING ?? ''}"
+                                class="w-full h-8 text-center text-sm font-bold rounded border border-forest-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center flex items-end justify-center pb-1">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="edit_GODKJENT_REISING" ${s.GODKJENT_REISING ? 'checked' : ''}
+                                    class="w-4 h-4 rounded border-forest-300 text-forest-600">
+                                <span class="text-[9px] text-bark-600">Godkj.</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
-                <div class="mt-2 pt-2 border-t border-bark-200 grid grid-cols-6 gap-1 text-center text-xs">
-                    <div><span class="text-bark-400">JL</span><br><b>${s.JAKTLYST ?? '-'}</b></div>
-                    <div><span class="text-bark-400">FA</span><br><b>${s.FART ?? '-'}</b></div>
-                    <div><span class="text-bark-400">SE</span><br><b>${s.SELVSTENDIGHET ?? '-'}</b></div>
-                    <div><span class="text-bark-400">SB</span><br><b>${s.SOKSBREDDE ?? '-'}</b></div>
-                    <div><span class="text-bark-400">RE</span><br><b>${s.REVIERING ?? '-'}</b></div>
-                    <div><span class="text-bark-400">SA</span><br><b>${s.SAMARBEID ?? '-'}</b></div>
+                <!-- Stand & Arbeid -->
+                <div class="bg-bark-50 rounded-lg p-2 mb-2">
+                    <span class="text-[10px] font-bold text-bark-600 uppercase">Stand & Arbeid</span>
+                    <div class="grid grid-cols-6 gap-1 mt-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] text-bark-400">St.M</label>
+                            <input type="number" min="0" max="99" id="edit_STAND_M" value="${s.STAND_M ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-bark-400">St.U</label>
+                            <input type="number" min="0" max="99" id="edit_STAND_U" value="${s.STAND_U ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-bark-400">TS</label>
+                            <input type="number" min="0" max="99" id="edit_TOMSTAND" value="${s.TOMSTAND ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-bark-400">MS</label>
+                            <input type="number" min="0" max="99" id="edit_MAKKER_STAND" value="${s.MAKKER_STAND ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-bark-400">SJ</label>
+                            <input type="number" min="0" max="99" id="edit_SJANSE" value="${s.SJANSE ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-forest-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-amber-500">SL</label>
+                            <input type="number" min="0" max="99" id="edit_SLIPPTID" value="${s.SLIPPTID ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-amber-200 focus:border-amber-500 outline-none bg-amber-50" placeholder="-">
+                        </div>
+                    </div>
+                </div>
+                <!-- Egenskaper -->
+                <div class="bg-earth-50 rounded-lg p-2">
+                    <span class="text-[10px] font-bold text-earth-700 uppercase">Egenskaper (1-6)</span>
+                    <div class="grid grid-cols-6 gap-1 mt-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] text-earth-500">JL</label>
+                            <input type="number" min="1" max="6" id="edit_JAKTLYST" value="${s.JAKTLYST ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-earth-200 focus:border-earth-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-earth-500">FA</label>
+                            <input type="number" min="1" max="6" id="edit_FART" value="${s.FART ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-earth-200 focus:border-earth-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-earth-500">SE</label>
+                            <input type="number" min="1" max="6" id="edit_SELVSTENDIGHET" value="${s.SELVSTENDIGHET ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-earth-200 focus:border-earth-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-earth-500">SB</label>
+                            <input type="number" min="1" max="6" id="edit_SOKSBREDDE" value="${s.SOKSBREDDE ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-earth-200 focus:border-earth-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-earth-500">RE</label>
+                            <input type="number" min="1" max="6" id="edit_REVIERING" value="${s.REVIERING ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-earth-200 focus:border-earth-500 outline-none" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] text-earth-500">SA</label>
+                            <input type="number" min="1" max="6" id="edit_SAMARBEID" value="${s.SAMARBEID ?? ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-earth-200 focus:border-earth-500 outline-none" placeholder="-">
+                        </div>
+                    </div>
                 </div>
             `;
 
@@ -475,9 +555,42 @@
                 return;
             }
 
+            // Save edited scores from the modal inputs
+            const latestRound = dog.rounds[dog.rounds.length - 1];
+
+            // Helper to get input value
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                if (!el) return null;
+                const v = el.value.trim();
+                return v === '' ? null : parseInt(v);
+            };
+            const getChecked = (id) => {
+                const el = document.getElementById(id);
+                return el ? el.checked : false;
+            };
+
+            // Update scores from editable inputs
+            latestRound.scores.PRESISJON = getVal('edit_PRESISJON');
+            latestRound.scores.REISING = getVal('edit_REISING');
+            latestRound.scores.GODKJENT_REISING = getChecked('edit_GODKJENT_REISING');
+            latestRound.scores.STAND_M = getVal('edit_STAND_M');
+            latestRound.scores.STAND_U = getVal('edit_STAND_U');
+            latestRound.scores.TOMSTAND = getVal('edit_TOMSTAND');
+            latestRound.scores.MAKKER_STAND = getVal('edit_MAKKER_STAND');
+            latestRound.scores.SJANSE = getVal('edit_SJANSE');
+            latestRound.scores.SLIPPTID = getVal('edit_SLIPPTID');
+            latestRound.scores.JAKTLYST = getVal('edit_JAKTLYST');
+            latestRound.scores.FART = getVal('edit_FART');
+            latestRound.scores.SELVSTENDIGHET = getVal('edit_SELVSTENDIGHET');
+            latestRound.scores.SOKSBREDDE = getVal('edit_SOKSBREDDE');
+            latestRound.scores.REVIERING = getVal('edit_REVIERING');
+            latestRound.scores.SAMARBEID = getVal('edit_SAMARBEID');
+
             // Save critique
             dog.critique = critiqueText;
             dog.critiqueStatus = 'submitted';
+            dog.critiqueSentToNKK = true;
             dog.critiqueSubmittedAt = new Date().toISOString();
             dog.critiqueSubmittedBy = state.judgeName;
 

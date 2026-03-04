@@ -798,18 +798,29 @@
                 const safeName = dog.name.replace(/[^a-zA-Z0-9æøåÆØÅ]/g, '_');
                 const filename = `Kritikk_${safeName}_${dog.nr}.pdf`;
 
-                // Download using blob for better compatibility
+                // Open PDF in new tab - works better on Safari/Mac
                 const pdfBlob = pdf.output('blob');
-                const url = URL.createObjectURL(pdfBlob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
+                const pdfUrl = URL.createObjectURL(pdfBlob);
 
-                showToast('PDF lastet ned!', 'success');
+                // Open in new window/tab
+                const pdfWindow = window.open(pdfUrl, '_blank');
+
+                if (pdfWindow) {
+                    showToast('PDF åpnet i ny fane. Bruk Cmd+S for å lagre.', 'success');
+                } else {
+                    // Popup blocked - try direct download as fallback
+                    const link = document.createElement('a');
+                    link.href = pdfUrl;
+                    link.download = filename;
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    setTimeout(() => {
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(pdfUrl);
+                    }, 100);
+                    showToast('PDF lastet ned til Nedlastinger-mappen', 'success');
+                }
             } catch (error) {
                 console.error('PDF generation error:', error);
                 alert('Feil ved generering av PDF: ' + error.message + '\n\nPrøv "Skriv ut" og velg "Lagre som PDF" i stedet.');

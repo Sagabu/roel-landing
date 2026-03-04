@@ -259,36 +259,12 @@
                         <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                         </svg>
-                        Kritikk/notater fra fjellet
+                        Notater fra fjellet
                     </label>
                     <div id="critiqueFieldNotes" class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-3 text-sm text-bark-700 min-h-[60px] italic">
                         Ingen notater registrert
                     </div>
                     <p class="text-xs text-bark-400 mt-1">Disse notatene ble registrert under bedømming i fjellet</p>
-                </div>
-
-                <!-- Full Critique Text -->
-                <div>
-                    <label class="block text-sm font-semibold text-bark-700 mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-forest-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        Kritikk (tekst)
-                    </label>
-                    <div class="relative">
-                        <textarea
-                            id="critiqueFinalText"
-                            rows="5"
-                            placeholder="Skriv eller dikter endelig kritikk basert på notatene over..."
-                            class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-forest-500 focus:ring-0 outline-none text-sm resize-none"></textarea>
-                        <button onclick="toggleCritiqueVoice()" id="critiqueVoiceBtn"
-                            class="absolute right-2 top-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-                            </svg>
-                            <span id="critiqueVoiceBtnText">Dikter</span>
-                        </button>
-                    </div>
                 </div>
 
                 <!-- Prize Selection -->
@@ -307,13 +283,13 @@
             </div>
 
             <div class="p-4 border-t border-bark-200 space-y-2">
-                <button onclick="finalizeCritique()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                <button onclick="saveAndFinishDog()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
-                    Ferdigstill og generer kritikk-dokument
+                    Lagre og avslutt hund
                 </button>
-                <p class="text-xs text-bark-500 text-center">Kritikken lagres som PDF og knyttes til hunden</p>
+                <p class="text-xs text-bark-500 text-center">Endelig kritikk skrives eller leses inn etter alle hunder er ferdig bedømt</p>
             </div>
         </div>
     </div>
@@ -1719,33 +1695,67 @@
             }
         }
 
-        // Finalize critique and generate document
-        function finalizeCritique() {
+        // Save and finish dog (without final critique - that comes later)
+        function saveAndFinishDog() {
             const dog = state.dogs.find(d => d.id === currentCritiqueDogId);
             if (!dog) return;
 
-            const critiqueText = document.getElementById('critiqueFinalText').value.trim();
-
-            if (!critiqueText) {
-                if (!confirm('Du har ikke skrevet noen kritikk. Vil du fortsette uten?')) {
-                    return;
-                }
-            }
-
-            // Save critique data to dog
-            dog.critique = critiqueText;
+            // Save prize selection
             dog.prize = selectedPrize;
             dog.status = 'done';
-            dog.critiqueDate = new Date().toISOString();
-            dog.critiqueDommer = state.judgeName;
-            dog.critiqueParty = state.partyConfig.name;
+            dog.finishedDate = new Date().toISOString();
+            dog.finishedBy = state.judgeName;
 
             saveLive();
+            hideCritique();
             renderCards();
             renderDogSelector();
 
-            // Generate and show PDF preview
-            generateCritiqueDocument(dog);
+            // Check if all dogs are done
+            const allDone = state.dogs.every(d => d.status === 'done' || d.knocked);
+            if (allDone) {
+                // Show option to go to final critique page
+                setTimeout(() => {
+                    if (confirm('Alle hunder er nå ferdig bedømt!\n\nVil du gå til siden for å skrive endelig kritikk?')) {
+                        window.location.href = 'dommer-kritikk.html?party=' + state.party;
+                    }
+                }, 500);
+            } else {
+                // Move to next dog
+                const currentIdx = state.dogs.findIndex(d => d.id === dog.id);
+                let nextIdx = currentIdx + 1;
+
+                // Find next dog that's not done
+                while (nextIdx < state.dogs.length) {
+                    if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                        break;
+                    }
+                    nextIdx++;
+                }
+
+                // Wrap around if needed
+                if (nextIdx >= state.dogs.length) {
+                    nextIdx = 0;
+                    while (nextIdx < currentIdx) {
+                        if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                            break;
+                        }
+                        nextIdx++;
+                    }
+                }
+
+                if (nextIdx < state.dogs.length && state.dogs[nextIdx].status !== 'done') {
+                    state.selectedDogs = [state.dogs[nextIdx].id];
+                    state.cardDogIndex = [nextIdx];
+                    renderCards();
+                    renderDogSelector();
+                }
+            }
+        }
+
+        // Legacy function for backward compatibility
+        function finalizeCritique() {
+            saveAndFinishDog();
         }
 
         function generateCritiqueDocument(dog) {

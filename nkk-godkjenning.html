@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NKK Godkjenning - Kritikkskjemaer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rockwell&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: {
+                            50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac',
+                            400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d',
+                            800: '#166534', 900: '#14532d',
+                        },
+                        earth: {
+                            50: '#faf6f1', 100: '#f5ede3', 200: '#e8d5c4', 300: '#d4b896',
+                            400: '#c49a6c', 500: '#b8834d', 600: '#a16b3d', 700: '#865434',
+                            800: '#6e4530', 900: '#5a3a2a',
+                        },
+                        bark: {
+                            50: '#f8f6f4', 100: '#e8e2dc', 200: '#d4c8bc', 300: '#b9a594',
+                            400: '#a18a74', 500: '#8f7761', 600: '#7a6352', 700: '#635045',
+                            800: '#54443c', 900: '#493c35',
+                        }
+                    },
+                    fontFamily: { 'rockwell': ['Rockwell', 'Georgia', 'serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        .font-rockwell { font-family: 'Rockwell', Georgia, serif; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body class="bg-bark-100 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-blue-700 to-blue-800 text-white sticky top-0 z-50 shadow-lg no-print">
+        <div class="max-w-5xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-rockwell font-bold">NKK Godkjenning</h1>
+                        <p class="text-blue-200 text-sm">Kritikkskjemaer til godkjenning</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <select id="partyFilter" onchange="filterByParty(this.value)" class="bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-sm">
+                        <option value="all">Alle partier</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-5xl mx-auto px-4 py-6">
+        <!-- Stats -->
+        <div class="grid grid-cols-3 gap-4 mb-6 no-print">
+            <div class="bg-white rounded-xl p-4 border border-bark-200">
+                <p class="text-sm text-bark-500">Venter godkjenning</p>
+                <p class="text-2xl font-bold text-blue-600" id="pendingCount">0</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-bark-200">
+                <p class="text-sm text-bark-500">Godkjent</p>
+                <p class="text-2xl font-bold text-green-600" id="approvedCount">0</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-bark-200">
+                <p class="text-sm text-bark-500">Returnert</p>
+                <p class="text-2xl font-bold text-amber-600" id="returnedCount">0</p>
+            </div>
+        </div>
+
+        <!-- Pending critiques -->
+        <div id="pendingSection" class="mb-8">
+            <h2 class="text-lg font-semibold text-bark-700 mb-3 flex items-center gap-2">
+                <span class="w-3 h-3 bg-blue-500 rounded-full"></span>
+                Venter på godkjenning
+            </h2>
+            <div id="pendingList" class="space-y-3">
+                <!-- Rendered by JS -->
+            </div>
+        </div>
+
+        <!-- Approved critiques -->
+        <div id="approvedSection">
+            <h2 class="text-lg font-semibold text-bark-700 mb-3 flex items-center gap-2">
+                <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+                Godkjente kritikker
+            </h2>
+            <div id="approvedList" class="space-y-3">
+                <!-- Rendered by JS -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Review Modal -->
+    <div id="reviewModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-blue-700 to-blue-800 text-white flex items-center justify-between">
+                <div>
+                    <h2 class="font-bold font-rockwell">Gjennomgå kritikk</h2>
+                    <p class="text-white/70 text-sm" id="reviewDogName">-</p>
+                </div>
+                <button onclick="hideReview()" class="p-2 hover:bg-white/20 rounded-lg transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4">
+                <!-- PDF Preview -->
+                <div id="critiquePreview" class="bg-white border-2 border-bark-200 rounded-xl p-6 shadow-inner">
+                    <!-- Generated critique document -->
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-bark-200 space-y-3 no-print">
+                <!-- Return comment input (hidden by default) -->
+                <div id="returnCommentSection" class="hidden">
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Kommentar til dommer (valgfritt)</label>
+                    <textarea id="returnComment" rows="2" placeholder="Beskriv hva som bør endres..."
+                        class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-amber-500 focus:ring-0 outline-none text-sm"></textarea>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="approveCritique()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Godkjenn kritikk
+                    </button>
+                    <button onclick="toggleReturnSection()" id="returnBtn" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                        </svg>
+                        Gjør endringer
+                    </button>
+                </div>
+                <button onclick="printCritique()" class="w-full py-2 bg-bark-100 hover:bg-bark-200 text-bark-700 rounded-xl transition text-sm font-medium flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                    </svg>
+                    Skriv ut / Last ned PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Party configurations
+        const PARTIES = {
+            ukak1: { name: 'UK/AK Parti 1' },
+            ukak2: { name: 'UK/AK Parti 2' },
+            ukak3: { name: 'UK/AK Parti 3' },
+            ukak4: { name: 'UK/AK Parti 4' },
+            vk1: { name: 'VK Kval Parti 1' },
+            vk2: { name: 'VK Kval Parti 2' },
+            vkfinale: { name: 'VK Finale' }
+        };
+
+        let allCritiques = [];
+        let currentReview = null;
+        let currentFilter = 'all';
+
+        // Load all critiques from all parties
+        function loadAllCritiques() {
+            allCritiques = [];
+
+            Object.keys(PARTIES).forEach(partyId => {
+                const saved = localStorage.getItem('judgeData_' + partyId);
+                if (saved) {
+                    const dogs = JSON.parse(saved);
+                    dogs.forEach(dog => {
+                        if (dog.critiqueStatus && dog.critiqueStatus !== 'pending') {
+                            allCritiques.push({
+                                ...dog,
+                                partyId,
+                                partyName: PARTIES[partyId].name
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Populate party filter
+            const filter = document.getElementById('partyFilter');
+            const usedParties = [...new Set(allCritiques.map(c => c.partyId))];
+            filter.innerHTML = '<option value="all">Alle partier</option>' +
+                usedParties.map(p => `<option value="${p}">${PARTIES[p].name}</option>`).join('');
+        }
+
+        function filterByParty(partyId) {
+            currentFilter = partyId;
+            render();
+        }
+
+        function render() {
+            loadAllCritiques();
+
+            let filtered = allCritiques;
+            if (currentFilter !== 'all') {
+                filtered = allCritiques.filter(c => c.partyId === currentFilter);
+            }
+
+            const pending = filtered.filter(c => c.critiqueStatus === 'submitted');
+            const approved = filtered.filter(c => c.critiqueStatus === 'approved');
+            const returned = filtered.filter(c => c.critiqueStatus === 'returned');
+
+            // Update stats
+            document.getElementById('pendingCount').textContent = pending.length;
+            document.getElementById('approvedCount').textContent = approved.length;
+            document.getElementById('returnedCount').textContent = returned.length;
+
+            // Render pending
+            document.getElementById('pendingList').innerHTML = pending.length === 0
+                ? '<p class="text-bark-500 text-center py-4">Ingen kritikker venter på godkjenning</p>'
+                : pending.map(c => renderCritiqueCard(c, 'pending')).join('');
+
+            // Render approved
+            document.getElementById('approvedList').innerHTML = approved.length === 0
+                ? '<p class="text-bark-500 text-center py-4">Ingen godkjente kritikker ennå</p>'
+                : approved.map(c => renderCritiqueCard(c, 'approved')).join('');
+        }
+
+        function renderCritiqueCard(critique, type) {
+            const prizeDisplay = critique.prize
+                ? `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">${critique.prize}</span>`
+                : '';
+
+            const statusBadge = type === 'approved'
+                ? '<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Godkjent</span>'
+                : '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Venter</span>';
+
+            return `
+                <div class="bg-white rounded-xl border border-bark-200 p-4 hover:shadow-md transition cursor-pointer"
+                     onclick="openReview('${critique.partyId}', ${critique.id})">
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 bg-forest-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <span class="text-xl font-bold text-forest-700">${critique.nr}</span>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <p class="font-bold text-bark-800">${critique.name}</p>
+                                ${prizeDisplay}
+                            </div>
+                            <p class="text-sm text-bark-500">${critique.breed} • ${critique.handler}</p>
+                            <p class="text-xs text-bark-400 mt-1">${critique.partyName} • Dommer: ${critique.critiqueSubmittedBy || '-'}</p>
+                        </div>
+                        <div class="flex flex-col items-end gap-1">
+                            ${statusBadge}
+                            ${type === 'approved' ? `
+                                <button onclick="event.stopPropagation(); downloadPdf('${critique.partyId}', ${critique.id})"
+                                    class="text-xs text-forest-600 hover:text-forest-800 underline">
+                                    Last ned PDF
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="mt-3 pt-3 border-t border-bark-100">
+                        <p class="text-sm text-bark-600 line-clamp-2">${critique.critique || 'Ingen kritikk skrevet'}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openReview(partyId, dogId) {
+            const saved = localStorage.getItem('judgeData_' + partyId);
+            if (!saved) return;
+
+            const dogs = JSON.parse(saved);
+            const dog = dogs.find(d => d.id === dogId);
+            if (!dog) return;
+
+            currentReview = { partyId, dogId, dog, dogs };
+
+            document.getElementById('reviewDogName').textContent = `${dog.name} (${PARTIES[partyId].name})`;
+
+            // Generate critique preview
+            generateCritiquePreview(dog, partyId);
+
+            // Reset return section
+            document.getElementById('returnCommentSection').classList.add('hidden');
+            document.getElementById('returnComment').value = '';
+            document.getElementById('returnBtn').innerHTML = `
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                </svg>
+                Gjør endringer
+            `;
+
+            document.getElementById('reviewModal').classList.remove('hidden');
+        }
+
+        function hideReview() {
+            document.getElementById('reviewModal').classList.add('hidden');
+            currentReview = null;
+        }
+
+        function generateCritiquePreview(dog, partyId) {
+            const latestRound = dog.rounds[dog.rounds.length - 1];
+            const s = latestRound.scores;
+            const isUKAK = partyId.startsWith('ukak');
+            const prizeDisplay = dog.prize || 'Ingen premie';
+
+            // Combine all round notes
+            const allNotes = dog.rounds
+                .filter(r => r.notes && r.notes.trim())
+                .map(r => `Slipp ${r.roundNum}: ${r.notes}`)
+                .join(' | ');
+
+            document.getElementById('critiquePreview').innerHTML = `
+                <div style="font-family: Georgia, serif; font-size: 13px; color: #1f2937;">
+                    <!-- Header -->
+                    <div style="text-align: center; margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #166534;">
+                        <h1 style="margin: 0; font-size: 18px; color: #166534;">KRITIKKSKJEMA</h1>
+                        <p style="margin: 4px 0 0; color: #6b7280; font-size: 11px;">Fuglehundprøve • ${PARTIES[partyId].name}</p>
+                    </div>
+
+                    <!-- Dog Info -->
+                    <div style="background: #f9fafb; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="width: 36px; height: 36px; background: #dcfce7; border-radius: 6px; display: flex; align-items: center; justify-content: center;">
+                                <span style="font-size: 16px; font-weight: bold; color: #166534;">${dog.nr}</span>
+                            </div>
+                            <div>
+                                <p style="margin: 0; font-weight: bold; font-size: 14px;">${dog.name}</p>
+                                <p style="margin: 2px 0 0; font-size: 11px; color: #6b7280;">${dog.breed} • Fører: ${dog.handler} • Eier: ${dog.owner}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scores Grid -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                        <div style="background: #f0fdf4; padding: 8px; border-radius: 6px;">
+                            <h4 style="font-size: 10px; color: #166534; margin: 0 0 4px; text-transform: uppercase; font-weight: bold;">Fuglebehandling</h4>
+                            <p style="font-size: 12px; margin: 2px 0;">Presisjon: <b>${s.PRESISJON ?? '-'}</b> | Reising: <b>${s.REISING ?? '-'}</b> ${s.GODKJENT_REISING ? '(godkj.)' : ''}</p>
+                        </div>
+                        <div style="background: #f9fafb; padding: 8px; border-radius: 6px;">
+                            <h4 style="font-size: 10px; color: #6b7280; margin: 0 0 4px; text-transform: uppercase; font-weight: bold;">Stand</h4>
+                            <p style="font-size: 12px; margin: 2px 0;">M: <b>${s.STAND_M ?? '-'}</b> | U: <b>${s.STAND_U ?? '-'}</b> | TS: <b>${s.TOMSTAND ?? '-'}</b> | SL: <b>${s.SLIPPTID ?? '-'}</b>min</p>
+                        </div>
+                    </div>
+
+                    <!-- Character scores -->
+                    <div style="background: #faf6f1; padding: 8px; border-radius: 6px; margin-bottom: 12px;">
+                        <h4 style="font-size: 10px; color: #865434; margin: 0 0 4px; text-transform: uppercase; font-weight: bold;">Egenskaper (1-6)</h4>
+                        <div style="display: flex; gap: 12px; font-size: 12px;">
+                            <span>JL: <b>${s.JAKTLYST ?? '-'}</b></span>
+                            <span>FA: <b>${s.FART ?? '-'}</b></span>
+                            <span>SE: <b>${s.SELVSTENDIGHET ?? '-'}</b></span>
+                            <span>SB: <b>${s.SOKSBREDDE ?? '-'}</b></span>
+                            <span>RE: <b>${s.REVIERING ?? '-'}</b></span>
+                            <span>SA: <b>${s.SAMARBEID ?? '-'}</b></span>
+                        </div>
+                    </div>
+
+                    <!-- Prize -->
+                    <div style="background: ${dog.prize ? '#fef3c7' : '#f3f4f6'}; padding: 10px; border-radius: 6px; margin-bottom: 12px; text-align: center;">
+                        <span style="font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: bold;">Premie</span>
+                        <p style="margin: 4px 0 0; font-size: 16px; font-weight: bold; color: ${dog.prize ? '#b45309' : '#6b7280'};">
+                            ${prizeDisplay}
+                        </p>
+                    </div>
+
+                    <!-- Field Notes -->
+                    ${allNotes ? `
+                    <div style="background: #fefce8; padding: 8px; border-radius: 6px; margin-bottom: 12px;">
+                        <h4 style="font-size: 10px; color: #854d0e; margin: 0 0 4px; text-transform: uppercase; font-weight: bold;">Notater fra fjellet</h4>
+                        <p style="font-size: 11px; margin: 0; color: #713f12; font-style: italic;">${allNotes}</p>
+                    </div>
+                    ` : ''}
+
+                    <!-- Critique -->
+                    <div style="border: 2px solid #166534; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                        <h4 style="font-size: 10px; color: #166534; margin: 0 0 6px; text-transform: uppercase; font-weight: bold;">Kritikk</h4>
+                        <p style="font-size: 12px; margin: 0; line-height: 1.5; white-space: pre-wrap;">${dog.critique || 'Ingen kritikk skrevet'}</p>
+                    </div>
+
+                    <!-- Signature -->
+                    <div style="display: flex; justify-content: space-between; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280;">
+                        <div>
+                            <p style="margin: 0;"><b>Dommer:</b> ${dog.critiqueSubmittedBy || '-'}</p>
+                            <p style="margin: 2px 0 0;"><b>Dato:</b> ${dog.critiqueSubmittedAt ? new Date(dog.critiqueSubmittedAt).toLocaleDateString('nb-NO') : '-'}</p>
+                        </div>
+                        <div style="text-align: right;">
+                            <p style="margin: 0;"><b>Parti:</b> ${PARTIES[partyId].name}</p>
+                            <p style="margin: 2px 0 0;"><b>Status:</b> ${dog.critiqueStatus === 'approved' ? 'Godkjent' : 'Venter godkjenning'}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleReturnSection() {
+            const section = document.getElementById('returnCommentSection');
+            const btn = document.getElementById('returnBtn');
+
+            if (section.classList.contains('hidden')) {
+                section.classList.remove('hidden');
+                btn.innerHTML = `
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    Send tilbake
+                `;
+                btn.onclick = returnCritique;
+            } else {
+                section.classList.add('hidden');
+                btn.innerHTML = `
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                    </svg>
+                    Gjør endringer
+                `;
+                btn.onclick = toggleReturnSection;
+            }
+        }
+
+        function approveCritique() {
+            if (!currentReview) return;
+
+            const { partyId, dogId, dog, dogs } = currentReview;
+
+            // Update dog status
+            dog.critiqueStatus = 'approved';
+            dog.approvedAt = new Date().toISOString();
+            dog.approvedBy = 'NKK-representant'; // In production, use actual name
+
+            // Save
+            localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+
+            hideReview();
+            render();
+
+            alert('Kritikken er godkjent! PDF er nå tilgjengelig for nedlasting og lagret på hundens historikk.');
+        }
+
+        function returnCritique() {
+            if (!currentReview) return;
+
+            const comment = document.getElementById('returnComment').value.trim();
+            const { partyId, dogId, dog, dogs } = currentReview;
+
+            // Update dog status
+            dog.critiqueStatus = 'returned';
+            dog.nkkComment = comment || 'Vennligst se over kritikken på nytt.';
+            dog.returnedAt = new Date().toISOString();
+
+            // Save
+            localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+
+            hideReview();
+            render();
+
+            alert('Kritikken er sendt tilbake til dommer for endringer.');
+        }
+
+        function printCritique() {
+            window.print();
+        }
+
+        function downloadPdf(partyId, dogId) {
+            // In production, this would generate a real PDF
+            alert('PDF-nedlasting kommer snart. Bruk "Skriv ut" og velg "Lagre som PDF" for nå.');
+            openReview(partyId, dogId);
+            setTimeout(() => window.print(), 500);
+        }
+
+        // Initialize
+        render();
+    </script>
+</body>
+</html>

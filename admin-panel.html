@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driftsadmin - Fuglehundprøve</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Rockwell&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forest: {
+                            50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac',
+                            400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d',
+                            800: '#166534', 900: '#14532d',
+                        },
+                        earth: {
+                            50: '#faf6f1', 100: '#f5ede3', 200: '#e8d5c4', 300: '#d4b896',
+                            400: '#c49a6c', 500: '#b8834d', 600: '#a16b3d', 700: '#865434',
+                            800: '#6e4530', 900: '#5a3a2a',
+                        },
+                        bark: {
+                            50: '#f8f6f4', 100: '#e8e2dc', 200: '#d4c8bc', 300: '#b9a594',
+                            400: '#a18a74', 500: '#8f7761', 600: '#7a6352', 700: '#635045',
+                            800: '#54443c', 900: '#493c35',
+                        }
+                    },
+                    fontFamily: { 'rockwell': ['Rockwell', 'Georgia', 'serif'] }
+                }
+            }
+        }
+    </script>
+    <style>.font-rockwell { font-family: 'Rockwell', Georgia, serif; }</style>
+</head>
+<body class="bg-bark-100 min-h-screen">
+    <header class="bg-forest-900 text-white shadow-lg">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <svg class="w-8 h-8 text-earth-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <div>
+                    <h1 class="text-xl font-rockwell font-bold">Driftsadmin</h1>
+                    <p class="text-forest-300 text-xs">Fuglehundprøve backend</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <a href="/" class="text-forest-200 hover:text-white text-sm transition">← Tilbake til prøven</a>
+                <a href="/api/backup" class="bg-earth-500 hover:bg-earth-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Last ned backup</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        <!-- Stats -->
+        <div id="statsCards" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
+                <p class="text-bark-500 text-sm">Datapunkter</p>
+                <p id="statKv" class="text-3xl font-bold text-forest-700 mt-1">-</p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
+                <p class="text-bark-500 text-sm">Admin-handlinger</p>
+                <p id="statLog" class="text-3xl font-bold text-forest-700 mt-1">-</p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
+                <p class="text-bark-500 text-sm">Status</p>
+                <p id="statStatus" class="text-lg font-bold text-forest-700 mt-1">-</p>
+            </div>
+        </div>
+
+        <!-- Trial Config -->
+        <div class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
+            <h2 class="text-lg font-rockwell font-bold text-bark-800 mb-4">Prøvekonfigurasjon</h2>
+            <form id="trialForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Prøvenavn</label>
+                    <input type="text" name="name" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Sted</label>
+                    <input type="text" name="location" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Startdato</label>
+                    <input type="date" name="start_date" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Sluttdato</label>
+                    <input type="date" name="end_date" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Arrangørklubb</label>
+                    <input type="text" name="organizing_club" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Kontakt-e-post</label>
+                    <input type="email" name="contact_email" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Kontakttelefon</label>
+                    <input type="tel" name="contact_phone" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Publisert</label>
+                    <select name="is_published" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none">
+                        <option value="0">Kladd</option>
+                        <option value="1">Publisert</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-bark-600 mb-1">Beskrivelse</label>
+                    <textarea name="description" rows="3" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none"></textarea>
+                </div>
+                <div class="md:col-span-2 flex justify-end">
+                    <button type="submit" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-lg font-medium transition">Lagre endringer</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Data Explorer -->
+        <div class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
+            <h2 class="text-lg font-rockwell font-bold text-bark-800 mb-4">Data (localStorage → SQLite)</h2>
+            <div id="dataExplorer" class="space-y-3">
+                <p class="text-bark-400">Laster...</p>
+            </div>
+        </div>
+
+        <!-- Admin Log -->
+        <div class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
+            <h2 class="text-lg font-rockwell font-bold text-bark-800 mb-4">Endringslogg</h2>
+            <div id="adminLog" class="space-y-2">
+                <p class="text-bark-400">Laster...</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    async function loadStats() {
+        const r = await fetch('/api/stats');
+        const s = await r.json();
+        document.getElementById('statKv').textContent = s.kvEntries;
+        document.getElementById('statLog').textContent = s.adminLogEntries;
+        document.getElementById('statStatus').textContent = s.trial?.is_published ? '✓ Publisert' : 'Kladd';
+    }
+
+    async function loadTrial() {
+        const r = await fetch('/api/trial');
+        const t = await r.json();
+        const form = document.getElementById('trialForm');
+        for (const [k, v] of Object.entries(t)) {
+            const el = form.elements[k];
+            if (el) el.value = v ?? '';
+        }
+    }
+
+    async function loadData() {
+        const r = await fetch('/api/storage');
+        const { keys } = await r.json();
+        const container = document.getElementById('dataExplorer');
+        if (keys.length === 0) {
+            container.innerHTML = '<p class="text-bark-400">Ingen data lagret ennå. Bruk prøvesidene for å generere data.</p>';
+            return;
+        }
+        container.innerHTML = keys.map(k => `
+            <details class="border border-bark-200 rounded-lg">
+                <summary class="px-4 py-3 cursor-pointer hover:bg-bark-50 flex justify-between items-center">
+                    <span class="font-medium text-bark-700">${k.key}</span>
+                    <span class="text-xs text-bark-400">${k.updated_at}</span>
+                </summary>
+                <div class="px-4 py-3 bg-bark-50 border-t border-bark-200">
+                    <pre id="data-${k.key}" class="text-xs text-bark-600 overflow-x-auto max-h-64">Laster...</pre>
+                </div>
+            </details>
+        `).join('');
+        // Lazy load values on expand
+        container.querySelectorAll('details').forEach(d => {
+            d.addEventListener('toggle', async () => {
+                if (!d.open) return;
+                const key = d.querySelector('summary span').textContent;
+                const pre = d.querySelector('pre');
+                if (pre.textContent !== 'Laster...') return;
+                const resp = await fetch(`/api/storage/${encodeURIComponent(key)}`);
+                const { value } = await resp.json();
+                pre.textContent = JSON.stringify(value, null, 2);
+            });
+        });
+    }
+
+    async function loadLog() {
+        const r = await fetch('/api/admin/log');
+        const { items } = await r.json();
+        const container = document.getElementById('adminLog');
+        if (items.length === 0) {
+            container.innerHTML = '<p class="text-bark-400">Ingen handlinger ennå.</p>';
+            return;
+        }
+        container.innerHTML = items.map(i => `
+            <div class="flex justify-between items-start py-2 border-b border-bark-100 last:border-0">
+                <div>
+                    <span class="text-sm font-medium text-bark-700">${i.action}</span>
+                    <p class="text-xs text-bark-400 mt-0.5">${i.detail?.substring(0, 120) || ''}</p>
+                </div>
+                <span class="text-xs text-bark-400 whitespace-nowrap ml-4">${i.created_at}</span>
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('trialForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const body = {};
+        for (const el of form.elements) {
+            if (el.name) body[el.name] = el.type === 'number' || el.name === 'is_published' ? Number(el.value) : el.value;
+        }
+        await fetch('/api/trial', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        loadStats();
+        loadLog();
+        // Flash success
+        const btn = form.querySelector('button[type=submit]');
+        const orig = btn.textContent;
+        btn.textContent = '✓ Lagret!';
+        btn.classList.replace('bg-forest-600', 'bg-earth-500');
+        setTimeout(() => { btn.textContent = orig; btn.classList.replace('bg-earth-500', 'bg-forest-600'); }, 1500);
+    });
+
+    loadStats();
+    loadTrial();
+    loadData();
+    loadLog();
+    </script>
+</body>
+</html>

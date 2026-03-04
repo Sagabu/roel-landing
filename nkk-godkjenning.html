@@ -750,14 +750,38 @@
             const dog = currentReview.dog;
             const element = document.getElementById('critiquePreview');
 
-            showToast('Genererer PDF...', 'success');
+            // Check if libraries are loaded
+            if (typeof html2canvas === 'undefined') {
+                alert('PDF-biblioteket html2canvas er ikke lastet. Prøv å laste siden på nytt.');
+                return;
+            }
+            if (typeof window.jspdf === 'undefined') {
+                alert('PDF-biblioteket jsPDF er ikke lastet. Prøv å laste siden på nytt.');
+                return;
+            }
+
+            // Show loading state
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `
+                <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Genererer PDF...
+            `;
 
             try {
+                // Small delay to let UI update
+                await new Promise(resolve => setTimeout(resolve, 100));
+
                 // Capture the critique preview as canvas
                 const canvas = await html2canvas(element, {
                     scale: 2,
                     useCORS: true,
-                    backgroundColor: '#ffffff'
+                    backgroundColor: '#ffffff',
+                    logging: false
                 });
 
                 // Create PDF
@@ -765,7 +789,6 @@
                 const pdf = new jsPDF('p', 'mm', 'a4');
 
                 const imgWidth = 210; // A4 width in mm
-                const pageHeight = 297; // A4 height in mm
                 const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
                 const imgData = canvas.toDataURL('image/png');
@@ -775,13 +798,25 @@
                 const safeName = dog.name.replace(/[^a-zA-Z0-9æøåÆØÅ]/g, '_');
                 const filename = `Kritikk_${safeName}_${dog.nr}.pdf`;
 
-                // Download
-                pdf.save(filename);
+                // Download using blob for better compatibility
+                const pdfBlob = pdf.output('blob');
+                const url = URL.createObjectURL(pdfBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
 
                 showToast('PDF lastet ned!', 'success');
             } catch (error) {
                 console.error('PDF generation error:', error);
-                showToast('Kunne ikke generere PDF. Prøv "Skriv ut" i stedet.', 'warning');
+                alert('Feil ved generering av PDF: ' + error.message + '\n\nPrøv "Skriv ut" og velg "Lagre som PDF" i stedet.');
+            } finally {
+                // Restore button
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         }
 

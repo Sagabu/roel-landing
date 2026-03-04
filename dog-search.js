@@ -3,6 +3,8 @@
 
 (function() {
     // Sample dog database (in production, this would come from server)
+    // Uses official FKF prizes: CACIT, ResCacit, CK, Finale, Semifinale, ÅP for VK
+    // and 1-3. premie + ÅP for UK/AK
     const allDogs = [
         {
             id: '1',
@@ -24,7 +26,7 @@
             gender: 'male',
             owner: 'Per Hansen',
             results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: '2.VK', judge: 'Ole Berg' }
+                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: 'CK', judge: 'Ole Berg' }
             ]
         },
         {
@@ -44,8 +46,8 @@
             gender: 'male',
             owner: 'Erik Svendsen',
             results: [
-                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: '1.VK', judge: 'Knut Moen' },
-                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'VK', prize: '1.VK', judge: 'Anne Kristiansen' }
+                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: 'CACIT', judge: 'Knut Moen' },
+                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'VK', prize: 'CK', judge: 'Anne Kristiansen' }
             ]
         },
         {
@@ -118,6 +120,15 @@
         return btn;
     }
 
+    // Prize color helper
+    function getPrizeClass(prize) {
+        if (['CACIT', 'ResCacit'].some(p => prize.includes(p)) || prize.includes('1')) return 'bg-amber-100 text-amber-700';
+        if (prize.includes('CK') || prize.includes('2')) return 'bg-green-100 text-green-700';
+        if (['Finale', 'Semifinale'].some(p => prize.includes(p))) return 'bg-blue-100 text-blue-700';
+        if (prize.includes('3') || prize.includes('ÅP') || prize.includes('AP')) return 'bg-earth-100 text-earth-700';
+        return 'bg-bark-100 text-bark-600';
+    }
+
     // Search function
     function performSearch(query) {
         const resultsContainer = document.getElementById('globalSearchResults');
@@ -167,7 +178,7 @@
                         ${dog.results.length > 0 ? `
                             <div class="mt-2 flex flex-wrap gap-1">
                                 ${dog.results.slice(0, 3).map(r => `
-                                    <span class="text-xs ${r.prize.includes('1') ? 'bg-amber-100 text-amber-700' : 'bg-bark-100 text-bark-600'} px-2 py-0.5 rounded">
+                                    <span class="text-xs ${getPrizeClass(r.prize)} px-2 py-0.5 rounded">
                                         ${r.prize}
                                     </span>
                                 `).join('')}

@@ -289,17 +289,7 @@
         let currentDogPhoto = null;
         let dogToDelete = null;
 
-        // Score field definitions (same as judge panel - dommer-vk.html)
-        const SCORE_FIELDS = [
-            { key: 'FMR', label: 'FMR', title: 'Fuglearbeid m/reis' },
-            { key: 'FUR', label: 'FUR', title: 'Fuglearbeid u/reis' },
-            { key: 'MS', label: 'MS', title: 'Makker stand' },
-            { key: 'TS', label: 'TS', title: 'Tomstand' },
-            { key: 'SJ', label: 'SJ', title: 'Sjanse på fugl' },
-            { key: 'SL', label: 'SL', title: 'Slipptid (min)' }
-        ];
-
-        // Sample critique data for demo
+        // Sample critique data for demo - using official FKF critique fields
         const sampleCritiques = [
             {
                 id: 'crit1',
@@ -311,7 +301,12 @@
                 party: 'UK/AK Parti 1',
                 judge: 'Bjørn Haugen',
                 prize: '1. premie',
-                scores: { FMR: 8, FUR: 9, MS: 7, TS: 8, SJ: 9, SL: 45 },
+                scores: {
+                    PRESISJON: 3, REISING: 5, GODKJENT_REISING: true,
+                    STAND_M: 2, STAND_U: 1, TOMSTAND: 0, MAKKER_STAND: 1, SJANSE: 3, SLIPPTID: 45,
+                    JAKTLYST: 5, FART: 5, SELVSTENDIGHET: 4, SOKSBREDDE: 4, REVIERING: 4, SAMARBEID: 4,
+                    SEK_SPONTAN: 1, SEK_FORBI: 0, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
+                },
                 critique: 'Meget fin hund med godt format og utstråling. Viser svært god jaktlyst og fart i terrenget. Søket er systematisk og effektivt med god bredde og dybde. Hunden viser fin selvstendighet samtidig som samarbeidet med fører er utmerket. Ved fuglkontakt viser hunden fast og sikker stand med god marking. Reiser villig på kommando. Apporten er ikke testet. En meget lovende unghund med stort potensial for videre arbeid.'
             },
             {
@@ -324,7 +319,12 @@
                 party: 'UK/AK Parti 2',
                 judge: 'Anne Kristiansen',
                 prize: '2. premie',
-                scores: { FMR: 7, FUR: 8, MS: 6, TS: 7, SJ: 8, SL: 42 },
+                scores: {
+                    PRESISJON: 3, REISING: 4, GODKJENT_REISING: true,
+                    STAND_M: 1, STAND_U: 1, TOMSTAND: 1, MAKKER_STAND: 0, SJANSE: 2, SLIPPTID: 42,
+                    JAKTLYST: 4, FART: 4, SELVSTENDIGHET: 3, SOKSBREDDE: 4, REVIERING: 3, SAMARBEID: 3,
+                    SEK_SPONTAN: 0, SEK_FORBI: 0, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
+                },
                 critique: 'Fin hund som viser god jaktlyst. Noe forsiktig start men kom godt i gang utover i slippet. Søket har bra bredde, men kunne vært mer systematisk i enkelte partier. God fart når hunden er i gang. Samarbeid med fører er tilfredsstillende. Står fint ved fuglkontakt med sikker marking. En hund med potensial som vil utvikle seg videre med mer erfaring.'
             }
         ];
@@ -511,34 +511,38 @@
             // Close details modal
             closeDogDetailsModal();
 
-            // Render PDF-style critique (updated: removed totalpoeng, field notes, renamed Poengscore to Kritikk)
+            const s = critique.scores;
+            const prizeColor = ['CACIT', 'ResCacit', '1'].some(p => critique.prize.includes(p)) ? 'amber' :
+                               ['CK', '2'].some(p => critique.prize.includes(p)) ? 'green' : 'earth';
+
+            // Render PDF-style critique with official FKF fields
             document.getElementById('critiqueContent').innerHTML = `
-                <div id="critiquePrintArea" class="bg-white rounded-lg shadow-lg max-w-2xl mx-auto">
+                <div id="critiquePrintArea" class="bg-white rounded-lg shadow-lg max-w-2xl mx-auto text-sm">
                     <!-- Header -->
-                    <div class="bg-forest-800 text-white p-6 rounded-t-lg">
+                    <div class="bg-forest-800 text-white p-5 rounded-t-lg">
                         <div class="flex items-center justify-between">
                             <div>
-                                <h1 class="text-2xl font-bold font-rockwell">KRITIKKSKJEMA</h1>
-                                <p class="text-forest-200">Fuglehundprøve - Jaktprøve</p>
+                                <h1 class="text-xl font-bold font-rockwell">KRITIKKSKJEMA</h1>
+                                <p class="text-forest-200 text-sm">Fuglehundprøve - Offisiell kritikk</p>
                             </div>
                             <div class="text-right">
-                                <p class="text-xl font-bold">${critique.trial}</p>
-                                <p class="text-forest-200">${formatDate(critique.date)}</p>
+                                <p class="font-bold">${critique.trial}</p>
+                                <p class="text-forest-200 text-sm">${formatDate(critique.date)}</p>
                             </div>
                         </div>
                     </div>
 
                     <!-- Dog & Handler Info -->
-                    <div class="p-6 border-b border-bark-200">
-                        <div class="grid grid-cols-2 gap-6">
+                    <div class="p-5 border-b border-bark-200">
+                        <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Hund</h3>
-                                <p class="text-lg font-bold text-bark-800">${dog.name}</p>
-                                <p class="text-sm text-bark-600">${dog.breed}</p>
+                                <p class="font-bold text-bark-800">${dog.name}</p>
+                                <p class="text-bark-600">${dog.breed}</p>
                             </div>
                             <div>
                                 <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Registreringsnummer</h3>
-                                <p class="text-lg font-bold text-bark-800">${critique.regNumber}</p>
+                                <p class="font-bold text-bark-800">${critique.regNumber}</p>
                             </div>
                             <div>
                                 <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Klasse / Parti</h3>
@@ -551,37 +555,142 @@
                         </div>
                     </div>
 
-                    <!-- Prize -->
-                    <div class="p-6 bg-gradient-to-r ${critique.prize.includes('1') ? 'from-amber-50 to-amber-100' : critique.prize.includes('2') ? 'from-gray-50 to-gray-100' : 'from-orange-50 to-orange-100'} border-b border-bark-200">
-                        <div class="text-center">
-                            <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Oppnådd premie</h3>
-                            <p class="text-3xl font-bold ${critique.prize.includes('1') ? 'text-amber-700' : critique.prize.includes('2') ? 'text-gray-700' : 'text-orange-700'}">${critique.prize}</p>
+                    <!-- FUGLEBEHANDLING Section -->
+                    <div class="p-5 bg-forest-50 border-b border-bark-200">
+                        <h3 class="text-xs font-bold text-forest-700 uppercase mb-3">Fuglebehandling</h3>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div class="text-center bg-white rounded-lg p-3">
+                                <p class="text-2xl font-bold text-forest-700">${s.PRESISJON ?? '-'}</p>
+                                <p class="text-xs text-bark-500">Presisjon (1-4)</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-3">
+                                <p class="text-2xl font-bold text-forest-700">${s.REISING ?? '-'}</p>
+                                <p class="text-xs text-bark-500">Reising (1-6)</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-3 flex flex-col items-center justify-center">
+                                <span class="${s.GODKJENT_REISING ? 'text-green-600' : 'text-bark-400'} text-lg">
+                                    ${s.GODKJENT_REISING ? '✓' : '○'}
+                                </span>
+                                <p class="text-xs text-bark-500">Godkj. reising</p>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Scores (renamed to Kritikk) - synced with judge panel fields -->
-                    <div class="p-6 border-b border-bark-200">
-                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-4">Kritikk</h3>
-                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                            ${SCORE_FIELDS.map(field => `
-                                <div class="bg-bark-50 rounded-lg p-3 text-center">
-                                    <p class="text-2xl font-bold text-bark-800">${critique.scores[field.key] !== null && critique.scores[field.key] !== undefined ? critique.scores[field.key] : '-'}</p>
-                                    <p class="text-xs text-bark-500" title="${field.title}">${field.label}</p>
-                                    <p class="text-[10px] text-bark-400 mt-1">${field.title}</p>
-                                </div>
-                            `).join('')}
+                    <!-- STAND/ARBEID Section -->
+                    <div class="p-5 border-b border-bark-200">
+                        <h3 class="text-xs font-bold text-bark-600 uppercase mb-3">Stand og arbeid</h3>
+                        <div class="grid grid-cols-4 gap-2 mb-2">
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-xl font-bold text-bark-700">${s.STAND_M ?? '-'}</p>
+                                <p class="text-[10px] text-bark-500">Stand m/makker</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-xl font-bold text-bark-700">${s.STAND_U ?? '-'}</p>
+                                <p class="text-[10px] text-bark-500">Stand u/makker</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-xl font-bold text-bark-700">${s.TOMSTAND ?? '-'}</p>
+                                <p class="text-[10px] text-bark-500">Tomstand</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-xl font-bold text-bark-700">${s.MAKKER_STAND ?? '-'}</p>
+                                <p class="text-[10px] text-bark-500">Makkers stand</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-xl font-bold text-bark-700">${s.SJANSE ?? '-'}</p>
+                                <p class="text-[10px] text-bark-500">Sjanse på fugl</p>
+                            </div>
+                            <div class="text-center bg-amber-50 rounded-lg p-2">
+                                <p class="text-xl font-bold text-amber-700">${s.SLIPPTID ?? '-'}</p>
+                                <p class="text-[10px] text-amber-600">Slipptid (min)</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EGENSKAPER (SUM) Section -->
+                    <div class="p-5 bg-earth-50 border-b border-bark-200">
+                        <h3 class="text-xs font-bold text-earth-700 uppercase mb-3">Egenskaper (1-6 skala)</h3>
+                        <div class="grid grid-cols-6 gap-2">
+                            <div class="text-center bg-white rounded-lg p-2">
+                                <p class="text-lg font-bold text-earth-700">${s.JAKTLYST ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Jaktlyst</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-2">
+                                <p class="text-lg font-bold text-earth-700">${s.FART ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Fart</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-2">
+                                <p class="text-lg font-bold text-earth-700">${s.SELVSTENDIGHET ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Selvst.</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-2">
+                                <p class="text-lg font-bold text-earth-700">${s.SOKSBREDDE ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Søksbr.</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-2">
+                                <p class="text-lg font-bold text-earth-700">${s.REVIERING ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Reviering</p>
+                            </div>
+                            <div class="text-center bg-white rounded-lg p-2">
+                                <p class="text-lg font-bold text-earth-700">${s.SAMARBEID ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Samarb.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EXTRA FIELDS Section -->
+                    <div class="p-5 border-b border-bark-200">
+                        <div class="grid grid-cols-4 gap-3">
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-bark-700">${s.SEK_SPONTAN ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Sek. spontan</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-bark-700">${s.SEK_FORBI ?? '-'}</p>
+                                <p class="text-[9px] text-bark-500">Sek. går forbi</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-lg font-bold ${s.APPORT === 1 ? 'text-green-600' : s.APPORT === 2 ? 'text-red-600' : 'text-bark-400'}">
+                                    ${s.APPORT === 1 ? 'Godkj' : s.APPORT === 2 ? 'Ikke' : '-'}
+                                </p>
+                                <p class="text-[9px] text-bark-500">Apport</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-lg font-bold ${s.RAPPORT_SPONTAN ? 'text-green-600' : 'text-bark-400'}">
+                                    ${s.RAPPORT_SPONTAN ? '✓' : '-'}
+                                </p>
+                                <p class="text-[9px] text-bark-500">Rapp. spontan</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${s.ADFERD ? `
+                    <!-- ADFERD Section -->
+                    <div class="p-5 bg-red-50 border-b border-bark-200">
+                        <h3 class="text-xs font-bold text-red-700 uppercase mb-2">Adferd (uønsket)</h3>
+                        <p class="text-bark-700">${s.ADFERD}</p>
+                    </div>
+                    ` : ''}
+
+                    <!-- Prize -->
+                    <div class="p-5 bg-gradient-to-r ${prizeColor === 'amber' ? 'from-amber-50 to-amber-100' : prizeColor === 'green' ? 'from-green-50 to-green-100' : 'from-earth-50 to-earth-100'} border-b border-bark-200">
+                        <div class="text-center">
+                            <h3 class="text-xs font-medium text-bark-500 uppercase mb-1">Oppnådd premie</h3>
+                            <p class="text-2xl font-bold ${prizeColor === 'amber' ? 'text-amber-700' : prizeColor === 'green' ? 'text-green-700' : 'text-earth-700'}">${critique.prize}</p>
                         </div>
                     </div>
 
                     <!-- Full Critique -->
-                    <div class="p-6">
-                        <h3 class="text-sm font-bold text-bark-700 uppercase mb-3">Dommerens vurdering</h3>
+                    <div class="p-5">
+                        <h3 class="text-xs font-bold text-bark-700 uppercase mb-3">Dommerkritikk</h3>
                         <p class="text-bark-700 leading-relaxed">${critique.critique}</p>
                     </div>
 
                     <!-- Footer -->
                     <div class="bg-bark-100 p-4 rounded-b-lg">
-                        <div class="flex items-center justify-between text-sm text-bark-500">
+                        <div class="flex items-center justify-between text-xs text-bark-500">
                             <p>Sted: ${critique.location}</p>
                             <p>Dommer: ${critique.judge}</p>
                         </div>
@@ -624,9 +733,10 @@
         }
 
         function getPrizeClass(prize) {
-            if (prize.includes('1.')) return 'bg-amber-100 text-amber-700';
-            if (prize.includes('2.')) return 'bg-gray-100 text-gray-600';
-            if (prize.includes('3.')) return 'bg-orange-100 text-orange-700';
+            if (['CACIT', 'ResCacit'].some(p => prize.includes(p)) || prize.includes('1')) return 'bg-amber-100 text-amber-700';
+            if (prize.includes('CK') || prize.includes('2')) return 'bg-green-100 text-green-700';
+            if (['Finale', 'Semifinale'].some(p => prize.includes(p))) return 'bg-blue-100 text-blue-700';
+            if (prize.includes('3') || prize.includes('ÅP') || prize.includes('AP')) return 'bg-earth-100 text-earth-700';
             return 'bg-bark-100 text-bark-600';
         }
 

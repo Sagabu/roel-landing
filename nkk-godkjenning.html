@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NKK Godkjenning - Kritikkskjemaer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Rockwell&display=swap" rel="stylesheet">
@@ -742,10 +744,45 @@
             }
         }
 
-        function downloadPdf() {
-            // For now, use print dialog with "Save as PDF" option
-            showToast('Velg "Lagre som PDF" i utskriftsdialogen', 'success');
-            setTimeout(() => window.print(), 500);
+        async function downloadPdf() {
+            if (!currentReview) return;
+
+            const dog = currentReview.dog;
+            const element = document.getElementById('critiquePreview');
+
+            showToast('Genererer PDF...', 'success');
+
+            try {
+                // Capture the critique preview as canvas
+                const canvas = await html2canvas(element, {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: '#ffffff'
+                });
+
+                // Create PDF
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+
+                const imgWidth = 210; // A4 width in mm
+                const pageHeight = 297; // A4 height in mm
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                const imgData = canvas.toDataURL('image/png');
+                pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+
+                // Generate filename
+                const safeName = dog.name.replace(/[^a-zA-Z0-9æøåÆØÅ]/g, '_');
+                const filename = `Kritikk_${safeName}_${dog.nr}.pdf`;
+
+                // Download
+                pdf.save(filename);
+
+                showToast('PDF lastet ned!', 'success');
+            } catch (error) {
+                console.error('PDF generation error:', error);
+                showToast('Kunne ikke generere PDF. Prøv "Skriv ut" i stedet.', 'warning');
+            }
         }
 
         function approveCritique() {

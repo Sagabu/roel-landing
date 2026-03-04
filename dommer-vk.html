@@ -1132,6 +1132,13 @@
                     renderDogSelector();
                     saveLive();
                 } else {
+                    // Save current notes from textarea before opening modal
+                    const textarea = document.getElementById('notes-' + dogId);
+                    if (textarea && dog.rounds && dog.rounds.length > 0) {
+                        const currentRound = dog.rounds[dog.rounds.length - 1];
+                        currentRound.notes = textarea.value;
+                        saveLive();
+                    }
                     // Open critique form modal
                     openCritiqueForm(dogId);
                 }
@@ -1523,10 +1530,30 @@
                 ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-sm text-red-700"><b>Adferd:</b> ${s.ADFERD}</div>` : ''}
             `;
 
-            // Fill in field notes
+            // Fill in field notes from all rounds/slips
             const fieldNotes = document.getElementById('critiqueFieldNotes');
-            if (dog.notes && dog.notes.trim()) {
-                fieldNotes.textContent = dog.notes;
+            let allNotes = '';
+
+            // Collect notes from all rounds
+            if (dog.rounds && dog.rounds.length > 0) {
+                dog.rounds.forEach((round, idx) => {
+                    if (round.notes && round.notes.trim()) {
+                        if (dog.rounds.length > 1) {
+                            allNotes += `Slipp ${idx + 1}: ${round.notes.trim()}\n`;
+                        } else {
+                            allNotes += round.notes.trim();
+                        }
+                    }
+                });
+            }
+
+            // Also include legacy dog.notes if present
+            if (dog.notes && dog.notes.trim() && !allNotes.includes(dog.notes.trim())) {
+                allNotes += (allNotes ? '\n' : '') + dog.notes.trim();
+            }
+
+            if (allNotes.trim()) {
+                fieldNotes.textContent = allNotes.trim();
                 fieldNotes.classList.remove('text-bark-400');
                 fieldNotes.classList.add('text-bark-700');
             } else {
@@ -1696,6 +1723,23 @@
         function saveAndFinishDog() {
             const dog = state.dogs.find(d => d.id === currentCritiqueDogId);
             if (!dog) return;
+
+            // Consolidate all round notes into dog.notes for later critique writing
+            if (dog.rounds && dog.rounds.length > 0) {
+                let allNotes = '';
+                dog.rounds.forEach((round, idx) => {
+                    if (round.notes && round.notes.trim()) {
+                        if (dog.rounds.length > 1) {
+                            allNotes += `Slipp ${idx + 1}: ${round.notes.trim()}\n`;
+                        } else {
+                            allNotes += round.notes.trim();
+                        }
+                    }
+                });
+                if (allNotes.trim()) {
+                    dog.notes = allNotes.trim();
+                }
+            }
 
             // Save prize selection
             dog.prize = selectedPrize;

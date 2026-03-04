@@ -56,13 +56,17 @@
                     </div>
                     <div>
                         <h1 class="text-xl font-rockwell font-bold">NKK Godkjenning</h1>
-                        <p class="text-blue-200 text-sm">Kritikkskjemaer til godkjenning</p>
+                        <p class="text-blue-200 text-sm" id="trialName">Kritikkskjemaer til godkjenning</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-4">
                     <select id="partyFilter" onchange="filterByParty(this.value)" class="bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-sm">
                         <option value="all">Alle partier</option>
                     </select>
+                    <div class="text-right">
+                        <p class="text-xs text-blue-200">NKK-representant</p>
+                        <p class="font-semibold" id="nkkRepName">-</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -178,6 +182,46 @@
         let allCritiques = [];
         let currentReview = null;
         let currentFilter = 'all';
+        let nkkRepInfo = null;
+
+        // Load NKK rep info
+        async function loadNkkRepInfo() {
+            try {
+                // Try API first
+                const resp = await fetch('/api/storage/trialTeam');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        const team = typeof value === 'string' ? JSON.parse(value) : value;
+                        if (team.nkkrep) {
+                            nkkRepInfo = team.nkkrep;
+                            document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Fallback to localStorage
+                const saved = localStorage.getItem('trialTeam');
+                if (saved) {
+                    const team = JSON.parse(saved);
+                    if (team.nkkrep) {
+                        nkkRepInfo = team.nkkrep;
+                        document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
+                    }
+                }
+            }
+
+            // Also try to load trial name
+            try {
+                const resp = await fetch('/api/trial');
+                if (resp.ok) {
+                    const trial = await resp.json();
+                    if (trial.name) {
+                        document.getElementById('trialName').textContent = trial.name;
+                    }
+                }
+            } catch (e) {}
+        }
 
         // Load all critiques from all parties
         function loadAllCritiques() {
@@ -484,6 +528,7 @@
         }
 
         // Initialize
+        loadNkkRepInfo();
         render();
     </script>
 </body>

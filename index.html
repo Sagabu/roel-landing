@@ -178,9 +178,9 @@
                 <div class="p-6">
                     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
-                            <h3 class="text-2xl font-bold font-rockwell text-forest-800">Høgkjølprøven 2026</h3>
-                            <p class="text-bark-600 mt-1">21. september 2026 • Høgkjølen, Tynset</p>
-                            <p class="text-bark-500 text-sm mt-1">Arrangør: Nord-Østerdal Fuglehundklubb</p>
+                            <h3 id="trialName" class="text-2xl font-bold font-rockwell text-forest-800">Laster...</h3>
+                            <p id="trialDetails" class="text-bark-600 mt-1"></p>
+                            <p id="trialClub" class="text-bark-500 text-sm mt-1"></p>
                         </div>
                         <div class="flex flex-col sm:flex-row gap-3">
                             <div class="text-center bg-forest-50 px-4 py-2 rounded-lg">
@@ -462,5 +462,31 @@
     </footer>
 
     <script src="dog-search.js"></script>
+    <script>
+        // Hent prøveinfo fra backend
+        fetch('/api/trial')
+            .then(r => r.json())
+            .then(trial => {
+                document.getElementById('trialName').textContent = trial.name || 'Fuglehundprøve';
+
+                // Formater dato og sted
+                const parts = [];
+                if (trial.start_date) {
+                    const d = new Date(trial.start_date);
+                    const opts = { day: 'numeric', month: 'long', year: 'numeric' };
+                    parts.push(d.toLocaleDateString('no-NO', opts));
+                }
+                if (trial.location) parts.push(trial.location);
+                document.getElementById('trialDetails').textContent = parts.join(' • ');
+
+                if (trial.organizing_club) {
+                    document.getElementById('trialClub').textContent = 'Arrangør: ' + trial.organizing_club;
+                }
+            })
+            .catch(err => {
+                console.log('Kunne ikke hente prøveinfo:', err);
+                document.getElementById('trialName').textContent = 'Fuglehundprøve';
+            });
+    </script>
 </body>
 </html>

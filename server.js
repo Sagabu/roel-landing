@@ -130,6 +130,30 @@ app.get("/api/backup", (c) => {
   return c.body(data);
 });
 
+// --- Helper: Convert "Etternavn, Fornavn" to "Fornavn Etternavn" ---
+function formatName(name) {
+  if (!name) return "";
+  if (name.includes(",")) {
+    const parts = name.split(",").map(p => p.trim());
+    return parts.reverse().join(" ");
+  }
+  return name;
+}
+
+// --- Helper: Parse class with day (UK1, UK2, AK1, AK2, VK) ---
+function parseClass(klasseRaw) {
+  const klasse = (klasseRaw || "AK").toUpperCase().trim();
+  // Match patterns like UK1, UK2, AK1, AK2, VK
+  const match = klasse.match(/^(UK|AK|VK)(\d)?$/);
+  if (match) {
+    return {
+      klasse: match[1],
+      dag: match[2] ? parseInt(match[2]) : null
+    };
+  }
+  return { klasse: "AK", dag: null };
+}
+
 // --- Parse participant list (PDF, CSV, Excel) ---
 app.post("/api/parse-participants", async (c) => {
   const formData = await c.req.formData();
@@ -150,8 +174,7 @@ app.post("/api/parse-participants", async (c) => {
       const pdfData = await pdfParse(buffer);
       const lines = pdfData.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-      // Skip header lines and parse data
-      // Format: Regnr, Navn, Rase, Eier, Fører, Klasse, Epost
+      // Format: Regnr, Navn, Rase, Eier (etternavn, fornavn), Fører (etternavn, fornavn), Klasse (UK1/UK2/AK1/AK2/VK), Epost
       for (const line of lines) {
         // Try to match registration number pattern (e.g., NO12345/22 or SE12345/22)
         const regMatch = line.match(/([A-Z]{2}\d+\/\d+)/);
@@ -160,13 +183,16 @@ app.post("/api/parse-participants", async (c) => {
           const parts = line.split(/\s{2,}|\t/).map(p => p.trim()).filter(p => p);
 
           if (parts.length >= 5) {
+            const klasseInfo = parseClass(parts[5]);
             const participant = {
               regnr: parts[0] || "",
               hundenavn: parts[1] || "",
               rase: parts[2] || "",
-              eier: parts[3] || "",
-              forer: parts[4] || parts[3] || "", // Fører, fallback to eier
-              klasse: parts[5] || "AK",
+              eier: formatName(parts[3]),
+              forer: formatName(parts[4] || parts[3]),
+              klasseRaw: parts[5] || "AK",
+              klasse: klasseInfo.klasse,
+              dag: klasseInfo.dag,
               epost: parts[6] || ""
             };
 
@@ -183,17 +209,20 @@ app.post("/api/parse-participants", async (c) => {
 
       // If structured parsing failed, try line-by-line with regex
       if (participants.length === 0) {
-        const regexPattern = /([A-Z]{2}\d+\/\d+)\s+(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(UK|AK|VK)\s*(.+)?/i;
+        const regexPattern = /([A-Z]{2}\d+\/\d+)\s+(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(UK\d?|AK\d?|VK)\s*(.+)?/i;
         for (const line of lines) {
           const match = line.match(regexPattern);
           if (match) {
+            const klasseInfo = parseClass(match[6]);
             participants.push({
               regnr: match[1],
               hundenavn: match[2].trim(),
               rase: match[3].trim(),
-              eier: match[4].trim(),
-              forer: match[5].trim(),
-              klasse: match[6].toUpperCase(),
+              eier: formatName(match[4].trim()),
+              forer: formatName(match[5].trim()),
+              klasseRaw: match[6].toUpperCase(),
+              klasse: klasseInfo.klasse,
+              dag: klasseInfo.dag,
               epost: (match[7] || "").trim()
             });
           }
@@ -211,13 +240,16 @@ app.post("/api/parse-participants", async (c) => {
       for (const line of dataLines) {
         const parts = line.split(/[,;]/).map(p => p.trim().replace(/^["']|["']$/g, ""));
         if (parts.length >= 5) {
+          const klasseInfo = parseClass(parts[5]);
           participants.push({
             regnr: parts[0] || "",
             hundenavn: parts[1] || "",
             rase: parts[2] || "",
-            eier: parts[3] || "",
-            forer: parts[4] || parts[3] || "",
-            klasse: parts[5] || "AK",
+            eier: formatName(parts[3]),
+            forer: formatName(parts[4] || parts[3]),
+            klasseRaw: parts[5] || "AK",
+            klasse: klasseInfo.klasse,
+            dag: klasseInfo.dag,
             epost: parts[6] || ""
           });
         }
@@ -235,13 +267,16 @@ app.post("/api/parse-participants", async (c) => {
 
       for (const row of dataRows) {
         if (row.length >= 5 && row[0]) {
+          const klasseInfo = parseClass(String(row[5] || "AK"));
           participants.push({
             regnr: String(row[0] || ""),
             hundenavn: String(row[1] || ""),
             rase: String(row[2] || ""),
-            eier: String(row[3] || ""),
-            forer: String(row[4] || row[3] || ""),
-            klasse: String(row[5] || "AK").toUpperCase(),
+            eier: formatName(String(row[3] || "")),
+            forer: formatName(String(row[4] || row[3] || "")),
+            klasseRaw: String(row[5] || "AK").toUpperCase(),
+            klasse: klasseInfo.klasse,
+            dag: klasseInfo.dag,
             epost: String(row[6] || "")
           });
         }
@@ -253,10 +288,14 @@ app.post("/api/parse-participants", async (c) => {
     // Filter out empty entries
     participants = participants.filter(p => p.regnr && p.hundenavn);
 
-    // Categorize by class
+    // Categorize by class and day
     const byClass = {
-      UK: participants.filter(p => p.klasse === "UK"),
-      AK: participants.filter(p => p.klasse === "AK"),
+      UK1: participants.filter(p => p.klasse === "UK" && p.dag === 1),
+      UK2: participants.filter(p => p.klasse === "UK" && p.dag === 2),
+      UK: participants.filter(p => p.klasse === "UK" && !p.dag),
+      AK1: participants.filter(p => p.klasse === "AK" && p.dag === 1),
+      AK2: participants.filter(p => p.klasse === "AK" && p.dag === 2),
+      AK: participants.filter(p => p.klasse === "AK" && !p.dag),
       VK: participants.filter(p => p.klasse === "VK")
     };
 
@@ -264,9 +303,17 @@ app.post("/api/parse-participants", async (c) => {
       success: true,
       total: participants.length,
       byClass: {
-        UK: byClass.UK.length,
-        AK: byClass.AK.length,
+        UK1: byClass.UK1.length,
+        UK2: byClass.UK2.length,
+        UK: byClass.UK.length + byClass.UK1.length + byClass.UK2.length,
+        AK1: byClass.AK1.length,
+        AK2: byClass.AK2.length,
+        AK: byClass.AK.length + byClass.AK1.length + byClass.AK2.length,
         VK: byClass.VK.length
+      },
+      byDay: {
+        dag1: byClass.UK1.length + byClass.AK1.length,
+        dag2: byClass.UK2.length + byClass.AK2.length
       },
       participants
     });

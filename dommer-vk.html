@@ -1057,29 +1057,28 @@
 
                 // Move to next dog in the list
                 const currentIdx = state.dogs.findIndex(d => d.id === dogId);
-                let nextIdx = currentIdx + 1;
+                let nextIdx = -1;
 
-                // Find next dog that's not done and not knocked out
-                while (nextIdx < state.dogs.length) {
-                    if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                // First, search forward from current position
+                for (let i = currentIdx + 1; i < state.dogs.length; i++) {
+                    if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
+                        nextIdx = i;
                         break;
                     }
-                    nextIdx++;
                 }
 
-                // If we reached the end, wrap around to find dogs that need more slips
-                if (nextIdx >= state.dogs.length) {
-                    nextIdx = 0;
-                    while (nextIdx <= currentIdx) {
-                        if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                // If not found, wrap around and search from beginning (excluding current dog)
+                if (nextIdx === -1) {
+                    for (let i = 0; i < currentIdx; i++) {
+                        if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
+                            nextIdx = i;
                             break;
                         }
-                        nextIdx++;
                     }
                 }
 
                 // If found a next dog, navigate to it
-                if (nextIdx < state.dogs.length && nextIdx !== currentIdx) {
+                if (nextIdx !== -1) {
                     state.selectedDogs = [state.dogs[nextIdx].id];
                     state.cardDogIndex = [nextIdx];
                     renderCards();
@@ -1814,40 +1813,49 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-3 text-sm text-red-700"><b>Adfe
 
             // Check if all dogs are done
             const allDone = state.dogs.every(d => d.status === 'done' || d.knocked);
+            console.log('All dogs done check:', allDone, state.dogs.map(d => ({id: d.id, status: d.status, knocked: d.knocked})));
+
             if (allDone) {
                 // Show modal with options
+                console.log('Showing all dogs complete modal');
                 setTimeout(() => {
                     showAllDogsCompleteModal();
                 }, 500);
             } else {
-                // Move to next dog
+                // Move to next dog that needs assessment
                 const currentIdx = state.dogs.findIndex(d => d.id === dog.id);
-                let nextIdx = currentIdx + 1;
+                let nextIdx = -1;
 
-                // Find next dog that's not done
-                while (nextIdx < state.dogs.length) {
-                    if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                // First, search forward from current position
+                for (let i = currentIdx + 1; i < state.dogs.length; i++) {
+                    if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
+                        nextIdx = i;
                         break;
                     }
-                    nextIdx++;
                 }
 
-                // Wrap around if needed
-                if (nextIdx >= state.dogs.length) {
-                    nextIdx = 0;
-                    while (nextIdx < currentIdx) {
-                        if (!state.dogs[nextIdx].knocked && state.dogs[nextIdx].status !== 'done') {
+                // If not found, wrap around and search from beginning
+                if (nextIdx === -1) {
+                    for (let i = 0; i < currentIdx; i++) {
+                        if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
+                            nextIdx = i;
                             break;
                         }
-                        nextIdx++;
                     }
                 }
 
-                if (nextIdx < state.dogs.length && state.dogs[nextIdx].status !== 'done') {
+                console.log('Next dog search result:', nextIdx, 'from current:', currentIdx);
+
+                if (nextIdx !== -1) {
                     state.selectedDogs = [state.dogs[nextIdx].id];
                     state.cardDogIndex = [nextIdx];
                     renderCards();
                     renderDogSelector();
+                }
+                // If no next dog found but allDone is false, there's an inconsistency
+                // This shouldn't happen, but log it for debugging
+                if (nextIdx === -1) {
+                    console.error('No next dog found but allDone is false - this is unexpected');
                 }
             }
         }
@@ -1859,11 +1867,22 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-3 text-sm text-red-700"><b>Adfe
 
         // Show modal when all dogs are complete
         function showAllDogsCompleteModal() {
-            document.getElementById('allDogsCompleteModal').classList.remove('hidden');
+            const modal = document.getElementById('allDogsCompleteModal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                console.log('Modal shown successfully');
+            } else {
+                console.error('allDogsCompleteModal not found!');
+                // Fallback: alert the user
+                alert('Gratulerer! Alle hunder er bedømt.\n\nGå til kritikk-siden for å fullføre.');
+            }
         }
 
         function hideAllDogsCompleteModal() {
-            document.getElementById('allDogsCompleteModal').classList.add('hidden');
+            const modal = document.getElementById('allDogsCompleteModal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
         }
 
         function goToFinalCritique() {

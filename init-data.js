@@ -13,6 +13,8 @@ function initTestData() {
             key.startsWith('userDogs') ||
             key.startsWith('userProfile') ||
             key.startsWith('userTrials') ||
+            key === 'userSession' ||
+            key === 'userMandates' ||
             key === 'clubAdmins' ||
             key === 'registeredClubs' ||
             key === 'clubTrials' ||

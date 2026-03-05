@@ -171,7 +171,16 @@ app.post("/api/parse-participants", async (c) => {
   try {
     if (fileName.endsWith(".pdf")) {
       // Parse PDF using pdf-parse v1 API
-      const pdfData = await pdfParse(buffer);
+      let pdfData;
+      try {
+        pdfData = await pdfParse(buffer);
+      } catch (pdfError) {
+        console.error("PDF parse error:", pdfError.message);
+        return c.json({
+          error: "Kunne ikke lese PDF-filen. Prøv å eksportere den på nytt fra kildesystemet, eller konverter til CSV/Excel-format.",
+          details: pdfError.message
+        }, 400);
+      }
       const lines = pdfData.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
       // Format: Regnr, Navn, Rase, Eier (etternavn, fornavn), Fører (etternavn, fornavn), Klasse (UK1/UK2/AK1/AK2/VK), Epost
@@ -281,8 +290,37 @@ app.post("/api/parse-participants", async (c) => {
           });
         }
       }
+    } else if (fileName.endsWith(".txt")) {
+      // Parse plain text file (same format as CSV but tab/space separated)
+      const text = buffer.toString("utf-8");
+      const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+      for (const line of lines) {
+        // Skip header-like lines
+        if (line.toLowerCase().includes("regnr") || line.toLowerCase().includes("hundenavn")) continue;
+
+        // Try to match registration number pattern
+        const regMatch = line.match(/([A-Z]{2}\d+\/\d+)/);
+        if (regMatch) {
+          const parts = line.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+          if (parts.length >= 5) {
+            const klasseInfo = parseClass(parts[5] || "AK");
+            participants.push({
+              regnr: parts[0] || "",
+              hundenavn: parts[1] || "",
+              rase: parts[2] || "",
+              eier: formatName(parts[3] || ""),
+              forer: formatName(parts[4] || parts[3] || ""),
+              klasseRaw: (parts[5] || "AK").toUpperCase(),
+              klasse: klasseInfo.klasse,
+              dag: klasseInfo.dag,
+              epost: parts[6] || ""
+            });
+          }
+        }
+      }
     } else {
-      return c.json({ error: "Ugyldig filformat. Bruk PDF, CSV eller Excel (.xlsx)" }, 400);
+      return c.json({ error: "Ugyldig filformat. Bruk PDF, CSV, TXT eller Excel (.xlsx)" }, 400);
     }
 
     // Filter out empty entries

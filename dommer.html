@@ -270,19 +270,28 @@
                 // For demo: accept any 4-digit code
                 // In production: verify against the actual sent code
                 if (code.length === 4) {
-                    // Get judge name from registered judges (simulated)
-                    const judgeName = getJudgeNameByPhone(phoneNumber);
+                    // Get judge info from registered judges
+                    const judgeInfo = getJudgeByPhone(phoneNumber);
 
-                    // Save session
+                    // Save session with assigned parties
                     const session = {
-                        name: judgeName,
+                        name: judgeInfo.name,
                         phone: phoneNumber,
+                        assignedParties: judgeInfo.parties || [],
                         loggedInAt: new Date().toISOString()
                     };
                     localStorage.setItem('judgeSession', JSON.stringify(session));
 
-                    // Redirect to party selection
-                    window.location.href = 'dommer-hjem.html';
+                    // If only one party assigned, go directly to it
+                    if (judgeInfo.parties && judgeInfo.parties.length === 1) {
+                        const partyId = judgeInfo.parties[0];
+                        session.selectedParty = partyId;
+                        localStorage.setItem('judgeSession', JSON.stringify(session));
+                        window.location.href = 'dommer-vk.html?party=' + partyId;
+                    } else {
+                        // Multiple or no parties - go to selection page
+                        window.location.href = 'dommer-hjem.html';
+                    }
                 } else {
                     // Show error
                     document.getElementById('codeError').classList.remove('hidden');
@@ -293,13 +302,29 @@
         }
 
         // Simulated judge lookup by phone (in production this would be server-side)
-        function getJudgeNameByPhone(phone) {
-            const judges = {
-                '99999999': 'Kari Nordmann',
-                '98765432': 'Ola Hansen',
-                '91234567': 'Per Olsen'
+        // Returns { name, assignedParties } where assignedParties is array of party IDs
+        function getJudgeByPhone(phone) {
+            // Hent dommer-tildelinger fra localStorage (satt av admin)
+            const assignments = JSON.parse(localStorage.getItem('judgeAssignments') || '{}');
+
+            // Sjekk om dette telefonnummeret er registrert
+            if (assignments[phone]) {
+                return assignments[phone]; // { name: "...", parties: ["ukak1", ...] }
+            }
+
+            // Fallback til hardkodede dommere for demo
+            const defaultJudges = {
+                '99999999': { name: 'Kari Nordmann', parties: ['ukak1'] },
+                '98765432': { name: 'Ola Hansen', parties: ['vk1'] },
+                '91234567': { name: 'Per Olsen', parties: ['ukak2'] },
+                '90000001': { name: 'Demo Dommer', parties: ['ukak1'] }
             };
-            return judges[phone] || 'Dommer'; // Default if not found
+            return defaultJudges[phone] || { name: 'Dommer', parties: [] };
+        }
+
+        // Legacy function for backwards compatibility
+        function getJudgeNameByPhone(phone) {
+            return getJudgeByPhone(phone).name;
         }
 
         // Clear code inputs

@@ -274,16 +274,71 @@
 
         // Party configurations
         const PARTIES = {
-            ukak1: { name: 'UK/AK Parti 1', judges: 1 },
-            ukak2: { name: 'UK/AK Parti 2', judges: 1 },
-            ukak3: { name: 'UK/AK Parti 3', judges: 1 },
-            ukak4: { name: 'UK/AK Parti 4', judges: 1 },
-            vk1: { name: 'VK Kval Parti 1', judges: 2 },
-            vk2: { name: 'VK Kval Parti 2', judges: 2 },
-            vkfinale: { name: 'VK Finale', judges: 2 }
+            ukak1: { name: 'UK/AK Parti 1', judges: 1, type: 'ukak' },
+            ukak2: { name: 'UK/AK Parti 2', judges: 1, type: 'ukak' },
+            ukak3: { name: 'UK/AK Parti 3', judges: 1, type: 'ukak' },
+            ukak4: { name: 'UK/AK Parti 4', judges: 1, type: 'ukak' },
+            vk1: { name: 'VK Kval Parti 1', judges: 2, type: 'vk' },
+            vk2: { name: 'VK Kval Parti 2', judges: 2, type: 'vk' },
+            vkfinale: { name: 'VK Finale', judges: 2, type: 'vkfinale' }
         };
 
         let selectedParty = null;
+
+        // Get assigned parties for this judge
+        const assignedParties = judgeData.assignedParties || [];
+
+        // If judge has assigned parties, filter the view
+        function filterPartyView() {
+            if (assignedParties.length === 0) {
+                // No assignments - show message and all parties (admin/demo mode)
+                return;
+            }
+
+            // Hide all party buttons first
+            document.querySelectorAll('.party-card').forEach(btn => {
+                btn.style.display = 'none';
+            });
+
+            // Show only assigned parties
+            assignedParties.forEach(partyId => {
+                const btn = document.querySelector(`[onclick="selectParty('${partyId}')"]`);
+                if (btn) {
+                    btn.style.display = 'block';
+                }
+            });
+
+            // Update welcome message
+            const welcomeP = document.querySelector('.bg-white.rounded-2xl p');
+            if (welcomeP && assignedParties.length === 1) {
+                welcomeP.textContent = 'Du er tildelt partiet nedenfor. Trykk for å starte bedømming.';
+            } else if (welcomeP) {
+                welcomeP.textContent = 'Du er tildelt partiene nedenfor. Velg hvilket du vil bedømme.';
+            }
+
+            // Hide empty sections
+            const hasUkak = assignedParties.some(p => p.startsWith('ukak'));
+            const hasVk = assignedParties.some(p => p.startsWith('vk') && !p.includes('finale'));
+            const hasFinale = assignedParties.includes('vkfinale');
+
+            if (!hasUkak) {
+                const ukakSection = document.querySelector('.mb-8:has(.bg-forest-500)');
+                if (ukakSection) ukakSection.style.display = 'none';
+            }
+            if (!hasVk) {
+                const vkSection = document.querySelector('.mb-8:has(.bg-earth-500)');
+                if (vkSection) vkSection.style.display = 'none';
+            }
+            if (!hasFinale) {
+                const finaleSection = document.querySelector('div:has(.bg-amber-500)');
+                if (finaleSection && !finaleSection.classList.contains('mb-8')) {
+                    finaleSection.style.display = 'none';
+                }
+            }
+        }
+
+        // Run filter on page load
+        filterPartyView();
 
         // Update party statuses from localStorage
         function updateStatuses() {

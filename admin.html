@@ -1645,6 +1645,56 @@
     </div>
 
     <script>
+        // ========================================
+        // LOAD TRIAL DATA FROM URL PARAMETER
+        // ========================================
+        (function loadTrialData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+
+            if (trialId) {
+                const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
+                const trial = trials.find(t => t.id === trialId);
+
+                if (trial) {
+                    // Update page title
+                    document.title = trial.name + ' - Admin';
+
+                    // Update header
+                    const headerTitle = document.querySelector('main h1.text-3xl');
+                    if (headerTitle) {
+                        headerTitle.textContent = trial.name;
+                    }
+
+                    // Update subheader with date and location
+                    const headerSub = document.querySelector('main h1.text-3xl + p');
+                    if (headerSub) {
+                        const startDate = new Date(trial.startDate);
+                        const formattedDate = startDate.toLocaleDateString('nb-NO', {
+                            day: 'numeric', month: 'long', year: 'numeric'
+                        });
+                        headerSub.textContent = formattedDate + ' - ' + trial.location;
+                    }
+
+                    // Update form fields in settings section
+                    const trialNameInput = document.getElementById('trialName');
+                    if (trialNameInput) trialNameInput.value = trial.name;
+
+                    const organizerInput = document.getElementById('organizerName');
+                    if (organizerInput && trial.club) organizerInput.value = trial.club.name || '';
+
+                    const trialDateInput = document.getElementById('trialDate');
+                    if (trialDateInput) trialDateInput.value = trial.startDate;
+
+                    const locationInput = document.getElementById('trialLocation');
+                    if (locationInput) locationInput.value = trial.location;
+
+                    // Store current trial ID for reference
+                    localStorage.setItem('currentTrialId', trialId);
+                }
+            }
+        })();
+
         // Toggle VK Finale info
         document.getElementById('vkFinale').addEventListener('change', function() {
             const vkFinaleInfo = document.getElementById('vkFinaleInfo');

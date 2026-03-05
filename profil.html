@@ -201,19 +201,103 @@
     </main>
 
     <script>
-        // Check if logged in
+        // Testbrukere med profildata
+        const TEST_PROFILES = {
+            '99999999': {
+                firstName: 'Chris',
+                lastName: 'Niebel',
+                email: 'chris.niebel@example.com',
+                phone: '99999999',
+                address: 'Jaktveien 15',
+                postalCode: '7800',
+                city: 'Namsos',
+                club: 'Namdal Fuglehundklubb',
+                memberSince: '2019'
+            },
+            '99999998': {
+                firstName: 'Gæggen',
+                lastName: 'Wågert',
+                email: 'gaeggen.wagert@example.com',
+                phone: '99999998',
+                address: 'Fugleveien 7',
+                postalCode: '7563',
+                city: 'Malvik',
+                club: 'Malvik Fuglehundklubb',
+                memberSince: '2020'
+            },
+            '99999997': {
+                firstName: 'Monja',
+                lastName: 'Aakert',
+                email: 'monja.aakert@example.com',
+                phone: '99999997',
+                address: 'Lederveien 1',
+                postalCode: '7800',
+                city: 'Namsos',
+                club: 'Namdal Fuglehundklubb',
+                memberSince: '2015'
+            },
+            '99999996': {
+                firstName: 'Torstein',
+                lastName: 'Møstn',
+                email: 'torstein.mostn@example.com',
+                phone: '99999996',
+                address: 'Selbuveien 22',
+                postalCode: '7580',
+                city: 'Selbu',
+                club: 'Selbu Fuglehundklubb',
+                memberSince: '2018'
+            },
+            '99999995': {
+                firstName: 'Marstein',
+                lastName: 'Manstein',
+                email: 'marstein.manstein@example.com',
+                phone: '99999995',
+                address: 'Fjellgata 44',
+                postalCode: '7340',
+                city: 'Oppdal',
+                club: 'Sørfjeldske Fuglehundklubb',
+                memberSince: '2021'
+            },
+            '99999994': {
+                firstName: 'Roar',
+                lastName: 'Storseth',
+                email: 'roar.storseth@example.com',
+                phone: '99999994',
+                address: 'Hundegata 8',
+                postalCode: '7500',
+                city: 'Stjørdal',
+                club: 'Stjørdal Fuglehundklubb',
+                memberSince: '2017'
+            }
+        };
+
+        // Hent innlogget bruker
+        const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+        const userPhone = userSession.phone || '';
+
+        // Last eller opprett profil
         let userProfile = JSON.parse(localStorage.getItem('userProfile') || 'null');
-        if (!userProfile) {
-            // For demo, create a sample profile
+
+        // Sjekk om vi har testprofil for denne brukeren
+        if (userPhone && TEST_PROFILES[userPhone]) {
+            const testProfile = TEST_PROFILES[userPhone];
+            // Oppdater eller opprett profil med testdata
             userProfile = {
-                firstName: 'Kari',
-                lastName: 'Nordmann',
-                email: 'kari.nordmann@example.com',
-                phone: '+47 912 34 567',
-                address: 'Fjellveien 42',
-                postalCode: '2500',
-                city: 'Tynset',
-                memberSince: '2024',
+                ...testProfile,
+                profileImage: userProfile?.profileImage || null
+            };
+            localStorage.setItem('userProfile', JSON.stringify(userProfile));
+        } else if (!userProfile) {
+            // Fallback hvis ingen innlogging
+            userProfile = {
+                firstName: '',
+                lastName: '',
+                email: '',
+                phone: userPhone || '',
+                address: '',
+                postalCode: '',
+                city: '',
+                memberSince: new Date().getFullYear().toString(),
                 profileImage: null
             };
             localStorage.setItem('userProfile', JSON.stringify(userProfile));
@@ -264,8 +348,9 @@
         }
 
         function loadStats() {
-            // Load stats from localStorage
-            const dogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
+            // Load stats from localStorage - hent hunder for innlogget bruker
+            const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
+            const dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
             const trials = JSON.parse(localStorage.getItem('userTrials') || '[]');
             const mandates = JSON.parse(localStorage.getItem('userMandates') || '[]');
 

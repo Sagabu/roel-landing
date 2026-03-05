@@ -170,18 +170,11 @@ app.post("/api/parse-participants", async (c) => {
 
   try {
     if (fileName.endsWith(".pdf")) {
-      // Parse PDF using pdf-parse v1 API
-      let pdfData;
-      try {
-        pdfData = await pdfParse(buffer);
-      } catch (pdfError) {
-        console.error("PDF parse error:", pdfError.message);
-        return c.json({
-          error: "Kunne ikke lese PDF-filen. Prøv å eksportere den på nytt fra kildesystemet, eller konverter til CSV/Excel-format.",
-          details: pdfError.message
-        }, 400);
-      }
-      const lines = pdfData.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+      // PDF-parsing er ustabil - anbefal CSV/Excel i stedet
+      return c.json({
+        error: "PDF-format støttes ikke lenger på grunn av kompatibilitetsproblemer. Vennligst eksporter deltakerlisten til CSV eller Excel (.xlsx) format i stedet.",
+        hint: "I de fleste systemer kan du velge 'Eksporter' eller 'Last ned som' og velge CSV eller Excel."
+      }, 400);
 
       // Format: Regnr, Navn, Rase, Eier (etternavn, fornavn), Fører (etternavn, fornavn), Klasse (UK1/UK2/AK1/AK2/VK), Epost
       for (const line of lines) {

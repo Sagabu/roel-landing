@@ -1368,12 +1368,24 @@
                 const formData = new FormData();
                 formData.append('file', file);
 
+                console.log('Uploading file:', file.name, file.type, file.size, 'bytes');
+
                 const response = await fetch('/api/parse-participants', {
                     method: 'POST',
                     body: formData
                 });
 
-                const result = await response.json();
+                console.log('Response status:', response.status);
+
+                const responseText = await response.text();
+                console.log('Response text:', responseText.substring(0, 500));
+
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                } catch (parseErr) {
+                    throw new Error('Server returnerte ugyldig svar: ' + responseText.substring(0, 100));
+                }
 
                 uploadLoading.classList.add('hidden');
 

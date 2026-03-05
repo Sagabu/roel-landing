@@ -156,7 +156,14 @@ function parseClass(klasseRaw) {
 
 // --- Parse participant list (PDF, CSV, Excel) ---
 app.post("/api/parse-participants", async (c) => {
-  const formData = await c.req.formData();
+  let formData;
+  try {
+    formData = await c.req.formData();
+  } catch (formErr) {
+    console.error("FormData error:", formErr);
+    return c.json({ error: "Kunne ikke lese skjemadata: " + formErr.message }, 400);
+  }
+
   const file = formData.get("file");
 
   if (!file) {
@@ -164,7 +171,13 @@ app.post("/api/parse-participants", async (c) => {
   }
 
   const fileName = file.name.toLowerCase();
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let buffer;
+  try {
+    buffer = Buffer.from(await file.arrayBuffer());
+  } catch (bufErr) {
+    console.error("ArrayBuffer error:", bufErr);
+    return c.json({ error: "Kunne ikke lese filinnhold: " + bufErr.message }, 400);
+  }
 
   let participants = [];
 

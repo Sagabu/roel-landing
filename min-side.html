@@ -497,6 +497,15 @@
                 }
             }
 
+            // Prøveleder uten aktiv prøve - kan opprette ny
+            if (phone === '90000000') {
+                return {
+                    name: 'Bjørn Jeger',
+                    isTrialAdmin: true,
+                    trials: []
+                };
+            }
+
             // Add trial if user has roles
             if (currentTrial.roles.length > 0) {
                 trials.push(currentTrial);
@@ -576,8 +585,30 @@
             const upcomingTrials = currentUser.trials?.filter(t => t.isUpcoming) || [];
             const pastTrials = currentUser.trials?.filter(t => !t.isUpcoming) || [];
 
-            // Render upcoming trials
-            if (upcomingTrials.length === 0) {
+            // Spesialhåndtering for prøveledere uten aktiv prøve
+            if (currentUser.isTrialAdmin && upcomingTrials.length === 0) {
+                upcomingContainer.classList.remove('hidden');
+                noUpcoming.classList.add('hidden');
+                upcomingContainer.innerHTML = `
+                    <div class="bg-white rounded-xl shadow-sm border-2 border-dashed border-forest-300 overflow-hidden">
+                        <div class="p-8 text-center">
+                            <div class="w-16 h-16 bg-forest-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg class="w-8 h-8 text-forest-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                            </div>
+                            <h4 class="font-bold font-rockwell text-lg text-bark-800 mb-2">Opprett ny prøve</h4>
+                            <p class="text-bark-500 text-sm mb-6">Du har ingen aktive prøver. Start med å opprette en ny fuglehundprøve.</p>
+                            <a href="admin.html" class="inline-flex items-center gap-2 bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-lg font-medium transition">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Opprett prøve
+                            </a>
+                        </div>
+                    </div>
+                `;
+            } else if (upcomingTrials.length === 0) {
                 upcomingContainer.classList.add('hidden');
                 noUpcoming.classList.remove('hidden');
             } else {

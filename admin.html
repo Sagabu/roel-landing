@@ -233,22 +233,21 @@
                 <!-- File Upload Section -->
                 <section id="opplasting" class="bg-white rounded-xl shadow-sm border border-earth-200 p-6">
                     <h2 class="text-xl font-bold font-rockwell text-forest-800 mb-2">Last opp deltakerliste</h2>
-                    <p class="text-bark-600 text-sm mb-6">Last opp en fil med hundeinfo (CSV eller Excel). Systemet fordeler automatisk på partier.</p>
+                    <p class="text-bark-600 text-sm mb-6">Last opp en fil med hundeinfo (PDF, CSV eller Excel). Systemet fordeler automatisk på partier.</p>
 
                     <!-- File format info -->
                     <div class="bg-forest-50 rounded-lg p-4 mb-6 border border-forest-200">
-                        <h4 class="font-medium text-forest-800 mb-2">Forventet filformat:</h4>
-                        <p class="text-sm text-forest-700 mb-2">Filen må inneholde følgende kolonner:</p>
+                        <h4 class="font-medium text-forest-800 mb-2">Forventet kolonner (fra venstre til høyre):</h4>
                         <div class="flex flex-wrap gap-2">
-                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">hundenavn</span>
-                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">regnr</span>
-                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">rase</span>
-                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">eier_navn</span>
-                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">eier_epost</span>
-                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">klasse</span>
-                            <span class="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-mono">dag</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Regnr</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Navn</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Rase</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Eier</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Fører</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Klasse</span>
+                            <span class="px-2 py-1 bg-forest-200 text-forest-800 rounded text-xs font-mono">Epost</span>
                         </div>
-                        <p class="text-xs text-forest-600 mt-2">Klasse: UK, AK eller VK | Dag: 1, 2, 3 eller 4 (hvilken prøvedag påmeldingen gjelder)</p>
+                        <p class="text-xs text-forest-600 mt-2">Klasse: UK, AK eller VK | Støttede formater: PDF, CSV, Excel (.xlsx)</p>
                         <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                             <p class="text-xs text-blue-800 flex items-start gap-2">
                                 <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -364,9 +363,20 @@
                         <p class="text-bark-600 mb-2">Dra og slipp fil her, eller</p>
                         <label class="inline-block bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-lg font-medium transition cursor-pointer">
                             Velg fil
-                            <input type="file" class="hidden" accept=".csv,.xlsx,.xls" id="fileInput">
+                            <input type="file" class="hidden" accept=".pdf,.csv,.xlsx,.xls" id="fileInput">
                         </label>
-                        <p class="text-xs text-bark-500 mt-3">Støtter CSV og Excel-filer (.csv, .xlsx, .xls)</p>
+                        <p class="text-xs text-bark-500 mt-3">Støtter PDF, CSV og Excel-filer (.pdf, .csv, .xlsx)</p>
+                    </div>
+
+                    <!-- Loading indicator -->
+                    <div id="uploadLoading" class="hidden mt-6">
+                        <div class="flex items-center justify-center gap-3 p-6 bg-blue-50 rounded-lg border border-blue-200">
+                            <svg class="w-6 h-6 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="text-blue-700 font-medium">Leser fil...</span>
+                        </div>
                     </div>
 
                     <!-- Upload preview (shown after file selected) -->
@@ -1777,10 +1787,12 @@
         // Initial schedule update
         updateDaySchedule();
 
-        // File upload demo
+        // File upload
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const uploadPreview = document.getElementById('uploadPreview');
+        const uploadLoading = document.getElementById('uploadLoading');
+        let currentParticipants = [];
 
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -1803,20 +1815,93 @@
             }
         });
 
-        function handleFile(file) {
-            document.getElementById('fileName').textContent = file.name;
+        async function handleFile(file) {
+            // Show loading
             dropZone.classList.add('hidden');
-            uploadPreview.classList.remove('hidden');
+            uploadLoading.classList.remove('hidden');
+            uploadPreview.classList.add('hidden');
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/parse-participants', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                uploadLoading.classList.add('hidden');
+
+                if (result.error) {
+                    alert('Feil ved lesing av fil: ' + result.error);
+                    dropZone.classList.remove('hidden');
+                    return;
+                }
+
+                // Store participants for later use
+                currentParticipants = result.participants;
+
+                // Update UI
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileStats').textContent =
+                    `${result.total} hunder funnet (UK: ${result.byClass.UK}, AK: ${result.byClass.AK}, VK: ${result.byClass.VK})`;
+
+                uploadPreview.classList.remove('hidden');
+
+                // Update stats
+                document.getElementById('statTotal').textContent = result.total;
+                document.getElementById('statTotalSub').textContent =
+                    `UK: ${result.byClass.UK} | AK: ${result.byClass.AK} | VK: ${result.byClass.VK}`;
+
+            } catch (err) {
+                uploadLoading.classList.add('hidden');
+                dropZone.classList.remove('hidden');
+                alert('Kunne ikke lese filen: ' + err.message);
+            }
         }
 
         document.getElementById('removeFile').addEventListener('click', () => {
             dropZone.classList.remove('hidden');
             uploadPreview.classList.add('hidden');
             fileInput.value = '';
+            currentParticipants = [];
         });
 
         document.getElementById('processUpload').addEventListener('click', () => {
-            alert('Fil behandlet! 48 hunder fordelt på partier:\n\n• UK/AK Parti 1: 20 hunder\n• UK/AK Parti 2: 16 hunder\n• VK Parti: 12 hunder\n\nSMS sendes nå til alle deltakere.');
+            if (currentParticipants.length === 0) {
+                alert('Ingen deltakere å fordele.');
+                return;
+            }
+
+            // Save participants to localStorage
+            localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
+
+            const ukak = currentParticipants.filter(p => p.klasse === 'UK' || p.klasse === 'AK');
+            const vk = currentParticipants.filter(p => p.klasse === 'VK');
+
+            // Calculate party distribution
+            const maxPerParty = 20;
+            const ukakParties = Math.ceil(ukak.length / maxPerParty);
+            const vkParties = Math.ceil(vk.length / maxPerParty);
+
+            let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;
+
+            for (let i = 0; i < ukakParties; i++) {
+                const start = i * maxPerParty;
+                const count = Math.min(maxPerParty, ukak.length - start);
+                message += `• UK/AK Parti ${i + 1}: ${count} hunder\n`;
+            }
+
+            for (let i = 0; i < vkParties; i++) {
+                const start = i * maxPerParty;
+                const count = Math.min(maxPerParty, vk.length - start);
+                message += `• VK Parti ${i + 1}: ${count} hunder\n`;
+            }
+
+            message += '\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
+            alert(message);
         });
 
         // Send SMS button scroll

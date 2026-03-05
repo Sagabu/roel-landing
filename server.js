@@ -5,6 +5,10 @@ import Database from "better-sqlite3";
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
+const XLSX = require("xlsx");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(__dirname, "fuglehund.db");
@@ -124,6 +128,153 @@ app.get("/api/backup", (c) => {
   c.header("Content-Type", "application/octet-stream");
   c.header("Content-Disposition", `attachment; filename="fuglehund-${new Date().toISOString().slice(0, 10)}.db"`);
   return c.body(data);
+});
+
+// --- Parse participant list (PDF, CSV, Excel) ---
+app.post("/api/parse-participants", async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file");
+
+  if (!file) {
+    return c.json({ error: "Ingen fil lastet opp" }, 400);
+  }
+
+  const fileName = file.name.toLowerCase();
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  let participants = [];
+
+  try {
+    if (fileName.endsWith(".pdf")) {
+      // Parse PDF
+      const pdfData = await pdfParse(buffer);
+      const lines = pdfData.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+      // Skip header lines and parse data
+      // Format: Regnr, Navn, Rase, Eier, Fører, Klasse, Epost
+      for (const line of lines) {
+        // Try to match registration number pattern (e.g., NO12345/22 or SE12345/22)
+        const regMatch = line.match(/([A-Z]{2}\d+\/\d+)/);
+        if (regMatch) {
+          // Split line by multiple spaces or tabs
+          const parts = line.split(/\s{2,}|\t/).map(p => p.trim()).filter(p => p);
+
+          if (parts.length >= 5) {
+            const participant = {
+              regnr: parts[0] || "",
+              hundenavn: parts[1] || "",
+              rase: parts[2] || "",
+              eier: parts[3] || "",
+              forer: parts[4] || parts[3] || "", // Fører, fallback to eier
+              klasse: parts[5] || "AK",
+              epost: parts[6] || ""
+            };
+
+            // Clean up regnr if it contains the dog name
+            if (participant.regnr.includes(" ")) {
+              const regParts = participant.regnr.split(" ");
+              participant.regnr = regParts.find(p => p.match(/[A-Z]{2}\d+\/\d+/)) || participant.regnr;
+            }
+
+            participants.push(participant);
+          }
+        }
+      }
+
+      // If structured parsing failed, try line-by-line with regex
+      if (participants.length === 0) {
+        const regexPattern = /([A-Z]{2}\d+\/\d+)\s+(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(UK|AK|VK)\s*(.+)?/i;
+        for (const line of lines) {
+          const match = line.match(regexPattern);
+          if (match) {
+            participants.push({
+              regnr: match[1],
+              hundenavn: match[2].trim(),
+              rase: match[3].trim(),
+              eier: match[4].trim(),
+              forer: match[5].trim(),
+              klasse: match[6].toUpperCase(),
+              epost: (match[7] || "").trim()
+            });
+          }
+        }
+      }
+
+    } else if (fileName.endsWith(".csv")) {
+      // Parse CSV
+      const text = buffer.toString("utf-8");
+      const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+      // Skip header
+      const dataLines = lines.slice(1);
+
+      for (const line of dataLines) {
+        const parts = line.split(/[,;]/).map(p => p.trim().replace(/^["']|["']$/g, ""));
+        if (parts.length >= 5) {
+          participants.push({
+            regnr: parts[0] || "",
+            hundenavn: parts[1] || "",
+            rase: parts[2] || "",
+            eier: parts[3] || "",
+            forer: parts[4] || parts[3] || "",
+            klasse: parts[5] || "AK",
+            epost: parts[6] || ""
+          });
+        }
+      }
+
+    } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+      // Parse Excel
+      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      // Skip header row
+      const dataRows = data.slice(1);
+
+      for (const row of dataRows) {
+        if (row.length >= 5 && row[0]) {
+          participants.push({
+            regnr: String(row[0] || ""),
+            hundenavn: String(row[1] || ""),
+            rase: String(row[2] || ""),
+            eier: String(row[3] || ""),
+            forer: String(row[4] || row[3] || ""),
+            klasse: String(row[5] || "AK").toUpperCase(),
+            epost: String(row[6] || "")
+          });
+        }
+      }
+    } else {
+      return c.json({ error: "Ugyldig filformat. Bruk PDF, CSV eller Excel (.xlsx)" }, 400);
+    }
+
+    // Filter out empty entries
+    participants = participants.filter(p => p.regnr && p.hundenavn);
+
+    // Categorize by class
+    const byClass = {
+      UK: participants.filter(p => p.klasse === "UK"),
+      AK: participants.filter(p => p.klasse === "AK"),
+      VK: participants.filter(p => p.klasse === "VK")
+    };
+
+    return c.json({
+      success: true,
+      total: participants.length,
+      byClass: {
+        UK: byClass.UK.length,
+        AK: byClass.AK.length,
+        VK: byClass.VK.length
+      },
+      participants
+    });
+
+  } catch (err) {
+    console.error("Parse error:", err);
+    return c.json({ error: "Kunne ikke lese filen: " + err.message }, 500);
+  }
 });
 
 // --- Serve shim ---

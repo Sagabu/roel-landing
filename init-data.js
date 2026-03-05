@@ -67,7 +67,7 @@ function initTestData() {
                 results: [
                     { date: '2024-09-14', trial: 'Namdalseid Høstprøve', class: 'AK', prize: '2. AK', judge: 'Kari Olsen' },
                     { date: '2024-03-22', trial: 'Vårprøven Steinkjer', class: 'AK', prize: '1. AK', judge: 'Per Hansen' },
-                    { date: '2023-09-10', trial: 'Høstprøven Namsos', class: 'UK', prize: '2. UK', judge: 'Ole Berg' }
+                    { date: '2023-09-10', trial: 'Høstprøven Namsos', class: 'UK', prize: '2. UK', judge: 'Monja Aakert' }
                 ]
             }
         ],
@@ -114,7 +114,7 @@ function initTestData() {
                 club: 'Namdal Fuglehundklubb',
                 results: [
                     { date: '2024-10-12', trial: 'Namdal Høstprøve', class: 'VK', prize: 'CERT', judge: 'Ole Nordmann' },
-                    { date: '2024-06-08', trial: 'Sommerprøven Lierne', class: 'VK', prize: '1. VK', judge: 'Per Olsen' },
+                    { date: '2024-06-08', trial: 'Sommerprøven Lierne', class: 'VK', prize: '1. VK', judge: 'Roar Storseth' },
                     { date: '2023-10-21', trial: 'NM Fuglehund', class: 'VK', prize: '2. VK', judge: 'Knut Lie' }
                 ]
             },

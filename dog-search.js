@@ -26,7 +26,7 @@
             gender: 'male',
             owner: 'Per Hansen',
             results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: 'CK', judge: 'Ole Berg' }
+                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: 'CK', judge: 'Monja Aakert' }
             ]
         },
         {

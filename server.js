@@ -7,7 +7,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+const { PDFParse } = require("pdf-parse");
 const XLSX = require("xlsx");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -170,8 +170,9 @@ app.post("/api/parse-participants", async (c) => {
 
   try {
     if (fileName.endsWith(".pdf")) {
-      // Parse PDF
-      const pdfData = await pdfParse(buffer);
+      // Parse PDF using pdf-parse v2 API
+      const parser = new PDFParse({ data: buffer });
+      const pdfData = await parser.getText();
       const lines = pdfData.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
       // Format: Regnr, Navn, Rase, Eier (etternavn, fornavn), Fører (etternavn, fornavn), Klasse (UK1/UK2/AK1/AK2/VK), Epost

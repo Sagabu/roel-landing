@@ -258,7 +258,14 @@
             const savedSession = localStorage.getItem('userSession');
             if (savedSession) {
                 try {
-                    currentUser = JSON.parse(savedSession);
+                    const saved = JSON.parse(savedSession);
+                    // Re-hent brukerinfo for å sikre at alle egenskaper er oppdatert
+                    const userInfo = getUserByPhone(saved.phone?.replace(/\D/g, ''));
+                    currentUser = {
+                        ...saved,
+                        trials: userInfo.trials,
+                        isTrialAdmin: userInfo.isTrialAdmin || false
+                    };
                     showDashboard();
                 } catch (e) {
                     localStorage.removeItem('userSession');
@@ -354,6 +361,7 @@
                         phone: phoneNumber,
                         name: userInfo.name || 'Bruker',
                         trials: userInfo.trials,
+                        isTrialAdmin: userInfo.isTrialAdmin || false,
                         loggedInAt: new Date().toISOString()
                     };
 

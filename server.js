@@ -53,6 +53,12 @@ db.exec(`
 
 const app = new Hono();
 
+// --- Global error handler ---
+app.onError((err, c) => {
+  console.error("Server error:", err);
+  return c.json({ error: err.message }, 500);
+});
+
 // --- localStorage bridge API ---
 app.get("/api/storage/:key", (c) => {
   const key = c.req.param("key");

@@ -505,11 +505,25 @@
                 }
             }
 
-            // Prøveleder uten aktiv prøve - kan opprette ny
+            // Sjekk om bruker er klubbadministrator
+            const clubAdmins = JSON.parse(localStorage.getItem('clubAdmins') || '{}');
+            if (clubAdmins[phone]) {
+                const clubInfo = clubAdmins[phone];
+                return {
+                    name: clubInfo.name,
+                    isTrialAdmin: true,
+                    clubName: clubInfo.clubName,
+                    clubRole: clubInfo.role,
+                    trials: []
+                };
+            }
+
+            // Demo-bruker: Prøveleder uten aktiv prøve
             if (phone === '90000000') {
                 return {
                     name: 'Bjørn Jeger',
                     isTrialAdmin: true,
+                    clubName: 'Demo Fuglehundklubb',
                     trials: []
                 };
             }
@@ -597,8 +611,19 @@
             if (currentUser.isTrialAdmin && upcomingTrials.length === 0) {
                 upcomingContainer.classList.remove('hidden');
                 noUpcoming.classList.add('hidden');
+                const clubName = currentUser.clubName || 'Din klubb';
+                const roleLabel = currentUser.clubRole === 'leder' ? 'Klubbleder' : 'Administrator';
                 upcomingContainer.innerHTML = `
                     <div class="bg-white rounded-xl shadow-sm border-2 border-dashed border-forest-300 overflow-hidden">
+                        <div class="bg-forest-50 px-6 py-3 border-b border-forest-200">
+                            <div class="flex items-center gap-2">
+                                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                                </svg>
+                                <span class="font-medium text-forest-800">${clubName}</span>
+                                <span class="text-xs bg-forest-200 text-forest-700 px-2 py-0.5 rounded-full">${roleLabel}</span>
+                            </div>
+                        </div>
                         <div class="p-8 text-center">
                             <div class="w-16 h-16 bg-forest-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <svg class="w-8 h-8 text-forest-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -606,8 +631,8 @@
                                 </svg>
                             </div>
                             <h4 class="font-bold font-rockwell text-lg text-bark-800 mb-2">Opprett ny prøve</h4>
-                            <p class="text-bark-500 text-sm mb-6">Du har ingen aktive prøver. Start med å opprette en ny fuglehundprøve.</p>
-                            <a href="admin.html" class="inline-flex items-center gap-2 bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-lg font-medium transition">
+                            <p class="text-bark-500 text-sm mb-6">Du har ingen aktive prøver. Start med å opprette en ny fuglehundprøve for ${clubName}.</p>
+                            <a href="opprett-prove.html" class="inline-flex items-center gap-2 bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-lg font-medium transition">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                                 </svg>

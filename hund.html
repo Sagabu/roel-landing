@@ -328,43 +328,111 @@
                 return;
             }
 
+            // Grupper kritikker per år
+            const critiquesPerYear = {};
+            currentDog.critiques.forEach(c => {
+                const year = new Date(c.date).getFullYear();
+                if (!critiquesPerYear[year]) critiquesPerYear[year] = [];
+                critiquesPerYear[year].push(c);
+            });
+
+            // Sorter år synkende (nyeste først)
+            const years = Object.keys(critiquesPerYear).sort((a, b) => b - a);
+            const currentYear = new Date().getFullYear();
+
             container.innerHTML = `
                 <h2 class="text-lg font-bold font-rockwell text-bark-800 mb-4">Jaktprøver og kritikker</h2>
-                ${currentDog.critiques.map(c => `
-                    <div class="bg-white rounded-2xl border border-earth-200 overflow-hidden cursor-pointer hover:shadow-md transition"
-                         onclick="viewCritique('${c.id}')">
-                        <div class="p-5">
-                            <div class="flex items-center justify-between mb-3">
-                                <div>
-                                    <h3 class="font-bold text-bark-800">${c.trial}</h3>
-                                    <p class="text-sm text-bark-500">${formatDate(c.date)} • ${c.location}</p>
+                <p class="text-sm text-bark-500 mb-4">${currentDog.critiques.length} registrerte prøver</p>
+                ${years.map((year, index) => {
+                    const yearCritiques = critiquesPerYear[year];
+                    const stats = getYearStats(yearCritiques);
+                    const isExpanded = index === 0; // Bare nyeste år ekspandert
+
+                    return `
+                        <div class="bg-white rounded-xl border border-earth-200 overflow-hidden mb-3">
+                            <!-- År-header (klikkbar) -->
+                            <button onclick="toggleYear('${year}')"
+                                    class="w-full px-4 py-3 flex items-center justify-between bg-bark-50 hover:bg-bark-100 transition">
+                                <div class="flex items-center gap-3">
+                                    <svg id="chevron-${year}" class="w-5 h-5 text-bark-400 transition-transform ${isExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                    <span class="font-bold text-bark-800">${year}</span>
+                                    <span class="text-sm text-bark-500">(${yearCritiques.length} ${yearCritiques.length === 1 ? 'prøve' : 'prøver'})</span>
                                 </div>
-                                <span class="px-3 py-1 rounded-full text-sm font-bold ${getPrizeClass(c.prize)}">${c.prize}</span>
-                            </div>
-                            <div class="flex items-center gap-4 text-sm text-bark-600">
-                                <span>Klasse: ${c.class}</span>
-                                <span class="text-bark-300">•</span>
-                                <span>Dommer: ${c.judge}</span>
+                                <div class="flex items-center gap-2 text-xs">
+                                    ${stats.bestPrize ? `<span class="px-2 py-1 rounded-full font-medium ${getPrizeClass(stats.bestPrize)}">Beste: ${stats.bestPrize}</span>` : ''}
+                                </div>
+                            </button>
+
+                            <!-- Kritikk-liste for dette året -->
+                            <div id="year-${year}" class="${isExpanded ? '' : 'hidden'}">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-bark-50 border-t border-bark-100">
+                                        <tr class="text-left text-xs text-bark-500 uppercase">
+                                            <th class="px-4 py-2 font-medium">Dato</th>
+                                            <th class="px-4 py-2 font-medium hidden sm:table-cell">Prøve</th>
+                                            <th class="px-4 py-2 font-medium">Klasse</th>
+                                            <th class="px-4 py-2 font-medium text-center">Premie</th>
+                                            <th class="px-4 py-2 font-medium text-right"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-bark-100">
+                                        ${yearCritiques.map(c => `
+                                            <tr class="hover:bg-forest-50 cursor-pointer transition" onclick="viewCritique('${c.id}')">
+                                                <td class="px-4 py-3">
+                                                    <span class="text-bark-700">${formatShortDate(c.date)}</span>
+                                                    <span class="sm:hidden block text-xs text-bark-500 truncate max-w-[120px]">${c.trial}</span>
+                                                </td>
+                                                <td class="px-4 py-3 hidden sm:table-cell">
+                                                    <span class="text-bark-700 truncate block max-w-[180px]">${c.trial}</span>
+                                                </td>
+                                                <td class="px-4 py-3 text-bark-600">${c.class}</td>
+                                                <td class="px-4 py-3 text-center">
+                                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold ${getPrizeClass(c.prize)}">${c.prize}</span>
+                                                </td>
+                                                <td class="px-4 py-3 text-right">
+                                                    <svg class="w-4 h-4 text-forest-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                                    </svg>
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-                        <div class="bg-bark-50 px-5 py-3 border-t border-bark-100 flex items-center justify-between">
-                            <div class="flex flex-wrap gap-1 text-[10px]">
-                                <span class="bg-forest-100 text-forest-700 rounded px-1.5 py-0.5">Pres:${c.scores.PRESISJON ?? '-'}</span>
-                                <span class="bg-forest-100 text-forest-700 rounded px-1.5 py-0.5">Reis:${c.scores.REISING ?? '-'}</span>
-                                <span class="bg-bark-100 text-bark-600 rounded px-1.5 py-0.5">StM:${c.scores.STAND_M ?? '-'}</span>
-                                <span class="bg-bark-100 text-bark-600 rounded px-1.5 py-0.5">StU:${c.scores.STAND_U ?? '-'}</span>
-                                <span class="bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">SL:${c.scores.SLIPPTID ?? '-'}m</span>
-                            </div>
-                            <span class="text-forest-600 text-sm font-medium flex items-center gap-1 flex-shrink-0">
-                                Se kritikk
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                </svg>
-                            </span>
-                        </div>
-                    </div>
-                `).join('')}
+                    `;
+                }).join('')}
             `;
+        }
+
+        function toggleYear(year) {
+            const content = document.getElementById(`year-${year}`);
+            const chevron = document.getElementById(`chevron-${year}`);
+            content.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-90');
+        }
+
+        function getYearStats(critiques) {
+            const prizeOrder = ['CACIT', 'ResCacit', '1. premie', '1.pr', 'CK', '2. premie', '2.pr', '3. premie', '3.pr', 'ÅP', 'AP'];
+            let bestPrize = null;
+            let bestIndex = Infinity;
+
+            critiques.forEach(c => {
+                const idx = prizeOrder.findIndex(p => c.prize.includes(p));
+                if (idx !== -1 && idx < bestIndex) {
+                    bestIndex = idx;
+                    bestPrize = c.prize;
+                }
+            });
+
+            return { bestPrize };
+        }
+
+        function formatShortDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
         }
 
         function viewCritique(critiqueId) {

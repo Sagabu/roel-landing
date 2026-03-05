@@ -56,10 +56,11 @@ function initTestData() {
     const userDogs = {
         '99999999': [ // Chris Niebel
             {
-                id: 1,
+                id: '1',
                 name: 'Breton XXL',
-                regNr: 'NO45678/22',
+                regNumber: 'NO45678/22',
                 breed: 'Breton',
+                gender: 'male',
                 birthDate: '2020-05-15',
                 owner: 'Chris Niebel',
                 club: 'Namdal Fuglehundklubb',
@@ -72,10 +73,11 @@ function initTestData() {
         ],
         '99999998': [ // Gæggen Wågert
             {
-                id: 2,
+                id: '2',
                 name: 'Zico',
-                regNr: 'NO34567/21',
+                regNumber: 'NO34567/21',
                 breed: 'Gordon Setter',
+                gender: 'male',
                 birthDate: '2019-03-20',
                 owner: 'Gæggen Wågert',
                 club: 'Malvik Fuglehundklubb',
@@ -86,10 +88,11 @@ function initTestData() {
                 ]
             },
             {
-                id: 3,
+                id: '3',
                 name: 'Mainoo',
-                regNr: 'NO45123/23',
+                regNumber: 'NO45123/23',
                 breed: 'Gordon Setter',
+                gender: 'male',
                 birthDate: '2021-07-10',
                 owner: 'Gæggen Wågert',
                 club: 'Malvik Fuglehundklubb',
@@ -101,10 +104,11 @@ function initTestData() {
         ],
         '99999997': [ // Monja Aakert
             {
-                id: 4,
+                id: '4',
                 name: 'Tripp',
-                regNr: 'NO23456/20',
+                regNumber: 'NO23456/20',
                 breed: 'Gordon Setter',
+                gender: 'male',
                 birthDate: '2018-02-14',
                 owner: 'Monja Aakert',
                 club: 'Namdal Fuglehundklubb',
@@ -115,10 +119,11 @@ function initTestData() {
                 ]
             },
             {
-                id: 5,
+                id: '5',
                 name: 'Trapp',
-                regNr: 'NO23457/20',
+                regNumber: 'NO23457/20',
                 breed: 'Gordon Setter',
+                gender: 'male',
                 birthDate: '2018-02-14',
                 owner: 'Monja Aakert',
                 club: 'Namdal Fuglehundklubb',
@@ -130,10 +135,11 @@ function initTestData() {
         ],
         '99999996': [ // Torstein Møstn
             {
-                id: 6,
+                id: '6',
                 name: 'Stora',
-                regNr: 'NO56789/21',
+                regNumber: 'NO56789/21',
                 breed: 'Irsk Setter',
+                gender: 'female',
                 birthDate: '2019-08-22',
                 owner: 'Torstein Møstn',
                 club: 'Selbu Fuglehundklubb',
@@ -144,10 +150,11 @@ function initTestData() {
                 ]
             },
             {
-                id: 7,
+                id: '7',
                 name: 'Petra',
-                regNr: 'NO56790/22',
+                regNumber: 'NO56790/22',
                 breed: 'Irsk Setter',
+                gender: 'female',
                 birthDate: '2020-04-18',
                 owner: 'Torstein Møstn',
                 club: 'Selbu Fuglehundklubb',
@@ -159,10 +166,11 @@ function initTestData() {
         ],
         '99999995': [ // Marstein Manstein
             {
-                id: 8,
+                id: '8',
                 name: 'Bleiebøtte',
-                regNr: 'NO67890/23',
+                regNumber: 'NO67890/23',
                 breed: 'Irsk Setter',
+                gender: 'female',
                 birthDate: '2021-11-30',
                 owner: 'Marstein Manstein',
                 club: 'Sørfjeldske Fuglehundklubb',
@@ -174,10 +182,11 @@ function initTestData() {
         ],
         '99999994': [ // Roar Storseth
             {
-                id: 9,
+                id: '9',
                 name: 'Kjemperask',
-                regNr: 'NO78901/22',
+                regNumber: 'NO78901/22',
                 breed: 'Engelsk Setter',
+                gender: 'male',
                 birthDate: '2020-09-05',
                 owner: 'Roar Storseth',
                 club: 'Stjørdal Fuglehundklubb',

@@ -273,78 +273,35 @@
     </div>
 
     <script>
-        let dogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
+        // Hent innlogget brukers telefonnummer
+        const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+        const userPhone = userSession.phone || '';
+
+        // Hent alle brukeres hunder (objekt med telefon som nøkkel)
+        const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
+
+        // Hent denne brukerens hunder (eller tom array)
+        let dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
+
         let currentDogPhoto = null;
         let dogToDelete = null;
 
-        // Sample critique data for demo - using official FKF critique fields
-        const sampleCritiques = [
-            {
-                id: 'crit1',
-                regNumber: 'NO45678/22',
-                trial: 'Høgkjølprøven 2025',
-                date: '2025-09-20',
-                location: 'Høgkjølen, Tynset',
-                class: 'UK',
-                party: 'UK/AK Parti 1',
-                judge: 'Bjørn Haugen',
-                prize: '1. premie',
-                scores: {
-                    PRESISJON: 3, REISING: 5, GODKJENT_REISING: true,
-                    STAND_M: 2, STAND_U: 1, TOMSTAND: 0, MAKKER_STAND: 1, SJANSE: 3, SLIPPTID: 45,
-                    JAKTLYST: 5, FART: 5, SELVSTENDIGHET: 4, SOKSBREDDE: 4, REVIERING: 4, SAMARBEID: 4,
-                    SEK_SPONTAN: 1, SEK_FORBI: 0, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
-                },
-                critique: 'Meget fin hund med godt format og utstråling. Viser svært god jaktlyst og fart i terrenget. Søket er systematisk og effektivt med god bredde og dybde. Hunden viser fin selvstendighet samtidig som samarbeidet med fører er utmerket. Ved fuglkontakt viser hunden fast og sikker stand med god marking. Reiser villig på kommando. Apporten er ikke testet. En meget lovende unghund med stort potensial for videre arbeid.'
-            },
-            {
-                id: 'crit2',
-                regNumber: 'NO45678/22',
-                trial: 'Rørosprøven 2025',
-                date: '2025-08-15',
-                location: 'Røros',
-                class: 'UK',
-                party: 'UK/AK Parti 2',
-                judge: 'Anne Kristiansen',
-                prize: '2. premie',
-                scores: {
-                    PRESISJON: 3, REISING: 4, GODKJENT_REISING: true,
-                    STAND_M: 1, STAND_U: 1, TOMSTAND: 1, MAKKER_STAND: 0, SJANSE: 2, SLIPPTID: 42,
-                    JAKTLYST: 4, FART: 4, SELVSTENDIGHET: 3, SOKSBREDDE: 4, REVIERING: 3, SAMARBEID: 3,
-                    SEK_SPONTAN: 0, SEK_FORBI: 0, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
-                },
-                critique: 'Fin hund som viser god jaktlyst. Noe forsiktig start men kom godt i gang utover i slippet. Søket har bra bredde, men kunne vært mer systematisk i enkelte partier. God fart når hunden er i gang. Samarbeid med fører er tilfredsstillende. Står fint ved fuglkontakt med sikker marking. En hund med potensial som vil utvikle seg videre med mer erfaring.'
+        // Funksjon for å lagre hunder for denne brukeren
+        function saveUserDogs() {
+            const allDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
+            if (Array.isArray(allDogs)) {
+                // Migrer fra gammel array-format til objekt-format
+                const newFormat = {};
+                newFormat[userPhone] = dogs;
+                localStorage.setItem('userDogs', JSON.stringify(newFormat));
+            } else {
+                allDogs[userPhone] = dogs;
+                localStorage.setItem('userDogs', JSON.stringify(allDogs));
             }
-        ];
-
-        // Initialize sample dogs if empty
-        if (dogs.length === 0) {
-            dogs = [
-                {
-                    id: '1',
-                    name: 'Fjelljeger\'s Storm',
-                    breed: 'Engelsk Setter',
-                    regNumber: 'NO45678/22',
-                    gender: 'male',
-                    photo: null,
-                    results: sampleCritiques.filter(c => c.regNumber === 'NO45678/22')
-                }
-            ];
-            localStorage.setItem('userDogs', JSON.stringify(dogs));
         }
 
         // Initialize
         function init() {
-            // Ensure sample critiques are attached to dogs with matching regNumber
-            dogs.forEach(dog => {
-                if (dog.regNumber) {
-                    const critiques = sampleCritiques.filter(c => c.regNumber === dog.regNumber);
-                    if (critiques.length > 0 && (!dog.results || dog.results.length === 0)) {
-                        dog.results = critiques;
-                    }
-                }
-            });
-            localStorage.setItem('userDogs', JSON.stringify(dogs));
             renderDogs();
         }
 
@@ -824,7 +781,7 @@
                 dogs.push(dogData);
             }
 
-            localStorage.setItem('userDogs', JSON.stringify(dogs));
+            saveUserDogs();
             closeDogModal();
             renderDogs();
             showToast(existingIndex >= 0 ? 'Hund oppdatert' : 'Hund lagt til');
@@ -845,7 +802,7 @@
         function confirmDelete() {
             if (dogToDelete) {
                 dogs = dogs.filter(d => d.id !== dogToDelete);
-                localStorage.setItem('userDogs', JSON.stringify(dogs));
+                saveUserDogs();
                 renderDogs();
                 showToast('Hund slettet');
             }

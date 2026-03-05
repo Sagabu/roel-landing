@@ -9,6 +9,16 @@ window.tailwind.config = {
     theme: {
         extend: {
             colors: {
+                // Main layout background color
+                cream: {
+                    DEFAULT: '#E7DAC8',
+                    50: '#FAF7F3',
+                    100: '#F5F0E8',
+                    200: '#E7DAC8',
+                    300: '#D4C4A8',
+                    400: '#C1AE88',
+                    500: '#AE9868',
+                },
                 forest: {
                     50: '#f6f7f4',
                     100: '#e3e7dc',

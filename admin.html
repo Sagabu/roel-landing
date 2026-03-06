@@ -376,18 +376,19 @@
 
                     <!-- File format info -->
                     <div class="bg-warm-50 rounded-lg p-4 mb-6 border border-primary-200">
-                        <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat:</h4>
+                        <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat (DogWeb-eksport):</h4>
                         <p class="text-sm text-warm-600 mb-2">Filen må inneholde følgende kolonner:</p>
                         <div class="flex flex-wrap gap-2">
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">hundenavn</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">regnr</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">rase</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">eier_navn</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">eier_epost</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">klasse</span>
-                            <span class="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-mono">dag</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Regnr</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Navn</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Rase</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Eier</span>
+                            <span class="px-2 py-1 bg-neutral-200 text-neutral-600 rounded text-xs font-mono">Fører</span>
+                            <span class="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-mono">Klasser</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Epost</span>
                         </div>
-                        <p class="text-xs text-warm-500 mt-2">Klasse: UK, AK eller VK | Dag: 1, 2, 3 eller 4 (hvilken prøvedag påmeldingen gjelder)</p>
+                        <p class="text-xs text-warm-500 mt-2"><strong>Klasser:</strong> UK1, UK2, AK1, AK2, VK (klasse + dag kombinert)</p>
+                        <p class="text-xs text-warm-500 mt-1">Samme hund kan stå på flere rader hvis påmeldt flere dager.</p>
                         <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                             <p class="text-xs text-blue-800 flex items-start gap-2">
                                 <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -591,6 +592,19 @@
                                 </svg>
                             </button>
                         </div>
+
+                        <!-- Upload errors (shown if parsing found issues) -->
+                        <div id="uploadErrors" class="hidden mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                            <h4 class="font-medium text-red-800 mb-2 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                Problemer funnet i filen
+                            </h4>
+                            <ul id="uploadErrorList" class="text-sm text-red-700 space-y-1 list-disc list-inside">
+                            </ul>
+                        </div>
+
                         <div class="mt-4 flex gap-3">
                             <button id="processUpload" class="bg-warm-500 hover:bg-warm-600 text-white px-6 py-2 rounded-lg font-medium transition flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1793,58 +1807,105 @@
         // ========================================
         function parseCSV(text) {
             const lines = text.trim().split('\n');
-            if (lines.length < 2) return [];
+            if (lines.length < 2) {
+                return { dogs: [], errors: ['Filen inneholder ingen data (må ha minst en header-rad og en data-rad)'] };
+            }
 
-            // Parse header
+            // Parse header - handle different separators
             const headerLine = lines[0];
-            const headers = headerLine.split(/[,;\t]/).map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+            let separator = ',';
+            if (headerLine.includes('\t')) separator = '\t';
+            else if (headerLine.includes(';')) separator = ';';
 
-            // Find column indices
+            const headers = headerLine.split(separator).map(h => h.trim().toLowerCase().replace(/["'*]/g, ''));
+
+            // Find column indices - match actual column names from DogWeb export
             const colMap = {
-                hundenavn: headers.findIndex(h => h.includes('hundenavn') || h.includes('navn')),
-                regnr: headers.findIndex(h => h.includes('regnr') || h.includes('reg')),
-                rase: headers.findIndex(h => h.includes('rase') || h.includes('breed')),
-                eier_navn: headers.findIndex(h => h.includes('eier') || h.includes('owner')),
-                eier_epost: headers.findIndex(h => h.includes('epost') || h.includes('email') || h.includes('e-post')),
-                klasse: headers.findIndex(h => h.includes('klasse') || h.includes('class')),
-                dag: headers.findIndex(h => h.includes('dag') || h.includes('day'))
+                regnr: headers.findIndex(h => h === 'regnr' || h.includes('regnr')),
+                navn: headers.findIndex(h => h === 'navn' || (h.includes('navn') && !h.includes('eier') && !h.includes('fører'))),
+                rase: headers.findIndex(h => h === 'rase' || h.includes('rase')),
+                eier: headers.findIndex(h => h === 'eier' || h.includes('eier')),
+                forer: headers.findIndex(h => h === 'fører' || h.includes('fører') || h === 'forer'),
+                klasser: headers.findIndex(h => h === 'klasser' || h.includes('klasse')),
+                epost: headers.findIndex(h => h === 'epost' || h.includes('epost') || h.includes('e-post') || h.includes('email'))
             };
 
+            // Validate required columns
+            const errors = [];
+            const missingCols = [];
+            if (colMap.regnr < 0) missingCols.push('Regnr');
+            if (colMap.navn < 0) missingCols.push('Navn');
+            if (colMap.klasser < 0) missingCols.push('Klasser');
+            if (colMap.epost < 0) missingCols.push('Epost');
+
+            if (missingCols.length > 0) {
+                errors.push(`Manglende kolonner: ${missingCols.join(', ')}`);
+                errors.push(`Fant kolonner: ${headers.filter(h => h).join(', ')}`);
+            }
+
             const dogs = [];
+            let rowErrors = 0;
+
             for (let i = 1; i < lines.length; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
 
-                const values = line.split(/[,;\t]/).map(v => v.trim().replace(/["']/g, ''));
+                const values = line.split(separator).map(v => v.trim().replace(/["']/g, ''));
 
-                // Extract class and day - handle formats like "UK1", "UK2", "AK1", "AK2" or separate columns
-                let klasse = colMap.klasse >= 0 ? values[colMap.klasse]?.toUpperCase() : '';
-                let dag = colMap.dag >= 0 ? values[colMap.dag] : '';
+                // Extract class and day - handle formats like "UK1", "UK2", "AK1", "AK2", "VK"
+                let klasseRaw = colMap.klasser >= 0 ? values[colMap.klasser]?.toUpperCase().trim() : '';
+                let klasse = '';
+                let dag = '1';
 
-                // Check if class contains day number (UK1, UK2, AK1, AK2 format)
-                const classMatch = klasse.match(/^(UK|AK|VK)(\d)?$/i);
+                // Parse class format: UK1, UK2, AK1, AK2, VK
+                const classMatch = klasseRaw.match(/^(UK|AK|VK)(\d)?$/i);
                 if (classMatch) {
                     klasse = classMatch[1].toUpperCase();
-                    if (classMatch[2] && !dag) {
+                    if (classMatch[2]) {
                         dag = classMatch[2];
+                    }
+                } else if (klasseRaw) {
+                    // Unknown class format
+                    rowErrors++;
+                    if (rowErrors <= 3) {
+                        errors.push(`Rad ${i + 1}: Ukjent klasseformat "${klasseRaw}" (forventet UK1, UK2, AK1, AK2, VK)`);
                     }
                 }
 
-                // Default to day 1 if not specified
-                if (!dag) dag = '1';
+                // Validate row data
+                const regnr = colMap.regnr >= 0 ? values[colMap.regnr]?.trim() : '';
+                const navn = colMap.navn >= 0 ? values[colMap.navn]?.trim() : '';
+                const epost = colMap.epost >= 0 ? values[colMap.epost]?.trim() : '';
+
+                if (!regnr && !navn) {
+                    continue; // Skip empty rows
+                }
+
+                if (!klasse) {
+                    rowErrors++;
+                    if (rowErrors <= 3) {
+                        errors.push(`Rad ${i + 1}: Mangler klasse for "${navn || regnr}"`);
+                    }
+                    continue;
+                }
 
                 dogs.push({
-                    hundenavn: colMap.hundenavn >= 0 ? values[colMap.hundenavn] : '',
-                    regnr: colMap.regnr >= 0 ? values[colMap.regnr] : '',
-                    rase: colMap.rase >= 0 ? values[colMap.rase] : '',
-                    eier_navn: colMap.eier_navn >= 0 ? values[colMap.eier_navn] : '',
-                    eier_epost: colMap.eier_epost >= 0 ? values[colMap.eier_epost] : '',
+                    regnr: regnr,
+                    navn: navn,
+                    rase: colMap.rase >= 0 ? values[colMap.rase]?.trim() : '',
+                    eier: colMap.eier >= 0 ? values[colMap.eier]?.trim() : '',
+                    forer: colMap.forer >= 0 ? values[colMap.forer]?.trim() : '',
+                    epost: epost,
                     klasse: klasse,
                     dag: dag
                 });
             }
 
-            return dogs;
+            if (rowErrors > 3) {
+                errors.push(`... og ${rowErrors - 3} flere rader med feil`);
+            }
+
+            return { dogs, errors };
         }
 
         function updateUploadSummary(dogs) {
@@ -1925,7 +1986,16 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 const text = e.target.result;
-                parsedDogs = parseCSV(text);
+                const result = parseCSV(text);
+                parsedDogs = result.dogs;
+
+                // Show errors if any
+                if (result.errors.length > 0) {
+                    showUploadErrors(result.errors);
+                } else {
+                    hideUploadErrors();
+                }
+
                 updateUploadSummary(parsedDogs);
             };
             reader.readAsText(file);
@@ -1934,10 +2004,21 @@
             uploadPreview.classList.remove('hidden');
         }
 
+        function showUploadErrors(errors) {
+            const errorList = document.getElementById('uploadErrorList');
+            errorList.innerHTML = errors.map(e => `<li>${e}</li>`).join('');
+            document.getElementById('uploadErrors').classList.remove('hidden');
+        }
+
+        function hideUploadErrors() {
+            document.getElementById('uploadErrors').classList.add('hidden');
+        }
+
         document.getElementById('removeFile').addEventListener('click', () => {
             dropZone.classList.remove('hidden');
             uploadPreview.classList.add('hidden');
             document.getElementById('uploadSummary').classList.add('hidden');
+            hideUploadErrors();
             fileInput.value = '';
             parsedDogs = [];
         });

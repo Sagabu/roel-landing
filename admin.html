@@ -2399,12 +2399,7 @@
                         uploadSummary = JSON.parse(savedSummary);
                     }
 
-                    if (parsedDogs.length > 0) {
-                        // Collapse the entire upload section since data is already loaded
-                        collapseUploadSection();
-
-                        console.log(`Lastet ${parsedDogs.length} lagrede hunder fra backend`);
-                    }
+                    console.log(`Lastet ${parsedDogs.length} lagrede hunder fra backend`);
                 } catch (e) {
                     console.error('Kunne ikke laste lagrede hunder:', e);
                 }
@@ -2416,11 +2411,24 @@
                     partyLists = JSON.parse(savedPartyLists);
                     if (partyLists.length > 0) {
                         renderPartyLists(partyLists);
+                        // Only collapse upload section if parties have been distributed
+                        collapseUploadSection();
                         console.log(`Lastet ${partyLists.length} lagrede partilister fra backend`);
                     }
                 } catch (e) {
                     console.error('Kunne ikke laste lagrede partilister:', e);
                 }
+            }
+
+            // If we have dogs but no party lists, show the upload preview with "Fordel på partier" button
+            if (parsedDogs.length > 0 && partyLists.length === 0) {
+                document.getElementById('dropZone').classList.add('hidden');
+                document.getElementById('uploadPreview').classList.remove('hidden');
+                document.getElementById('fileName').textContent = `${parsedDogs.length} hunder (lagret)`;
+                updateUploadSummary(parsedDogs);
+                // Hide parti config
+                document.getElementById('partiConfigSection').classList.add('hidden');
+                document.getElementById('dayDistributionInfo').classList.add('hidden');
             }
         }
 

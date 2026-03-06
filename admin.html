@@ -1682,23 +1682,34 @@
             const ukak = currentParticipants.filter(p => p.klasse === 'UK' || p.klasse === 'AK');
             const vk = currentParticipants.filter(p => p.klasse === 'VK');
 
-            // Calculate party distribution
+            // Calculate party distribution with even distribution
             const maxPerParty = 20;
             const ukakParties = Math.ceil(ukak.length / maxPerParty);
             const vkParties = Math.ceil(vk.length / maxPerParty);
 
+            // Helper function for even distribution
+            function getEvenDistribution(total, numParties) {
+                const base = Math.floor(total / numParties);
+                const remainder = total % numParties;
+                const distribution = [];
+                for (let i = 0; i < numParties; i++) {
+                    // Distribute remainder evenly, giving extra to later parties
+                    distribution.push(base + (i >= numParties - remainder ? 1 : 0));
+                }
+                return distribution;
+            }
+
+            const ukakDistribution = getEvenDistribution(ukak.length, ukakParties);
+            const vkDistribution = getEvenDistribution(vk.length, vkParties);
+
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;
 
             for (let i = 0; i < ukakParties; i++) {
-                const start = i * maxPerParty;
-                const count = Math.min(maxPerParty, ukak.length - start);
-                message += `• UK/AK Parti ${i + 1}: ${count} hunder\n`;
+                message += `• UK/AK Parti ${i + 1}: ${ukakDistribution[i]} hunder\n`;
             }
 
             for (let i = 0; i < vkParties; i++) {
-                const start = i * maxPerParty;
-                const count = Math.min(maxPerParty, vk.length - start);
-                message += `• VK Parti ${i + 1}: ${count} hunder\n`;
+                message += `• VK ${i + 1}: ${vkDistribution[i]} hunder\n`;
             }
 
             message += '\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
@@ -1874,30 +1885,26 @@
             const maxPerParty = 20;
             const parties = [];
 
-            // Create UK/AK parties
-            for (let i = 0; i < Math.ceil(ukak.length / maxPerParty); i++) {
-                const start = i * maxPerParty;
-                const end = Math.min(start + maxPerParty, ukak.length);
-                parties.push({
-                    name: `UK/AK Parti ${i + 1}`,
-                    dogs: ukak.slice(start, end).map((p, idx) => ({
-                        nr: idx + 1,
-                        forer: p.forer,
-                        hund: p.hundenavn,
-                        regnr: p.regnr,
-                        rase: p.rase,
-                        klasse: p.klasse
-                    }))
-                });
+            // Helper function for even distribution
+            function getEvenDistribution(total, numParties) {
+                const base = Math.floor(total / numParties);
+                const remainder = total % numParties;
+                const distribution = [];
+                for (let i = 0; i < numParties; i++) {
+                    distribution.push(base + (i >= numParties - remainder ? 1 : 0));
+                }
+                return distribution;
             }
 
-            // Create VK parties
-            for (let i = 0; i < Math.ceil(vk.length / maxPerParty); i++) {
-                const start = i * maxPerParty;
-                const end = Math.min(start + maxPerParty, vk.length);
+            // Create UK/AK parties with even distribution
+            const ukakPartyCount = Math.ceil(ukak.length / maxPerParty);
+            const ukakDistribution = getEvenDistribution(ukak.length, ukakPartyCount);
+            let ukakOffset = 0;
+            for (let i = 0; i < ukakPartyCount; i++) {
+                const count = ukakDistribution[i];
                 parties.push({
-                    name: `VK Parti ${i + 1}`,
-                    dogs: vk.slice(start, end).map((p, idx) => ({
+                    name: `UK/AK Parti ${i + 1}`,
+                    dogs: ukak.slice(ukakOffset, ukakOffset + count).map((p, idx) => ({
                         nr: idx + 1,
                         forer: p.forer,
                         hund: p.hundenavn,
@@ -1906,6 +1913,27 @@
                         klasse: p.klasse
                     }))
                 });
+                ukakOffset += count;
+            }
+
+            // Create VK parties with even distribution
+            const vkPartyCount = Math.ceil(vk.length / maxPerParty);
+            const vkDistribution = getEvenDistribution(vk.length, vkPartyCount);
+            let vkOffset = 0;
+            for (let i = 0; i < vkPartyCount; i++) {
+                const count = vkDistribution[i];
+                parties.push({
+                    name: `VK ${i + 1}`,
+                    dogs: vk.slice(vkOffset, vkOffset + count).map((p, idx) => ({
+                        nr: idx + 1,
+                        forer: p.forer,
+                        hund: p.hundenavn,
+                        regnr: p.regnr,
+                        rase: p.rase,
+                        klasse: p.klasse
+                    }))
+                });
+                vkOffset += count;
             }
 
             // Render parties

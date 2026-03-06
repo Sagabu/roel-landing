@@ -161,28 +161,48 @@ function parseClass(klasseRaw) {
 }
 
 // --- Parse participant list (PDF, CSV, Excel) ---
+// Supports both FormData upload and JSON base64 upload
 app.post("/api/parse-participants", async (c) => {
-  let formData;
-  try {
-    formData = await c.req.formData();
-  } catch (formErr) {
-    console.error("FormData error:", formErr);
-    return c.json({ error: "Kunne ikke lese skjemadata: " + formErr.message }, 400);
-  }
+  let fileName, buffer;
 
-  const file = formData.get("file");
+  const contentType = c.req.header("content-type") || "";
 
-  if (!file) {
-    return c.json({ error: "Ingen fil lastet opp" }, 400);
-  }
+  if (contentType.includes("application/json")) {
+    // Base64 JSON upload (works through proxies)
+    try {
+      const body = await c.req.json();
+      if (!body.fileName || !body.data) {
+        return c.json({ error: "Mangler fileName eller data" }, 400);
+      }
+      fileName = body.fileName.toLowerCase();
+      buffer = Buffer.from(body.data, "base64");
+    } catch (jsonErr) {
+      console.error("JSON parse error:", jsonErr);
+      return c.json({ error: "Kunne ikke lese JSON: " + jsonErr.message }, 400);
+    }
+  } else {
+    // FormData upload (traditional)
+    let formData;
+    try {
+      formData = await c.req.formData();
+    } catch (formErr) {
+      console.error("FormData error:", formErr);
+      return c.json({ error: "Kunne ikke lese skjemadata: " + formErr.message }, 400);
+    }
 
-  const fileName = file.name.toLowerCase();
-  let buffer;
-  try {
-    buffer = Buffer.from(await file.arrayBuffer());
-  } catch (bufErr) {
-    console.error("ArrayBuffer error:", bufErr);
-    return c.json({ error: "Kunne ikke lese filinnhold: " + bufErr.message }, 400);
+    const file = formData.get("file");
+
+    if (!file) {
+      return c.json({ error: "Ingen fil lastet opp" }, 400);
+    }
+
+    fileName = file.name.toLowerCase();
+    try {
+      buffer = Buffer.from(await file.arrayBuffer());
+    } catch (bufErr) {
+      console.error("ArrayBuffer error:", bufErr);
+      return c.json({ error: "Kunne ikke lese filinnhold: " + bufErr.message }, 400);
+    }
   }
 
   let participants = [];

@@ -1365,27 +1365,27 @@
             uploadPreview.classList.add('hidden');
 
             try {
-                const formData = new FormData();
-                formData.append('file', file);
-
-                console.log('Uploading file:', file.name, file.type, file.size, 'bytes');
+                // Read file as Base64 to avoid FormData proxy issues
+                const base64Data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const base64 = reader.result.split(',')[1]; // Remove data:...;base64, prefix
+                        resolve(base64);
+                    };
+                    reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
+                    reader.readAsDataURL(file);
+                });
 
                 const response = await fetch('/api/parse-participants', {
                     method: 'POST',
-                    body: formData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fileName: file.name,
+                        data: base64Data
+                    })
                 });
 
-                console.log('Response status:', response.status);
-
-                const responseText = await response.text();
-                console.log('Response text:', responseText.substring(0, 500));
-
-                let result;
-                try {
-                    result = JSON.parse(responseText);
-                } catch (parseErr) {
-                    throw new Error('Server returnerte ugyldig svar: ' + responseText.substring(0, 100));
-                }
+                const result = await response.json();
 
                 uploadLoading.classList.add('hidden');
 

@@ -1687,15 +1687,34 @@
             const ukakParties = Math.ceil(ukak.length / maxPerParty);
             const vkParties = Math.ceil(vk.length / maxPerParty);
 
-            // Helper function for even distribution
+            // Helper function for even distribution, preferring even numbers per party
             function getEvenDistribution(total, numParties) {
-                const base = Math.floor(total / numParties);
-                const remainder = total % numParties;
                 const distribution = [];
+                let remaining = total;
+
                 for (let i = 0; i < numParties; i++) {
-                    // Distribute remainder evenly, giving extra to later parties
-                    distribution.push(base + (i >= numParties - remainder ? 1 : 0));
+                    const partiesLeft = numParties - i;
+                    // Calculate ideal size for this party
+                    let size = Math.round(remaining / partiesLeft);
+
+                    // Prefer even numbers if possible
+                    if (size % 2 !== 0 && remaining > size) {
+                        // Try to make it even by adding or subtracting 1
+                        const sizeUp = size + 1;
+                        const sizeDown = size - 1;
+
+                        // Check if we can use sizeUp (even) without leaving too few for remaining parties
+                        if (sizeUp % 2 === 0 && (remaining - sizeUp) >= (partiesLeft - 1) * 2) {
+                            size = sizeUp;
+                        } else if (sizeDown % 2 === 0 && sizeDown >= 2) {
+                            size = sizeDown;
+                        }
+                    }
+
+                    distribution.push(size);
+                    remaining -= size;
                 }
+
                 return distribution;
             }
 
@@ -1885,14 +1904,30 @@
             const maxPerParty = 20;
             const parties = [];
 
-            // Helper function for even distribution
+            // Helper function for even distribution, preferring even numbers per party
             function getEvenDistribution(total, numParties) {
-                const base = Math.floor(total / numParties);
-                const remainder = total % numParties;
                 const distribution = [];
+                let remaining = total;
+
                 for (let i = 0; i < numParties; i++) {
-                    distribution.push(base + (i >= numParties - remainder ? 1 : 0));
+                    const partiesLeft = numParties - i;
+                    let size = Math.round(remaining / partiesLeft);
+
+                    // Prefer even numbers if possible
+                    if (size % 2 !== 0 && remaining > size) {
+                        const sizeUp = size + 1;
+                        const sizeDown = size - 1;
+                        if (sizeUp % 2 === 0 && (remaining - sizeUp) >= (partiesLeft - 1) * 2) {
+                            size = sizeUp;
+                        } else if (sizeDown % 2 === 0 && sizeDown >= 2) {
+                            size = sizeDown;
+                        }
+                    }
+
+                    distribution.push(size);
+                    remaining -= size;
                 }
+
                 return distribution;
             }
 

@@ -286,9 +286,15 @@
 
                 <!-- Header -->
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <h1 id="headerTrialName" class="text-3xl font-bold font-rockwell text-neutral-800">Ingen prøve opprettet</h1>
-                        <p id="headerTrialInfo" class="text-neutral-500">Opprett en ny prøve under "Innstillinger"</p>
+                    <div class="flex items-center gap-4">
+                        <!-- Club logo in header -->
+                        <div id="headerLogoContainer" class="hidden w-16 h-16 rounded-xl overflow-hidden bg-white shadow-sm border border-neutral-200 flex-shrink-0">
+                            <img id="headerLogo" class="w-full h-full object-contain p-1" src="" alt="Klubblogo">
+                        </div>
+                        <div>
+                            <h1 id="headerTrialName" class="text-3xl font-bold font-rockwell text-neutral-800">Ingen prøve opprettet</h1>
+                            <p id="headerTrialInfo" class="text-neutral-500">Opprett en ny prøve under "Innstillinger"</p>
+                        </div>
                     </div>
                     <div class="flex gap-3">
                         <button id="exportPdfBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
@@ -2327,12 +2333,24 @@
         const adminLogo = document.getElementById('adminLogo');
         const adminLogoPlaceholder = document.getElementById('adminLogoPlaceholder');
 
+        // Function to update header logo
+        function updateHeaderLogo(logoSrc) {
+            const headerLogoContainer = document.getElementById('headerLogoContainer');
+            const headerLogo = document.getElementById('headerLogo');
+            if (logoSrc && headerLogoContainer && headerLogo) {
+                headerLogo.src = logoSrc;
+                headerLogoContainer.classList.remove('hidden');
+            }
+        }
+
         // Load saved logo from localStorage
         const savedLogo = localStorage.getItem('clubLogo');
         if (savedLogo) {
             adminLogo.src = savedLogo;
             adminLogo.classList.remove('hidden');
             adminLogoPlaceholder.classList.add('hidden');
+            // Also show in header
+            updateHeaderLogo(savedLogo);
         }
 
         adminLogoArea.addEventListener('click', () => adminLogoInput.click());
@@ -2347,6 +2365,8 @@
                     adminLogo.classList.remove('hidden');
                     adminLogoPlaceholder.classList.add('hidden');
                     localStorage.setItem('clubLogo', dataUrl);
+                    // Also update header logo immediately
+                    updateHeaderLogo(dataUrl);
                 };
                 reader.readAsDataURL(file);
             }

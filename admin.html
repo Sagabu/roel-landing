@@ -1863,10 +1863,22 @@
                 // Skip markdown separator rows (| --- | --- | etc)
                 if (line.match(/^[\|\s\-:]+$/)) continue;
 
-                // Clean values: remove markdown bold, quotes, and handle pipe separator
-                let values = line.split(separator).map(v =>
-                    v.trim().replace(/\*\*/g, '').replace(/["']/g, '').replace(/^\[|\]$/g, '').trim()
-                );
+                // Clean values: remove markdown formatting and extract clean data
+                let values = line.split(separator).map(v => {
+                    let clean = v.trim();
+                    // Remove markdown bold **text**
+                    clean = clean.replace(/\*\*/g, '');
+                    // Extract email from markdown link [email](mailto:email)
+                    const emailMatch = clean.match(/\[([^\]]+)\]\(mailto:[^)]+\)/);
+                    if (emailMatch) {
+                        clean = emailMatch[1];
+                    }
+                    // Remove any remaining markdown links [text](url)
+                    clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+                    // Remove quotes
+                    clean = clean.replace(/["']/g, '');
+                    return clean.trim();
+                });
 
                 // For pipe-separated (markdown), remove empty first/last elements
                 if (separator === '|') {

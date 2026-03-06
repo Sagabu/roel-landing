@@ -24,7 +24,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS trial_config (
     id INTEGER PRIMARY KEY DEFAULT 1,
-    name TEXT NOT NULL DEFAULT 'Høgkjølprøven 2026',
+    name TEXT NOT NULL DEFAULT '',
     location TEXT DEFAULT '',
     start_date TEXT DEFAULT '',
     end_date TEXT DEFAULT '',

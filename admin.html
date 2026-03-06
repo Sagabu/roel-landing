@@ -2040,23 +2040,41 @@
 
         function handleFile(file) {
             // Umiddelbar debug - viser at funksjonen kjører
-            document.getElementById('debugText').textContent = 'handleFile kjører for: ' + file.name + '\nLeser fil...';
+            const debugEl = document.getElementById('debugText');
+            debugEl.textContent = 'handleFile v3 kjører for: ' + file.name + '\nFilstørrelse: ' + file.size + ' bytes\nFiltype: ' + file.type + '\n\nLeser fil...';
             document.getElementById('fileName').textContent = file.name;
+
+            // Timeout for å oppdage om onload aldri blir kalt
+            const timeoutId = setTimeout(() => {
+                debugEl.textContent += '\n\n⚠️ TIMEOUT: onload ble ikke kalt etter 5 sekunder!';
+            }, 5000);
 
             // Read and parse file
             const reader = new FileReader();
+
+            reader.onloadstart = () => {
+                debugEl.textContent += '\n📖 onloadstart trigget';
+            };
+
+            reader.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    debugEl.textContent += '\n📊 Progress: ' + e.loaded + '/' + e.total;
+                }
+            };
+
             reader.onload = (e) => {
+                clearTimeout(timeoutId);
                 try {
+                    debugEl.textContent += '\n✅ onload trigget!';
                     const text = e.target.result;
 
                     // Show debug info on page
-                    let debugInfo = '';
-                    debugInfo += 'FILE LOADED!\n';
+                    let debugInfo = 'FILE LOADED!\n';
                     debugInfo += 'Fil størrelse: ' + text.length + ' tegn\n';
                     debugInfo += 'Antall linjer: ' + text.split('\n').length + '\n';
                     debugInfo += 'Første 300 tegn:\n' + text.substring(0, 300) + '\n\n';
 
-                    document.getElementById('debugText').textContent = debugInfo + '\nParser fil...';
+                    debugEl.textContent = debugInfo + '\nParser fil...';
 
                     const result = parseCSV(text);
                     parsedDogs = result.dogs;
@@ -2067,7 +2085,7 @@
                         debugInfo += 'Første hund: ' + JSON.stringify(parsedDogs[0]) + '\n';
                     }
 
-                    document.getElementById('debugText').textContent = debugInfo;
+                    debugEl.textContent = debugInfo;
 
                     // Show errors if any
                     if (result.errors.length > 0) {
@@ -2078,15 +2096,26 @@
 
                     updateUploadSummary(parsedDogs);
                 } catch (err) {
-                    document.getElementById('debugText').textContent = 'JAVASCRIPT FEIL: ' + err.message + '\n\nStack: ' + err.stack;
+                    debugEl.textContent = 'JAVASCRIPT FEIL: ' + err.message + '\n\nStack: ' + err.stack;
                 }
             };
 
             reader.onerror = (e) => {
-                document.getElementById('debugText').textContent = 'FEIL ved lesing av fil: ' + e.target.error;
+                clearTimeout(timeoutId);
+                debugEl.textContent = 'FEIL ved lesing av fil: ' + (e.target.error ? e.target.error.message : 'Ukjent feil');
             };
 
-            reader.readAsText(file);
+            reader.onabort = () => {
+                clearTimeout(timeoutId);
+                debugEl.textContent += '\n❌ Fillesing avbrutt!';
+            };
+
+            try {
+                reader.readAsText(file, 'UTF-8');
+                debugEl.textContent += '\n📤 readAsText startet';
+            } catch (readErr) {
+                debugEl.textContent += '\n❌ readAsText feilet: ' + readErr.message;
+            }
 
             dropZone.classList.add('hidden');
             uploadPreview.classList.remove('hidden');

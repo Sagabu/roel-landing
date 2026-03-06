@@ -1721,6 +1721,77 @@
             const ukakDistribution = getEvenDistribution(ukak.length, ukakParties);
             const vkDistribution = getEvenDistribution(vk.length, vkParties);
 
+            // Build parties with actual dogs
+            const parties = [];
+            let ukakOffset = 0;
+            for (let i = 0; i < ukakParties; i++) {
+                const count = ukakDistribution[i];
+                parties.push({
+                    name: `UK/AK Parti ${i + 1}`,
+                    type: 'ukak',
+                    dogs: ukak.slice(ukakOffset, ukakOffset + count)
+                });
+                ukakOffset += count;
+            }
+
+            let vkOffset = 0;
+            for (let i = 0; i < vkParties; i++) {
+                const count = vkDistribution[i];
+                parties.push({
+                    name: `VK ${i + 1}`,
+                    type: 'vk',
+                    dogs: vk.slice(vkOffset, vkOffset + count)
+                });
+                vkOffset += count;
+            }
+
+            // Save parties to localStorage
+            localStorage.setItem('trialParties', JSON.stringify(parties));
+
+            // Update UI - show party lists section
+            document.getElementById('partyListsEmptyState').classList.add('hidden');
+            document.getElementById('partyListsContent').classList.remove('hidden');
+
+            // Render party lists
+            const container = document.getElementById('partyListsContainer');
+            container.innerHTML = parties.map((party, idx) => `
+                <div class="bg-white rounded-xl shadow-sm border border-earth-200 overflow-hidden mb-4">
+                    <div class="px-6 py-4 bg-${party.type === 'vk' ? 'earth' : 'forest'}-50 border-b border-earth-200">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-bold font-rockwell text-${party.type === 'vk' ? 'earth' : 'forest'}-800">${party.name}</h3>
+                            <span class="px-3 py-1 bg-${party.type === 'vk' ? 'earth' : 'forest'}-100 text-${party.type === 'vk' ? 'earth' : 'forest'}-700 rounded-full text-sm font-medium">${party.dogs.length} hunder</span>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-bark-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Nr</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Fører</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Hund</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Rase</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Klasse</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-earth-100">
+                                ${party.dogs.map((dog, i) => `
+                                    <tr class="hover:bg-bark-50">
+                                        <td class="px-4 py-3 text-sm font-medium text-bark-700">${i + 1}</td>
+                                        <td class="px-4 py-3 text-sm text-bark-700">${dog.forer}</td>
+                                        <td class="px-4 py-3 text-sm font-medium text-bark-800">${dog.hundenavn}</td>
+                                        <td class="px-4 py-3 text-sm text-bark-600">${dog.rase}</td>
+                                        <td class="px-4 py-3 text-sm">
+                                            <span class="px-2 py-1 rounded text-xs font-medium ${dog.klasse === 'UK' ? 'bg-blue-100 text-blue-700' : dog.klasse === 'AK' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${dog.klasseRaw || dog.klasse}</span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `).join('');
+
+            // Build message
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;
 
             for (let i = 0; i < ukakParties; i++) {
@@ -1733,6 +1804,9 @@
 
             message += '\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
             alert(message);
+
+            // Scroll to party lists section
+            document.getElementById('partilister').scrollIntoView({ behavior: 'smooth' });
         });
 
         // Send SMS button scroll

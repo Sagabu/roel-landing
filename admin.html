@@ -1362,13 +1362,29 @@
         function parseClass(klasseStr) {
             if (!klasseStr) return { klasse: 'AK', dag: null };
             const upper = String(klasseStr).toUpperCase().trim();
-            const match = upper.match(/(UK|AK|VK)(\d)?/);
+
+            // Try various patterns:
+            // UK, UK1, UK2, AK, AK1, AK2, VK
+            // Also handle: "Unghund", "Åpen", "Vinner" etc.
+
+            // Direct match UK/AK/VK with optional day number
+            let match = upper.match(/^(UK|AK|VK)(\d)?$/);
             if (match) {
-                return {
-                    klasse: match[1],
-                    dag: match[2] ? parseInt(match[2]) : null
-                };
+                return { klasse: match[1], dag: match[2] ? parseInt(match[2]) : null };
             }
+
+            // Match UK/AK/VK anywhere in string (e.g., "Klasse UK1" or "UK-1")
+            match = upper.match(/(UK|AK|VK)[- ]?(\d)?/);
+            if (match) {
+                return { klasse: match[1], dag: match[2] ? parseInt(match[2]) : null };
+            }
+
+            // Norwegian class names
+            if (upper.includes('UNGHUND') || upper.includes('UNG')) return { klasse: 'UK', dag: null };
+            if (upper.includes('VINNER')) return { klasse: 'VK', dag: null };
+            if (upper.includes('ÅPEN') || upper.includes('AAPEN') || upper.includes('OPEN')) return { klasse: 'AK', dag: null };
+
+            // Default to AK
             return { klasse: 'AK', dag: null };
         }
 
@@ -1424,6 +1440,22 @@
                 if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
                     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
+                    // Log header to help debug column order
+                    console.log('CSV Header:', lines[0]);
+                    const headerParts = parseCSVLine(lines[0]);
+                    console.log('Header columns:', headerParts);
+
+                    // Find class column index (might not be column 5)
+                    let klasseColIndex = 5; // default
+                    for (let i = 0; i < headerParts.length; i++) {
+                        const col = headerParts[i].toLowerCase();
+                        if (col.includes('klasse') || col === 'uk' || col === 'ak' || col === 'vk') {
+                            klasseColIndex = i;
+                            console.log('Found class column at index:', i, '=', headerParts[i]);
+                            break;
+                        }
+                    }
+
                     // Skip header line
                     const dataLines = lines.slice(1);
 
@@ -1433,21 +1465,34 @@
 
                         const parts = parseCSVLine(line);
 
+                        // Log first few rows for debugging
+                        if (participants.length < 3) {
+                            console.log('Row', participants.length + 1, ':', parts);
+                            console.log('  Class value:', parts[klasseColIndex], '-> parsed:', parseClass(parts[klasseColIndex]));
+                        }
+
                         if (parts.length >= 5 && parts[0]) {
-                            const klasseInfo = parseClass(parts[5]);
+                            const klasseInfo = parseClass(parts[klasseColIndex]);
                             participants.push({
                                 regnr: parts[0] || '',
                                 hundenavn: parts[1] || '',
                                 rase: parts[2] || '',
                                 eier: formatName(parts[3]),
                                 forer: formatName(parts[4] || parts[3]),
-                                klasseRaw: (parts[5] || 'AK').toUpperCase(),
+                                klasseRaw: (parts[klasseColIndex] || 'AK').toUpperCase(),
                                 klasse: klasseInfo.klasse,
                                 dag: klasseInfo.dag,
                                 epost: parts[6] || ''
                             });
                         }
                     }
+
+                    console.log('Total parsed:', participants.length);
+                    console.log('By class:', {
+                        UK: participants.filter(p => p.klasse === 'UK').length,
+                        AK: participants.filter(p => p.klasse === 'AK').length,
+                        VK: participants.filter(p => p.klasse === 'VK').length
+                    });
                 } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
                     alert('Excel-filer (.xlsx) støttes ikke i nettleseren. Vennligst lagre filen som CSV først:\n\n1. Åpne filen i Excel\n2. Fil → Lagre som\n3. Velg "CSV (kommaseparert)" som format\n4. Last opp CSV-filen her');
                     dropZone.classList.remove('hidden');

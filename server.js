@@ -48,8 +48,213 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Brukere-tabell
+  CREATE TABLE IF NOT EXISTS brukere (
+    telefon TEXT PRIMARY KEY,
+    fornavn TEXT NOT NULL,
+    etternavn TEXT NOT NULL,
+    epost TEXT DEFAULT '',
+    adresse TEXT DEFAULT '',
+    postnummer TEXT DEFAULT '',
+    sted TEXT DEFAULT '',
+    rolle TEXT DEFAULT 'deltaker',
+    medlem_siden TEXT DEFAULT (strftime('%Y', 'now')),
+    profilbilde TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Klubber-tabell
+  CREATE TABLE IF NOT EXISTS klubber (
+    id TEXT PRIMARY KEY,
+    orgnummer TEXT UNIQUE,
+    navn TEXT NOT NULL,
+    region TEXT DEFAULT ''
+  );
+
+  -- Hunder-tabell
+  CREATE TABLE IF NOT EXISTS hunder (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    regnr TEXT UNIQUE NOT NULL,
+    navn TEXT NOT NULL,
+    rase TEXT DEFAULT '',
+    kjonn TEXT DEFAULT 'male',
+    fodt TEXT DEFAULT '',
+    eier_telefon TEXT REFERENCES brukere(telefon),
+    klubb_id TEXT REFERENCES klubber(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Resultater-tabell (hund-resultater)
+  CREATE TABLE IF NOT EXISTS resultater (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hund_id INTEGER REFERENCES hunder(id),
+    dato TEXT NOT NULL,
+    prove_navn TEXT NOT NULL,
+    klasse TEXT DEFAULT 'AK',
+    premie TEXT DEFAULT '',
+    dommer TEXT DEFAULT ''
+  );
+
+  -- Prøver-tabell
+  CREATE TABLE IF NOT EXISTS prover (
+    id TEXT PRIMARY KEY,
+    navn TEXT NOT NULL,
+    sted TEXT DEFAULT '',
+    start_dato TEXT,
+    slutt_dato TEXT,
+    klubb_id TEXT REFERENCES klubber(id),
+    proveleder_telefon TEXT REFERENCES brukere(telefon),
+    nkkrep_telefon TEXT REFERENCES brukere(telefon),
+    status TEXT DEFAULT 'planlagt',
+    klasser TEXT DEFAULT '{"uk":true,"ak":true,"vk":true}',
+    partier TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Dommer-tildelinger (kobler dommer til parti i en prøve)
+  CREATE TABLE IF NOT EXISTS dommer_tildelinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT REFERENCES prover(id),
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    parti TEXT NOT NULL,
+    dommer_rolle INTEGER DEFAULT NULL,
+    UNIQUE(prove_id, dommer_telefon)
+  );
+
+  -- Klubb-administratorer
+  CREATE TABLE IF NOT EXISTS klubb_admins (
+    telefon TEXT REFERENCES brukere(telefon),
+    klubb_id TEXT REFERENCES klubber(id),
+    rolle TEXT DEFAULT 'admin',
+    PRIMARY KEY (telefon, klubb_id)
+  );
+
   INSERT OR IGNORE INTO trial_config (id) VALUES (1);
 `);
+
+// --- Seed initial data if tables are empty ---
+function seedData() {
+  const brukerCount = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
+  if (brukerCount > 0) return; // Already seeded
+
+  console.log("🌱 Seeding initial data...");
+
+  // Seed klubber
+  const klubber = [
+    { id: 'namdal', orgnummer: '987654321', navn: 'Namdal Fuglehundklubb', region: 'Trøndelag' },
+    { id: 'malvik', orgnummer: '987654322', navn: 'Malvik Fuglehundklubb', region: 'Trøndelag' },
+    { id: 'selbu', orgnummer: '987654323', navn: 'Selbu Fuglehundklubb', region: 'Trøndelag' },
+    { id: 'sorfjeldske', orgnummer: '987654324', navn: 'Sørfjeldske Fuglehundklubb', region: 'Trøndelag' },
+    { id: 'stjordal', orgnummer: '987654325', navn: 'Stjørdal Fuglehundklubb', region: 'Trøndelag' }
+  ];
+  const insertKlubb = db.prepare("INSERT INTO klubber (id, orgnummer, navn, region) VALUES (?, ?, ?, ?)");
+  for (const k of klubber) {
+    insertKlubb.run(k.id, k.orgnummer, k.navn, k.region);
+  }
+
+  // Seed brukere
+  const brukere = [
+    { telefon: '99999999', fornavn: 'Chris', etternavn: 'Niebel', epost: 'chris.niebel@example.com', adresse: 'Jaktveien 15', postnummer: '7800', sted: 'Namsos', rolle: 'deltaker,dommer', medlem_siden: '2019' },
+    { telefon: '99999998', fornavn: 'Gæggen', etternavn: 'Wågert', epost: 'gaeggen.wagert@example.com', adresse: 'Fugleveien 7', postnummer: '7563', sted: 'Malvik', rolle: 'deltaker', medlem_siden: '2020' },
+    { telefon: '99999997', fornavn: 'Monja', etternavn: 'Aakert', epost: 'monja.aakert@example.com', adresse: 'Lederveien 1', postnummer: '7800', sted: 'Namsos', rolle: 'deltaker,dommer,klubbleder,proveleder', medlem_siden: '2015' },
+    { telefon: '99999996', fornavn: 'Torstein', etternavn: 'Møstn', epost: 'torstein.mostn@example.com', adresse: 'Selbuveien 22', postnummer: '7580', sted: 'Selbu', rolle: 'deltaker', medlem_siden: '2018' },
+    { telefon: '99999995', fornavn: 'Marstein', etternavn: 'Manstein', epost: 'marstein.manstein@example.com', adresse: 'Fjellgata 44', postnummer: '7340', sted: 'Oppdal', rolle: 'deltaker,nkkrep', medlem_siden: '2021' },
+    { telefon: '99999994', fornavn: 'Roar', etternavn: 'Storseth', epost: 'roar.storseth@example.com', adresse: 'Hundegata 8', postnummer: '7500', sted: 'Stjørdal', rolle: 'deltaker,dommer', medlem_siden: '2017' }
+  ];
+  const insertBruker = db.prepare("INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, medlem_siden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  for (const b of brukere) {
+    insertBruker.run(b.telefon, b.fornavn, b.etternavn, b.epost, b.adresse, b.postnummer, b.sted, b.rolle, b.medlem_siden);
+  }
+
+  // Seed klubb-admins
+  db.prepare("INSERT INTO klubb_admins (telefon, klubb_id, rolle) VALUES (?, ?, ?)").run('99999997', 'namdal', 'leder');
+
+  // Seed hunder med resultater
+  const insertHund = db.prepare("INSERT INTO hunder (regnr, navn, rase, kjonn, fodt, eier_telefon, klubb_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  const insertResultat = db.prepare("INSERT INTO resultater (hund_id, dato, prove_navn, klasse, premie, dommer) VALUES (?, ?, ?, ?, ?, ?)");
+
+  // Chris Niebel's hund
+  let result = insertHund.run('NO45678/22', 'Breton XXL', 'Breton', 'male', '2020-05-15', '99999999', 'namdal');
+  let hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-09-14', 'Namdalseid Høstprøve', 'AK', '2. AK', 'Kari Olsen');
+  insertResultat.run(hundId, '2024-03-22', 'Vårprøven Steinkjer', 'AK', '1. AK', 'Per Hansen');
+  insertResultat.run(hundId, '2023-09-10', 'Høstprøven Namsos', 'UK', '2. UK', 'Monja Aakert');
+
+  // Gæggen Wågert's hunder
+  result = insertHund.run('NO34567/21', 'Zico', 'Gordon Setter', 'male', '2019-03-20', '99999998', 'malvik');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-10-05', 'Malvik Høstprøve', 'VK', '3. VK', 'Arne Fjell');
+  insertResultat.run(hundId, '2024-04-12', 'Trondheim Vårprøve', 'AK', '1. AK', 'Liv Strand');
+  insertResultat.run(hundId, '2023-09-28', 'NM Fuglehund', 'AK', '2. AK', 'Tor Dahl');
+
+  result = insertHund.run('NO45123/23', 'Mainoo', 'Gordon Setter', 'male', '2021-07-10', '99999998', 'malvik');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-09-20', 'Selbu Prøve', 'UK', '1. UK', 'Hans Mo');
+  insertResultat.run(hundId, '2024-05-18', 'Vårprøven Klæbu', 'UK', '2. UK', 'Gerd Vik');
+
+  // Monja Aakert's hunder
+  result = insertHund.run('NO23456/20', 'Tripp', 'Gordon Setter', 'male', '2018-02-14', '99999997', 'namdal');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-10-12', 'Namdal Høstprøve', 'VK', 'CERT', 'Ole Nordmann');
+  insertResultat.run(hundId, '2024-06-08', 'Sommerprøven Lierne', 'VK', '1. VK', 'Roar Storseth');
+  insertResultat.run(hundId, '2023-10-21', 'NM Fuglehund', 'VK', '2. VK', 'Knut Lie');
+
+  result = insertHund.run('NO23457/20', 'Trapp', 'Gordon Setter', 'male', '2018-02-14', '99999997', 'namdal');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-09-30', 'Grong Høstprøve', 'AK', '1. AK', 'Stein Berg');
+  insertResultat.run(hundId, '2024-04-20', 'Vårprøven Namdalen', 'AK', '2. AK', 'Liv Mo');
+
+  // Torstein Møstn's hunder
+  result = insertHund.run('NO56789/21', 'Stora', 'Irsk Setter', 'female', '2019-08-22', '99999996', 'selbu');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-09-15', 'Selbu Høstprøve', 'AK', '1. AK', 'Eva Dahl');
+  insertResultat.run(hundId, '2024-05-05', 'Vårprøven Tydal', 'AK', '3. AK', 'Odd Lie');
+  insertResultat.run(hundId, '2023-09-22', 'Røros Prøve', 'UK', '1. UK', 'Marit Vik');
+
+  result = insertHund.run('NO56790/22', 'Petra', 'Irsk Setter', 'female', '2020-04-18', '99999996', 'selbu');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-10-01', 'Holtålen Prøve', 'UK', '2. UK', 'Jon Berg');
+  insertResultat.run(hundId, '2024-06-15', 'Sommerprøven Selbu', 'UK', '1. UK', 'Anne Mo');
+
+  // Marstein Manstein's hund
+  result = insertHund.run('NO67890/23', 'Bleiebøtte', 'Irsk Setter', 'female', '2021-11-30', '99999995', 'sorfjeldske');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-09-08', 'Oppdal Høstprøve', 'UK', '1. UK', 'Rolf Strand');
+  insertResultat.run(hundId, '2024-04-28', 'Vårprøven Rennebu', 'UK', '3. UK', 'Gro Fjell');
+
+  // Roar Storseth's hund
+  result = insertHund.run('NO78901/22', 'Kjemperask', 'Engelsk Setter', 'male', '2020-09-05', '99999994', 'stjordal');
+  hundId = result.lastInsertRowid;
+  insertResultat.run(hundId, '2024-10-08', 'Stjørdal Høstprøve', 'VK', '2. VK', 'Tor Hansen');
+  insertResultat.run(hundId, '2024-05-25', 'Vårprøven Meråker', 'AK', '1. AK', 'Liv Olsen');
+  insertResultat.run(hundId, '2023-10-14', 'Levanger Prøve', 'AK', '1. AK', 'Per Mo');
+
+  // Seed Vinterprøven 2026
+  db.prepare(`INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, status, klasser, partier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    'vinterproven2026',
+    'Vinterprøven 2026',
+    'Lierne',
+    '2026-01-17',
+    '2026-01-18',
+    'namdal',
+    '99999997',
+    '99999995',
+    'active',
+    JSON.stringify({ uk: true, ak: true, vk: true, vkType: '2day' }),
+    JSON.stringify({ day1: { ukak: 3, vkKval: 2 }, day2: { ukak: 4, vkFinale: 1 } })
+  );
+
+  // Seed dommer-tildelinger for Vinterprøven
+  const insertDommer = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
+  insertDommer.run('vinterproven2026', '99999999', 'ukak1', null);
+  insertDommer.run('vinterproven2026', '99999997', 'vkfinale', 1);
+  insertDommer.run('vinterproven2026', '99999994', 'ukak2', null);
+
+  console.log("✅ Initial data seeded successfully");
+}
+
+seedData();
 
 const app = new Hono();
 
@@ -124,7 +329,295 @@ app.get("/api/stats", (c) => {
   const kvCount = db.prepare("SELECT COUNT(*) as n FROM kv_store").get().n;
   const logCount = db.prepare("SELECT COUNT(*) as n FROM admin_log").get().n;
   const trial = db.prepare("SELECT name, is_published FROM trial_config WHERE id = 1").get();
-  return c.json({ kvEntries: kvCount, adminLogEntries: logCount, trial });
+  const brukerCount = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
+  const hundCount = db.prepare("SELECT COUNT(*) as n FROM hunder").get().n;
+  const klubbCount = db.prepare("SELECT COUNT(*) as n FROM klubber").get().n;
+  const proveCount = db.prepare("SELECT COUNT(*) as n FROM prover").get().n;
+  return c.json({ kvEntries: kvCount, adminLogEntries: logCount, trial, brukere: brukerCount, hunder: hundCount, klubber: klubbCount, prover: proveCount });
+});
+
+// ============================================
+// BRUKERE API
+// ============================================
+
+// Hent alle brukere
+app.get("/api/brukere", (c) => {
+  const rows = db.prepare("SELECT * FROM brukere ORDER BY etternavn, fornavn").all();
+  return c.json(rows);
+});
+
+// Hent én bruker på telefon
+app.get("/api/brukere/:telefon", (c) => {
+  const telefon = c.req.param("telefon");
+  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!row) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  // Hent også klubb-info hvis bruker er admin
+  const klubbAdmin = db.prepare(`
+    SELECT ka.rolle as klubb_rolle, k.id as klubb_id, k.navn as klubb_navn
+    FROM klubb_admins ka
+    JOIN klubber k ON ka.klubb_id = k.id
+    WHERE ka.telefon = ?
+  `).get(telefon);
+
+  return c.json({ ...row, klubbAdmin: klubbAdmin || null });
+});
+
+// Opprett eller oppdater bruker
+app.put("/api/brukere/:telefon", async (c) => {
+  const telefon = c.req.param("telefon");
+  const body = await c.req.json();
+
+  const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+
+  if (existing) {
+    // Oppdater
+    const fields = ["fornavn", "etternavn", "epost", "adresse", "postnummer", "sted", "rolle", "profilbilde"];
+    const sets = [];
+    const vals = [];
+    for (const f of fields) {
+      if (f in body) {
+        sets.push(`${f} = ?`);
+        vals.push(body[f]);
+      }
+    }
+    if (sets.length > 0) {
+      sets.push("updated_at = datetime('now')");
+      db.prepare(`UPDATE brukere SET ${sets.join(", ")} WHERE telefon = ?`).run(...vals, telefon);
+    }
+  } else {
+    // Opprett ny
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      telefon,
+      body.fornavn || '',
+      body.etternavn || '',
+      body.epost || '',
+      body.adresse || '',
+      body.postnummer || '',
+      body.sted || '',
+      body.rolle || 'deltaker'
+    );
+  }
+
+  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  return c.json(row);
+});
+
+// Sjekk om bruker er dommer for en prøve
+app.get("/api/brukere/:telefon/dommer-info", (c) => {
+  const telefon = c.req.param("telefon");
+  const proveId = c.req.query("prove_id");
+
+  let query = `
+    SELECT dt.*, p.navn as prove_navn, p.sted as prove_sted, p.start_dato, p.slutt_dato, b.fornavn, b.etternavn
+    FROM dommer_tildelinger dt
+    JOIN prover p ON dt.prove_id = p.id
+    JOIN brukere b ON dt.dommer_telefon = b.telefon
+    WHERE dt.dommer_telefon = ?
+  `;
+  const params = [telefon];
+
+  if (proveId) {
+    query += " AND dt.prove_id = ?";
+    params.push(proveId);
+  }
+
+  const rows = db.prepare(query).all(...params);
+
+  if (rows.length === 0) return c.json({ isDommer: false });
+
+  return c.json({
+    isDommer: true,
+    tildelinger: rows.map(r => ({
+      proveId: r.prove_id,
+      proveNavn: r.prove_navn,
+      proveSted: r.prove_sted,
+      startDato: r.start_dato,
+      sluttDato: r.slutt_dato,
+      parti: r.parti,
+      dommerRolle: r.dommer_rolle,
+      navn: `${r.fornavn} ${r.etternavn}`
+    }))
+  });
+});
+
+// ============================================
+// HUNDER API
+// ============================================
+
+// Hent alle hunder for en bruker
+app.get("/api/brukere/:telefon/hunder", (c) => {
+  const telefon = c.req.param("telefon");
+  const hunder = db.prepare(`
+    SELECT h.*, k.navn as klubb_navn
+    FROM hunder h
+    LEFT JOIN klubber k ON h.klubb_id = k.id
+    WHERE h.eier_telefon = ?
+  `).all(telefon);
+
+  // Hent resultater for hver hund
+  const getResultater = db.prepare("SELECT * FROM resultater WHERE hund_id = ? ORDER BY dato DESC");
+  const result = hunder.map(h => ({
+    ...h,
+    results: getResultater.all(h.id)
+  }));
+
+  return c.json(result);
+});
+
+// Hent alle hunder (for søk)
+app.get("/api/hunder", (c) => {
+  const search = c.req.query("search");
+  let query = `
+    SELECT h.*, k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as eier_navn
+    FROM hunder h
+    LEFT JOIN klubber k ON h.klubb_id = k.id
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+  `;
+
+  if (search) {
+    query += ` WHERE h.navn LIKE ? OR h.regnr LIKE ? OR b.fornavn LIKE ? OR b.etternavn LIKE ?`;
+    const searchPattern = `%${search}%`;
+    const rows = db.prepare(query).all(searchPattern, searchPattern, searchPattern, searchPattern);
+    return c.json(rows);
+  }
+
+  const rows = db.prepare(query + " ORDER BY h.navn").all();
+  return c.json(rows);
+});
+
+// Hent én hund
+app.get("/api/hunder/:id", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare(`
+    SELECT h.*, k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as eier_navn, b.telefon as eier_telefon
+    FROM hunder h
+    LEFT JOIN klubber k ON h.klubb_id = k.id
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    WHERE h.id = ? OR h.regnr = ?
+  `).get(id, id);
+
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const resultater = db.prepare("SELECT * FROM resultater WHERE hund_id = ? ORDER BY dato DESC").all(hund.id);
+
+  return c.json({ ...hund, results: resultater });
+});
+
+// ============================================
+// KLUBBER API
+// ============================================
+
+// Hent alle klubber
+app.get("/api/klubber", (c) => {
+  const rows = db.prepare("SELECT * FROM klubber ORDER BY navn").all();
+  return c.json(rows);
+});
+
+// Hent én klubb
+app.get("/api/klubber/:id", (c) => {
+  const id = c.req.param("id");
+  const row = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
+  if (!row) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  // Hent admins for klubben
+  const admins = db.prepare(`
+    SELECT b.telefon, b.fornavn, b.etternavn, ka.rolle
+    FROM klubb_admins ka
+    JOIN brukere b ON ka.telefon = b.telefon
+    WHERE ka.klubb_id = ?
+  `).all(id);
+
+  return c.json({ ...row, admins });
+});
+
+// ============================================
+// PRØVER API
+// ============================================
+
+// Hent alle prøver
+app.get("/api/prover", (c) => {
+  const rows = db.prepare(`
+    SELECT p.*, k.navn as klubb_navn,
+           pl.fornavn || ' ' || pl.etternavn as proveleder_navn,
+           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    LEFT JOIN brukere pl ON p.proveleder_telefon = pl.telefon
+    LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+    ORDER BY p.start_dato DESC
+  `).all();
+  return c.json(rows);
+});
+
+// Hent én prøve
+app.get("/api/prover/:id", (c) => {
+  const id = c.req.param("id");
+  const row = db.prepare(`
+    SELECT p.*, k.navn as klubb_navn,
+           pl.fornavn || ' ' || pl.etternavn as proveleder_navn, pl.telefon as proveleder_telefon,
+           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn, nr.telefon as nkkrep_telefon
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    LEFT JOIN brukere pl ON p.proveleder_telefon = pl.telefon
+    LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+    WHERE p.id = ?
+  `).get(id);
+
+  if (!row) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  // Hent dommere for prøven
+  const dommere = db.prepare(`
+    SELECT dt.parti, dt.dommer_rolle, b.telefon, b.fornavn, b.etternavn
+    FROM dommer_tildelinger dt
+    JOIN brukere b ON dt.dommer_telefon = b.telefon
+    WHERE dt.prove_id = ?
+  `).all(id);
+
+  return c.json({
+    ...row,
+    klasser: JSON.parse(row.klasser || '{}'),
+    partier: JSON.parse(row.partier || '{}'),
+    dommere
+  });
+});
+
+// Hent prøver for en bruker (der brukeren har en rolle)
+app.get("/api/brukere/:telefon/prover", (c) => {
+  const telefon = c.req.param("telefon");
+
+  // Finn prøver der bruker er prøveleder, NKK-rep, eller dommer
+  const prover = db.prepare(`
+    SELECT DISTINCT p.*, k.navn as klubb_navn,
+           CASE
+             WHEN p.proveleder_telefon = ? THEN 'proveleder'
+             WHEN p.nkkrep_telefon = ? THEN 'nkkrep'
+             ELSE NULL
+           END as admin_rolle
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.proveleder_telefon = ? OR p.nkkrep_telefon = ?
+       OR p.id IN (SELECT prove_id FROM dommer_tildelinger WHERE dommer_telefon = ?)
+    ORDER BY p.start_dato DESC
+  `).all(telefon, telefon, telefon, telefon, telefon);
+
+  // Hent dommer-info for hver prøve
+  const getDommerInfo = db.prepare("SELECT parti, dommer_rolle FROM dommer_tildelinger WHERE prove_id = ? AND dommer_telefon = ?");
+
+  const result = prover.map(p => {
+    const dommerInfo = getDommerInfo.get(p.id, telefon);
+    return {
+      ...p,
+      klasser: JSON.parse(p.klasser || '{}'),
+      partier: JSON.parse(p.partier || '{}'),
+      dommerInfo: dommerInfo || null
+    };
+  });
+
+  return c.json(result);
 });
 
 // --- Backup ---

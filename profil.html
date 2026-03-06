@@ -194,115 +194,73 @@
     </main>
 
     <script>
-        // Testbrukere med profildata
-        const TEST_PROFILES = {
-            '99999999': {
-                firstName: 'Chris',
-                lastName: 'Niebel',
-                email: 'chris.niebel@example.com',
-                phone: '99999999',
-                address: 'Jaktveien 15',
-                postalCode: '7800',
-                city: 'Namsos',
-                club: 'Namdal Fuglehundklubb',
-                memberSince: '2019'
-            },
-            '99999998': {
-                firstName: 'Gæggen',
-                lastName: 'Wågert',
-                email: 'gaeggen.wagert@example.com',
-                phone: '99999998',
-                address: 'Fugleveien 7',
-                postalCode: '7563',
-                city: 'Malvik',
-                club: 'Malvik Fuglehundklubb',
-                memberSince: '2020'
-            },
-            '99999997': {
-                firstName: 'Monja',
-                lastName: 'Aakert',
-                email: 'monja.aakert@example.com',
-                phone: '99999997',
-                address: 'Lederveien 1',
-                postalCode: '7800',
-                city: 'Namsos',
-                club: 'Namdal Fuglehundklubb',
-                memberSince: '2015'
-            },
-            '99999996': {
-                firstName: 'Torstein',
-                lastName: 'Møstn',
-                email: 'torstein.mostn@example.com',
-                phone: '99999996',
-                address: 'Selbuveien 22',
-                postalCode: '7580',
-                city: 'Selbu',
-                club: 'Selbu Fuglehundklubb',
-                memberSince: '2018'
-            },
-            '99999995': {
-                firstName: 'Marstein',
-                lastName: 'Manstein',
-                email: 'marstein.manstein@example.com',
-                phone: '99999995',
-                address: 'Fjellgata 44',
-                postalCode: '7340',
-                city: 'Oppdal',
-                club: 'Sørfjeldske Fuglehundklubb',
-                memberSince: '2021'
-            },
-            '99999994': {
-                firstName: 'Roar',
-                lastName: 'Storseth',
-                email: 'roar.storseth@example.com',
-                phone: '99999994',
-                address: 'Hundegata 8',
-                postalCode: '7500',
-                city: 'Stjørdal',
-                club: 'Stjørdal Fuglehundklubb',
-                memberSince: '2017'
-            }
-        };
-
         // Hent innlogget bruker
         const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
         const userPhone = userSession.phone || '';
 
-        // Last eller opprett profil
-        let userProfile = JSON.parse(localStorage.getItem('userProfile') || 'null');
-
-        // Sjekk om vi har testprofil for denne brukeren
-        if (userPhone && TEST_PROFILES[userPhone]) {
-            const testProfile = TEST_PROFILES[userPhone];
-            // Oppdater eller opprett profil med testdata
-            userProfile = {
-                ...testProfile,
-                profileImage: userProfile?.profileImage || null
-            };
-            localStorage.setItem('userProfile', JSON.stringify(userProfile));
-        } else if (!userProfile) {
-            // Fallback hvis ingen innlogging
-            userProfile = {
-                firstName: '',
-                lastName: '',
-                email: '',
-                phone: userPhone || '',
-                address: '',
-                postalCode: '',
-                city: '',
-                memberSince: new Date().getFullYear().toString(),
-                profileImage: null
-            };
-            localStorage.setItem('userProfile', JSON.stringify(userProfile));
-        }
-
+        let userProfile = null;
         let isEditing = false;
         let originalData = {};
 
-        // Initialize page
-        function init() {
+        // Initialize page - hent data fra API
+        async function init() {
+            if (!userPhone) {
+                // Ikke innlogget, redirect til min-side
+                window.location.href = 'min-side.html';
+                return;
+            }
+
+            await loadProfileFromAPI();
+            await loadStats();
+        }
+
+        // Hent profil fra API
+        async function loadProfileFromAPI() {
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    userProfile = {
+                        firstName: data.fornavn || '',
+                        lastName: data.etternavn || '',
+                        email: data.epost || '',
+                        phone: data.telefon || userPhone,
+                        address: data.adresse || '',
+                        postalCode: data.postnummer || '',
+                        city: data.sted || '',
+                        memberSince: data.medlem_siden || new Date().getFullYear().toString(),
+                        profileImage: data.profilbilde || null
+                    };
+                } else {
+                    // Bruker finnes ikke i DB, lag tom profil
+                    userProfile = {
+                        firstName: '',
+                        lastName: '',
+                        email: '',
+                        phone: userPhone,
+                        address: '',
+                        postalCode: '',
+                        city: '',
+                        memberSince: new Date().getFullYear().toString(),
+                        profileImage: null
+                    };
+                }
+            } catch (err) {
+                console.error('Kunne ikke hente profil:', err);
+                userProfile = {
+                    firstName: '',
+                    lastName: '',
+                    email: '',
+                    phone: userPhone,
+                    address: '',
+                    postalCode: '',
+                    city: '',
+                    memberSince: new Date().getFullYear().toString(),
+                    profileImage: null
+                };
+            }
+
             loadProfile();
-            loadStats();
         }
 
         function loadProfile() {
@@ -340,15 +298,35 @@
             return first + last || '--';
         }
 
-        function loadStats() {
-            // Load stats from localStorage - hent hunder for innlogget bruker
-            const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
-            const dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
-            const trials = JSON.parse(localStorage.getItem('userTrials') || '[]');
-            const mandates = JSON.parse(localStorage.getItem('userMandates') || '[]');
+        async function loadStats() {
+            // Hent hunder fra API
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}/hunder`);
+                if (resp.ok) {
+                    const hunder = await resp.json();
+                    document.getElementById('dogCount').textContent = hunder.length;
+                } else {
+                    document.getElementById('dogCount').textContent = '0';
+                }
+            } catch (err) {
+                document.getElementById('dogCount').textContent = '0';
+            }
 
-            document.getElementById('dogCount').textContent = dogs.length;
-            document.getElementById('trialCount').textContent = trials.length;
+            // Hent prøver fra API
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}/prover`);
+                if (resp.ok) {
+                    const prover = await resp.json();
+                    document.getElementById('trialCount').textContent = prover.length;
+                } else {
+                    document.getElementById('trialCount').textContent = '0';
+                }
+            } catch (err) {
+                document.getElementById('trialCount').textContent = '0';
+            }
+
+            // Fullmakter fra localStorage (ikke migrert ennå)
+            const mandates = JSON.parse(localStorage.getItem('userMandates') || '[]');
             document.getElementById('mandateCount').textContent = mandates.length;
         }
 
@@ -412,7 +390,7 @@
             editActions.classList.add('hidden');
         }
 
-        function saveProfile() {
+        async function saveProfile() {
             // Update profile
             userProfile.firstName = document.getElementById('firstName').value;
             userProfile.lastName = document.getElementById('lastName').value;
@@ -422,8 +400,30 @@
             userProfile.postalCode = document.getElementById('postalCode').value;
             userProfile.city = document.getElementById('city').value;
 
-            // Save to localStorage
-            localStorage.setItem('userProfile', JSON.stringify(userProfile));
+            // Save to API
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fornavn: userProfile.firstName,
+                        etternavn: userProfile.lastName,
+                        epost: userProfile.email,
+                        adresse: userProfile.address,
+                        postnummer: userProfile.postalCode,
+                        sted: userProfile.city,
+                        profilbilde: userProfile.profileImage
+                    })
+                });
+
+                if (!resp.ok) {
+                    throw new Error('Kunne ikke lagre profil');
+                }
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                showToast('Kunne ikke lagre profilen');
+                return;
+            }
 
             // Update display
             const fullName = `${userProfile.firstName} ${userProfile.lastName}`.trim();

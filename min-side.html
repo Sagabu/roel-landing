@@ -273,15 +273,19 @@
             if (savedSession) {
                 try {
                     const saved = JSON.parse(savedSession);
-                    // Re-hent brukerinfo for å sikre at alle egenskaper er oppdatert
-                    const userInfo = getUserByPhone(saved.phone?.replace(/\D/g, ''));
+                    // Re-hent brukerinfo fra API for å sikre at alle egenskaper er oppdatert
+                    const userInfo = await getUserByPhoneAsync(saved.phone?.replace(/\D/g, ''));
                     currentUser = {
                         ...saved,
+                        name: userInfo.name || saved.name,
                         trials: userInfo.trials,
-                        isTrialAdmin: userInfo.isTrialAdmin || false
+                        isTrialAdmin: userInfo.isTrialAdmin || false,
+                        clubName: userInfo.clubName || null,
+                        clubRole: userInfo.clubRole || null
                     };
                     showDashboard();
                 } catch (e) {
+                    console.error('Session restore error:', e);
                     localStorage.removeItem('userSession');
                 }
             }
@@ -358,252 +362,251 @@
                    document.getElementById('code4').value;
         }
 
-        function verifyCode() {
+        async function verifyCode() {
             const code = getEnteredCode();
             if (code.length !== 4) return;
 
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Verifiserer...';
 
-            setTimeout(() => {
-                document.getElementById('loadingOverlay').classList.add('hidden');
+            // Hent brukerdata fra API
+            const userInfo = await getUserByPhoneAsync(phoneNumber);
 
-                if (code.length === 4) {
-                    const userInfo = getUserByPhone(phoneNumber);
+            document.getElementById('loadingOverlay').classList.add('hidden');
 
-                    currentUser = {
-                        phone: phoneNumber,
-                        name: userInfo.name || 'Bruker',
-                        trials: userInfo.trials,
-                        isTrialAdmin: userInfo.isTrialAdmin || false,
-                        clubName: userInfo.clubName || null,
-                        clubRole: userInfo.clubRole || null,
-                        loggedInAt: new Date().toISOString()
-                    };
+            if (code.length === 4) {
+                currentUser = {
+                    phone: phoneNumber,
+                    name: userInfo.name || 'Bruker',
+                    trials: userInfo.trials,
+                    isTrialAdmin: userInfo.isTrialAdmin || false,
+                    clubName: userInfo.clubName || null,
+                    clubRole: userInfo.clubRole || null,
+                    loggedInAt: new Date().toISOString()
+                };
 
-                    localStorage.setItem('userSession', JSON.stringify(currentUser));
+                localStorage.setItem('userSession', JSON.stringify(currentUser));
 
-                    // Also set userProfile for backward compatibility with other pages
-                    const userProfile = {
-                        name: currentUser.name,
-                        phone: phoneNumber,
-                        email: '',
-                        loggedInAt: currentUser.loggedInAt
-                    };
-                    localStorage.setItem('userProfile', JSON.stringify(userProfile));
+                // Also set userProfile for backward compatibility with other pages
+                const userProfile = {
+                    name: currentUser.name,
+                    phone: phoneNumber,
+                    email: cachedUserData?.epost || '',
+                    loggedInAt: currentUser.loggedInAt
+                };
+                localStorage.setItem('userProfile', JSON.stringify(userProfile));
 
-                    // Set judgeSession if user has judge role
-                    const judgeRole = currentUser.trials?.find(t => t.roles?.some(r => r.type === 'dommer'));
-                    if (judgeRole) {
-                        const judgeInfo = getJudgeByPhone(phoneNumber);
-                        if (judgeInfo) {
-                            const judgeSession = {
-                                name: currentUser.name,
-                                phone: phoneNumber,
-                                assignedParty: judgeInfo.assignedParty,
-                                judgeRole: judgeInfo.judgeRole
-                            };
-                            localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
-                        }
+                // Set judgeSession if user has judge role
+                const judgeRole = currentUser.trials?.find(t => t.roles?.some(r => r.type === 'dommer'));
+                if (judgeRole) {
+                    const judgeInfo = getJudgeByPhone(phoneNumber);
+                    if (judgeInfo) {
+                        const judgeSession = {
+                            name: currentUser.name,
+                            phone: phoneNumber,
+                            assignedParty: judgeInfo.assignedParty,
+                            judgeRole: judgeInfo.judgeRole
+                        };
+                        localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
                     }
-
-                    showDashboard();
-                } else {
-                    document.getElementById('codeError').classList.remove('hidden');
-                    clearCodeInputs();
-                    document.getElementById('code1').focus();
                 }
-            }, 1000);
+
+                showDashboard();
+            } else {
+                document.getElementById('codeError').classList.remove('hidden');
+                clearCodeInputs();
+                document.getElementById('code1').focus();
+            }
         }
 
-        // Look up user info by phone number
-        function getUserByPhone(phone) {
-            let teamData = null;
-            try {
-                const stored = localStorage.getItem('trialTeam');
-                if (stored) teamData = JSON.parse(stored);
-            } catch (e) {}
+        // Cache for API-data
+        let cachedUserData = null;
+        let cachedDommerInfo = null;
 
+        // Look up user info by phone number - henter fra API
+        async function getUserByPhoneAsync(phone) {
             const trials = [];
             let name = null;
+            let isTrialAdmin = false;
+            let clubName = null;
+            let clubRole = null;
 
-            // Current trial info
-            const currentTrial = {
-                id: 'current',
-                name: trialData?.name || 'Høgkjølprøven 2026',
-                location: trialData?.location || 'Høgkjølen, Tynset',
-                startDate: trialData?.start_date || '2026-09-20',
-                endDate: trialData?.end_date || '2026-09-21',
-                isUpcoming: true,
-                roles: [],
-                pendingTasks: []
-            };
-
-            // Check if user is prøveleder
-            if (teamData?.proveleder?.phone?.replace(/\D/g, '') === phone) {
-                name = teamData.proveleder.name;
-                currentTrial.roles.push({
-                    type: 'proveleder',
-                    label: 'Prøveleder',
-                    icon: 'crown',
-                    color: 'forest',
-                    link: 'admin.html'
-                });
-            }
-
-            // Check if user is NKK-rep
-            if (teamData?.nkkrep?.phone?.replace(/\D/g, '') === phone) {
-                name = name || teamData.nkkrep.name;
-                currentTrial.roles.push({
-                    type: 'nkkrep',
-                    label: 'NKK-representant',
-                    icon: 'badge',
-                    color: 'blue',
-                    link: 'nkk-godkjenning.html'
-                });
-            }
-
-            // Check if user is a registered judge
-            const judgeInfo = getJudgeByPhone(phone);
-            if (judgeInfo) {
-                name = name || judgeInfo.name;
-                currentTrial.roles.push({
-                    type: 'dommer',
-                    label: 'Dommer',
-                    description: `Parti: ${judgeInfo.assignedParty?.toUpperCase() || 'Ikke tildelt'}`,
-                    icon: 'clipboard',
-                    color: 'earth',
-                    link: 'dommer-hjem.html'
-                });
-            }
-
-            // Check if user is a participant
-            let userProfile = null;
+            // Hent brukerdata fra API
             try {
-                const stored = localStorage.getItem('userProfile');
-                if (stored) {
-                    userProfile = JSON.parse(stored);
-                    if (userProfile.phone?.replace(/\D/g, '') === phone) {
-                        name = name || userProfile.name;
-                        currentTrial.roles.push({
-                            type: 'deltaker',
-                            label: 'Deltaker',
-                            icon: 'user',
-                            color: 'bark',
-                            link: 'deltaker.html'
-                        });
+                const resp = await fetch(`/api/brukere/${phone}`);
+                if (resp.ok) {
+                    cachedUserData = await resp.json();
+                    name = `${cachedUserData.fornavn} ${cachedUserData.etternavn}`.trim();
+
+                    // Sjekk om bruker har klubb-admin rolle
+                    if (cachedUserData.klubbAdmin) {
+                        isTrialAdmin = true;
+                        clubName = cachedUserData.klubbAdmin.klubb_navn;
+                        clubRole = cachedUserData.klubbAdmin.klubb_rolle;
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error('Kunne ikke hente brukerdata:', e);
+            }
 
-            // Test users for Vinterprøven 2026
-            if (!name && currentTrial.roles.length === 0) {
-                const testUsers = {
-                    '99999999': {
-                        name: 'Chris Niebel',
-                        club: 'Namdal Fuglehundklubb',
-                        roles: [
-                            { type: 'deltaker', label: 'Deltaker', icon: 'user', color: 'bark', link: 'deltaker.html' },
-                            { type: 'dommer', label: 'Dommer', description: 'UK/AK Parti 1', icon: 'clipboard', color: 'earth', link: 'dommer-hjem.html' }
-                        ]
-                    },
-                    '99999998': {
-                        name: 'Gæggen Wågert',
-                        club: 'Malvik Fuglehundklubb',
-                        roles: [
-                            { type: 'deltaker', label: 'Deltaker', icon: 'user', color: 'bark', link: 'deltaker.html' }
-                        ]
-                    },
-                    '99999996': {
-                        name: 'Torstein Møstn',
-                        club: 'Selbu Fuglehundklubb',
-                        roles: [
-                            { type: 'deltaker', label: 'Deltaker', icon: 'user', color: 'bark', link: 'deltaker.html' }
-                        ]
-                    },
-                    '99999995': {
-                        name: 'Marstein Manstein',
-                        club: 'Sørfjeldske Fuglehundklubb',
-                        roles: [
-                            { type: 'nkkrep', label: 'NKK-representant', description: 'Vinterprøven 2026', icon: 'badge', color: 'blue', link: 'nkk-godkjenning.html' },
-                            { type: 'deltaker', label: 'Deltaker', icon: 'user', color: 'bark', link: 'deltaker.html' }
-                        ]
-                    },
-                    '99999994': {
-                        name: 'Roar Storseth',
-                        club: 'Stjørdal Fuglehundklubb',
-                        roles: [
-                            { type: 'deltaker', label: 'Deltaker', icon: 'user', color: 'bark', link: 'deltaker.html' },
-                            { type: 'dommer', label: 'Dommer', description: 'UK/AK Parti 2', icon: 'clipboard', color: 'earth', link: 'dommer-hjem.html' }
-                        ]
-                    },
-                };
-                if (testUsers[phone]) {
-                    name = testUsers[phone].name;
-                    currentTrial.roles = testUsers[phone].roles;
-                    // Update trial name for Vinterprøven
-                    currentTrial.name = 'Vinterprøven 2026';
-                    currentTrial.location = 'Lierne';
-                    currentTrial.startDate = '2026-01-17';
-                    currentTrial.endDate = '2026-01-18';
+            // Hent prøver for brukeren
+            try {
+                const resp = await fetch(`/api/brukere/${phone}/prover`);
+                if (resp.ok) {
+                    const prover = await resp.json();
+
+                    for (const prove of prover) {
+                        const today = new Date();
+                        const startDate = new Date(prove.start_dato);
+                        const isUpcoming = startDate >= today;
+
+                        const trial = {
+                            id: prove.id,
+                            name: prove.navn,
+                            location: prove.sted,
+                            startDate: prove.start_dato,
+                            endDate: prove.slutt_dato,
+                            isUpcoming,
+                            roles: [],
+                            pendingTasks: []
+                        };
+
+                        // Sjekk roller
+                        if (prove.proveleder_telefon === phone) {
+                            trial.roles.push({
+                                type: 'proveleder',
+                                label: 'Prøveleder',
+                                icon: 'crown',
+                                color: 'forest',
+                                link: 'admin.html'
+                            });
+                            isTrialAdmin = true;
+                        }
+
+                        if (prove.nkkrep_telefon === phone) {
+                            trial.roles.push({
+                                type: 'nkkrep',
+                                label: 'NKK-representant',
+                                icon: 'badge',
+                                color: 'blue',
+                                link: 'nkk-godkjenning.html'
+                            });
+                        }
+
+                        if (prove.dommerInfo) {
+                            trial.roles.push({
+                                type: 'dommer',
+                                label: 'Dommer',
+                                description: `Parti: ${prove.dommerInfo.parti?.toUpperCase() || 'Ikke tildelt'}`,
+                                icon: 'clipboard',
+                                color: 'earth',
+                                link: 'dommer-hjem.html'
+                            });
+                            cachedDommerInfo = {
+                                name: name,
+                                assignedParty: prove.dommerInfo.parti,
+                                judgeRole: prove.dommerInfo.dommer_rolle
+                            };
+                        }
+
+                        // Sjekk om bruker er registrert som deltaker (basert på rolle-felt)
+                        if (cachedUserData?.rolle?.includes('deltaker')) {
+                            trial.roles.push({
+                                type: 'deltaker',
+                                label: 'Deltaker',
+                                icon: 'user',
+                                color: 'bark',
+                                link: 'deltaker.html'
+                            });
+                        }
+
+                        // Sjekk om bruker har klubbleder-rolle
+                        if (cachedUserData?.rolle?.includes('klubbleder') && cachedUserData.klubbAdmin) {
+                            trial.roles.push({
+                                type: 'klubbleder',
+                                label: 'Klubbleder',
+                                description: cachedUserData.klubbAdmin.klubb_navn,
+                                icon: 'star',
+                                color: 'amber',
+                                link: 'klubb.html'
+                            });
+                        }
+
+                        if (trial.roles.length > 0) {
+                            trials.push(trial);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente prøver:', e);
+            }
+
+            // Fallback: hvis ingen prøver funnet, men bruker finnes i DB
+            if (trials.length === 0 && cachedUserData) {
+                // Sjekk dommer-info separat
+                try {
+                    const resp = await fetch(`/api/brukere/${phone}/dommer-info`);
+                    if (resp.ok) {
+                        const dommerData = await resp.json();
+                        if (dommerData.isDommer && dommerData.tildelinger?.length > 0) {
+                            for (const tildeling of dommerData.tildelinger) {
+                                const today = new Date();
+                                const startDate = new Date(tildeling.startDato);
+                                const isUpcoming = startDate >= today;
+
+                                trials.push({
+                                    id: tildeling.proveId,
+                                    name: tildeling.proveNavn,
+                                    location: tildeling.proveSted,
+                                    startDate: tildeling.startDato,
+                                    endDate: tildeling.sluttDato,
+                                    isUpcoming,
+                                    roles: [{
+                                        type: 'dommer',
+                                        label: 'Dommer',
+                                        description: `Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
+                                        icon: 'clipboard',
+                                        color: 'earth',
+                                        link: 'dommer-hjem.html'
+                                    }],
+                                    pendingTasks: []
+                                });
+
+                                cachedDommerInfo = {
+                                    name: tildeling.navn,
+                                    assignedParty: tildeling.parti,
+                                    judgeRole: tildeling.dommerRolle
+                                };
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke hente dommer-info:', e);
                 }
             }
 
-            // Monja Aakert har admin-tilgang som klubbleder og prøveleder
-            // (må sjekkes FØR generell clubAdmins-sjekk)
-            if (phone === '99999997') {
-                const vinterproven = {
-                    id: 'vinterproven2026',
-                    name: 'Vinterprøven 2026',
-                    location: 'Lierne',
-                    startDate: '2026-01-17',
-                    endDate: '2026-01-18',
-                    isUpcoming: true,
-                    roles: [
-                        { type: 'proveleder', label: 'Prøveleder', icon: 'crown', color: 'forest', link: 'admin.html' },
-                        { type: 'klubbleder', label: 'Klubbleder', description: 'Namdal Fuglehundklubb', icon: 'star', color: 'amber', link: 'klubb.html' },
-                        { type: 'dommer', label: 'Dommer', description: 'VK Finale', icon: 'clipboard', color: 'earth', link: 'dommer-hjem.html' },
-                        { type: 'deltaker', label: 'Deltaker', icon: 'user', color: 'bark', link: 'deltaker.html' }
-                    ],
-                    pendingTasks: []
-                };
+            return { name, trials, isTrialAdmin, clubName, clubRole };
+        }
+
+        // Synkron wrapper for bakoverkompatibilitet
+        function getUserByPhone(phone) {
+            // Hvis vi har cachet data, bruk det
+            if (cachedUserData) {
+                const name = `${cachedUserData.fornavn} ${cachedUserData.etternavn}`.trim();
                 return {
-                    name: 'Monja Aakert',
-                    isTrialAdmin: true,
-                    clubName: 'Namdal Fuglehundklubb',
-                    clubRole: 'Klubbleder',
-                    trials: [vinterproven]
+                    name,
+                    trials: currentUser?.trials || [],
+                    isTrialAdmin: cachedUserData.klubbAdmin != null,
+                    clubName: cachedUserData.klubbAdmin?.klubb_navn,
+                    clubRole: cachedUserData.klubbAdmin?.klubb_rolle
                 };
             }
-
-            // Sjekk om bruker er klubbadministrator (for andre enn hardkodede testbrukere)
-            const clubAdmins = JSON.parse(localStorage.getItem('clubAdmins') || '{}');
-            if (clubAdmins[phone]) {
-                const clubInfo = clubAdmins[phone];
-                return {
-                    name: clubInfo.name,
-                    isTrialAdmin: true,
-                    clubName: clubInfo.clubName,
-                    clubRole: clubInfo.role,
-                    trials: []
-                };
-            }
-
-            // Add trial if user has roles
-            if (currentTrial.roles.length > 0) {
-                trials.push(currentTrial);
-            }
-
-            return { name, trials };
+            return { name: null, trials: [] };
         }
 
         function getJudgeByPhone(phone) {
-            const registeredJudges = {
-                '99999999': { name: 'Chris Niebel', assignedParty: 'ukak1', judgeRole: null },
-                '99999997': { name: 'Monja Aakert', assignedParty: 'vkfinale', judgeRole: 1 },
-                '99999994': { name: 'Roar Storseth', assignedParty: 'ukak2', judgeRole: null }
-            };
-            return registeredJudges[phone] || null;
+            // Bruk cachet dommer-info fra API
+            return cachedDommerInfo;
         }
 
         function clearCodeInputs() {
@@ -627,10 +630,15 @@
             document.getElementById('userName').textContent = currentUser.name || 'Bruker';
             document.getElementById('userPhone').textContent = '+47 ' + formatPhoneForDisplay(currentUser.phone);
 
-            // Dog count
+            // Dog count - hent fra API
             try {
-                const dogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
-                document.getElementById('dogCount').textContent = dogs.length > 0 ? `${dogs.length} registrert` : 'Ingen registrert';
+                const resp = await fetch(`/api/brukere/${currentUser.phone}/hunder`);
+                if (resp.ok) {
+                    const hunder = await resp.json();
+                    document.getElementById('dogCount').textContent = hunder.length > 0 ? `${hunder.length} registrert` : 'Ingen registrert';
+                } else {
+                    document.getElementById('dogCount').textContent = 'Ingen registrert';
+                }
             } catch (e) {
                 document.getElementById('dogCount').textContent = '-';
             }

@@ -752,7 +752,7 @@
                     </div>
 
                     <!-- Link to public party list page -->
-                    <div id="publicLinkSection" class="hidden mt-6 pt-4 border-t border-neutral-200">
+                    <div id="publicLinkSection" class="hidden mt-6 pt-4 border-t border-neutral-200 space-y-4">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="font-medium text-neutral-800">Del partilister med deltakere</p>
@@ -764,6 +764,16 @@
                                 </svg>
                                 Åpne offentlig side
                             </a>
+                        </div>
+                        <!-- Restructure button -->
+                        <div class="flex items-center justify-between bg-neutral-50 rounded-lg p-3">
+                            <div>
+                                <p class="font-medium text-neutral-700 text-sm">Restrukturér rekkefølge</p>
+                                <p class="text-xs text-neutral-500">Sorterer UK-hunder først i alle UK/AK-partier</p>
+                            </div>
+                            <button onclick="restructurePartyLists()" class="bg-neutral-200 hover:bg-neutral-300 text-neutral-700 px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                                UK først
+                            </button>
                         </div>
                     </div>
                 </section>
@@ -1531,7 +1541,6 @@
 
         function distributeToParties(dogs, numParties, maxPerParty, type, day) {
             const parties = [];
-            const shuffledDogs = [...dogs].sort(() => Math.random() - 0.5); // Shuffle for random distribution
 
             for (let i = 0; i < numParties; i++) {
                 parties.push({
@@ -1543,15 +1552,73 @@
                 });
             }
 
-            // Distribute dogs evenly across parties
-            shuffledDogs.forEach((dog, index) => {
+            // Separate UK and AK dogs
+            const ukDogs = dogs.filter(d => d.klasse === 'UK');
+            const akDogs = dogs.filter(d => d.klasse === 'AK');
+
+            // Shuffle each group separately
+            const shuffledUK = [...ukDogs].sort(() => Math.random() - 0.5);
+            const shuffledAK = [...akDogs].sort(() => Math.random() - 0.5);
+
+            // Distribute UK dogs evenly across parties FIRST
+            shuffledUK.forEach((dog, index) => {
                 const partyIndex = index % numParties;
                 if (parties[partyIndex].dogs.length < maxPerParty) {
-                    parties[partyIndex].dogs.push({...dog, partyOrder: parties[partyIndex].dogs.length + 1});
+                    parties[partyIndex].dogs.push({...dog});
                 }
             });
 
+            // Then distribute AK dogs evenly across parties
+            shuffledAK.forEach((dog, index) => {
+                const partyIndex = index % numParties;
+                if (parties[partyIndex].dogs.length < maxPerParty) {
+                    parties[partyIndex].dogs.push({...dog});
+                }
+            });
+
+            // Update partyOrder for each dog (UK first, then AK)
+            parties.forEach(party => {
+                party.dogs.forEach((dog, idx) => {
+                    dog.partyOrder = idx + 1;
+                });
+            });
+
             return parties;
+        }
+
+        // Function to restructure existing party lists (UK first, then AK)
+        function restructurePartyLists() {
+            if (!partyLists || partyLists.length === 0) {
+                alert('Ingen partilister å restrukturere.');
+                return;
+            }
+
+            partyLists.forEach(party => {
+                if (!party.dogs || party.dogs.length === 0) return;
+
+                // Skip VK parties (they don't have UK/AK split)
+                if (party.type && party.type.includes('VK')) return;
+
+                // Separate UK and AK
+                const ukDogs = party.dogs.filter(d => d.klasse === 'UK');
+                const akDogs = party.dogs.filter(d => d.klasse === 'AK');
+
+                // Combine: UK first, then AK
+                party.dogs = [...ukDogs, ...akDogs];
+
+                // Update partyOrder
+                party.dogs.forEach((dog, idx) => {
+                    dog.partyOrder = idx + 1;
+                });
+            });
+
+            // Save to localStorage
+            localStorage.setItem('partyLists', JSON.stringify(partyLists));
+
+            // Re-render
+            renderPartyLists(partyLists);
+
+            alert('Partilistene er oppdatert! UK-hunder kommer nå først i alle partier.');
         }
 
         // ========================================

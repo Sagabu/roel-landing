@@ -371,11 +371,36 @@
 
                 <!-- File Upload Section -->
                 <section id="opplasting" class="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-                    <h2 class="text-xl font-bold font-rockwell text-neutral-800 mb-2">Last opp deltakerliste</h2>
-                    <p class="text-neutral-500 text-sm mb-6">Last opp en fil med hundeinfo (CSV eller Excel). Systemet fordeler automatisk på partier.</p>
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="text-xl font-bold font-rockwell text-neutral-800">Last opp deltakerliste</h2>
+                        <!-- Collapsed state button (hidden by default) -->
+                        <button id="expandUploadSection" class="hidden bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                            Endre parti-oppsett
+                        </button>
+                    </div>
 
-                    <!-- File format info -->
-                    <div class="bg-warm-50 rounded-lg p-4 mb-6 border border-primary-200">
+                    <!-- Collapsed summary (hidden by default, shown when section is collapsed) -->
+                    <div id="uploadCollapsedSummary" class="hidden mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <div>
+                                <p class="font-medium text-green-800"><span id="collapsedDogCount">0</span> hunder fordelt på partier</p>
+                                <p class="text-sm text-green-600" id="collapsedSummaryDetails">UK/AK: 0 • VK: 0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Expandable content wrapper -->
+                    <div id="uploadExpandableContent">
+                        <p class="text-neutral-500 text-sm mb-6">Last opp en fil med hundeinfo (CSV eller Excel). Systemet fordeler automatisk på partier.</p>
+
+                        <!-- File format info -->
+                        <div class="bg-warm-50 rounded-lg p-4 mb-6 border border-primary-200">
                         <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat:</h4>
                         <p class="text-sm text-warm-600 mb-2">Filen må inneholde følgende kolonner:</p>
                         <div class="flex flex-wrap gap-2">
@@ -387,7 +412,7 @@
                             <span class="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-mono">Klasser</span>
                             <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Epost</span>
                         </div>
-                        <p class="text-xs text-warm-500 mt-2"><strong>Klasser:</strong> UK1, UK2, AK1, AK2, VK (klasse + dag kombinert)</p>
+                        <p class="text-xs text-warm-500 mt-2"><strong>Klasser:</strong> UK1, UK2, AK1, AK2, VK (1-dags/kval+finale)</p>
                         <p class="text-xs text-warm-500 mt-1">Samme hund kan stå på flere rader hvis påmeldt flere dager.</p>
                         <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                             <p class="text-xs text-blue-800 flex items-start gap-2">
@@ -621,6 +646,7 @@
                             </button>
                         </div>
                     </div>
+                    </div><!-- End uploadExpandableContent -->
                 </section>
 
                 <!-- Confirmation Status Section -->
@@ -1900,7 +1926,32 @@
             // Store parsed data in localStorage for other pages
             localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
             localStorage.setItem('uploadSummary', JSON.stringify(uploadSummary));
+
+            // Collapse the upload section
+            collapseUploadSection();
         });
+
+        // Function to collapse upload section
+        function collapseUploadSection() {
+            document.getElementById('uploadExpandableContent').classList.add('hidden');
+            document.getElementById('expandUploadSection').classList.remove('hidden');
+            document.getElementById('uploadCollapsedSummary').classList.remove('hidden');
+
+            // Update collapsed summary
+            document.getElementById('collapsedDogCount').textContent = parsedDogs.length;
+            const ukakTotal = uploadSummary.UKAK1 + uploadSummary.UKAK2 + uploadSummary.UKAK3;
+            document.getElementById('collapsedSummaryDetails').textContent = `UK/AK: ${ukakTotal} • VK: ${uploadSummary.VK}`;
+        }
+
+        // Function to expand upload section
+        function expandUploadSection() {
+            document.getElementById('uploadExpandableContent').classList.remove('hidden');
+            document.getElementById('expandUploadSection').classList.add('hidden');
+            document.getElementById('uploadCollapsedSummary').classList.add('hidden');
+        }
+
+        // Expand button click handler
+        document.getElementById('expandUploadSection').addEventListener('click', expandUploadSection);
 
         // Send SMS button scroll
         document.getElementById('sendSmsBtn').addEventListener('click', () => {
@@ -2164,17 +2215,8 @@
                     }
 
                     if (parsedDogs.length > 0) {
-                        // Show upload preview
-                        document.getElementById('dropZone').classList.add('hidden');
-                        document.getElementById('uploadPreview').classList.remove('hidden');
-                        document.getElementById('fileName').textContent = `${parsedDogs.length} hunder (lagret)`;
-
-                        // Update summary display
-                        updateUploadSummary(parsedDogs);
-
-                        // Hide parti config since we have data
-                        document.getElementById('partiConfigSection').classList.add('hidden');
-                        document.getElementById('dayDistributionInfo').classList.add('hidden');
+                        // Collapse the entire upload section since data is already loaded
+                        collapseUploadSection();
 
                         console.log(`Lastet ${parsedDogs.length} lagrede hunder fra backend`);
                     }

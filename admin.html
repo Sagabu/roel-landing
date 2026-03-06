@@ -982,6 +982,39 @@
 
     <script>
         // ========================================
+        // DIRECT API STORAGE (backup for shim)
+        // ========================================
+        async function saveToServer(key, value) {
+            try {
+                const resp = await fetch(`/api/storage/${encodeURIComponent(key)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: value })
+                });
+                if (resp.ok) {
+                    console.log('[admin] Saved to server:', key);
+                } else {
+                    console.error('[admin] Failed to save:', key, resp.status);
+                }
+            } catch (e) {
+                console.error('[admin] Error saving to server:', key, e);
+            }
+        }
+
+        async function loadFromServer(key) {
+            try {
+                const resp = await fetch(`/api/storage/${encodeURIComponent(key)}`);
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    return value;
+                }
+            } catch (e) {
+                console.error('[admin] Error loading from server:', key, e);
+            }
+            return null;
+        }
+
+        // ========================================
         // PARSED DATA STORAGE
         // ========================================
         let parsedDogs = [];
@@ -1372,9 +1405,11 @@
 
                 updateUploadSummary(parsedDogs);
 
-                // Lagre til localStorage (synkroniseres automatisk til backend via storage-shim)
+                // Lagre til localStorage og server
                 localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
                 localStorage.setItem('uploadSummary', JSON.stringify(uploadSummary));
+                saveToServer('uploadedDogs', parsedDogs);
+                saveToServer('uploadSummary', uploadSummary);
 
                 // Oppdater dashboard-statistikk med det nye antallet
                 updateDashboardStats();
@@ -1455,10 +1490,15 @@
             // Update dashboard statistics
             updateDashboardStats();
 
-            // Store data in localStorage (synced to backend)
+            // Store data in localStorage AND directly to server
             localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
             localStorage.setItem('uploadSummary', JSON.stringify(uploadSummary));
             localStorage.setItem('partyLists', JSON.stringify(partyLists));
+
+            // Direct API calls (backup for shim)
+            saveToServer('uploadedDogs', parsedDogs);
+            saveToServer('uploadSummary', uploadSummary);
+            saveToServer('partyLists', partyLists);
 
             // Skjul parti-konfigurasjon og fordel-knapp etter partiene er fordelt
             document.getElementById('partiConfigSection').classList.add('hidden');
@@ -2009,8 +2049,9 @@
         }
 
         function saveFinaleAndClose(finaleIndex) {
-            // Save to localStorage
+            // Save to localStorage and server
             localStorage.setItem('partyLists', JSON.stringify(partyLists));
+            saveToServer('partyLists', partyLists);
 
             // Update party cards
             renderPartyLists(partyLists);
@@ -2090,6 +2131,7 @@
                 location: document.getElementById('trialLocation').value
             };
             localStorage.setItem('trialDetails', JSON.stringify(trialDetails));
+            saveToServer('trialDetails', trialDetails);
 
             // Update header immediately
             updateTrialHeader(trialDetails);
@@ -2155,42 +2197,29 @@
             if (collapseBtn) collapseBtn.classList.remove('hidden');
         }
 
-        function loadTrialDetails() {
-            const saved = localStorage.getItem('trialDetails');
-            if (saved) {
-                try {
-                    const details = JSON.parse(saved);
-                    if (details.name) document.getElementById('trialName').value = details.name;
-                    if (details.organizer) document.getElementById('organizerName').value = details.organizer;
-                    if (details.startDate) document.getElementById('trialDate').value = details.startDate;
-                    if (details.endDate) document.getElementById('trialEndDate').value = details.endDate;
-                    if (details.meetTime) document.getElementById('trialMeetTime').value = details.meetTime;
-                    if (details.location) document.getElementById('trialLocation').value = details.location;
+        async function loadTrialDetails() {
+            const details = await loadFromServer('trialDetails');
+            if (details) {
+                if (details.name) document.getElementById('trialName').value = details.name;
+                if (details.organizer) document.getElementById('organizerName').value = details.organizer;
+                if (details.startDate) document.getElementById('trialDate').value = details.startDate;
+                if (details.endDate) document.getElementById('trialEndDate').value = details.endDate;
+                if (details.meetTime) document.getElementById('trialMeetTime').value = details.meetTime;
+                if (details.location) document.getElementById('trialLocation').value = details.location;
 
-                    // Update header with saved details
-                    updateTrialHeader(details);
+                // Update header with saved details
+                updateTrialHeader(details);
 
-                    // If we have a name, collapse the section
-                    if (details.name) {
-                        collapseTrialDetails();
-                    }
-                } catch (e) {
-                    console.error('Kunne ikke laste prøvedetaljer:', e);
+                // If we have a name, collapse the section
+                if (details.name) {
+                    collapseTrialDetails();
                 }
+                console.log('[admin] Lastet prøvedetaljer fra server');
             }
         }
 
-        // Helper: run callback on hydration (now or when event fires)
-        function onHydrated(callback) {
-            if (window._storageHydrated) {
-                callback();
-            } else {
-                window.addEventListener('storageHydrated', callback);
-            }
-        }
-
-        // Load trial details when hydration completes
-        onHydrated(loadTrialDetails);
+        // Load trial details when page is ready
+        document.addEventListener('DOMContentLoaded', loadTrialDetails);
 
         // ========================================
         // LOGO UPLOAD
@@ -2464,46 +2493,36 @@
         // ========================================
         // LOAD SAVED DATA ON PAGE LOAD
         // ========================================
-        function loadSavedDogs() {
-            const savedDogs = localStorage.getItem('uploadedDogs');
-            const savedSummary = localStorage.getItem('uploadSummary');
-            const savedPartyLists = localStorage.getItem('partyLists');
+        async function loadSavedDogs() {
+            console.log('[admin] Loading saved data from server...');
 
-            if (savedDogs) {
-                try {
-                    parsedDogs = JSON.parse(savedDogs);
-                    if (savedSummary) {
-                        uploadSummary = JSON.parse(savedSummary);
-                    }
+            // Load directly from server API
+            const serverDogs = await loadFromServer('uploadedDogs');
+            const serverSummary = await loadFromServer('uploadSummary');
+            const serverPartyLists = await loadFromServer('partyLists');
 
-                    console.log(`Lastet ${parsedDogs.length} lagrede hunder fra backend`);
-                } catch (e) {
-                    console.error('Kunne ikke laste lagrede hunder:', e);
+            if (serverDogs && Array.isArray(serverDogs)) {
+                parsedDogs = serverDogs;
+                if (serverSummary) {
+                    uploadSummary = serverSummary;
                 }
+                console.log(`[admin] Lastet ${parsedDogs.length} lagrede hunder fra server`);
             }
 
             // Load and render saved party lists
-            if (savedPartyLists) {
-                try {
-                    partyLists = JSON.parse(savedPartyLists);
-                    if (partyLists.length > 0) {
-                        renderPartyLists(partyLists);
-                        // Only collapse upload section if parties have been distributed
-                        collapseUploadSection();
-                        console.log(`Lastet ${partyLists.length} lagrede partilister fra backend`);
-                    }
-                } catch (e) {
-                    console.error('Kunne ikke laste lagrede partilister:', e);
-                }
+            if (serverPartyLists && Array.isArray(serverPartyLists) && serverPartyLists.length > 0) {
+                partyLists = serverPartyLists;
+                renderPartyLists(partyLists);
+                collapseUploadSection();
+                console.log(`[admin] Lastet ${partyLists.length} lagrede partilister fra server`);
             }
 
-            // If we have dogs but no party lists, show the upload preview with "Fordel på partier" button
+            // If we have dogs but no party lists, show the upload preview
             if (parsedDogs.length > 0 && partyLists.length === 0) {
                 document.getElementById('dropZone').classList.add('hidden');
                 document.getElementById('uploadPreview').classList.remove('hidden');
                 document.getElementById('fileName').textContent = `${parsedDogs.length} hunder (lagret)`;
                 updateUploadSummary(parsedDogs);
-                // Hide parti config
                 document.getElementById('partiConfigSection').classList.add('hidden');
                 document.getElementById('dayDistributionInfo').classList.add('hidden');
             }
@@ -2512,8 +2531,8 @@
             updateDashboardStats();
         }
 
-        // Wait for hydration from storage-shim, then load saved data
-        onHydrated(loadSavedDogs);
+        // Load saved data when page is ready
+        document.addEventListener('DOMContentLoaded', loadSavedDogs);
     </script>
 
     </div><!-- End adminContent -->

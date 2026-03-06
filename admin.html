@@ -2370,16 +2370,18 @@
     </div>
 
     <script>
-        // Logo cropping functionality
+        // Logo cropping functionality - simple approach using transform
         let originalImageData = null;
-        let cropOffsetX = 0;
-        let cropOffsetY = 0;
-        let cropScale = 1;
-        let baseWidth = 0;
-        let baseHeight = 0;
+        let naturalWidth = 0;
+        let naturalHeight = 0;
+        let scale = 1;
+        let translateX = 0;
+        let translateY = 0;
         let isDragging = false;
         let dragStartX = 0;
         let dragStartY = 0;
+        let lastTranslateX = 0;
+        let lastTranslateY = 0;
 
         const CONTAINER_SIZE = 256;
 
@@ -2389,33 +2391,46 @@
             const cropImage = document.getElementById('cropImage');
             const zoomSlider = document.getElementById('cropZoom');
 
-            cropImage.src = imageDataUrl;
-            cropScale = 1;
+            // Reset
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
             zoomSlider.value = 100;
 
             modal.classList.remove('hidden');
 
-            // Wait for image to load then calculate base size and center it
-            cropImage.onload = () => {
-                // Calculate base size so image covers the container
-                const imgRatio = cropImage.naturalWidth / cropImage.naturalHeight;
+            // Load image to get natural dimensions
+            const img = new Image();
+            img.onload = () => {
+                naturalWidth = img.naturalWidth;
+                naturalHeight = img.naturalHeight;
 
+                // Set image source and initial size
+                cropImage.src = imageDataUrl;
+
+                // Calculate initial scale so shortest side fits container
+                const imgRatio = naturalWidth / naturalHeight;
                 if (imgRatio > 1) {
-                    // Landscape: height fits container, width is larger
-                    baseHeight = CONTAINER_SIZE;
-                    baseWidth = CONTAINER_SIZE * imgRatio;
+                    // Landscape - fit height, scale = container / height
+                    scale = CONTAINER_SIZE / naturalHeight;
                 } else {
-                    // Portrait or square: width fits container, height is larger
-                    baseWidth = CONTAINER_SIZE;
-                    baseHeight = CONTAINER_SIZE / imgRatio;
+                    // Portrait or square - fit width
+                    scale = CONTAINER_SIZE / naturalWidth;
                 }
 
                 // Center the image
-                cropOffsetX = (CONTAINER_SIZE - baseWidth) / 2;
-                cropOffsetY = (CONTAINER_SIZE - baseHeight) / 2;
+                const displayWidth = naturalWidth * scale;
+                const displayHeight = naturalHeight * scale;
+                translateX = (CONTAINER_SIZE - displayWidth) / 2;
+                translateY = (CONTAINER_SIZE - displayHeight) / 2;
+
+                zoomSlider.min = Math.round(scale * 100);
+                zoomSlider.max = Math.round(scale * 400);
+                zoomSlider.value = Math.round(scale * 100);
 
                 updateCropPreview();
             };
+            img.src = imageDataUrl;
         }
 
         function closeCropModal() {
@@ -2424,51 +2439,54 @@
 
         function updateCropPreview() {
             const cropImage = document.getElementById('cropImage');
+            const displayWidth = naturalWidth * scale;
+            const displayHeight = naturalHeight * scale;
 
-            const scaledWidth = baseWidth * cropScale;
-            const scaledHeight = baseHeight * cropScale;
-
-            cropImage.style.width = scaledWidth + 'px';
-            cropImage.style.height = scaledHeight + 'px';
-            cropImage.style.left = cropOffsetX + 'px';
-            cropImage.style.top = cropOffsetY + 'px';
+            cropImage.style.width = displayWidth + 'px';
+            cropImage.style.height = displayHeight + 'px';
+            cropImage.style.left = translateX + 'px';
+            cropImage.style.top = translateY + 'px';
         }
 
         document.getElementById('cropZoom').addEventListener('input', (e) => {
-            const oldScale = cropScale;
-            cropScale = parseInt(e.target.value) / 100;
+            const newScale = parseInt(e.target.value) / 100;
 
-            // Adjust offset to zoom from center
-            const oldWidth = baseWidth * oldScale;
-            const oldHeight = baseHeight * oldScale;
-            const newWidth = baseWidth * cropScale;
-            const newHeight = baseHeight * cropScale;
+            // Zoom from center of container
+            const oldDisplayWidth = naturalWidth * scale;
+            const oldDisplayHeight = naturalHeight * scale;
+            const newDisplayWidth = naturalWidth * newScale;
+            const newDisplayHeight = naturalHeight * newScale;
 
-            // Keep the center point in the same position
+            // Adjust translate to keep center point
             const centerX = CONTAINER_SIZE / 2;
             const centerY = CONTAINER_SIZE / 2;
 
-            const oldCenterOffsetX = centerX - cropOffsetX;
-            const oldCenterOffsetY = centerY - cropOffsetY;
+            // Current image center relative to container
+            const imgCenterX = translateX + oldDisplayWidth / 2;
+            const imgCenterY = translateY + oldDisplayHeight / 2;
 
-            cropOffsetX = centerX - (oldCenterOffsetX * (newWidth / oldWidth));
-            cropOffsetY = centerY - (oldCenterOffsetY * (newHeight / oldHeight));
+            // Keep the same relative position
+            translateX = centerX - (centerX - translateX) * (newDisplayWidth / oldDisplayWidth);
+            translateY = centerY - (centerY - translateY) * (newDisplayHeight / oldDisplayHeight);
 
+            scale = newScale;
             updateCropPreview();
         });
 
         // Drag functionality
         document.getElementById('cropImage').addEventListener('mousedown', (e) => {
             isDragging = true;
-            dragStartX = e.clientX - cropOffsetX;
-            dragStartY = e.clientY - cropOffsetY;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            lastTranslateX = translateX;
+            lastTranslateY = translateY;
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
-            cropOffsetX = e.clientX - dragStartX;
-            cropOffsetY = e.clientY - dragStartY;
+            translateX = lastTranslateX + (e.clientX - dragStartX);
+            translateY = lastTranslateY + (e.clientY - dragStartY);
             updateCropPreview();
         });
 
@@ -2480,16 +2498,18 @@
         document.getElementById('cropImage').addEventListener('touchstart', (e) => {
             isDragging = true;
             const touch = e.touches[0];
-            dragStartX = touch.clientX - cropOffsetX;
-            dragStartY = touch.clientY - cropOffsetY;
+            dragStartX = touch.clientX;
+            dragStartY = touch.clientY;
+            lastTranslateX = translateX;
+            lastTranslateY = translateY;
             e.preventDefault();
         });
 
         document.addEventListener('touchmove', (e) => {
             if (!isDragging) return;
             const touch = e.touches[0];
-            cropOffsetX = touch.clientX - dragStartX;
-            cropOffsetY = touch.clientY - dragStartY;
+            translateX = lastTranslateX + (touch.clientX - dragStartX);
+            translateY = lastTranslateY + (touch.clientY - dragStartY);
             updateCropPreview();
         });
 
@@ -2506,17 +2526,18 @@
             canvas.width = outputSize;
             canvas.height = outputSize;
 
-            // Current displayed size
-            const displayedWidth = baseWidth * cropScale;
-            const displayedHeight = baseHeight * cropScale;
+            // Current displayed size (using the new variables)
+            const displayedWidth = naturalWidth * scale;
+            const displayedHeight = naturalHeight * scale;
 
             // Scale factors from displayed size to natural size
             const scaleX = cropImage.naturalWidth / displayedWidth;
             const scaleY = cropImage.naturalHeight / displayedHeight;
 
             // Source coordinates in natural image pixels
-            const sx = -cropOffsetX * scaleX;
-            const sy = -cropOffsetY * scaleY;
+            // translateX/Y are the offset of the image from container origin
+            const sx = -translateX * scaleX;
+            const sy = -translateY * scaleY;
             const sw = CONTAINER_SIZE * scaleX;
             const sh = CONTAINER_SIZE * scaleY;
 

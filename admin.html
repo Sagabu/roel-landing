@@ -371,16 +371,28 @@
 
                 <!-- Trial Details (Step 1) -->
                 <section id="innstillinger" class="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
-                    <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center justify-between">
                         <div class="flex items-center gap-3">
                             <span class="flex items-center justify-center w-8 h-8 rounded-full bg-warm-500 text-white font-bold text-sm">1</span>
                             <h2 class="text-xl font-bold font-rockwell text-neutral-800">Prøveinformasjon</h2>
                         </div>
-                        <button onclick="saveTrialDetails()" class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition">Lagre</button>
+                        <div class="flex gap-2">
+                            <!-- Expand button (shown when collapsed) -->
+                            <button id="expandTrialDetails" onclick="expandTrialDetails()" class="hidden bg-neutral-100 hover:bg-neutral-200 text-neutral-700 px-4 py-2 rounded-lg font-medium text-sm transition flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                </svg>
+                                Rediger
+                            </button>
+                            <!-- Save button (shown when expanded) -->
+                            <button id="collapseTrialDetails" onclick="saveTrialDetails()" class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition">Lagre</button>
+                        </div>
                     </div>
 
-                    <!-- Logo og grunninfo -->
-                    <div class="flex flex-col md:flex-row gap-6 mb-6 pb-6 border-b border-neutral-200">
+                    <!-- Collapsible content -->
+                    <div id="trialDetailsContent" class="mt-6">
+                        <!-- Logo og grunninfo -->
+                        <div class="flex flex-col md:flex-row gap-6 mb-6 pb-6 border-b border-neutral-200">
                         <!-- Logo upload -->
                         <div class="shrink-0">
                             <label class="block text-sm font-medium text-neutral-500 mb-2">Klubblogo (vises på PDF)</label>
@@ -427,6 +439,7 @@
                             <input type="text" id="trialLocation" value="" placeholder="F.eks. Namsos, Trøndelag" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                     </div>
+                    </div><!-- End trialDetailsContent -->
                 </section>
 
                 <!-- File Upload Section (Step 2) -->
@@ -2220,17 +2233,62 @@
             };
             localStorage.setItem('trialDetails', JSON.stringify(trialDetails));
 
-            // Show confirmation
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = 'Lagret!';
-            btn.classList.add('bg-green-500');
-            btn.classList.remove('bg-warm-500', 'hover:bg-warm-600');
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.classList.remove('bg-green-500');
-                btn.classList.add('bg-warm-500', 'hover:bg-warm-600');
-            }, 1500);
+            // Update header immediately
+            updateTrialHeader(trialDetails);
+
+            // Collapse the trial details section
+            collapseTrialDetails();
+        }
+
+        function updateTrialHeader(details) {
+            const headerName = document.getElementById('headerTrialName');
+            const headerInfo = document.getElementById('headerTrialInfo');
+
+            if (details.name) {
+                headerName.textContent = details.name;
+
+                // Build info string
+                let infoText = '';
+                if (details.startDate) {
+                    const startDate = new Date(details.startDate);
+                    const options = { day: 'numeric', month: 'long', year: 'numeric' };
+                    infoText = startDate.toLocaleDateString('no-NO', options);
+
+                    if (details.endDate && details.endDate !== details.startDate) {
+                        const endDate = new Date(details.endDate);
+                        infoText = `${startDate.getDate()}.-${endDate.toLocaleDateString('no-NO', options)}`;
+                    }
+                }
+                if (details.location) {
+                    infoText += infoText ? ` • ${details.location}` : details.location;
+                }
+                if (details.organizer) {
+                    infoText += infoText ? ` • ${details.organizer}` : details.organizer;
+                }
+
+                headerInfo.textContent = infoText || 'Prøveinformasjon lagret';
+            }
+        }
+
+        function collapseTrialDetails() {
+            const section = document.getElementById('innstillinger');
+            const content = document.getElementById('trialDetailsContent');
+            const expandBtn = document.getElementById('expandTrialDetails');
+            const collapseBtn = document.getElementById('collapseTrialDetails');
+
+            if (content) content.classList.add('hidden');
+            if (expandBtn) expandBtn.classList.remove('hidden');
+            if (collapseBtn) collapseBtn.classList.add('hidden');
+        }
+
+        function expandTrialDetails() {
+            const content = document.getElementById('trialDetailsContent');
+            const expandBtn = document.getElementById('expandTrialDetails');
+            const collapseBtn = document.getElementById('collapseTrialDetails');
+
+            if (content) content.classList.remove('hidden');
+            if (expandBtn) expandBtn.classList.add('hidden');
+            if (collapseBtn) collapseBtn.classList.remove('hidden');
         }
 
         function loadTrialDetails() {
@@ -2244,6 +2302,14 @@
                     if (details.endDate) document.getElementById('trialEndDate').value = details.endDate;
                     if (details.meetTime) document.getElementById('trialMeetTime').value = details.meetTime;
                     if (details.location) document.getElementById('trialLocation').value = details.location;
+
+                    // Update header with saved details
+                    updateTrialHeader(details);
+
+                    // If we have a name, collapse the section
+                    if (details.name) {
+                        collapseTrialDetails();
+                    }
                 } catch (e) {
                     console.error('Kunne ikke laste prøvedetaljer:', e);
                 }

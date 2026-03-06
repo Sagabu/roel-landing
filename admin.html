@@ -372,7 +372,7 @@
                 <!-- File Upload Section -->
                 <section id="opplasting" class="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
                     <div class="flex items-center justify-between mb-2">
-                        <h2 class="text-xl font-bold font-rockwell text-neutral-800">Last opp deltakerliste</h2>
+                        <h2 id="uploadSectionTitle" class="text-xl font-bold font-rockwell text-neutral-800">Last opp deltakerliste</h2>
                         <!-- Collapsed state button (hidden by default) -->
                         <button id="expandUploadSection" class="hidden bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -649,7 +649,49 @@
                     </div><!-- End uploadExpandableContent -->
                 </section>
 
-                <!-- Confirmation Status Section -->
+                <!-- Party Lists Section (moved up, before bekreftelser) -->
+                <section id="partilister" class="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-bold font-rockwell text-neutral-800">Partilister</h2>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="partyListsEmptyState" class="py-8 text-center">
+                        <svg class="w-12 h-12 text-neutral-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        <p class="text-neutral-500 mb-1">Ingen partilister opprettet</p>
+                        <p class="text-neutral-400 text-sm">Trykk "Fordel på partier" for å opprette partilister</p>
+                    </div>
+
+                    <!-- Party cards grid (4 columns) -->
+                    <div id="partyCardsGrid" class="hidden grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <!-- Party cards will be rendered here -->
+                    </div>
+
+                    <!-- Expanded party view (shown when a card is clicked) -->
+                    <div id="expandedPartyView" class="hidden mt-4">
+                        <!-- Expanded party content rendered here -->
+                    </div>
+
+                    <!-- Link to public party list page -->
+                    <div id="publicLinkSection" class="hidden mt-6 pt-4 border-t border-neutral-200">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="font-medium text-neutral-800">Del partilister med deltakere</p>
+                                <p class="text-sm text-neutral-500">Deltakere kan se hvem de går sammen med</p>
+                            </div>
+                            <a href="/partilister.html" target="_blank" class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                Åpne offentlig side
+                            </a>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Confirmation Status Section (moved down) -->
                 <section id="bekreftelser" class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
                     <div class="px-6 py-4 bg-neutral-50 border-b border-neutral-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
@@ -760,28 +802,6 @@
                         </div>
                     </div>
                 </section>
-
-                <!-- Party Lists -->
-                <section id="partilister" class="space-y-6">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-xl font-bold font-rockwell text-neutral-800">Partilister</h2>
-                    </div>
-
-                    <!-- Empty state -->
-                    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">
-                        <svg class="w-16 h-16 text-neutral-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-                        </svg>
-                        <p class="text-neutral-500 text-lg mb-2">Ingen partilister opprettet</p>
-                        <p class="text-neutral-400 text-sm">Last opp deltakere for å opprette partilister automatisk</p>
-                    </div>
-
-                    <!-- Container for dynamically generated party lists -->
-                    <div id="partyListsContainer" class="space-y-6">
-                        <!-- Party lists will be rendered here by JavaScript -->
-                    </div>
-                </section>
-
 
                 <!-- Waitlist -->
                 <section id="venteliste" class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
@@ -2028,87 +2048,140 @@
         // ========================================
         // RENDER PARTY LISTS
         // ========================================
+        let currentExpandedParty = null;
+
         function renderPartyLists(parties) {
-            const container = document.getElementById('partyListsContainer');
-            const emptyState = container.previousElementSibling; // The empty state div
+            const emptyState = document.getElementById('partyListsEmptyState');
+            const cardsGrid = document.getElementById('partyCardsGrid');
+            const expandedView = document.getElementById('expandedPartyView');
+            const publicLink = document.getElementById('publicLinkSection');
 
             if (parties.length === 0) {
-                container.innerHTML = '';
                 emptyState.classList.remove('hidden');
+                cardsGrid.classList.add('hidden');
+                expandedView.classList.add('hidden');
+                publicLink.classList.add('hidden');
                 return;
             }
 
             emptyState.classList.add('hidden');
+            cardsGrid.classList.remove('hidden');
+            publicLink.classList.remove('hidden');
+
+            // Update section title
+            document.getElementById('uploadSectionTitle').textContent = 'Påmeldingslisten ferdig opplastet';
 
             const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
-            const typeColors = {
-                'UK/AK': 'warm',
-                'VK': 'amber',
-                'VK Kval': 'amber',
-                'VK Finale': 'yellow'
-            };
 
-            let html = '';
-
+            // Render party cards
+            let cardsHtml = '';
             parties.forEach((party, index) => {
-                const colorClass = typeColors[party.type] || 'neutral';
-                const headerBg = party.type.includes('VK') ? 'bg-amber-50' : 'bg-warm-50';
-                const confirmedCount = party.dogs.filter(d => d.confirmed).length;
+                const isVK = party.type.includes('VK');
+                const bgColor = isVK ? 'bg-amber-100 hover:bg-amber-200 border-amber-300' : 'bg-warm-100 hover:bg-warm-200 border-warm-300';
+                const textColor = isVK ? 'text-amber-800' : 'text-warm-800';
+                const isActive = currentExpandedParty === index;
+                const activeClass = isActive ? 'ring-2 ring-warm-500 ring-offset-2' : '';
 
-                html += `
-                <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" data-party-index="${index}">
-                    <div class="px-6 py-4 ${headerBg} border-b border-neutral-200 flex items-center justify-between">
-                        <div>
-                            <div class="flex items-center gap-2 mb-1">
-                                <h3 class="font-semibold text-neutral-800 font-rockwell">${party.type} Parti ${party.partyNumber}</h3>
-                                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">${dayNames[party.day]}</span>
-                            </div>
-                            <p class="text-sm text-neutral-500">${party.dogs.length} av ${party.maxDogs} plasser fylt</p>
-                        </div>
-                        <div class="flex gap-2">
-                            <button class="text-warm-500 hover:text-warm-600 p-2" title="Rediger" onclick="editParty(${index})">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead>
-                                <tr class="border-b border-neutral-200 bg-neutral-50">
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Nr</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Hund</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Reg.nr</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Rase</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Fører</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Klasse</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${party.dogs.map((dog, dogIndex) => `
-                                <tr class="border-b border-neutral-100 hover:bg-warm-50/50">
-                                    <td class="py-3 px-4 font-medium">${dogIndex + 1}</td>
-                                    <td class="py-3 px-4">${dog.navn}</td>
-                                    <td class="py-3 px-4 text-neutral-500 text-xs font-mono">${dog.regnr}</td>
-                                    <td class="py-3 px-4 text-neutral-500">${dog.rase}</td>
-                                    <td class="py-3 px-4">${dog.forer || dog.eier}</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-100 text-neutral-700 rounded text-xs">${dog.klasse}</span></td>
-                                </tr>
-                                `).join('')}
-                                ${party.dogs.length === 0 ? `
-                                <tr>
-                                    <td colspan="6" class="py-8 text-center text-neutral-400">Ingen hunder i dette partiet ennå</td>
-                                </tr>
-                                ` : ''}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                cardsHtml += `
+                <button onclick="togglePartyView(${index})"
+                    class="p-4 rounded-xl border-2 ${bgColor} ${activeClass} transition-all text-left">
+                    <h3 class="font-semibold ${textColor} font-rockwell">${party.type} ${party.partyNumber}</h3>
+                    <p class="text-sm ${textColor} opacity-75">${dayNames[party.day]}</p>
+                    <p class="text-xs ${textColor} opacity-60 mt-1">${party.dogs.length} hunder</p>
+                </button>
                 `;
             });
+            cardsGrid.innerHTML = cardsHtml;
+        }
 
-            container.innerHTML = html;
+        function togglePartyView(index) {
+            const expandedView = document.getElementById('expandedPartyView');
+            const cardsGrid = document.getElementById('partyCardsGrid');
+
+            // If clicking on already expanded party, close it
+            if (currentExpandedParty === index) {
+                expandedView.classList.add('hidden');
+                currentExpandedParty = null;
+                renderPartyLists(partyLists); // Re-render cards to remove active state
+                return;
+            }
+
+            currentExpandedParty = index;
+            const party = partyLists[index];
+            const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
+            const isVK = party.type.includes('VK');
+            const headerBg = isVK ? 'bg-amber-50' : 'bg-warm-50';
+
+            const html = `
+            <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" id="partyTableView">
+                <div class="px-6 py-4 ${headerBg} border-b border-neutral-200 flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-semibold text-neutral-800 font-rockwell">${party.type} Parti ${party.partyNumber}</h3>
+                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">${dayNames[party.day]}</span>
+                        </div>
+                        <p class="text-sm text-neutral-500">${party.dogs.length} av ${party.maxDogs} plasser</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="savePartyAsImage(${index})" class="bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            Lagre bilde
+                        </button>
+                        <button onclick="togglePartyView(${index})" class="text-neutral-500 hover:text-neutral-700 p-2" title="Lukk">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-neutral-200 bg-neutral-50">
+                                <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Nr</th>
+                                <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Hund</th>
+                                <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Reg.nr</th>
+                                <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Rase</th>
+                                <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Fører</th>
+                                <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Klasse</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${party.dogs.map((dog, dogIndex) => `
+                            <tr class="border-b border-neutral-100 hover:bg-warm-50/50">
+                                <td class="py-3 px-4 font-medium">${dogIndex + 1}</td>
+                                <td class="py-3 px-4">${dog.navn}</td>
+                                <td class="py-3 px-4 text-neutral-500 text-xs font-mono">${dog.regnr}</td>
+                                <td class="py-3 px-4 text-neutral-500">${dog.rase}</td>
+                                <td class="py-3 px-4">${dog.forer || dog.eier}</td>
+                                <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-100 text-neutral-700 rounded text-xs">${dog.klasse}</span></td>
+                            </tr>
+                            `).join('')}
+                            ${party.dogs.length === 0 ? `
+                            <tr>
+                                <td colspan="6" class="py-8 text-center text-neutral-400">Ingen hunder i dette partiet ennå</td>
+                            </tr>
+                            ` : ''}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            `;
+
+            expandedView.innerHTML = html;
+            expandedView.classList.remove('hidden');
+
+            // Re-render cards to show active state
+            renderPartyLists(partyLists);
+
+            // Scroll to expanded view
+            expandedView.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function savePartyAsImage(index) {
+            alert('Lagre som bilde-funksjon kommer snart! Du kan bruke skjermbildefunksjonen på telefonen i mellomtiden.');
         }
 
         function editParty(index) {
@@ -2121,6 +2194,9 @@
             document.getElementById('expandUploadSection').classList.remove('hidden');
             document.getElementById('uploadCollapsedSummary').classList.remove('hidden');
 
+            // Update section title
+            document.getElementById('uploadSectionTitle').textContent = 'Påmeldingslisten ferdig opplastet';
+
             // Update collapsed summary
             document.getElementById('collapsedDogCount').textContent = parsedDogs.length;
             const ukakTotal = uploadSummary.UKAK1 + uploadSummary.UKAK2 + uploadSummary.UKAK3;
@@ -2132,6 +2208,8 @@
             document.getElementById('uploadExpandableContent').classList.remove('hidden');
             document.getElementById('expandUploadSection').classList.add('hidden');
             document.getElementById('uploadCollapsedSummary').classList.add('hidden');
+            // Reset title when expanding
+            document.getElementById('uploadSectionTitle').textContent = 'Last opp deltakerliste';
         }
 
         // Expand button click handler

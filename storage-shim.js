@@ -76,6 +76,7 @@
       // Server down — localStorage still works offline
     }
     // Signal that hydration is complete
+    window._storageHydrated = true;
     window.dispatchEvent(new CustomEvent('storageHydrated'));
   }
 

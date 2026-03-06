@@ -12,7 +12,8 @@
   const API = '/api/storage';
   const SYNCED_KEYS = [
     'userProfile', 'userDogs', 'userTrials', 'userMandates',
-    'judgeSession', 'clubLogo'
+    'judgeSession', 'clubLogo',
+    'uploadedDogs', 'uploadSummary', 'partiConfig'
   ];
   // judgeData_* keys are dynamic (per party)
   function isSyncedKey(key) {

@@ -376,7 +376,7 @@
 
                     <!-- File format info -->
                     <div class="bg-warm-50 rounded-lg p-4 mb-6 border border-primary-200">
-                        <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat (DogWeb-eksport):</h4>
+                        <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat:</h4>
                         <p class="text-sm text-warm-600 mb-2">Filen må inneholde følgende kolonner:</p>
                         <div class="flex flex-wrap gap-2">
                             <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Regnr</span>
@@ -1588,7 +1588,7 @@
                 if (headers[headers.length - 1] === '') headers.pop();
             }
 
-            // Find column indices - match actual column names from DogWeb export
+            // Find column indices
             const colMap = {
                 regnr: headers.findIndex(h => h === 'regnr' || h.includes('regnr')),
                 navn: headers.findIndex(h => h === 'navn' || (h.includes('navn') && !h.includes('eier') && !h.includes('fører'))),
@@ -1804,6 +1804,10 @@
                 }
 
                 updateUploadSummary(parsedDogs);
+
+                // Lagre til localStorage (synkroniseres automatisk til backend via storage-shim)
+                localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
+                localStorage.setItem('uploadSummary', JSON.stringify(uploadSummary));
             };
 
             reader.onerror = () => {
@@ -1862,9 +1866,16 @@
             dropZone.classList.remove('hidden');
             uploadPreview.classList.add('hidden');
             document.getElementById('uploadSummary').classList.add('hidden');
+            document.getElementById('partiConfigSection').classList.remove('hidden');
+            document.getElementById('dayDistributionInfo').classList.remove('hidden');
             hideUploadErrors();
             fileInput.value = '';
             parsedDogs = [];
+            uploadSummary = { UKAK1: 0, UKAK2: 0, UKAK3: 0, VK: 0, total: 0 };
+
+            // Fjern lagrede data
+            localStorage.removeItem('uploadedDogs');
+            localStorage.removeItem('uploadSummary');
         });
 
         document.getElementById('processUpload').addEventListener('click', () => {
@@ -2137,6 +2148,44 @@
             const fileName = `${trialName.replace(/\s+/g, '_')}_Partilister.pdf`;
             doc.save(fileName);
         }
+
+        // ========================================
+        // LOAD SAVED DATA ON PAGE LOAD
+        // ========================================
+        function loadSavedDogs() {
+            const savedDogs = localStorage.getItem('uploadedDogs');
+            const savedSummary = localStorage.getItem('uploadSummary');
+
+            if (savedDogs) {
+                try {
+                    parsedDogs = JSON.parse(savedDogs);
+                    if (savedSummary) {
+                        uploadSummary = JSON.parse(savedSummary);
+                    }
+
+                    if (parsedDogs.length > 0) {
+                        // Show upload preview
+                        document.getElementById('dropZone').classList.add('hidden');
+                        document.getElementById('uploadPreview').classList.remove('hidden');
+                        document.getElementById('fileName').textContent = `${parsedDogs.length} hunder (lagret)`;
+
+                        // Update summary display
+                        updateUploadSummary(parsedDogs);
+
+                        // Hide parti config since we have data
+                        document.getElementById('partiConfigSection').classList.add('hidden');
+                        document.getElementById('dayDistributionInfo').classList.add('hidden');
+
+                        console.log(`Lastet ${parsedDogs.length} lagrede hunder fra backend`);
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke laste lagrede hunder:', e);
+                }
+            }
+        }
+
+        // Wait for hydration from storage-shim, then load saved data
+        setTimeout(loadSavedDogs, 500);
     </script>
 
     </div><!-- End adminContent -->

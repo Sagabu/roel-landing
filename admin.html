@@ -752,7 +752,7 @@
                     </div>
 
                     <!-- Link to public party list page -->
-                    <div id="publicLinkSection" class="hidden mt-6 pt-4 border-t border-neutral-200 space-y-4">
+                    <div id="publicLinkSection" class="hidden mt-6 pt-4 border-t border-neutral-200">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="font-medium text-neutral-800">Del partilister med deltakere</p>
@@ -764,16 +764,6 @@
                                 </svg>
                                 Åpne offentlig side
                             </a>
-                        </div>
-                        <!-- Restructure button -->
-                        <div class="flex items-center justify-between bg-neutral-50 rounded-lg p-3">
-                            <div>
-                                <p class="font-medium text-neutral-700 text-sm">Restrukturér rekkefølge</p>
-                                <p class="text-xs text-neutral-500">Sorterer UK-hunder først i alle UK/AK-partier</p>
-                            </div>
-                            <button onclick="restructurePartyLists()" class="bg-neutral-200 hover:bg-neutral-300 text-neutral-700 px-3 py-1.5 rounded-lg text-sm font-medium transition">
-                                UK først
-                            </button>
                         </div>
                     </div>
                 </section>
@@ -1673,46 +1663,6 @@
             }
 
             return result;
-        }
-
-        // Function to restructure existing party lists (UK first, then AK, owners spread out)
-        function restructurePartyLists() {
-            if (!partyLists || partyLists.length === 0) {
-                alert('Ingen partilister å restrukturere.');
-                return;
-            }
-
-            partyLists.forEach(party => {
-                if (!party.dogs || party.dogs.length === 0) return;
-
-                // Skip VK Finale (empty until finalists selected)
-                if (party.isFinale) return;
-
-                // Separate by class
-                const ukDogs = party.dogs.filter(d => d.klasse === 'UK');
-                const akDogs = party.dogs.filter(d => d.klasse === 'AK');
-                const otherDogs = party.dogs.filter(d => d.klasse !== 'UK' && d.klasse !== 'AK');
-
-                // UK first, then AK, then others - with same owner's dogs spread out
-                party.dogs = [
-                    ...spreadOutByOwner(ukDogs),
-                    ...spreadOutByOwner(akDogs),
-                    ...spreadOutByOwner(otherDogs)
-                ];
-
-                // Update partyOrder
-                party.dogs.forEach((dog, idx) => {
-                    dog.partyOrder = idx + 1;
-                });
-            });
-
-            // Save to localStorage
-            localStorage.setItem('partyLists', JSON.stringify(partyLists));
-
-            // Re-render
-            renderPartyLists(partyLists);
-
-            alert('Partilistene er oppdatert! UK-hunder først, gruppert etter eier.');
         }
 
         // ========================================

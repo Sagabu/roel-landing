@@ -883,7 +883,7 @@
             }
         }
 
-        function approveCritique() {
+        async function approveCritique() {
             if (!currentReview) return;
 
             const { partyId, dogId, dog, dogs } = currentReview;
@@ -894,11 +894,69 @@
 
             localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
 
+            // Also update partyLists with approved prize
+            await updatePartyListsWithPrize(partyId, dog);
+
             hideReview();
             render();
 
             // Show success toast
             showToast('Kritikken er godkjent!', 'success');
+        }
+
+        // Update partyLists with approved prize for the dog
+        async function updatePartyListsWithPrize(partyId, approvedDog) {
+            try {
+                // Load partyLists from server
+                let partyLists = [];
+                const resp = await fetch('/api/storage/partyLists');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    partyLists = value || [];
+                } else {
+                    const saved = localStorage.getItem('partyLists');
+                    if (saved) partyLists = JSON.parse(saved);
+                }
+
+                if (!partyLists || partyLists.length === 0) return;
+
+                // Find the dog in partyLists by regnr or name
+                let found = false;
+                partyLists.forEach(party => {
+                    if (!party.dogs) return;
+                    party.dogs.forEach(dog => {
+                        // Match by registration number or name
+                        const matchByRegnr = approvedDog.regNr && dog.regnr === approvedDog.regNr;
+                        const matchByName = dog.navn === approvedDog.name;
+
+                        if (matchByRegnr || matchByName) {
+                            // Update dog with approved prize
+                            dog.approvedPrize = approvedDog.prize;
+                            dog.approvedAt = approvedDog.approvedAt;
+                            dog.approvedBy = approvedDog.approvedBy;
+                            dog.critiqueApproved = true;
+                            found = true;
+                            console.log('[NKK] Updated dog with prize:', dog.navn, approvedDog.prize);
+                        }
+                    });
+                });
+
+                if (found) {
+                    // Save updated partyLists
+                    localStorage.setItem('partyLists', JSON.stringify(partyLists));
+
+                    // Also save to server
+                    await fetch('/api/storage/partyLists', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: partyLists })
+                    });
+
+                    console.log('[NKK] Saved partyLists with approved prize');
+                }
+            } catch (e) {
+                console.error('[NKK] Error updating partyLists:', e);
+            }
         }
 
         function returnCritique() {

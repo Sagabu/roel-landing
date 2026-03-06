@@ -588,7 +588,7 @@
         }
 
         // Check session and initialize on page load
-        (function initFromSession() {
+        (async function initFromSession() {
             const session = localStorage.getItem('judgeSession');
             if (!session) {
                 window.location.href = 'dommer.html';
@@ -600,26 +600,112 @@
             // Get party from URL or session
             const urlParams = new URLSearchParams(window.location.search);
             const partyFromUrl = urlParams.get('party');
+            const partyIndexFromUrl = urlParams.get('index');
             const party = partyFromUrl || sessionData.selectedParty;
 
-            if (!party || !PARTIES[party]) {
+            // Set state from session
+            state.judgeName = sessionData.name || 'Dommer';
+            state.loggedIn = true;
+
+            // Check if this is a new-style party (party_X format from partyLists)
+            if (party && party.startsWith('party_')) {
+                // Load from partyLists
+                await initFromPartyLists(party, partyIndexFromUrl, sessionData);
+            } else if (party && PARTIES[party]) {
+                // Old-style hardcoded party
+                state.judgeRole = sessionData.judgeRole;
+                state.party = party;
+                state.partyConfig = PARTIES[party];
+
+                const baseDogs = SAMPLE_DOGS[party] || generateSampleDogs(party, state.partyConfig.dogCount);
+                state.dogs = baseDogs.map(initDog);
+
+                // Load saved data if exists
+                const saved = localStorage.getItem('judgeData_' + party);
+                if (saved) {
+                    try {
+                        const savedDogs = JSON.parse(saved);
+                        state.dogs = savedDogs;
+                    } catch (e) {}
+                }
+
+                // Update UI
+                updateUIColors();
+                document.getElementById('headerPartyName').textContent = state.partyConfig.name;
+
+                const isVK = state.party.startsWith('vk');
+                if (isVK && state.judgeRole) {
+                    document.getElementById('headerJudgeName').textContent = `Dommer ${state.judgeRole}: ${state.judgeName}`;
+                } else {
+                    document.getElementById('headerJudgeName').textContent = `Dommer: ${state.judgeName}`;
+                }
+            } else {
                 window.location.href = 'dommer-hjem.html';
                 return;
             }
 
-            // Set state from session
-            state.judgeName = sessionData.name || 'Dommer';
-            state.judgeRole = sessionData.judgeRole;
-            state.party = party;
-            state.partyConfig = PARTIES[party];
-            state.loggedIn = true;
+            renderDogSelector();
+            renderCards();
+        })();
 
-            // Load dogs for this party
-            const baseDogs = SAMPLE_DOGS[party] || generateSampleDogs(party, state.partyConfig.dogCount);
+        // Initialize from partyLists (new dynamic parties)
+        async function initFromPartyLists(partyId, partyIndex, sessionData) {
+            // Load partyLists from server
+            let partyLists = [];
+            try {
+                const resp = await fetch('/api/storage/partyLists');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    partyLists = value || [];
+                }
+            } catch (e) {
+                const saved = localStorage.getItem('partyLists');
+                if (saved) {
+                    partyLists = JSON.parse(saved);
+                }
+            }
+
+            const idx = parseInt(partyIndex) || parseInt(partyId.replace('party_', ''));
+            const partyData = partyLists[idx];
+
+            if (!partyData) {
+                window.location.href = 'dommer-hjem.html';
+                return;
+            }
+
+            // Find this judge's role in the party
+            const judgePhone = sessionData.phone;
+            const myAssignment = partyData.judges?.find(j => j.phone === judgePhone);
+            state.judgeRole = myAssignment?.role || 'Dommer';
+
+            // Determine party config based on type
+            const isVK = partyData.type.includes('VK');
+            const isFinale = partyData.type === 'VK Finale' || partyData.isFinale;
+            state.party = partyId;
+            state.partyConfig = {
+                name: `${partyData.type} Parti ${partyData.partyNumber}`,
+                color: isFinale ? 'amber' : (isVK ? 'earth' : 'forest'),
+                dogCount: partyData.dogs.length,
+                judges: isVK ? 2 : 1,
+                hasLiveRanking: isFinale || partyData.type === 'VK'
+            };
+
+            // Convert party dogs to assessment format
+            const baseDogs = partyData.dogs.map((dog, i) => ({
+                id: i + 1,
+                nr: dog.partyOrder || (i + 1),
+                name: dog.navn,
+                breed: dog.rase,
+                handler: dog.forer || dog.eier,
+                owner: dog.eier,
+                regnr: dog.regnr,
+                klasse: dog.klasse
+            }));
+
             state.dogs = baseDogs.map(initDog);
 
-            // Load saved data if exists
-            const saved = localStorage.getItem('judgeData_' + party);
+            // Load saved judge data if exists
+            const saved = localStorage.getItem('judgeData_' + partyId);
             if (saved) {
                 try {
                     const savedDogs = JSON.parse(saved);
@@ -630,17 +716,8 @@
             // Update UI
             updateUIColors();
             document.getElementById('headerPartyName').textContent = state.partyConfig.name;
-
-            const isVK = state.party.startsWith('vk');
-            if (isVK && state.judgeRole) {
-                document.getElementById('headerJudgeName').textContent = `Dommer ${state.judgeRole}: ${state.judgeName}`;
-            } else {
-                document.getElementById('headerJudgeName').textContent = `Dommer: ${state.judgeName}`;
-            }
-
-            renderDogSelector();
-            renderCards();
-        })();
+            document.getElementById('headerJudgeName').textContent = `${state.judgeRole}: ${state.judgeName}`;
+        }
 
         // Update UI colors based on party type
         function updateUIColors() {

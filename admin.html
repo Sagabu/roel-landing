@@ -1742,11 +1742,22 @@
                 const isActive = currentExpandedParty === index;
                 const activeClass = isActive ? 'ring-2 ring-warm-500 ring-offset-2' : '';
 
+                // Check judge status
+                const judges = party.judges || [];
+                const requiredJudges = isVK ? 2 : 1;
+                const hasJudges = judges.length >= requiredJudges;
+                const judgeIcon = hasJudges
+                    ? '<span class="text-green-600 ml-1" title="Dommer tildelt">✓</span>'
+                    : '<span class="text-amber-500 ml-1" title="Mangler dommer">⚠</span>';
+
                 cardsHtml += `
                 <button onclick="togglePartyView(${index})"
                     class="px-3 py-2 rounded-lg border ${bgColor} ${activeClass} transition-all text-left">
-                    <span class="font-medium text-sm ${textColor}">${party.type} ${party.partyNumber}</span>
-                    <span class="text-xs ${textColor} opacity-60 ml-1">(${party.dogs.length})</span>
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-sm ${textColor}">${party.type} ${party.partyNumber}</span>
+                        ${judgeIcon}
+                    </div>
+                    <span class="text-xs ${textColor} opacity-60">${party.dogs.length} hunder</span>
                 </button>
                 `;
             });
@@ -1787,6 +1798,17 @@
             const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
             const isVK = party.type.includes('VK');
             const headerBg = isVK ? 'bg-amber-50' : 'bg-warm-50';
+            const requiredJudges = isVK ? 2 : 1;
+            const judges = party.judges || [];
+            const hasEnoughJudges = judges.length >= requiredJudges;
+
+            // Render judge badges
+            const judgesBadges = judges.length > 0
+                ? judges.map(j => `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+                    ${j.name}${j.role ? ' (' + j.role + ')' : ''}
+                  </span>`).join('')
+                : `<span class="text-amber-600 text-xs font-medium">Ingen dommer tildelt</span>`;
 
             const html = `
             <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" id="partyTableView">
@@ -1812,6 +1834,31 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- Dommer-seksjon -->
+                <div class="px-6 py-4 bg-white border-b border-neutral-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <svg class="w-5 h-5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                </svg>
+                                <span class="font-medium text-neutral-700">Dommer${requiredJudges > 1 ? 'e' : ''}</span>
+                                <span class="text-xs text-neutral-400">(${judges.length}/${requiredJudges} ${requiredJudges > 1 ? 'påkrevd' : 'påkrevd'})</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-2">
+                                ${judgesBadges}
+                            </div>
+                        </div>
+                        <button onclick="openJudgeModal(${index})" class="bg-warm-500 hover:bg-warm-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                            </svg>
+                            ${judges.length === 0 ? 'Tildel dommer' : 'Endre dommere'}
+                        </button>
+                    </div>
+                </div>
+
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead>
@@ -2899,6 +2946,181 @@
                 openCropModal(savedLogo);
             }
         });
+    </script>
+
+    <!-- Dommer-tildeling Modal -->
+    <div id="judgeModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div class="px-6 py-4 border-b border-neutral-200 flex items-center justify-between bg-warm-50">
+                <h3 class="font-semibold text-neutral-800 font-rockwell">Tildel dommere</h3>
+                <button onclick="closeJudgeModal()" class="text-neutral-500 hover:text-neutral-700">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6">
+                <p id="judgeModalPartyName" class="text-sm text-neutral-500 mb-4">-</p>
+
+                <!-- Eksisterende dommere -->
+                <div id="currentJudgesList" class="mb-6">
+                    <!-- Fylles dynamisk -->
+                </div>
+
+                <!-- Legg til ny dommer -->
+                <div class="border-t border-neutral-200 pt-4">
+                    <h4 class="font-medium text-neutral-700 mb-3">Legg til dommer</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Navn</label>
+                            <input type="text" id="judgeNameInput" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-warm-500 focus:border-warm-500" placeholder="F.eks. Roar Storseth">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Telefon</label>
+                            <input type="tel" id="judgePhoneInput" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-warm-500 focus:border-warm-500" placeholder="8 siffer">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-neutral-600 mb-1">Rolle</label>
+                            <select id="judgeRoleInput" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                                <option value="Hoveddommer">Hoveddommer</option>
+                                <option value="Meddommer">Meddommer</option>
+                            </select>
+                        </div>
+                        <button onclick="addJudgeToParty()" class="w-full bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg font-medium transition">
+                            Legg til dommer
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-neutral-200 bg-neutral-50 flex justify-end gap-2">
+                <button onclick="closeJudgeModal()" class="px-4 py-2 text-neutral-600 hover:text-neutral-800 font-medium">Lukk</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // JUDGE ASSIGNMENT FUNCTIONS
+        // ========================================
+        let currentJudgePartyIndex = null;
+
+        function openJudgeModal(partyIndex) {
+            currentJudgePartyIndex = partyIndex;
+            const party = partyLists[partyIndex];
+            const isVK = party.type.includes('VK');
+            const requiredJudges = isVK ? 2 : 1;
+
+            document.getElementById('judgeModalPartyName').textContent =
+                `${party.type} Parti ${party.partyNumber} - Dag ${party.day} (${requiredJudges} dommer${requiredJudges > 1 ? 'e' : ''} påkrevd)`;
+
+            updateCurrentJudgesList();
+
+            document.getElementById('judgeModal').classList.remove('hidden');
+        }
+
+        function closeJudgeModal() {
+            document.getElementById('judgeModal').classList.add('hidden');
+            currentJudgePartyIndex = null;
+            // Clear inputs
+            document.getElementById('judgeNameInput').value = '';
+            document.getElementById('judgePhoneInput').value = '';
+            document.getElementById('judgeRoleInput').value = 'Hoveddommer';
+        }
+
+        function updateCurrentJudgesList() {
+            const party = partyLists[currentJudgePartyIndex];
+            const judges = party.judges || [];
+            const container = document.getElementById('currentJudgesList');
+
+            if (judges.length === 0) {
+                container.innerHTML = '<p class="text-neutral-400 text-sm">Ingen dommere tildelt ennå</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <h4 class="font-medium text-neutral-700 mb-2">Tildelte dommere</h4>
+                <div class="space-y-2">
+                    ${judges.map((j, idx) => `
+                        <div class="flex items-center justify-between bg-green-50 rounded-lg px-3 py-2">
+                            <div>
+                                <span class="font-medium text-green-800">${j.name}</span>
+                                <span class="text-green-600 text-sm ml-2">${j.role || ''}</span>
+                                <br><span class="text-green-600 text-xs">${j.phone}</span>
+                            </div>
+                            <button onclick="removeJudge(${idx})" class="text-red-500 hover:text-red-700 p-1" title="Fjern">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function addJudgeToParty() {
+            const name = document.getElementById('judgeNameInput').value.trim();
+            const phone = document.getElementById('judgePhoneInput').value.replace(/\D/g, '');
+            const role = document.getElementById('judgeRoleInput').value;
+
+            if (!name) {
+                alert('Vennligst skriv inn dommerens navn');
+                return;
+            }
+            if (phone.length !== 8) {
+                alert('Telefonnummer må være 8 siffer');
+                return;
+            }
+
+            const party = partyLists[currentJudgePartyIndex];
+            if (!party.judges) {
+                party.judges = [];
+            }
+
+            // Check if judge already assigned
+            if (party.judges.some(j => j.phone === phone)) {
+                alert('Denne dommeren er allerede tildelt dette partiet');
+                return;
+            }
+
+            party.judges.push({
+                name: name,
+                phone: phone,
+                role: role,
+                assignedAt: new Date().toISOString()
+            });
+
+            // Save to localStorage and server
+            localStorage.setItem('partyLists', JSON.stringify(partyLists));
+            saveToServer('partyLists', partyLists);
+
+            // Update UI
+            updateCurrentJudgesList();
+            renderPartyLists(partyLists);
+            renderNormalPartyView(currentJudgePartyIndex, party);
+
+            // Clear inputs
+            document.getElementById('judgeNameInput').value = '';
+            document.getElementById('judgePhoneInput').value = '';
+
+            console.log('[admin] Dommer tildelt:', name, 'til', party.type, 'Parti', party.partyNumber);
+        }
+
+        function removeJudge(judgeIndex) {
+            const party = partyLists[currentJudgePartyIndex];
+            const removed = party.judges.splice(judgeIndex, 1)[0];
+
+            // Save
+            localStorage.setItem('partyLists', JSON.stringify(partyLists));
+            saveToServer('partyLists', partyLists);
+
+            // Update UI
+            updateCurrentJudgesList();
+            renderPartyLists(partyLists);
+            renderNormalPartyView(currentJudgePartyIndex, party);
+
+            console.log('[admin] Dommer fjernet:', removed.name);
+        }
     </script>
 
 </body>

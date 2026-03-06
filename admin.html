@@ -1917,11 +1917,16 @@
             hideUploadErrors();
             fileInput.value = '';
             parsedDogs = [];
+            partyLists = [];
             uploadSummary = { UKAK1: 0, UKAK2: 0, UKAK3: 0, VK: 0, total: 0 };
 
             // Fjern lagrede data
             localStorage.removeItem('uploadedDogs');
             localStorage.removeItem('uploadSummary');
+            localStorage.removeItem('partyLists');
+
+            // Oppdater dashboard-statistikk
+            updateDashboardStats();
         });
 
         // Store party lists globally
@@ -1953,6 +1958,9 @@
 
             // Render party lists
             renderPartyLists(partyLists);
+
+            // Update dashboard statistics
+            updateDashboardStats();
 
             // Store data in localStorage (synced to backend)
             localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
@@ -2455,6 +2463,49 @@
         }
 
         // ========================================
+        // DASHBOARD STATISTICS
+        // ========================================
+        function updateDashboardStats() {
+            // Calculate total dogs from party lists or parsed dogs
+            let totalDogs = 0;
+            let ukakCount = 0;
+            let vkCount = 0;
+
+            if (partyLists.length > 0) {
+                // Count unique dogs from party lists
+                const uniqueDogs = new Set();
+                partyLists.forEach(party => {
+                    party.dogs.forEach(dog => {
+                        const dogId = dog.regnr || dog.navn;
+                        if (!uniqueDogs.has(dogId)) {
+                            uniqueDogs.add(dogId);
+                            totalDogs++;
+                            if (party.type.includes('VK')) {
+                                vkCount++;
+                            } else {
+                                ukakCount++;
+                            }
+                        }
+                    });
+                });
+            } else if (parsedDogs.length > 0) {
+                // Fallback to parsed dogs if no party lists yet
+                totalDogs = parsedDogs.length;
+                parsedDogs.forEach(dog => {
+                    if (dog.klasse === 'VK') {
+                        vkCount++;
+                    } else {
+                        ukakCount++;
+                    }
+                });
+            }
+
+            // Update dashboard stats
+            document.getElementById('statTotalRegistered').textContent = totalDogs;
+            document.getElementById('statClassBreakdown').textContent = `UK/AK: ${ukakCount} | VK: ${vkCount}`;
+        }
+
+        // ========================================
         // LOAD SAVED DATA ON PAGE LOAD
         // ========================================
         function loadSavedDogs() {
@@ -2500,6 +2551,9 @@
                 document.getElementById('partiConfigSection').classList.add('hidden');
                 document.getElementById('dayDistributionInfo').classList.add('hidden');
             }
+
+            // Update dashboard statistics
+            updateDashboardStats();
         }
 
         // Wait for hydration from storage-shim, then load saved data

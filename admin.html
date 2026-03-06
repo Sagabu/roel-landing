@@ -1505,10 +1505,20 @@
             // Create VK parties
             if (vkDogs.length > 0) {
                 if (config.vkFormat === '2day') {
-                    // 2-day VK: 2 kval parties only
-                    // VK Finale is NOT created here - it must be added manually after kval is complete
+                    // 2-day VK: 2 kval parties + 1 empty finale party
                     const kvalParties = distributeToParties(vkDogs, 2, maxDogsPerParty, 'VK Kval', config.vkKvalDay);
                     parties.push(...kvalParties);
+
+                    // Create empty VK Finale party for the next day
+                    const finaleDay = config.vkKvalDay + 1;
+                    parties.push({
+                        type: 'VK Finale',
+                        day: finaleDay,
+                        partyNumber: 1,
+                        dogs: [],
+                        maxDogs: maxDogsPerParty,
+                        isFinale: true
+                    });
                 } else {
                     // 1-day VK: single party
                     const vkParties = distributeToParties(vkDogs, 1, maxDogsPerParty, 'VK', config.vk1dayDay);
@@ -1606,6 +1616,23 @@
 
             currentExpandedParty = index;
             const party = partyLists[index];
+
+            // Check if this is VK Finale - show special selection view
+            if (party.isFinale || party.type === 'VK Finale') {
+                renderFinaleSelectionView(index, party);
+            } else {
+                renderNormalPartyView(index, party);
+            }
+
+            // Re-render cards to show active state
+            renderPartyLists(partyLists);
+
+            // Scroll to expanded view
+            expandedView.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function renderNormalPartyView(index, party) {
+            const expandedView = document.getElementById('expandedPartyView');
             const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
             const isVK = party.type.includes('VK');
             const headerBg = isVK ? 'bg-amber-50' : 'bg-warm-50';
@@ -1670,12 +1697,221 @@
 
             expandedView.innerHTML = html;
             expandedView.classList.remove('hidden');
+        }
 
-            // Re-render cards to show active state
+        function renderFinaleSelectionView(finaleIndex, finaleParty) {
+            const expandedView = document.getElementById('expandedPartyView');
+            const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
+
+            // Find VK Kval parties
+            const kvalParties = partyLists.filter(p => p.type === 'VK Kval');
+            const allKvalDogs = [];
+
+            kvalParties.forEach((kval, kvalIndex) => {
+                kval.dogs.forEach(dog => {
+                    allKvalDogs.push({
+                        ...dog,
+                        fromParty: `VK Kval ${kval.partyNumber}`,
+                        kvalPartyIndex: kvalIndex
+                    });
+                });
+            });
+
+            // Check which dogs are already in finale
+            const finaleRegnrs = new Set(finaleParty.dogs.map(d => d.regnr));
+
+            const html = `
+            <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+                <div class="px-6 py-4 bg-gradient-to-r from-amber-50 to-amber-100 border-b border-amber-200 flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-semibold text-amber-800 font-rockwell">VK Finale</h3>
+                            <span class="px-2 py-0.5 bg-amber-200 text-amber-800 rounded text-xs font-medium">${dayNames[finaleParty.day]}</span>
+                        </div>
+                        <p class="text-sm text-amber-700">Velg hunder fra VK Kval som går videre til finale</p>
+                    </div>
+                    <button onclick="togglePartyView(${finaleIndex})" class="text-amber-600 hover:text-amber-800 p-2" title="Lukk">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Current finale dogs -->
+                <div class="px-6 py-4 bg-green-50 border-b border-green-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-medium text-green-800">Finalister (<span id="finaleCount">${finaleParty.dogs.length}</span> av maks ${finaleParty.maxDogs})</h4>
+                        ${finaleParty.dogs.length > 0 ? `
+                        <button onclick="clearFinale(${finaleIndex})" class="text-red-600 hover:text-red-700 text-sm font-medium">
+                            Fjern alle
+                        </button>
+                        ` : ''}
+                    </div>
+                    <div id="finaleDogsContainer" class="flex flex-wrap gap-2">
+                        ${finaleParty.dogs.length === 0 ? `
+                        <p class="text-green-600 text-sm italic">Ingen finalister valgt ennå. Kryss av hunder fra listen under.</p>
+                        ` : finaleParty.dogs.map(dog => `
+                        <span class="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+                            ${dog.navn}
+                            <button onclick="removeFromFinale(${finaleIndex}, '${dog.regnr}')" class="hover:text-red-600 ml-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </span>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- VK Kval dogs to select from -->
+                <div class="px-6 py-4">
+                    <h4 class="font-medium text-neutral-800 mb-3">Velg fra VK Kval-partiene</h4>
+                    ${kvalParties.length === 0 ? `
+                    <p class="text-neutral-500 text-sm">Ingen VK Kval-partier funnet.</p>
+                    ` : kvalParties.map((kval, ki) => `
+                    <div class="mb-4">
+                        <h5 class="font-medium text-amber-700 mb-2">VK Kval ${kval.partyNumber}</h5>
+                        <div class="space-y-2">
+                            ${kval.dogs.map(dog => {
+                                const isSelected = finaleRegnrs.has(dog.regnr);
+                                return `
+                                <label class="flex items-center gap-3 p-3 rounded-lg border ${isSelected ? 'bg-green-50 border-green-300' : 'bg-white border-neutral-200 hover:border-amber-300'} cursor-pointer transition">
+                                    <input type="checkbox"
+                                        class="finale-checkbox w-5 h-5 text-green-600 rounded border-neutral-300 focus:ring-green-500"
+                                        data-finale-index="${finaleIndex}"
+                                        data-regnr="${dog.regnr}"
+                                        data-dog='${JSON.stringify(dog).replace(/'/g, "&#39;")}'
+                                        ${isSelected ? 'checked' : ''}
+                                        onchange="toggleFinalist(this)">
+                                    <div class="flex-1">
+                                        <span class="font-medium text-neutral-800">${dog.navn}</span>
+                                        <span class="text-neutral-500 text-sm ml-2">${dog.rase}</span>
+                                    </div>
+                                    <span class="text-neutral-500 text-xs font-mono">${dog.regnr}</span>
+                                </label>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                    `).join('')}
+                </div>
+
+                <!-- Save button -->
+                <div class="px-6 py-4 bg-neutral-50 border-t border-neutral-200">
+                    <button onclick="saveFinaleAndClose(${finaleIndex})" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-medium transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Lagre finalister
+                    </button>
+                </div>
+            </div>
+            `;
+
+            expandedView.innerHTML = html;
+            expandedView.classList.remove('hidden');
+        }
+
+        function toggleFinalist(checkbox) {
+            const finaleIndex = parseInt(checkbox.dataset.finaleIndex);
+            const regnr = checkbox.dataset.regnr;
+            const dog = JSON.parse(checkbox.dataset.dog.replace(/&#39;/g, "'"));
+            const finaleParty = partyLists[finaleIndex];
+
+            if (checkbox.checked) {
+                // Add to finale
+                if (finaleParty.dogs.length >= finaleParty.maxDogs) {
+                    alert(`Maksimalt ${finaleParty.maxDogs} hunder i finalen!`);
+                    checkbox.checked = false;
+                    return;
+                }
+                if (!finaleParty.dogs.find(d => d.regnr === regnr)) {
+                    finaleParty.dogs.push({...dog, klasse: 'VK'});
+                }
+                checkbox.closest('label').classList.add('bg-green-50', 'border-green-300');
+                checkbox.closest('label').classList.remove('bg-white', 'border-neutral-200');
+            } else {
+                // Remove from finale
+                finaleParty.dogs = finaleParty.dogs.filter(d => d.regnr !== regnr);
+                checkbox.closest('label').classList.remove('bg-green-50', 'border-green-300');
+                checkbox.closest('label').classList.add('bg-white', 'border-neutral-200');
+            }
+
+            // Update finale count
+            document.getElementById('finaleCount').textContent = finaleParty.dogs.length;
+
+            // Update finale dogs display
+            updateFinaleDogsDisplay(finaleIndex);
+        }
+
+        function updateFinaleDogsDisplay(finaleIndex) {
+            const finaleParty = partyLists[finaleIndex];
+            const container = document.getElementById('finaleDogsContainer');
+
+            if (finaleParty.dogs.length === 0) {
+                container.innerHTML = `<p class="text-green-600 text-sm italic">Ingen finalister valgt ennå. Kryss av hunder fra listen under.</p>`;
+            } else {
+                container.innerHTML = finaleParty.dogs.map(dog => `
+                    <span class="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+                        ${dog.navn}
+                        <button onclick="removeFromFinale(${finaleIndex}, '${dog.regnr}')" class="hover:text-red-600 ml-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </span>
+                `).join('');
+            }
+        }
+
+        function removeFromFinale(finaleIndex, regnr) {
+            const finaleParty = partyLists[finaleIndex];
+            finaleParty.dogs = finaleParty.dogs.filter(d => d.regnr !== regnr);
+
+            // Uncheck the checkbox
+            const checkbox = document.querySelector(`input.finale-checkbox[data-regnr="${regnr}"]`);
+            if (checkbox) {
+                checkbox.checked = false;
+                checkbox.closest('label').classList.remove('bg-green-50', 'border-green-300');
+                checkbox.closest('label').classList.add('bg-white', 'border-neutral-200');
+            }
+
+            document.getElementById('finaleCount').textContent = finaleParty.dogs.length;
+            updateFinaleDogsDisplay(finaleIndex);
+        }
+
+        function clearFinale(finaleIndex) {
+            if (!confirm('Er du sikker på at du vil fjerne alle finalister?')) return;
+
+            const finaleParty = partyLists[finaleIndex];
+            finaleParty.dogs = [];
+
+            // Uncheck all checkboxes
+            document.querySelectorAll('input.finale-checkbox').forEach(cb => {
+                cb.checked = false;
+                cb.closest('label').classList.remove('bg-green-50', 'border-green-300');
+                cb.closest('label').classList.add('bg-white', 'border-neutral-200');
+            });
+
+            document.getElementById('finaleCount').textContent = 0;
+            updateFinaleDogsDisplay(finaleIndex);
+        }
+
+        function saveFinaleAndClose(finaleIndex) {
+            // Save to localStorage
+            localStorage.setItem('partyLists', JSON.stringify(partyLists));
+
+            // Update party cards
             renderPartyLists(partyLists);
 
-            // Scroll to expanded view
-            expandedView.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // Close the view
+            const expandedView = document.getElementById('expandedPartyView');
+            expandedView.classList.add('hidden');
+            currentExpandedParty = null;
+
+            // Show confirmation
+            const finaleParty = partyLists[finaleIndex];
+            alert(`${finaleParty.dogs.length} hunder lagret til VK Finale!`);
         }
 
         function savePartyAsImage(index) {

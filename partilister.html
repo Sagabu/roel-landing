@@ -193,6 +193,10 @@
         // Data from localStorage (synced with backend via storage-shim)
         let partyLists = [];
         let trialDetails = null;
+        let partiesByDay = {};
+        let dayDates = {};
+        let sortedDays = [];
+        let selectedDay = null;
 
         // Initialize on page load
         function init() {
@@ -223,6 +227,45 @@
                     console.error('Could not parse trialDetails:', e);
                 }
             }
+
+            // Group parties by day
+            partiesByDay = {};
+            partyLists.forEach(party => {
+                const day = party.day || 1;
+                if (!partiesByDay[day]) {
+                    partiesByDay[day] = [];
+                }
+                partiesByDay[day].push(party);
+            });
+            sortedDays = Object.keys(partiesByDay).map(Number).sort((a, b) => a - b);
+
+            // Calculate actual dates for each day based on trial start date
+            dayDates = {};
+            if (trialDetails && trialDetails.startDate) {
+                const startDate = new Date(trialDetails.startDate);
+                sortedDays.forEach(day => {
+                    const date = new Date(startDate);
+                    date.setDate(startDate.getDate() + (day - 1));
+                    dayDates[day] = date;
+                });
+            }
+        }
+
+        function getDayName(dayNumber) {
+            // If we have actual dates, use weekday name
+            if (dayDates[dayNumber]) {
+                const weekdays = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
+                return weekdays[dayDates[dayNumber].getDay()];
+            }
+            // Fallback to "Dag X"
+            return `Dag ${dayNumber}`;
+        }
+
+        function getDaySubtitle(dayNumber) {
+            if (dayDates[dayNumber]) {
+                return dayDates[dayNumber].toLocaleDateString('no-NO', { day: 'numeric', month: 'long' });
+            }
+            return '';
         }
 
         function renderPage() {
@@ -263,52 +306,86 @@
             const totalDogs = partyLists.reduce((sum, p) => sum + (p.dogs ? p.dogs.length : 0), 0);
             const ukakParties = partyLists.filter(p => p.type && (p.type.includes('UK') || p.type.includes('AK'))).length;
             const vkParties = partyLists.filter(p => p.type && p.type.includes('VK')).length;
-            const uniqueDays = [...new Set(partyLists.map(p => p.day))].length;
 
             document.getElementById('statTotalDogs').textContent = totalDogs;
             document.getElementById('statUkakParties').textContent = ukakParties;
             document.getElementById('statVkParties').textContent = vkParties;
-            document.getElementById('statDays').textContent = uniqueDays;
+            document.getElementById('statDays').textContent = sortedDays.length;
 
-            // Render tabs
-            renderTabs();
+            // Render day tabs
+            renderDayTabs();
 
-            // Render party sections
-            renderPartySections();
-
-            // Show first party by default
-            if (partyLists.length > 0) {
-                showParty(0);
+            // Show first day by default
+            if (sortedDays.length > 0) {
+                showDay(sortedDays[0]);
             }
         }
 
-        function renderTabs() {
+        function renderDayTabs() {
             const tabsContainer = document.getElementById('partyTabs');
             tabsContainer.innerHTML = '';
 
-            partyLists.forEach((party, index) => {
-                const isVk = party.type && party.type.includes('VK');
-                const dogCount = party.dogs ? party.dogs.length : 0;
-                const label = `${party.type || 'Parti'} ${party.partyNumber || (index + 1)}`;
+            sortedDays.forEach((day, index) => {
+                const parties = partiesByDay[day];
+                const dogCount = parties.reduce((sum, p) => sum + (p.dogs ? p.dogs.length : 0), 0);
+                const dayName = getDayName(day);
 
                 const tab = document.createElement('button');
-                tab.className = `party-tab px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${
+                tab.className = `day-tab px-6 py-3 rounded-lg text-sm font-medium whitespace-nowrap transition ${
                     index === 0
-                        ? (isVk ? 'bg-accent-500 text-white' : 'bg-warm-500 text-white')
+                        ? 'bg-warm-500 text-white'
                         : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
                 }`;
-                tab.dataset.index = index;
-                tab.innerHTML = `${label} <span class="${index === 0 ? 'text-white/70' : 'text-neutral-500'}">(${dogCount})</span>`;
-                tab.addEventListener('click', () => showParty(index));
+                tab.dataset.day = day;
+                tab.innerHTML = `
+                    <span class="font-semibold">${dayName}</span>
+                    <span class="${index === 0 ? 'text-white/70' : 'text-neutral-500'} ml-1">(${dogCount} hunder)</span>
+                `;
+                tab.addEventListener('click', () => showDay(day));
                 tabsContainer.appendChild(tab);
             });
         }
 
-        function renderPartySections() {
-            const container = document.getElementById('partySections');
-            container.innerHTML = '';
+        function showDay(day) {
+            selectedDay = day;
 
-            partyLists.forEach((party, index) => {
+            // Update day tabs
+            document.querySelectorAll('.day-tab').forEach(tab => {
+                const tabDay = parseInt(tab.dataset.day);
+                if (tabDay === day) {
+                    tab.classList.remove('bg-neutral-100', 'text-neutral-700');
+                    tab.classList.add('bg-warm-500', 'text-white');
+                    const span = tab.querySelector('span:last-child');
+                    if (span) span.className = 'text-white/70 ml-1';
+                } else {
+                    tab.classList.remove('bg-warm-500', 'text-white');
+                    tab.classList.add('bg-neutral-100', 'text-neutral-700');
+                    const span = tab.querySelector('span:last-child');
+                    if (span) span.className = 'text-neutral-500 ml-1';
+                }
+            });
+
+            // Render parties for this day
+            renderPartiesForDay(day);
+        }
+
+        function renderPartiesForDay(day) {
+            const container = document.getElementById('partySections');
+            const parties = partiesByDay[day] || [];
+            const dayName = getDayName(day);
+            const daySubtitle = getDaySubtitle(day);
+
+            container.innerHTML = `
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold font-rockwell text-neutral-800">${dayName}</h2>
+                    ${daySubtitle ? `<p class="text-neutral-500">${daySubtitle}</p>` : ''}
+                </div>
+                <div class="space-y-6" id="dayPartiesContainer"></div>
+            `;
+
+            const partiesContainer = document.getElementById('dayPartiesContainer');
+
+            parties.forEach((party, index) => {
                 const isVk = party.type && party.type.includes('VK');
                 const dogCount = party.dogs ? party.dogs.length : 0;
                 const label = `${party.type || 'Parti'} ${party.partyNumber || (index + 1)}`;
@@ -316,24 +393,21 @@
                 // Count UK and AK dogs
                 const ukCount = party.dogs ? party.dogs.filter(d => d.klasse === 'UK').length : 0;
                 const akCount = party.dogs ? party.dogs.filter(d => d.klasse === 'AK').length : 0;
-                const vkCount = party.dogs ? party.dogs.filter(d => d.klasse === 'VK').length : 0;
+
+                const partyId = `party-day${day}-${index}`;
 
                 const section = document.createElement('section');
-                section.id = `party-section-${index}`;
-                section.className = `party-section ${index === 0 ? '' : 'hidden'}`;
-
                 section.innerHTML = `
-                    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" id="party-content-${index}">
+                    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" id="${partyId}">
                         <div class="px-6 py-4 ${isVk ? 'bg-accent-50' : 'bg-warm-50'} border-b border-neutral-200">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                 <div>
-                                    <h2 class="text-xl font-bold font-rockwell ${isVk ? 'text-accent-800' : 'text-neutral-800'}">${label}</h2>
-                                    <p class="text-sm text-neutral-500">Dag ${party.day || '?'}</p>
+                                    <h3 class="text-xl font-bold font-rockwell ${isVk ? 'text-accent-800' : 'text-neutral-800'}">${label}</h3>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span class="px-3 py-1 ${isVk ? 'bg-accent-200 text-accent-800' : 'bg-primary-200 text-neutral-800'} rounded-full text-sm font-medium">${dogCount} hunder</span>
                                     ${!isVk ? `<span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">UK: ${ukCount} • AK: ${akCount}</span>` : ''}
-                                    <button onclick="savePartyAsImage('party-content-${index}')" class="save-image-btn p-2 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg transition" title="Lagre som bilde">
+                                    <button onclick="savePartyAsImage('${partyId}')" class="save-image-btn p-2 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg transition" title="Lagre som bilde">
                                         <svg class="w-5 h-5 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                         </svg>
@@ -362,7 +436,7 @@
                     </div>
                 `;
 
-                container.appendChild(section);
+                partiesContainer.appendChild(section);
             });
         }
 
@@ -403,32 +477,6 @@
                     </tr>
                 `;
             }).join('');
-        }
-
-        function showParty(index) {
-            // Update tabs
-            document.querySelectorAll('.party-tab').forEach((tab, i) => {
-                const party = partyLists[i];
-                const isVk = party && party.type && party.type.includes('VK');
-
-                if (i === index) {
-                    tab.classList.remove('bg-neutral-100', 'text-neutral-700');
-                    tab.classList.add(isVk ? 'bg-accent-500' : 'bg-warm-500', 'text-white');
-                    // Update count span color
-                    const span = tab.querySelector('span');
-                    if (span) span.className = 'text-white/70';
-                } else {
-                    tab.classList.remove('bg-warm-500', 'bg-accent-500', 'text-white');
-                    tab.classList.add('bg-neutral-100', 'text-neutral-700');
-                    const span = tab.querySelector('span');
-                    if (span) span.className = 'text-neutral-500';
-                }
-            });
-
-            // Show corresponding section
-            document.querySelectorAll('.party-section').forEach((section, i) => {
-                section.classList.toggle('hidden', i !== index);
-            });
         }
 
         function savePartyAsImage(elementId) {

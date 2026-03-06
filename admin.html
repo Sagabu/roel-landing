@@ -1905,7 +1905,26 @@
                 errors.push(`... og ${rowErrors - 3} flere rader med feil`);
             }
 
-            return { dogs, errors };
+            // Remove exact duplicates (same regnr + same klasse + same dag)
+            const seen = new Set();
+            const uniqueDogs = [];
+            let duplicateCount = 0;
+
+            for (const dog of dogs) {
+                const key = `${dog.regnr}|${dog.klasse}|${dog.dag}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueDogs.push(dog);
+                } else {
+                    duplicateCount++;
+                }
+            }
+
+            if (duplicateCount > 0) {
+                errors.push(`${duplicateCount} duplikat${duplicateCount > 1 ? 'er' : ''} fjernet (identiske rader)`);
+            }
+
+            return { dogs: uniqueDogs, errors };
         }
 
         function updateUploadSummary(dogs) {

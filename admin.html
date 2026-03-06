@@ -354,9 +354,9 @@
                         <p class="text-bark-600 mb-2">Dra og slipp fil her, eller</p>
                         <label class="inline-block bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-lg font-medium transition cursor-pointer">
                             Velg fil
-                            <input type="file" class="hidden" accept=".csv,.xlsx,.xls,.txt" id="fileInput">
+                            <input type="file" class="hidden" accept=".csv,.txt" id="fileInput">
                         </label>
-                        <p class="text-xs text-bark-500 mt-3">Støtter CSV, Excel og tekstfiler (.csv, .xlsx, .txt)</p>
+                        <p class="text-xs text-bark-500 mt-3">Støtter CSV og tekstfiler (.csv, .txt)</p>
                     </div>
 
                     <!-- Loading indicator -->
@@ -1358,6 +1358,50 @@
             }
         });
 
+        // Client-side CSV/TXT parser (no server needed)
+        function parseClass(klasseStr) {
+            if (!klasseStr) return { klasse: 'AK', dag: null };
+            const upper = String(klasseStr).toUpperCase().trim();
+            const match = upper.match(/(UK|AK|VK)(\d)?/);
+            if (match) {
+                return {
+                    klasse: match[1],
+                    dag: match[2] ? parseInt(match[2]) : null
+                };
+            }
+            return { klasse: 'AK', dag: null };
+        }
+
+        function formatName(name) {
+            if (!name) return '';
+            // If name contains comma, assume "Lastname, Firstname" format
+            if (name.includes(',')) {
+                const parts = name.split(',').map(p => p.trim());
+                return parts.length >= 2 ? `${parts[1]} ${parts[0]}` : name;
+            }
+            return name.trim();
+        }
+
+        function parseCSVLine(line) {
+            // Handle quoted fields with commas inside
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if ((char === ',' || char === ';') && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
         async function handleFile(file) {
             // Show loading
             dropZone.classList.add('hidden');
@@ -1365,50 +1409,90 @@
             uploadPreview.classList.add('hidden');
 
             try {
-                // Read file as Base64 to avoid FormData proxy issues
-                const base64Data = await new Promise((resolve, reject) => {
+                const fileName = file.name.toLowerCase();
+
+                // Read file as text
+                const text = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = () => {
-                        const base64 = reader.result.split(',')[1]; // Remove data:...;base64, prefix
-                        resolve(base64);
-                    };
+                    reader.onload = () => resolve(reader.result);
                     reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
-                    reader.readAsDataURL(file);
+                    reader.readAsText(file);
                 });
 
-                const response = await fetch('/api/parse-participants', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        fileName: file.name,
-                        data: base64Data
-                    })
-                });
+                let participants = [];
 
-                const result = await response.json();
+                if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+                    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-                uploadLoading.classList.add('hidden');
+                    // Skip header line
+                    const dataLines = lines.slice(1);
 
-                if (result.error) {
-                    alert('Feil ved lesing av fil: ' + result.error);
+                    for (const line of dataLines) {
+                        // Skip header-like lines
+                        if (line.toLowerCase().includes('regnr') || line.toLowerCase().includes('hundenavn')) continue;
+
+                        const parts = parseCSVLine(line);
+
+                        if (parts.length >= 5 && parts[0]) {
+                            const klasseInfo = parseClass(parts[5]);
+                            participants.push({
+                                regnr: parts[0] || '',
+                                hundenavn: parts[1] || '',
+                                rase: parts[2] || '',
+                                eier: formatName(parts[3]),
+                                forer: formatName(parts[4] || parts[3]),
+                                klasseRaw: (parts[5] || 'AK').toUpperCase(),
+                                klasse: klasseInfo.klasse,
+                                dag: klasseInfo.dag,
+                                epost: parts[6] || ''
+                            });
+                        }
+                    }
+                } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                    alert('Excel-filer (.xlsx) støttes ikke i nettleseren. Vennligst lagre filen som CSV først:\n\n1. Åpne filen i Excel\n2. Fil → Lagre som\n3. Velg "CSV (kommaseparert)" som format\n4. Last opp CSV-filen her');
                     dropZone.classList.remove('hidden');
+                    uploadLoading.classList.add('hidden');
+                    return;
+                } else {
+                    alert('Ugyldig filformat. Bruk CSV eller TXT.');
+                    dropZone.classList.remove('hidden');
+                    uploadLoading.classList.add('hidden');
                     return;
                 }
 
+                // Filter out empty entries
+                participants = participants.filter(p => p.regnr && p.hundenavn);
+
+                if (participants.length === 0) {
+                    alert('Ingen deltakere funnet i filen. Sjekk at filen har riktig format:\nRegnr, Navn, Rase, Eier, Fører, Klasse, Epost');
+                    dropZone.classList.remove('hidden');
+                    uploadLoading.classList.add('hidden');
+                    return;
+                }
+
+                // Calculate stats
+                const byClass = {
+                    UK: participants.filter(p => p.klasse === 'UK').length,
+                    AK: participants.filter(p => p.klasse === 'AK').length,
+                    VK: participants.filter(p => p.klasse === 'VK').length
+                };
+
+                uploadLoading.classList.add('hidden');
+
                 // Store participants for later use
-                currentParticipants = result.participants;
+                currentParticipants = participants;
 
                 // Update UI
                 document.getElementById('fileName').textContent = file.name;
                 document.getElementById('fileStats').textContent =
-                    `${result.total} hunder funnet (UK: ${result.byClass.UK}, AK: ${result.byClass.AK}, VK: ${result.byClass.VK})`;
+                    `${participants.length} hunder funnet (UK: ${byClass.UK}, AK: ${byClass.AK}, VK: ${byClass.VK})`;
 
                 uploadPreview.classList.remove('hidden');
 
                 // Update stats
-                document.getElementById('statTotal').textContent = result.total;
+                document.getElementById('statTotal').textContent = participants.length;
                 document.getElementById('statTotalSub').textContent =
-                    `UK: ${result.byClass.UK} | AK: ${result.byClass.AK} | VK: ${result.byClass.VK}`;
+                    `UK: ${byClass.UK} | AK: ${byClass.AK} | VK: ${byClass.VK}`;
 
             } catch (err) {
                 uploadLoading.classList.add('hidden');

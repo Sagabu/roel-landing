@@ -2046,34 +2046,40 @@
             // Read and parse file
             const reader = new FileReader();
             reader.onload = (e) => {
-                const text = e.target.result;
+                try {
+                    const text = e.target.result;
 
-                // Show debug info on page
-                let debugInfo = '';
-                debugInfo += 'FILE LOADED!\n';
-                debugInfo += 'Fil størrelse: ' + text.length + ' tegn\n';
-                debugInfo += 'Antall linjer: ' + text.split('\n').length + '\n';
-                debugInfo += 'Første 300 tegn:\n' + text.substring(0, 300) + '\n\n';
+                    // Show debug info on page
+                    let debugInfo = '';
+                    debugInfo += 'FILE LOADED!\n';
+                    debugInfo += 'Fil størrelse: ' + text.length + ' tegn\n';
+                    debugInfo += 'Antall linjer: ' + text.split('\n').length + '\n';
+                    debugInfo += 'Første 300 tegn:\n' + text.substring(0, 300) + '\n\n';
 
-                const result = parseCSV(text);
-                parsedDogs = result.dogs;
+                    document.getElementById('debugText').textContent = debugInfo + '\nParser fil...';
 
-                debugInfo += 'Parsede hunder: ' + parsedDogs.length + '\n';
-                debugInfo += 'Feil: ' + result.errors.join(', ') + '\n';
-                if (parsedDogs.length > 0) {
-                    debugInfo += 'Første hund: ' + JSON.stringify(parsedDogs[0]) + '\n';
+                    const result = parseCSV(text);
+                    parsedDogs = result.dogs;
+
+                    debugInfo += 'Parsede hunder: ' + parsedDogs.length + '\n';
+                    debugInfo += 'Feil: ' + result.errors.join(', ') + '\n';
+                    if (parsedDogs.length > 0) {
+                        debugInfo += 'Første hund: ' + JSON.stringify(parsedDogs[0]) + '\n';
+                    }
+
+                    document.getElementById('debugText').textContent = debugInfo;
+
+                    // Show errors if any
+                    if (result.errors.length > 0) {
+                        showUploadErrors(result.errors);
+                    } else {
+                        hideUploadErrors();
+                    }
+
+                    updateUploadSummary(parsedDogs);
+                } catch (err) {
+                    document.getElementById('debugText').textContent = 'JAVASCRIPT FEIL: ' + err.message + '\n\nStack: ' + err.stack;
                 }
-
-                document.getElementById('debugText').textContent = debugInfo;
-
-                // Show errors if any
-                if (result.errors.length > 0) {
-                    showUploadErrors(result.errors);
-                } else {
-                    hideUploadErrors();
-                }
-
-                updateUploadSummary(parsedDogs);
             };
 
             reader.onerror = (e) => {

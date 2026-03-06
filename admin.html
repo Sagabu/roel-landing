@@ -1494,7 +1494,9 @@
                     // Skip header line
                     const dataLines = lines.slice(1);
 
-                    for (const line of dataLines) {
+                    let skippedLines = 0;
+                    for (let lineNum = 0; lineNum < dataLines.length; lineNum++) {
+                        const line = dataLines[lineNum];
                         // Skip header-like lines or empty lines
                         const lower = line.toLowerCase();
                         if (lower.includes('regnr') || lower.includes('hundenavn')) continue;
@@ -1502,29 +1504,40 @@
 
                         const parts = parseCSVLine(line, separator);
 
-                        // Log first few rows for debugging
+                        // Log first few rows and any skipped rows for debugging
                         if (participants.length < 3) {
-                            console.log('Row', participants.length + 1, ':', parts);
+                            console.log('Row', lineNum + 2, ':', parts);
                             console.log('  Class value:', parts[colIndex.klasse], '-> parsed:', parseClass(parts[colIndex.klasse]));
                         }
 
-                        if (parts.length >= 5 && parts[colIndex.regnr]) {
-                            const klasseInfo = parseClass(parts[colIndex.klasse]);
-                            participants.push({
-                                regnr: parts[colIndex.regnr] || '',
-                                hundenavn: parts[colIndex.navn] || '',
-                                rase: parts[colIndex.rase] || '',
-                                eier: formatName(parts[colIndex.eier]),
-                                forer: formatName(parts[colIndex.forer] || parts[colIndex.eier]),
-                                klasseRaw: (parts[colIndex.klasse] || 'AK').toUpperCase(),
-                                klasse: klasseInfo.klasse,
-                                dag: klasseInfo.dag,
-                                epost: parts[colIndex.epost] || ''
-                            });
+                        // Only require regnr to be present - other fields can be empty
+                        const regnr = parts[colIndex.regnr];
+                        if (!regnr || regnr.trim().length === 0) {
+                            skippedLines++;
+                            if (skippedLines <= 5) {
+                                console.log('Skipped line', lineNum + 2, '- no regnr:', parts);
+                            }
+                            continue;
                         }
+
+                        const klasseInfo = parseClass(parts[colIndex.klasse]);
+                        participants.push({
+                            regnr: regnr.trim(),
+                            hundenavn: (parts[colIndex.navn] || '').trim(),
+                            rase: (parts[colIndex.rase] || '').trim(),
+                            eier: formatName(parts[colIndex.eier] || ''),
+                            forer: formatName(parts[colIndex.forer] || parts[colIndex.eier] || ''),
+                            klasseRaw: (parts[colIndex.klasse] || 'AK').toUpperCase(),
+                            klasse: klasseInfo.klasse,
+                            dag: klasseInfo.dag,
+                            epost: (parts[colIndex.epost] || '').trim()
+                        });
                     }
 
                     console.log('Total parsed:', participants.length);
+                    if (skippedLines > 0) {
+                        console.log('Skipped lines (no regnr):', skippedLines);
+                    }
                     console.log('By class:', {
                         UK: participants.filter(p => p.klasse === 'UK').length,
                         AK: participants.filter(p => p.klasse === 'AK').length,

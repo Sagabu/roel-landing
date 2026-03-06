@@ -1505,14 +1505,17 @@
                         const parts = parseCSVLine(line, separator);
 
                         // Log first few rows and any skipped rows for debugging
+                        // Strip markdown bold (**text**) and other formatting
+                        const cleanField = (val) => (val || '').replace(/\*\*/g, '').trim();
+
                         if (participants.length < 3) {
                             console.log('Row', lineNum + 2, ':', parts);
-                            console.log('  Class value:', parts[colIndex.klasse], '-> parsed:', parseClass(parts[colIndex.klasse]));
+                            console.log('  Class value:', cleanField(parts[colIndex.klasse]), '-> parsed:', parseClass(cleanField(parts[colIndex.klasse])));
                         }
 
                         // Only require regnr to be present - other fields can be empty
-                        const regnr = parts[colIndex.regnr];
-                        if (!regnr || regnr.trim().length === 0) {
+                        const regnr = cleanField(parts[colIndex.regnr]);
+                        if (!regnr || regnr.length === 0) {
                             skippedLines++;
                             if (skippedLines <= 5) {
                                 console.log('Skipped line', lineNum + 2, '- no regnr:', parts);
@@ -1520,17 +1523,18 @@
                             continue;
                         }
 
-                        const klasseInfo = parseClass(parts[colIndex.klasse]);
+                        const klasseVal = cleanField(parts[colIndex.klasse]);
+                        const klasseInfo = parseClass(klasseVal);
                         participants.push({
-                            regnr: regnr.trim(),
-                            hundenavn: (parts[colIndex.navn] || '').trim(),
-                            rase: (parts[colIndex.rase] || '').trim(),
-                            eier: formatName(parts[colIndex.eier] || ''),
-                            forer: formatName(parts[colIndex.forer] || parts[colIndex.eier] || ''),
-                            klasseRaw: (parts[colIndex.klasse] || 'AK').toUpperCase(),
+                            regnr: cleanField(regnr),
+                            hundenavn: cleanField(parts[colIndex.navn]),
+                            rase: cleanField(parts[colIndex.rase]),
+                            eier: formatName(cleanField(parts[colIndex.eier])),
+                            forer: formatName(cleanField(parts[colIndex.forer]) || cleanField(parts[colIndex.eier])),
+                            klasseRaw: klasseVal.toUpperCase(),
                             klasse: klasseInfo.klasse,
                             dag: klasseInfo.dag,
-                            epost: (parts[colIndex.epost] || '').trim()
+                            epost: cleanField(parts[colIndex.epost])
                         });
                     }
 

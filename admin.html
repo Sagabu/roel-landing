@@ -1552,32 +1552,79 @@
                 });
             }
 
-            // Separate UK and AK dogs
+            // Group dogs by owner (eier) - dogs with same owner must be in same party
+            function groupByOwner(dogList) {
+                const ownerGroups = {};
+                dogList.forEach(dog => {
+                    const owner = dog.eier || 'Ukjent';
+                    if (!ownerGroups[owner]) {
+                        ownerGroups[owner] = [];
+                    }
+                    ownerGroups[owner].push({...dog});
+                });
+                // Convert to array of groups and shuffle
+                return Object.values(ownerGroups).sort(() => Math.random() - 0.5);
+            }
+
+            // Find party with fewest dogs that can fit the group
+            function findBestParty(groupSize) {
+                let bestIndex = 0;
+                let minDogs = Infinity;
+                for (let i = 0; i < parties.length; i++) {
+                    if (parties[i].dogs.length < minDogs &&
+                        parties[i].dogs.length + groupSize <= maxPerParty) {
+                        minDogs = parties[i].dogs.length;
+                        bestIndex = i;
+                    }
+                }
+                return bestIndex;
+            }
+
+            // Separate UK and AK dogs, then group by owner
             const ukDogs = dogs.filter(d => d.klasse === 'UK');
             const akDogs = dogs.filter(d => d.klasse === 'AK');
+            const otherDogs = dogs.filter(d => d.klasse !== 'UK' && d.klasse !== 'AK');
 
-            // Shuffle each group separately
-            const shuffledUK = [...ukDogs].sort(() => Math.random() - 0.5);
-            const shuffledAK = [...akDogs].sort(() => Math.random() - 0.5);
+            const ukOwnerGroups = groupByOwner(ukDogs);
+            const akOwnerGroups = groupByOwner(akDogs);
+            const otherOwnerGroups = groupByOwner(otherDogs);
 
-            // Distribute UK dogs evenly across parties FIRST
-            shuffledUK.forEach((dog, index) => {
-                const partyIndex = index % numParties;
-                if (parties[partyIndex].dogs.length < maxPerParty) {
-                    parties[partyIndex].dogs.push({...dog});
-                }
+            // Distribute UK owner groups first (UK dogs come first in party)
+            ukOwnerGroups.forEach(group => {
+                const partyIndex = findBestParty(group.length);
+                group.forEach(dog => {
+                    if (parties[partyIndex].dogs.length < maxPerParty) {
+                        parties[partyIndex].dogs.push(dog);
+                    }
+                });
             });
 
-            // Then distribute AK dogs evenly across parties
-            shuffledAK.forEach((dog, index) => {
-                const partyIndex = index % numParties;
-                if (parties[partyIndex].dogs.length < maxPerParty) {
-                    parties[partyIndex].dogs.push({...dog});
-                }
+            // Then distribute AK owner groups
+            akOwnerGroups.forEach(group => {
+                const partyIndex = findBestParty(group.length);
+                group.forEach(dog => {
+                    if (parties[partyIndex].dogs.length < maxPerParty) {
+                        parties[partyIndex].dogs.push(dog);
+                    }
+                });
             });
 
-            // Update partyOrder for each dog (UK first, then AK)
+            // Distribute other dogs (VK etc) by owner group
+            otherOwnerGroups.forEach(group => {
+                const partyIndex = findBestParty(group.length);
+                group.forEach(dog => {
+                    if (parties[partyIndex].dogs.length < maxPerParty) {
+                        parties[partyIndex].dogs.push(dog);
+                    }
+                });
+            });
+
+            // Sort each party: UK first, then AK, then others - and update partyOrder
             parties.forEach(party => {
+                const uk = party.dogs.filter(d => d.klasse === 'UK');
+                const ak = party.dogs.filter(d => d.klasse === 'AK');
+                const other = party.dogs.filter(d => d.klasse !== 'UK' && d.klasse !== 'AK');
+                party.dogs = [...uk, ...ak, ...other];
                 party.dogs.forEach((dog, idx) => {
                     dog.partyOrder = idx + 1;
                 });
@@ -1586,25 +1633,44 @@
             return parties;
         }
 
-        // Function to restructure existing party lists (UK first, then AK)
+        // Function to restructure existing party lists (UK first, then AK, grouped by owner)
         function restructurePartyLists() {
             if (!partyLists || partyLists.length === 0) {
                 alert('Ingen partilister å restrukturere.');
                 return;
             }
 
+            // Helper to group dogs by owner and flatten back
+            function groupAndFlatten(dogList) {
+                const ownerGroups = {};
+                dogList.forEach(dog => {
+                    const owner = dog.eier || 'Ukjent';
+                    if (!ownerGroups[owner]) {
+                        ownerGroups[owner] = [];
+                    }
+                    ownerGroups[owner].push(dog);
+                });
+                // Flatten: all dogs from same owner stay together
+                return Object.values(ownerGroups).flat();
+            }
+
             partyLists.forEach(party => {
                 if (!party.dogs || party.dogs.length === 0) return;
 
-                // Skip VK parties (they don't have UK/AK split)
-                if (party.type && party.type.includes('VK')) return;
+                // Skip VK Finale (empty until finalists selected)
+                if (party.isFinale) return;
 
-                // Separate UK and AK
+                // Separate by class
                 const ukDogs = party.dogs.filter(d => d.klasse === 'UK');
                 const akDogs = party.dogs.filter(d => d.klasse === 'AK');
+                const otherDogs = party.dogs.filter(d => d.klasse !== 'UK' && d.klasse !== 'AK');
 
-                // Combine: UK first, then AK
-                party.dogs = [...ukDogs, ...akDogs];
+                // Group each class by owner, then combine: UK first, then AK, then others
+                party.dogs = [
+                    ...groupAndFlatten(ukDogs),
+                    ...groupAndFlatten(akDogs),
+                    ...groupAndFlatten(otherDogs)
+                ];
 
                 // Update partyOrder
                 party.dogs.forEach((dog, idx) => {
@@ -1618,7 +1684,7 @@
             // Re-render
             renderPartyLists(partyLists);
 
-            alert('Partilistene er oppdatert! UK-hunder kommer nå først i alle partier.');
+            alert('Partilistene er oppdatert! UK-hunder først, gruppert etter eier.');
         }
 
         // ========================================

@@ -1679,13 +1679,17 @@
             // Save participants to localStorage
             localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
 
-            const ukak = currentParticipants.filter(p => p.klasse === 'UK' || p.klasse === 'AK');
-            const vk = currentParticipants.filter(p => p.klasse === 'VK');
+            // Separate dogs by class
+            const ukDogs = currentParticipants.filter(p => p.klasse === 'UK');
+            const akDogs = currentParticipants.filter(p => p.klasse === 'AK');
+            const vkDogs = currentParticipants.filter(p => p.klasse === 'VK');
+
+            const totalUkAk = ukDogs.length + akDogs.length;
 
             // Calculate party distribution with even distribution
             const maxPerParty = 20;
-            const ukakParties = Math.ceil(ukak.length / maxPerParty);
-            const vkParties = Math.ceil(vk.length / maxPerParty);
+            const ukakPartyCount = Math.ceil(totalUkAk / maxPerParty);
+            const vkPartyCount = Math.ceil(vkDogs.length / maxPerParty);
 
             // Helper function for even distribution, preferring even numbers per party
             function getEvenDistribution(total, numParties) {
@@ -1694,16 +1698,12 @@
 
                 for (let i = 0; i < numParties; i++) {
                     const partiesLeft = numParties - i;
-                    // Calculate ideal size for this party
                     let size = Math.round(remaining / partiesLeft);
 
                     // Prefer even numbers if possible
                     if (size % 2 !== 0 && remaining > size) {
-                        // Try to make it even by adding or subtracting 1
                         const sizeUp = size + 1;
                         const sizeDown = size - 1;
-
-                        // Check if we can use sizeUp (even) without leaving too few for remaining parties
                         if (sizeUp % 2 === 0 && (remaining - sizeUp) >= (partiesLeft - 1) * 2) {
                             size = sizeUp;
                         } else if (sizeDown % 2 === 0 && sizeDown >= 2) {
@@ -1718,29 +1718,67 @@
                 return distribution;
             }
 
-            const ukakDistribution = getEvenDistribution(ukak.length, ukakParties);
-            const vkDistribution = getEvenDistribution(vk.length, vkParties);
+            // Get trial dates from config or use defaults
+            const trialStartDate = localStorage.getItem('trialStartDate') || '2026-03-06';
+            const startDate = new Date(trialStartDate);
 
-            // Build parties with actual dogs
+            // Distribute UK dogs evenly across UK/AK parties (30-40% UK per party)
+            // UK dogs go first on each party
+            const ukakDistribution = getEvenDistribution(totalUkAk, ukakPartyCount);
+            const ukDistribution = getEvenDistribution(ukDogs.length, ukakPartyCount);
+
+            // Build UK/AK parties with UK dogs first, then AK dogs
             const parties = [];
-            let ukakOffset = 0;
-            for (let i = 0; i < ukakParties; i++) {
-                const count = ukakDistribution[i];
+            let ukOffset = 0;
+            let akOffset = 0;
+
+            for (let i = 0; i < ukakPartyCount; i++) {
+                const totalForParty = ukakDistribution[i];
+                const ukForParty = ukDistribution[i];
+                const akForParty = totalForParty - ukForParty;
+
+                // UK dogs first, then AK dogs
+                const partyDogs = [
+                    ...ukDogs.slice(ukOffset, ukOffset + ukForParty),
+                    ...akDogs.slice(akOffset, akOffset + akForParty)
+                ];
+
+                // Assign day based on party index (odd parties day 1, even parties day 2, etc.)
+                const dayNum = (i % 2) + 1;
+                const partyDate = new Date(startDate);
+                partyDate.setDate(partyDate.getDate() + dayNum - 1);
+
                 parties.push({
                     name: `UK/AK Parti ${i + 1}`,
                     type: 'ukak',
-                    dogs: ukak.slice(ukakOffset, ukakOffset + count)
+                    day: dayNum,
+                    date: partyDate.toISOString().split('T')[0],
+                    dogs: partyDogs,
+                    ukCount: ukForParty,
+                    akCount: akForParty
                 });
-                ukakOffset += count;
+
+                ukOffset += ukForParty;
+                akOffset += akForParty;
             }
 
+            // Build VK parties
+            const vkDistribution = getEvenDistribution(vkDogs.length, vkPartyCount);
             let vkOffset = 0;
-            for (let i = 0; i < vkParties; i++) {
+
+            for (let i = 0; i < vkPartyCount; i++) {
                 const count = vkDistribution[i];
+                // VK runs on a specific day (usually day 1 or configured)
+                const vkDay = 1;
+                const partyDate = new Date(startDate);
+                partyDate.setDate(partyDate.getDate() + vkDay - 1);
+
                 parties.push({
                     name: `VK ${i + 1}`,
                     type: 'vk',
-                    dogs: vk.slice(vkOffset, vkOffset + count)
+                    day: vkDay,
+                    date: partyDate.toISOString().split('T')[0],
+                    dogs: vkDogs.slice(vkOffset, vkOffset + count)
                 });
                 vkOffset += count;
             }
@@ -1752,57 +1790,97 @@
             document.getElementById('partyListsEmptyState').classList.add('hidden');
             document.getElementById('partyListsContent').classList.remove('hidden');
 
-            // Render party lists
-            const container = document.getElementById('partyListsContainer');
-            container.innerHTML = parties.map((party, idx) => `
-                <div class="bg-white rounded-xl shadow-sm border border-earth-200 overflow-hidden mb-4">
-                    <div class="px-6 py-4 bg-${party.type === 'vk' ? 'earth' : 'forest'}-50 border-b border-earth-200">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-lg font-bold font-rockwell text-${party.type === 'vk' ? 'earth' : 'forest'}-800">${party.name}</h3>
-                            <span class="px-3 py-1 bg-${party.type === 'vk' ? 'earth' : 'forest'}-100 text-${party.type === 'vk' ? 'earth' : 'forest'}-700 rounded-full text-sm font-medium">${party.dogs.length} hunder</span>
-                        </div>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead class="bg-bark-50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Nr</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Fører</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Hund</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Rase</th>
-                                    <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Klasse</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-earth-100">
-                                ${party.dogs.map((dog, i) => `
-                                    <tr class="hover:bg-bark-50">
-                                        <td class="px-4 py-3 text-sm font-medium text-bark-700">${i + 1}</td>
-                                        <td class="px-4 py-3 text-sm text-bark-700">${dog.forer}</td>
-                                        <td class="px-4 py-3 text-sm font-medium text-bark-800">${dog.hundenavn}</td>
-                                        <td class="px-4 py-3 text-sm text-bark-600">${dog.rase}</td>
-                                        <td class="px-4 py-3 text-sm">
-                                            <span class="px-2 py-1 rounded text-xs font-medium ${dog.klasse === 'UK' ? 'bg-blue-100 text-blue-700' : dog.klasse === 'AK' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${dog.klasseRaw || dog.klasse}</span>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `).join('');
+            // Helper to format date in Norwegian
+            function formatDateNorwegian(dateStr) {
+                const date = new Date(dateStr);
+                const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
+                const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+                return `${days[date.getDay()]} ${date.getDate()}. ${months[date.getMonth()]} ${date.getFullYear()}`;
+            }
 
-            // Build message
+            // Group parties by day
+            const partiesByDay = {};
+            parties.forEach(party => {
+                const key = party.date;
+                if (!partiesByDay[key]) {
+                    partiesByDay[key] = [];
+                }
+                partiesByDay[key].push(party);
+            });
+
+            // Render party lists grouped by day
+            const container = document.getElementById('partyListsContainer');
+            const sortedDates = Object.keys(partiesByDay).sort();
+
+            container.innerHTML = sortedDates.map((dateStr, dayIndex) => {
+                const dayParties = partiesByDay[dateStr];
+                const formattedDate = formatDateNorwegian(dateStr);
+
+                return `
+                    <div class="mb-8">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 bg-forest-600 text-white rounded-full flex items-center justify-center font-bold">
+                                ${dayIndex + 1}
+                            </div>
+                            <h3 class="text-xl font-bold font-rockwell text-forest-800">Dag ${dayIndex + 1} - ${formattedDate}</h3>
+                        </div>
+                        ${dayParties.map(party => `
+                            <div class="bg-white rounded-xl shadow-sm border border-earth-200 overflow-hidden mb-4">
+                                <div class="px-6 py-4 bg-${party.type === 'vk' ? 'earth' : 'forest'}-50 border-b border-earth-200">
+                                    <div class="flex items-center justify-between flex-wrap gap-2">
+                                        <h4 class="text-lg font-bold font-rockwell text-${party.type === 'vk' ? 'earth' : 'forest'}-800">${party.name}</h4>
+                                        <div class="flex items-center gap-2">
+                                            <span class="px-3 py-1 bg-${party.type === 'vk' ? 'earth' : 'forest'}-100 text-${party.type === 'vk' ? 'earth' : 'forest'}-700 rounded-full text-sm font-medium">${party.dogs.length} hunder</span>
+                                            ${party.ukCount ? `<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">UK: ${party.ukCount}</span>` : ''}
+                                            ${party.akCount ? `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">AK: ${party.akCount}</span>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full">
+                                        <thead class="bg-bark-50">
+                                            <tr>
+                                                <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Nr</th>
+                                                <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Fører</th>
+                                                <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Hund</th>
+                                                <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Rase</th>
+                                                <th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Klasse</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-earth-100">
+                                            ${party.dogs.map((dog, i) => `
+                                                <tr class="hover:bg-bark-50">
+                                                    <td class="px-4 py-3 text-sm font-medium text-bark-700">${i + 1}</td>
+                                                    <td class="px-4 py-3 text-sm text-bark-700">${dog.forer}</td>
+                                                    <td class="px-4 py-3 text-sm font-medium text-bark-800">${dog.hundenavn}</td>
+                                                    <td class="px-4 py-3 text-sm text-bark-600">${dog.rase}</td>
+                                                    <td class="px-4 py-3 text-sm">
+                                                        <span class="px-2 py-1 rounded text-xs font-medium ${dog.klasse === 'UK' ? 'bg-blue-100 text-blue-700' : dog.klasse === 'AK' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${dog.klasseRaw || dog.klasse}</span>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }).join('');
+
+            // Build message with UK distribution info
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;
 
-            for (let i = 0; i < ukakParties; i++) {
-                message += `• UK/AK Parti ${i + 1}: ${ukakDistribution[i]} hunder\n`;
-            }
+            parties.filter(p => p.type === 'ukak').forEach(party => {
+                const ukPct = Math.round((party.ukCount / party.dogs.length) * 100);
+                message += `• ${party.name}: ${party.dogs.length} hunder (UK: ${party.ukCount} [${ukPct}%], AK: ${party.akCount})\n`;
+            });
 
-            for (let i = 0; i < vkParties; i++) {
-                message += `• VK ${i + 1}: ${vkDistribution[i]} hunder\n`;
-            }
+            parties.filter(p => p.type === 'vk').forEach(party => {
+                message += `• ${party.name}: ${party.dogs.length} hunder\n`;
+            });
 
-            message += '\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
+            message += '\nUK-hunder er plassert først på hvert parti.\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
             alert(message);
 
             // Scroll to party lists section

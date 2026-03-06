@@ -402,16 +402,17 @@
                         <!-- Logo upload -->
                         <div class="shrink-0">
                             <label class="block text-sm font-medium text-neutral-500 mb-2">Klubblogo (vises på PDF)</label>
-                            <div class="w-32 h-32 bg-warm-50 rounded-xl flex items-center justify-center border-2 border-dashed border-primary-300 cursor-pointer hover:bg-neutral-50 transition" id="adminLogoArea">
+                            <div class="w-32 h-32 bg-warm-50 rounded-xl flex items-center justify-center border-2 border-dashed border-primary-300 cursor-pointer hover:bg-neutral-50 transition overflow-hidden" id="adminLogoArea">
                                 <div class="text-center" id="adminLogoPlaceholder">
                                     <svg class="w-10 h-10 text-primary-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                     </svg>
                                     <span class="text-xs text-warm-500">Last opp</span>
                                 </div>
-                                <img id="adminLogo" class="hidden w-full h-full object-contain rounded-xl p-2" src="" alt="Logo">
+                                <img id="adminLogo" class="hidden w-full h-full object-cover rounded-xl" src="" alt="Logo">
                                 <input type="file" id="adminLogoInput" class="hidden" accept="image/*">
                             </div>
+                            <button type="button" id="editLogoBtn" class="hidden text-xs text-warm-500 hover:text-warm-600 mt-1">Tilpass bildet</button>
                         </div>
 
                         <!-- Prøvenavn og arrangør -->
@@ -1892,6 +1893,7 @@
                 adminLogo.src = savedLogo;
                 adminLogo.classList.remove('hidden');
                 adminLogoPlaceholder.classList.add('hidden');
+                document.getElementById('editLogoBtn').classList.remove('hidden');
                 // Also show in header
                 updateHeaderLogo(savedLogo);
             }
@@ -1907,12 +1909,8 @@
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     const dataUrl = event.target.result;
-                    adminLogo.src = dataUrl;
-                    adminLogo.classList.remove('hidden');
-                    adminLogoPlaceholder.classList.add('hidden');
-                    localStorage.setItem('clubLogo', dataUrl);
-                    // Also update header logo immediately
-                    updateHeaderLogo(dataUrl);
+                    // Open crop modal instead of directly setting
+                    openCropModal(dataUrl);
                 };
                 reader.readAsDataURL(file);
             }
@@ -2346,6 +2344,218 @@
             document.getElementById('loginPhone').value = '';
             goBackToLoginStep1();
         }
+    </script>
+
+    <!-- Logo Crop Modal -->
+    <div id="logoCropModal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-neutral-200">
+                <h3 class="text-lg font-bold font-rockwell text-neutral-800">Tilpass logo</h3>
+                <p class="text-sm text-neutral-500">Zoom og flytt bildet slik at det fyller firkanten</p>
+            </div>
+            <div class="p-6">
+                <div class="relative w-64 h-64 mx-auto bg-neutral-100 rounded-xl overflow-hidden border-2 border-warm-500">
+                    <img id="cropImage" class="absolute cursor-move" src="" alt="Crop preview" style="transform-origin: center center;">
+                </div>
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-neutral-600 mb-2">Zoom</label>
+                    <input type="range" id="cropZoom" min="100" max="300" value="100" class="w-full accent-warm-500">
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-neutral-50 border-t border-neutral-200 flex justify-end gap-3 rounded-b-2xl">
+                <button type="button" onclick="closeCropModal()" class="px-4 py-2 text-neutral-600 hover:text-neutral-800">Avbryt</button>
+                <button type="button" onclick="applyCrop()" class="px-4 py-2 bg-warm-500 hover:bg-warm-600 text-white rounded-lg font-medium">Bruk</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Logo cropping functionality
+        let originalImageData = null;
+        let cropOffsetX = 0;
+        let cropOffsetY = 0;
+        let cropZoom = 100;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+
+        function openCropModal(imageDataUrl) {
+            originalImageData = imageDataUrl;
+            const modal = document.getElementById('logoCropModal');
+            const cropImage = document.getElementById('cropImage');
+            const zoomSlider = document.getElementById('cropZoom');
+
+            cropImage.src = imageDataUrl;
+            cropOffsetX = 0;
+            cropOffsetY = 0;
+            cropZoom = 100;
+            zoomSlider.value = 100;
+
+            modal.classList.remove('hidden');
+
+            // Wait for image to load then center it
+            cropImage.onload = () => {
+                centerImage();
+                updateCropPreview();
+            };
+        }
+
+        function closeCropModal() {
+            document.getElementById('logoCropModal').classList.add('hidden');
+        }
+
+        function centerImage() {
+            const cropImage = document.getElementById('cropImage');
+            const container = cropImage.parentElement;
+            const containerSize = 256; // 64 * 4 = 256px (w-64)
+
+            const imgRatio = cropImage.naturalWidth / cropImage.naturalHeight;
+            let imgWidth, imgHeight;
+
+            if (imgRatio > 1) {
+                imgHeight = containerSize * (cropZoom / 100);
+                imgWidth = imgHeight * imgRatio;
+            } else {
+                imgWidth = containerSize * (cropZoom / 100);
+                imgHeight = imgWidth / imgRatio;
+            }
+
+            cropOffsetX = (containerSize - imgWidth) / 2;
+            cropOffsetY = (containerSize - imgHeight) / 2;
+        }
+
+        function updateCropPreview() {
+            const cropImage = document.getElementById('cropImage');
+            const containerSize = 256;
+
+            const imgRatio = cropImage.naturalWidth / cropImage.naturalHeight;
+            let imgWidth, imgHeight;
+
+            if (imgRatio > 1) {
+                imgHeight = containerSize * (cropZoom / 100);
+                imgWidth = imgHeight * imgRatio;
+            } else {
+                imgWidth = containerSize * (cropZoom / 100);
+                imgHeight = imgWidth / imgRatio;
+            }
+
+            cropImage.style.width = imgWidth + 'px';
+            cropImage.style.height = imgHeight + 'px';
+            cropImage.style.left = cropOffsetX + 'px';
+            cropImage.style.top = cropOffsetY + 'px';
+        }
+
+        document.getElementById('cropZoom').addEventListener('input', (e) => {
+            const oldZoom = cropZoom;
+            cropZoom = parseInt(e.target.value);
+
+            // Adjust offset to keep center point
+            const ratio = cropZoom / oldZoom;
+            const containerSize = 256;
+            const centerX = containerSize / 2;
+            const centerY = containerSize / 2;
+
+            cropOffsetX = centerX - (centerX - cropOffsetX) * ratio;
+            cropOffsetY = centerY - (centerY - cropOffsetY) * ratio;
+
+            updateCropPreview();
+        });
+
+        // Drag functionality
+        document.getElementById('cropImage').addEventListener('mousedown', (e) => {
+            isDragging = true;
+            dragStartX = e.clientX - cropOffsetX;
+            dragStartY = e.clientY - cropOffsetY;
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            cropOffsetX = e.clientX - dragStartX;
+            cropOffsetY = e.clientY - dragStartY;
+            updateCropPreview();
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // Touch support
+        document.getElementById('cropImage').addEventListener('touchstart', (e) => {
+            isDragging = true;
+            const touch = e.touches[0];
+            dragStartX = touch.clientX - cropOffsetX;
+            dragStartY = touch.clientY - cropOffsetY;
+            e.preventDefault();
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            cropOffsetX = touch.clientX - dragStartX;
+            cropOffsetY = touch.clientY - dragStartY;
+            updateCropPreview();
+        });
+
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        function applyCrop() {
+            const cropImage = document.getElementById('cropImage');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const outputSize = 256;
+
+            canvas.width = outputSize;
+            canvas.height = outputSize;
+
+            const imgRatio = cropImage.naturalWidth / cropImage.naturalHeight;
+            let imgWidth, imgHeight;
+
+            if (imgRatio > 1) {
+                imgHeight = outputSize * (cropZoom / 100);
+                imgWidth = imgHeight * imgRatio;
+            } else {
+                imgWidth = outputSize * (cropZoom / 100);
+                imgHeight = imgWidth / imgRatio;
+            }
+
+            // Scale factors
+            const scaleX = cropImage.naturalWidth / imgWidth;
+            const scaleY = cropImage.naturalHeight / imgHeight;
+
+            // Source coordinates
+            const sx = -cropOffsetX * scaleX;
+            const sy = -cropOffsetY * scaleY;
+            const sw = outputSize * scaleX;
+            const sh = outputSize * scaleY;
+
+            ctx.drawImage(cropImage, sx, sy, sw, sh, 0, 0, outputSize, outputSize);
+
+            const croppedDataUrl = canvas.toDataURL('image/png');
+
+            // Update both admin logo and header logo
+            const adminLogo = document.getElementById('adminLogo');
+            adminLogo.src = croppedDataUrl;
+            adminLogo.classList.remove('hidden');
+            document.getElementById('adminLogoPlaceholder').classList.add('hidden');
+            document.getElementById('editLogoBtn').classList.remove('hidden');
+
+            localStorage.setItem('clubLogo', croppedDataUrl);
+            updateHeaderLogo(croppedDataUrl);
+
+            closeCropModal();
+        }
+
+        // Edit button handler
+        document.getElementById('editLogoBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const savedLogo = localStorage.getItem('clubLogo');
+            if (savedLogo) {
+                openCropModal(savedLogo);
+            }
+        });
     </script>
 
 </body>

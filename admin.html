@@ -593,6 +593,12 @@
                             </button>
                         </div>
 
+                        <!-- Debug info (temporary) -->
+                        <div id="debugInfo" class="hidden mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-300">
+                            <h4 class="font-medium text-yellow-800 mb-2">Debug Info:</h4>
+                            <pre id="debugText" class="text-xs text-yellow-700 whitespace-pre-wrap overflow-auto max-h-48"></pre>
+                        </div>
+
                         <!-- Upload errors (shown if parsing found issues) -->
                         <div id="uploadErrors" class="hidden mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
                             <h4 class="font-medium text-red-800 mb-2 flex items-center gap-2">
@@ -2039,17 +2045,24 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 const text = e.target.result;
-                console.log('=== FILE UPLOAD DEBUG ===');
-                console.log('File size:', text.length, 'chars');
-                console.log('First 500 chars:', text.substring(0, 500));
-                console.log('Number of lines:', text.split('\n').length);
+
+                // Show debug info on page
+                let debugInfo = '';
+                debugInfo += 'Fil størrelse: ' + text.length + ' tegn\n';
+                debugInfo += 'Antall linjer: ' + text.split('\n').length + '\n';
+                debugInfo += 'Første 300 tegn:\n' + text.substring(0, 300) + '\n\n';
 
                 const result = parseCSV(text);
                 parsedDogs = result.dogs;
 
-                console.log('Parsed dogs:', parsedDogs.length);
-                console.log('Errors:', result.errors);
-                console.log('First 3 dogs:', parsedDogs.slice(0, 3));
+                debugInfo += 'Parsede hunder: ' + parsedDogs.length + '\n';
+                debugInfo += 'Feil: ' + result.errors.join(', ') + '\n';
+                if (parsedDogs.length > 0) {
+                    debugInfo += 'Første hund: ' + JSON.stringify(parsedDogs[0]) + '\n';
+                }
+
+                document.getElementById('debugText').textContent = debugInfo;
+                document.getElementById('debugInfo').classList.remove('hidden');
 
                 // Show errors if any
                 if (result.errors.length > 0) {

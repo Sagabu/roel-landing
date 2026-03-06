@@ -129,6 +129,7 @@ app.get("/api/backup", (c) => {
 // --- Serve shim ---
 app.get("/storage-shim.js", (c) => {
   c.header("Content-Type", "application/javascript");
+  c.header("Cache-Control", "no-cache, no-store, must-revalidate");
   return c.body(readFileSync(join(__dirname, "storage-shim.js"), "utf-8"));
 });
 

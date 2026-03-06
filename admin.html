@@ -1816,8 +1816,18 @@
             let separator = ',';
             if (headerLine.includes('\t')) separator = '\t';
             else if (headerLine.includes(';')) separator = ';';
+            else if (headerLine.includes('|')) separator = '|'; // Markdown table format
 
-            const headers = headerLine.split(separator).map(h => h.trim().toLowerCase().replace(/["'*]/g, ''));
+            // Clean headers: remove markdown bold (**), quotes, asterisks, and trim
+            let headers = headerLine.split(separator).map(h =>
+                h.trim().toLowerCase().replace(/\*\*/g, '').replace(/["'*]/g, '').trim()
+            );
+
+            // For pipe-separated (markdown), remove empty first/last elements
+            if (separator === '|') {
+                if (headers[0] === '') headers.shift();
+                if (headers[headers.length - 1] === '') headers.pop();
+            }
 
             // Find column indices - match actual column names from DogWeb export
             const colMap = {
@@ -1850,7 +1860,19 @@
                 const line = lines[i].trim();
                 if (!line) continue;
 
-                const values = line.split(separator).map(v => v.trim().replace(/["']/g, ''));
+                // Skip markdown separator rows (| --- | --- | etc)
+                if (line.match(/^[\|\s\-:]+$/)) continue;
+
+                // Clean values: remove markdown bold, quotes, and handle pipe separator
+                let values = line.split(separator).map(v =>
+                    v.trim().replace(/\*\*/g, '').replace(/["']/g, '').replace(/^\[|\]$/g, '').trim()
+                );
+
+                // For pipe-separated (markdown), remove empty first/last elements
+                if (separator === '|') {
+                    if (values[0] === '') values.shift();
+                    if (values[values.length - 1] === '') values.pop();
+                }
 
                 // Extract class and day - handle formats like "UK1", "UK2", "AK1", "AK2", "VK"
                 let klasseRaw = colMap.klasser >= 0 ? values[colMap.klasser]?.toUpperCase().trim() : '';

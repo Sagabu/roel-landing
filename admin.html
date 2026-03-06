@@ -1812,21 +1812,76 @@
         // CSV PARSING
         // ========================================
         function parseCSV(text) {
-            const lines = text.trim().split('\n');
-            if (lines.length < 2) {
+            // Detect separator from first line
+            const firstLine = text.split('\n')[0];
+            let separator = ',';
+            if (firstLine.includes('\t')) separator = '\t';
+            else if (firstLine.includes(';')) separator = ';';
+            else if (firstLine.includes('|')) separator = '|';
+
+            // Parse CSV properly handling quoted fields with newlines
+            function parseCSVRows(text, sep) {
+                const rows = [];
+                let currentRow = [];
+                let currentField = '';
+                let inQuotes = false;
+
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    const nextChar = text[i + 1];
+
+                    if (inQuotes) {
+                        if (char === '"' && nextChar === '"') {
+                            // Escaped quote
+                            currentField += '"';
+                            i++;
+                        } else if (char === '"') {
+                            // End of quoted field
+                            inQuotes = false;
+                        } else {
+                            currentField += char;
+                        }
+                    } else {
+                        if (char === '"') {
+                            // Start of quoted field
+                            inQuotes = true;
+                        } else if (char === sep) {
+                            // Field separator
+                            currentRow.push(currentField.trim());
+                            currentField = '';
+                        } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+                            // End of row
+                            if (char === '\r') i++; // Skip \n in \r\n
+                            currentRow.push(currentField.trim());
+                            if (currentRow.some(f => f)) { // Skip empty rows
+                                rows.push(currentRow);
+                            }
+                            currentRow = [];
+                            currentField = '';
+                        } else if (char !== '\r') {
+                            currentField += char;
+                        }
+                    }
+                }
+                // Don't forget last field/row
+                if (currentField || currentRow.length > 0) {
+                    currentRow.push(currentField.trim());
+                    if (currentRow.some(f => f)) {
+                        rows.push(currentRow);
+                    }
+                }
+                return rows;
+            }
+
+            const rows = parseCSVRows(text, separator);
+
+            if (rows.length < 2) {
                 return { dogs: [], errors: ['Filen inneholder ingen data (må ha minst en header-rad og en data-rad)'] };
             }
 
-            // Parse header - handle different separators
-            const headerLine = lines[0];
-            let separator = ',';
-            if (headerLine.includes('\t')) separator = '\t';
-            else if (headerLine.includes(';')) separator = ';';
-            else if (headerLine.includes('|')) separator = '|'; // Markdown table format
-
-            // Clean headers: remove markdown bold (**), quotes, asterisks, and trim
-            let headers = headerLine.split(separator).map(h =>
-                h.trim().toLowerCase().replace(/\*\*/g, '').replace(/["'*]/g, '').trim()
+            // Clean headers
+            let headers = rows[0].map(h =>
+                h.toLowerCase().replace(/\*\*/g, '').replace(/["'*]/g, '').trim()
             );
 
             // For pipe-separated (markdown), remove empty first/last elements
@@ -1862,16 +1917,10 @@
             const dogs = [];
             let rowErrors = 0;
 
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-
-                // Skip markdown separator rows (| --- | --- | etc)
-                if (line.match(/^[\|\s\-:]+$/)) continue;
-
-                // Clean values: remove markdown formatting and extract clean data
-                let values = line.split(separator).map(v => {
-                    let clean = v.trim();
+            for (let i = 1; i < rows.length; i++) {
+                // Values are already parsed - clean them
+                let values = rows[i].map(v => {
+                    let clean = v;
                     // Remove markdown bold **text**
                     clean = clean.replace(/\*\*/g, '');
                     // Extract email from markdown link [email](mailto:email)
@@ -1881,9 +1930,9 @@
                     }
                     // Remove any remaining markdown links [text](url)
                     clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-                    // Remove quotes
-                    clean = clean.replace(/["']/g, '');
-                    return clean.trim();
+                    // Normalize whitespace (collapse multiple spaces/newlines to single space)
+                    clean = clean.replace(/\s+/g, ' ').trim();
+                    return clean;
                 });
 
                 // For pipe-separated (markdown), remove empty first/last elements
@@ -1891,6 +1940,9 @@
                     if (values[0] === '') values.shift();
                     if (values[values.length - 1] === '') values.pop();
                 }
+
+                // Skip markdown separator rows (| --- | --- | etc)
+                if (values.every(v => /^[-:]+$/.test(v) || v === '')) continue;
 
                 // Extract class and day - handle formats like "UK1", "UK2", "AK1", "AK2", "VK"
                 let klasseRaw = (colMap.klasser >= 0 && values[colMap.klasser]) ? values[colMap.klasser].toUpperCase().trim() : '';

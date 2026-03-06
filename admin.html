@@ -1407,9 +1407,13 @@
                 else separator = ',';
             }
 
-            // For pipe-separated, just split directly
+            // For pipe-separated, split and trim but keep empty fields to preserve column indices
             if (separator === '|') {
-                return line.split('|').map(p => p.trim()).filter(p => p.length > 0);
+                const parts = line.split('|').map(p => p.trim());
+                // Remove first and last if empty (markdown tables start/end with |)
+                if (parts.length > 0 && parts[0] === '') parts.shift();
+                if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+                return parts;
             }
 
             // Handle quoted fields for CSV

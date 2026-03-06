@@ -182,13 +182,23 @@
         }
 
         // Load and render parties
-        function loadParties() {
-            const partiesJson = localStorage.getItem('trialParties');
-            if (!partiesJson) {
-                return;
+        async function loadParties() {
+            let parties = null;
+            try {
+                const resp = await fetch('/api/storage/trialParties');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        parties = typeof value === 'string' ? JSON.parse(value) : value;
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente partilister:', e);
             }
 
-            const parties = JSON.parse(partiesJson);
+            if (!parties) {
+                return;
+            }
             if (!parties || parties.length === 0) {
                 return;
             }

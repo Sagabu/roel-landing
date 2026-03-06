@@ -244,45 +244,106 @@
     </div>
 
     <script>
-        // Sample mandate data
-        let mandates = JSON.parse(localStorage.getItem('userMandates') || '[]');
-        let dogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
+        // Data lastes fra API
+        let mandates = [];
+        let dogs = [];
 
-        // Add sample data if empty
-        if (mandates.length === 0) {
-            mandates = [
-                {
-                    id: '1',
-                    type: 'received',
-                    dogName: 'Tripp',
-                    dogOwner: 'Monja Aakert',
-                    ownerPhone: '+47 999 99 997',
-                    trial: 'Vinterprøven 2026',
-                    validFrom: '2026-01-01',
-                    validTo: '2026-01-31',
-                    permissions: ['run', 'results'],
-                    status: 'active'
-                },
-                {
-                    id: '2',
-                    type: 'given',
-                    dogName: 'Zico',
-                    recipientName: 'Chris Niebel',
-                    recipientPhone: '+47 999 99 999',
-                    trial: null,
-                    validFrom: '2026-01-01',
-                    validTo: '2026-12-31',
-                    permissions: ['run', 'register', 'results'],
-                    status: 'active'
+        // Hent innlogget brukers telefon
+        const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+        const userPhone = userSession.phone || '';
+
+        // Hent fullmakter fra API
+        async function loadMandatesFromAPI() {
+            try {
+                const resp = await fetch('/api/storage/userMandates');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        mandates = typeof value === 'string' ? JSON.parse(value) : value;
+                    }
                 }
-            ];
-            localStorage.setItem('userMandates', JSON.stringify(mandates));
+            } catch (e) {
+                console.error('Kunne ikke hente fullmakter:', e);
+            }
+
+            // Add sample data if empty
+            if (mandates.length === 0) {
+                mandates = [
+                    {
+                        id: '1',
+                        type: 'received',
+                        dogName: 'Tripp',
+                        dogOwner: 'Monja Aakert',
+                        ownerPhone: '+47 999 99 997',
+                        trial: 'Vinterprøven 2026',
+                        validFrom: '2026-01-01',
+                        validTo: '2026-01-31',
+                        permissions: ['run', 'results'],
+                        status: 'active'
+                    },
+                    {
+                        id: '2',
+                        type: 'given',
+                        dogName: 'Zico',
+                        recipientName: 'Chris Niebel',
+                        recipientPhone: '+47 999 99 999',
+                        trial: null,
+                        validFrom: '2026-01-01',
+                        validTo: '2026-12-31',
+                        permissions: ['run', 'register', 'results'],
+                        status: 'active'
+                    }
+                ];
+                await saveMandatesToAPI();
+            }
+        }
+
+        // Lagre fullmakter til API
+        async function saveMandatesToAPI() {
+            try {
+                await fetch('/api/storage/userMandates', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: mandates })
+                });
+            } catch (e) {
+                console.error('Kunne ikke lagre fullmakter:', e);
+            }
+        }
+
+        // Hent hunder fra API
+        async function loadDogsFromAPI() {
+            if (!userPhone) return;
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}/hunder`);
+                if (resp.ok) {
+                    const hunder = await resp.json();
+                    dogs = hunder.map(h => ({
+                        id: h.id.toString(),
+                        name: h.navn
+                    }));
+                }
+            } catch (e) {
+                // Fallback til kv_store
+                try {
+                    const resp = await fetch('/api/storage/userDogs');
+                    if (resp.ok) {
+                        const { value } = await resp.json();
+                        if (value) {
+                            const allDogs = typeof value === 'string' ? JSON.parse(value) : value;
+                            dogs = allDogs[userPhone] || [];
+                        }
+                    }
+                } catch (e2) {}
+            }
         }
 
         let currentTab = 'received';
         let mandateToRevoke = null;
 
-        function init() {
+        async function init() {
+            await loadMandatesFromAPI();
+            await loadDogsFromAPI();
             populateDogSelect();
             renderMandates();
         }
@@ -432,7 +493,7 @@
         }
 
         // Form submit
-        document.getElementById('mandateForm').addEventListener('submit', function(e) {
+        document.getElementById('mandateForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const dogId = document.getElementById('mandateDog').value;
@@ -457,7 +518,7 @@
             };
 
             mandates.push(newMandate);
-            localStorage.setItem('userMandates', JSON.stringify(mandates));
+            await saveMandatesToAPI();
 
             closeMandateModal();
             renderMandates();
@@ -477,12 +538,12 @@
             mandateToRevoke = null;
         }
 
-        function confirmRevoke() {
+        async function confirmRevoke() {
             if (mandateToRevoke) {
                 const index = mandates.findIndex(m => m.id === mandateToRevoke);
                 if (index >= 0) {
                     mandates[index].status = 'revoked';
-                    localStorage.setItem('userMandates', JSON.stringify(mandates));
+                    await saveMandatesToAPI();
                     renderMandates();
                     showToast('Fullmakt trukket tilbake');
                 }

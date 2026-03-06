@@ -528,12 +528,28 @@
     <!-- Testdata er nå migrert til SQLite via server.js seedData() -->
     <script src="init-data.js"></script>
     <script>
-        // Auto-init testdata
-        const DATA_VERSION = '5';
-        if (!localStorage.getItem('dataVersion') || localStorage.getItem('dataVersion') !== DATA_VERSION) {
-            initTestData();
-            localStorage.setItem('dataVersion', DATA_VERSION);
-        }
+        // Auto-init testdata via API
+        (async function() {
+            const DATA_VERSION = '5';
+            try {
+                const resp = await fetch('/api/storage/dataVersion');
+                let currentVersion = null;
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    currentVersion = value;
+                }
+                if (currentVersion !== DATA_VERSION) {
+                    if (typeof initTestData === 'function') initTestData();
+                    await fetch('/api/storage/dataVersion', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: DATA_VERSION })
+                    });
+                }
+            } catch (e) {
+                console.error('Feil ved init:', e);
+            }
+        })();
     </script>
 </body>
 </html>

@@ -1196,12 +1196,33 @@
         // ========================================
         // LOAD TRIAL DATA FROM URL PARAMETER
         // ========================================
-        (function loadTrialData() {
+        (async function loadTrialData() {
             const urlParams = new URLSearchParams(window.location.search);
-            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+            let trialId = urlParams.get('trial');
+
+            // Hent currentTrialId fra API hvis ikke i URL
+            if (!trialId) {
+                try {
+                    const resp = await fetch('/api/storage/currentTrialId');
+                    if (resp.ok) {
+                        const { value } = await resp.json();
+                        if (value) trialId = value;
+                    }
+                } catch (e) {}
+            }
 
             if (trialId) {
-                const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
+                let trials = [];
+                try {
+                    const resp = await fetch('/api/storage/clubTrials');
+                    if (resp.ok) {
+                        const { value } = await resp.json();
+                        if (value) {
+                            trials = typeof value === 'string' ? JSON.parse(value) : value;
+                        }
+                    }
+                } catch (e) {}
+
                 const trial = trials.find(t => t.id === trialId);
 
                 if (trial) {
@@ -1249,7 +1270,13 @@
                     }
 
                     // Store current trial ID for reference
-                    localStorage.setItem('currentTrialId', trialId);
+                    try {
+                        await fetch('/api/storage/currentTrialId', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ value: trialId })
+                        });
+                    } catch (e) {}
                 }
             }
         })();
@@ -1674,14 +1701,22 @@
             currentParticipants = [];
         });
 
-        document.getElementById('processUpload').addEventListener('click', () => {
+        document.getElementById('processUpload').addEventListener('click', async () => {
             if (currentParticipants.length === 0) {
                 alert('Ingen deltakere å fordele.');
                 return;
             }
 
-            // Save participants to localStorage
-            localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
+            // Save participants to API
+            try {
+                await fetch('/api/storage/trialParticipants', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: currentParticipants })
+                });
+            } catch (e) {
+                console.error('Kunne ikke lagre deltakere:', e);
+            }
 
             // Separate dogs by class
             const ukDogs = currentParticipants.filter(p => p.klasse === 'UK');
@@ -1723,7 +1758,14 @@
             }
 
             // Get trial dates from config or use defaults
-            const trialStartDate = localStorage.getItem('trialStartDate') || '2026-03-06';
+            let trialStartDate = '2026-03-06';
+            try {
+                const resp = await fetch('/api/storage/trialStartDate');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) trialStartDate = value;
+                }
+            } catch (e) {}
             const startDate = new Date(trialStartDate);
 
             // Distribute UK dogs evenly across UK/AK parties (30-40% UK per party)
@@ -1787,8 +1829,16 @@
                 vkOffset += count;
             }
 
-            // Save parties to localStorage
-            localStorage.setItem('trialParties', JSON.stringify(parties));
+            // Save parties to API
+            try {
+                await fetch('/api/storage/trialParties', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: parties })
+                });
+            } catch (e) {
+                console.error('Kunne ikke lagre partilister:', e);
+            }
 
             // Update UI - show party lists section
             document.getElementById('partyListsEmptyState').classList.add('hidden');
@@ -1916,26 +1966,41 @@
         const adminLogo = document.getElementById('adminLogo');
         const adminLogoPlaceholder = document.getElementById('adminLogoPlaceholder');
 
-        // Load saved logo from localStorage
-        const savedLogo = localStorage.getItem('clubLogo');
-        if (savedLogo) {
-            adminLogo.src = savedLogo;
-            adminLogo.classList.remove('hidden');
-            adminLogoPlaceholder.classList.add('hidden');
-        }
+        // Load saved logo from API
+        (async () => {
+            try {
+                const resp = await fetch('/api/storage/clubLogo');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        adminLogo.src = value;
+                        adminLogo.classList.remove('hidden');
+                        adminLogoPlaceholder.classList.add('hidden');
+                    }
+                }
+            } catch (e) {}
+        })();
 
         adminLogoArea.addEventListener('click', () => adminLogoInput.click());
 
-        adminLogoInput.addEventListener('change', (e) => {
+        adminLogoInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
-                reader.onload = (event) => {
+                reader.onload = async (event) => {
                     const dataUrl = event.target.result;
                     adminLogo.src = dataUrl;
                     adminLogo.classList.remove('hidden');
                     adminLogoPlaceholder.classList.add('hidden');
-                    localStorage.setItem('clubLogo', dataUrl);
+                    try {
+                        await fetch('/api/storage/clubLogo', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ value: dataUrl })
+                        });
+                    } catch (err) {
+                        console.error('Kunne ikke lagre logo:', err);
+                    }
                 };
                 reader.readAsDataURL(file);
             }
@@ -1946,7 +2011,7 @@
         // ========================================
         document.getElementById('exportPdfBtn').addEventListener('click', generatePDF);
 
-        function generatePDF() {
+        async function generatePDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({
                 orientation: 'portrait',
@@ -1959,7 +2024,14 @@
             const trialLocation = document.getElementById('trialLocation').value || '';
             const trialDate = document.getElementById('trialDate').value || '';
             const trialJudges = document.getElementById('trialJudges').value || '';
-            const clubLogo = localStorage.getItem('clubLogo');
+            let clubLogo = null;
+            try {
+                const resp = await fetch('/api/storage/clubLogo');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    clubLogo = value;
+                }
+            } catch (e) {}
 
             // Format date in Norwegian
             let formattedDate = '';
@@ -2040,8 +2112,17 @@
             doc.line(15, yPos, 195, yPos);
             yPos += 10;
 
-            // Get party data from localStorage (populated when participants are uploaded)
-            const storedParticipants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            // Get party data from API (populated when participants are uploaded)
+            let storedParticipants = [];
+            try {
+                const resp = await fetch('/api/storage/trialParticipants');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        storedParticipants = typeof value === 'string' ? JSON.parse(value) : value;
+                    }
+                }
+            } catch (e) {}
 
             // If no participants uploaded yet, show message and return
             if (storedParticipants.length === 0) {

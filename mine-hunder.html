@@ -272,31 +272,104 @@
         const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
         const userPhone = userSession.phone || '';
 
-        // Hent alle brukeres hunder (objekt med telefon som nøkkel)
-        const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
-
-        // Hent denne brukerens hunder (eller tom array)
-        let dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
+        // Hunder lastes fra API
+        let dogs = [];
 
         let currentDogPhoto = null;
         let dogToDelete = null;
 
-        // Funksjon for å lagre hunder for denne brukeren
-        function saveUserDogs() {
-            const allDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
-            if (Array.isArray(allDogs)) {
-                // Migrer fra gammel array-format til objekt-format
-                const newFormat = {};
-                newFormat[userPhone] = dogs;
-                localStorage.setItem('userDogs', JSON.stringify(newFormat));
+        // Hent hunder fra API
+        async function loadDogsFromAPI() {
+            if (!userPhone) {
+                console.warn('Ingen innlogget bruker');
+                return;
+            }
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}/hunder`);
+                if (resp.ok) {
+                    dogs = await resp.json();
+                    // Konverter API-format til visningsformat
+                    dogs = dogs.map(h => ({
+                        id: h.id.toString(),
+                        name: h.navn,
+                        breed: h.rase,
+                        regNumber: h.regnr,
+                        gender: h.kjonn,
+                        photo: h.profilbilde || null,
+                        results: h.results || []
+                    }));
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente hunder:', e);
+            }
+        }
+
+        // Lagre hund via API (POST for ny, PUT for oppdatering)
+        async function saveDogToAPI(dogData) {
+            // For nå bruker vi kv_store som mellomlagring
+            // Senere kan dette byttes til dedikert hunder-API
+            const allDogs = await fetchUserDogsFromKV();
+            const existingIndex = allDogs.findIndex(d => d.id === dogData.id);
+            if (existingIndex >= 0) {
+                allDogs[existingIndex] = dogData;
             } else {
-                allDogs[userPhone] = dogs;
-                localStorage.setItem('userDogs', JSON.stringify(allDogs));
+                allDogs.push(dogData);
+            }
+            await saveUserDogsToKV(allDogs);
+        }
+
+        // Slett hund via API
+        async function deleteDogFromAPI(dogId) {
+            const allDogs = await fetchUserDogsFromKV();
+            const filtered = allDogs.filter(d => d.id !== dogId);
+            await saveUserDogsToKV(filtered);
+        }
+
+        // Midlertidig: Hent fra kv_store
+        async function fetchUserDogsFromKV() {
+            try {
+                const resp = await fetch('/api/storage/userDogs');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        const allDogs = typeof value === 'string' ? JSON.parse(value) : value;
+                        return allDogs[userPhone] || [];
+                    }
+                }
+            } catch (e) {}
+            return [];
+        }
+
+        // Midlertidig: Lagre til kv_store
+        async function saveUserDogsToKV(userDogs) {
+            try {
+                const resp = await fetch('/api/storage/userDogs');
+                let allDogs = {};
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        allDogs = typeof value === 'string' ? JSON.parse(value) : value;
+                    }
+                }
+                allDogs[userPhone] = userDogs;
+                await fetch('/api/storage/userDogs', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: allDogs })
+                });
+            } catch (e) {
+                console.error('Kunne ikke lagre hunder:', e);
             }
         }
 
         // Initialize
-        function init() {
+        async function init() {
+            await loadDogsFromAPI();
+            // Fallback til kv_store hvis ingen hunder i API
+            if (dogs.length === 0) {
+                const kvDogs = await fetchUserDogsFromKV();
+                dogs = kvDogs;
+            }
             renderDogs();
         }
 
@@ -742,7 +815,7 @@
         }
 
         // Form submit
-        document.getElementById('dogForm').addEventListener('submit', function(e) {
+        document.getElementById('dogForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const id = document.getElementById('dogId').value || Date.now().toString();
@@ -759,10 +832,12 @@
                 results: []
             };
 
-            // Auto-attach critiques based on regNumber
-            const matchingCritiques = sampleCritiques.filter(c => c.regNumber === regNumber);
-            if (matchingCritiques.length > 0) {
-                dogData.results = matchingCritiques;
+            // Auto-attach critiques based on regNumber (sample for demo)
+            if (typeof sampleCritiques !== 'undefined') {
+                const matchingCritiques = sampleCritiques.filter(c => c.regNumber === regNumber);
+                if (matchingCritiques.length > 0) {
+                    dogData.results = matchingCritiques;
+                }
             }
 
             const existingIndex = dogs.findIndex(d => d.id === id);
@@ -776,7 +851,7 @@
                 dogs.push(dogData);
             }
 
-            saveUserDogs();
+            await saveUserDogsToKV(dogs);
             closeDogModal();
             renderDogs();
             showToast(existingIndex >= 0 ? 'Hund oppdatert' : 'Hund lagt til');
@@ -794,10 +869,10 @@
             dogToDelete = null;
         }
 
-        function confirmDelete() {
+        async function confirmDelete() {
             if (dogToDelete) {
                 dogs = dogs.filter(d => d.id !== dogToDelete);
-                saveUserDogs();
+                await saveUserDogsToKV(dogs);
                 renderDogs();
                 showToast('Hund slettet');
             }

@@ -317,28 +317,43 @@
 
         logoUploadArea.addEventListener('click', () => logoInput.click());
 
-        logoInput.addEventListener('change', (e) => {
+        logoInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = async (e) => {
                     clubLogo.src = e.target.result;
                     clubLogo.classList.remove('hidden');
                     logoPlaceholder.classList.add('hidden');
-                    // Save to localStorage for demo
-                    localStorage.setItem('clubLogo', e.target.result);
+                    // Save to API
+                    try {
+                        await fetch('/api/storage/clubLogo', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ value: e.target.result })
+                        });
+                    } catch (err) {
+                        console.error('Kunne ikke lagre logo:', err);
+                    }
                 };
                 reader.readAsDataURL(file);
             }
         });
 
-        // Load saved logo
-        const savedLogo = localStorage.getItem('clubLogo');
-        if (savedLogo) {
-            clubLogo.src = savedLogo;
-            clubLogo.classList.remove('hidden');
-            logoPlaceholder.classList.add('hidden');
-        }
+        // Load saved logo from API
+        (async () => {
+            try {
+                const resp = await fetch('/api/storage/clubLogo');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        clubLogo.src = value;
+                        clubLogo.classList.remove('hidden');
+                        logoPlaceholder.classList.add('hidden');
+                    }
+                }
+            } catch (e) {}
+        })();
     </script>
 
 </body>

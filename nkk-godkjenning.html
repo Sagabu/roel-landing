@@ -190,16 +190,18 @@
         let nkkRepInfo = null;
 
         // Initialize with test data
-        function initTestData() {
-            // Always update test data to ensure regNr is present
-            const existing = localStorage.getItem('judgeData_ukak1');
-            if (existing) {
-                // Check if existing data has regNr, if not, force refresh
-                try {
-                    const data = JSON.parse(existing);
-                    if (data[0]?.regNr) return; // Already has regNr, skip
-                } catch (e) {}
-            }
+        async function initTestData() {
+            // Check if test data already exists in API
+            try {
+                const resp = await fetch('/api/storage/judgeData_ukak1');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        const data = typeof value === 'string' ? JSON.parse(value) : value;
+                        if (data[0]?.regNr) return; // Already has regNr, skip
+                    }
+                }
+            } catch (e) {}
 
             // Create test critiques for Marte to review
             const testData = [
@@ -279,14 +281,23 @@
                 }
             ];
 
-            localStorage.setItem('judgeData_ukak1', JSON.stringify(testData));
+            // Lagre til API
+            await fetch('/api/storage/judgeData_ukak1', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: testData })
+            });
 
             // Also set up Marte as NKK-rep if not already
             const teamData = {
                 proveleder: { name: 'Hans Olsen', phone: '99887766', email: 'hans@test.no' },
                 nkkrep: { name: 'Marte Haugen', phone: '90000001', email: 'marte@nkk.no' }
             };
-            localStorage.setItem('trialTeam', JSON.stringify(teamData));
+            await fetch('/api/storage/trialTeam', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: teamData })
+            });
         }
 
         // Load NKK rep info
@@ -325,24 +336,31 @@
             } catch (e) {}
         }
 
-        function loadAllCritiques() {
+        async function loadAllCritiques() {
             allCritiques = [];
 
-            Object.keys(PARTIES).forEach(partyId => {
-                const saved = localStorage.getItem('judgeData_' + partyId);
-                if (saved) {
-                    const dogs = JSON.parse(saved);
-                    dogs.forEach(dog => {
-                        if (dog.critiqueStatus && dog.critiqueStatus !== 'pending') {
-                            allCritiques.push({
-                                ...dog,
-                                partyId,
-                                partyName: PARTIES[partyId].name
+            for (const partyId of Object.keys(PARTIES)) {
+                try {
+                    const resp = await fetch('/api/storage/judgeData_' + partyId);
+                    if (resp.ok) {
+                        const { value } = await resp.json();
+                        if (value) {
+                            const dogs = typeof value === 'string' ? JSON.parse(value) : value;
+                            dogs.forEach(dog => {
+                                if (dog.critiqueStatus && dog.critiqueStatus !== 'pending') {
+                                    allCritiques.push({
+                                        ...dog,
+                                        partyId,
+                                        partyName: PARTIES[partyId].name
+                                    });
+                                }
                             });
                         }
-                    });
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke hente data for parti', partyId, e);
                 }
-            });
+            }
 
             const filter = document.getElementById('partyFilter');
             const usedParties = [...new Set(allCritiques.map(c => c.partyId))];
@@ -355,8 +373,8 @@
             render();
         }
 
-        function render() {
-            loadAllCritiques();
+        async function render() {
+            await loadAllCritiques();
 
             let filtered = allCritiques;
             if (currentFilter !== 'all') {
@@ -448,20 +466,27 @@
             `;
         }
 
-        function openReview(partyId, dogId) {
-            const saved = localStorage.getItem('judgeData_' + partyId);
-            if (!saved) return;
+        async function openReview(partyId, dogId) {
+            try {
+                const resp = await fetch('/api/storage/judgeData_' + partyId);
+                if (!resp.ok) return;
 
-            const dogs = JSON.parse(saved);
-            const dog = dogs.find(d => d.id === dogId);
-            if (!dog) return;
+                const { value } = await resp.json();
+                if (!value) return;
 
-            currentReview = { partyId, dogId, dog, dogs };
-            document.getElementById('reviewDogName').textContent = `${dog.name} • ${PARTIES[partyId].name}`;
-            generateCritiquePreview(dog, partyId);
-            renderActionButtons(dog.critiqueStatus);
+                const dogs = typeof value === 'string' ? JSON.parse(value) : value;
+                const dog = dogs.find(d => d.id === dogId);
+                if (!dog) return;
 
-            document.getElementById('reviewModal').classList.remove('hidden');
+                currentReview = { partyId, dogId, dog, dogs };
+                document.getElementById('reviewDogName').textContent = `${dog.name} • ${PARTIES[partyId].name}`;
+                generateCritiquePreview(dog, partyId);
+                renderActionButtons(dog.critiqueStatus);
+
+                document.getElementById('reviewModal').classList.remove('hidden');
+            } catch (e) {
+                console.error('Kunne ikke åpne review:', e);
+            }
         }
 
         function hideReview() {
@@ -829,7 +854,7 @@
             }
         }
 
-        function approveCritique() {
+        async function approveCritique() {
             if (!currentReview) return;
 
             const { partyId, dogId, dog, dogs } = currentReview;
@@ -838,7 +863,11 @@
             dog.approvedAt = new Date().toISOString();
             dog.approvedBy = nkkRepInfo?.name || 'NKK-representant';
 
-            localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+            await fetch('/api/storage/judgeData_' + partyId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: dogs })
+            });
 
             hideReview();
             render();
@@ -847,7 +876,7 @@
             showToast('Kritikken er godkjent!', 'success');
         }
 
-        function returnCritique() {
+        async function returnCritique() {
             if (!currentReview) return;
 
             const comment = document.getElementById('returnComment').value.trim();
@@ -857,7 +886,11 @@
             dog.nkkComment = comment || 'Vennligst se over kritikken på nytt.';
             dog.returnedAt = new Date().toISOString();
 
-            localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+            await fetch('/api/storage/judgeData_' + partyId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: dogs })
+            });
 
             hideReview();
             render();
@@ -894,9 +927,11 @@
         }
 
         // Initialize
-        initTestData();
-        loadNkkRepInfo();
-        render();
+        (async function() {
+            await initTestData();
+            await loadNkkRepInfo();
+            await render();
+        })();
     </script>
 </body>
 </html>

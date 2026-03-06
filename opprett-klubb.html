@@ -450,22 +450,69 @@
                 createdAt: new Date().toISOString()
             };
 
-            // Save to localStorage (would be API call in production)
-            const clubs = JSON.parse(localStorage.getItem('registeredClubs') || '[]');
-            clubs.push(clubData);
-            localStorage.setItem('registeredClubs', JSON.stringify(clubs));
+            // Save to API
+            try {
+                const resp = await fetch('/api/klubber', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        navn: clubData.name,
+                        orgnr: clubData.orgNumber,
+                        adresse: clubData.address,
+                        postnummer: clubData.postalCode,
+                        sted: clubData.city,
+                        region: clubData.region,
+                        kontakt_navn: clubData.contact.name,
+                        kontakt_epost: clubData.contact.email,
+                        kontakt_telefon: clubData.contact.phone,
+                        logo: clubData.logo
+                    })
+                });
+
+                if (!resp.ok) {
+                    throw new Error('Kunne ikke opprette klubb');
+                }
+            } catch (err) {
+                console.error('Feil ved oppretting av klubb:', err);
+                // Fallback til kv_store
+                const clubsResp = await fetch('/api/storage/registeredClubs');
+                let clubs = [];
+                if (clubsResp.ok) {
+                    const { value } = await clubsResp.json();
+                    if (value) clubs = typeof value === 'string' ? JSON.parse(value) : value;
+                }
+                clubs.push(clubData);
+                await fetch('/api/storage/registeredClubs', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: clubs })
+                });
+            }
 
             // Also save club admins mapping for login lookup
-            const clubAdmins = JSON.parse(localStorage.getItem('clubAdmins') || '{}');
-            clubData.admins.forEach(admin => {
-                clubAdmins[admin.phone] = {
-                    clubId: clubData.orgNumber,
-                    clubName: clubData.name,
-                    name: admin.name,
-                    role: admin.role
-                };
-            });
-            localStorage.setItem('clubAdmins', JSON.stringify(clubAdmins));
+            try {
+                const adminResp = await fetch('/api/storage/clubAdmins');
+                let clubAdmins = {};
+                if (adminResp.ok) {
+                    const { value } = await adminResp.json();
+                    if (value) clubAdmins = typeof value === 'string' ? JSON.parse(value) : value;
+                }
+                clubData.admins.forEach(admin => {
+                    clubAdmins[admin.phone] = {
+                        clubId: clubData.orgNumber,
+                        clubName: clubData.name,
+                        name: admin.name,
+                        role: admin.role
+                    };
+                });
+                await fetch('/api/storage/clubAdmins', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: clubAdmins })
+                });
+            } catch (e) {
+                console.error('Kunne ikke lagre admin-mapping:', e);
+            }
 
             // Show success modal
             document.getElementById('successModal').classList.remove('hidden');

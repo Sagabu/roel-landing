@@ -91,7 +91,7 @@
             }
         }
 
-        function loadCritique() {
+        async function loadCritique() {
             const params = new URLSearchParams(window.location.search);
             const partyId = params.get('party');
             const dogId = parseInt(params.get('dog'));
@@ -106,8 +106,20 @@
                 return;
             }
 
-            const saved = localStorage.getItem('judgeData_' + partyId);
-            if (!saved) {
+            let dogs = null;
+            try {
+                const resp = await fetch('/api/storage/judgeData_' + partyId);
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        dogs = typeof value === 'string' ? JSON.parse(value) : value;
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente kritikkdata:', e);
+            }
+
+            if (!dogs) {
                 document.getElementById('critiqueContent').innerHTML = `
                     <div class="text-center py-12">
                         <p class="text-bark-500">Parti ikke funnet</p>
@@ -116,8 +128,6 @@
                 `;
                 return;
             }
-
-            const dogs = JSON.parse(saved);
             const dog = dogs.find(d => d.id === dogId);
 
             if (!dog) {
@@ -191,13 +201,28 @@
             const prizeNum = formattedPrize?.match(/^(\d)/)?.[1] || '0';
             const prize = prizeConfig[prizeNum] || { bg: 'bg-bark-200', text: 'text-bark-700' };
 
-            // Get dog image if available
+            // Get dog image if available (from API)
             let dogImage = dog.image || null;
             try {
-                const userDogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
-                const matchingDog = userDogs.find(d => d.regNr === dog.regNr || d.name === dog.name);
-                if (matchingDog?.image) {
-                    dogImage = matchingDog.image;
+                const resp = await fetch('/api/storage/userDogs');
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        const allDogs = typeof value === 'string' ? JSON.parse(value) : value;
+                        // Flatten if object with phone keys
+                        let userDogs = [];
+                        if (Array.isArray(allDogs)) {
+                            userDogs = allDogs;
+                        } else {
+                            Object.values(allDogs).forEach(dogs => {
+                                if (Array.isArray(dogs)) userDogs = userDogs.concat(dogs);
+                            });
+                        }
+                        const matchingDog = userDogs.find(d => d.regNr === dog.regNr || d.name === dog.name);
+                        if (matchingDog?.image) {
+                            dogImage = matchingDog.image;
+                        }
+                    }
                 }
             } catch (e) {}
 

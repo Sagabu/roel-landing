@@ -273,10 +273,17 @@
             document.getElementById('judgeName').textContent = state.judgeName;
             document.getElementById('backLink').href = 'dommer-vk.html?party=' + state.party;
 
-            // Load dogs from localStorage
-            const saved = localStorage.getItem('judgeData_' + state.party);
-            if (saved) {
-                state.dogs = JSON.parse(saved);
+            // Load dogs from API
+            try {
+                const resp = await fetch('/api/storage/judgeData_' + state.party);
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        state.dogs = typeof value === 'string' ? JSON.parse(value) : value;
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente hundedata:', e);
             }
 
             renderDogList();
@@ -584,8 +591,16 @@
             dog.critiqueSubmittedAt = new Date().toISOString();
             dog.critiqueSubmittedBy = state.judgeName;
 
-            // Save to localStorage
-            localStorage.setItem('judgeData_' + state.party, JSON.stringify(state.dogs));
+            // Save to API
+            try {
+                await fetch('/api/storage/judgeData_' + state.party, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: state.dogs })
+                });
+            } catch (e) {
+                console.error('Kunne ikke lagre kritikk:', e);
+            }
 
             hideModal();
             renderDogList();

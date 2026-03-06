@@ -788,32 +788,69 @@
                 createdAt: new Date().toISOString()
             };
 
-            // Save to localStorage
-            const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
-            trials.push(trialData);
-            localStorage.setItem('clubTrials', JSON.stringify(trials));
+            // Save to API
+            try {
+                // Opprett prøve via API
+                const resp = await fetch('/api/prover', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        navn: trialData.name,
+                        type: trialData.type,
+                        sted: trialData.location,
+                        start_dato: trialData.startDate,
+                        slutt_dato: trialData.endDate,
+                        paameldingsfrist: trialData.deadline,
+                        etteranmelding_frist: trialData.lateDeadline,
+                        klubb_id: trialData.club.orgNumber,
+                        status: 'draft'
+                    })
+                });
 
-            // Set as current active trial
-            localStorage.setItem('currentTrialId', trialId);
+                if (!resp.ok) {
+                    throw new Error('Kunne ikke opprette prøve');
+                }
+            } catch (err) {
+                console.error('Feil ved oppretting av prøve:', err);
+                // Fallback til kv_store
+                const trialsResp = await fetch('/api/storage/clubTrials');
+                let trials = [];
+                if (trialsResp.ok) {
+                    const { value } = await trialsResp.json();
+                    if (value) trials = typeof value === 'string' ? JSON.parse(value) : value;
+                }
+                trials.push(trialData);
+                await fetch('/api/storage/clubTrials', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: trials })
+                });
+            }
 
-            // Update API
-            fetch('/api/trial', {
+            // Set as current active trial via kv_store
+            await fetch('/api/storage/currentTrialId', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: trialData.name,
-                    location: trialData.location,
-                    start_date: trialData.startDate,
-                    end_date: trialData.endDate,
-                    published: false
-                })
-            }).then(() => {
-                // Redirect to admin page with the new trial ID
-                window.location.href = 'admin.html?trial=' + trialId;
-            }).catch(() => {
-                // Still redirect even if API fails
-                window.location.href = 'admin.html?trial=' + trialId;
+                body: JSON.stringify({ value: trialId })
             });
+
+            // Update trial config API
+            try {
+                await fetch('/api/trial', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: trialData.name,
+                        location: trialData.location,
+                        start_date: trialData.startDate,
+                        end_date: trialData.endDate,
+                        published: false
+                    })
+                });
+            } catch (e) {}
+
+            // Redirect to admin page with the new trial ID
+            window.location.href = 'admin.html?trial=' + trialId;
         }
     </script>
 </body>

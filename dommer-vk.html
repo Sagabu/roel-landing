@@ -534,7 +534,7 @@
         }
 
         // Check session and initialize on page load
-        (function initFromSession() {
+        (async function initFromSession() {
             const session = localStorage.getItem('judgeSession');
             if (!session) {
                 window.location.href = 'dommer.html';
@@ -564,13 +564,18 @@
             const baseDogs = SAMPLE_DOGS[party] || generateSampleDogs(party, state.partyConfig.dogCount);
             state.dogs = baseDogs.map(initDog);
 
-            // Load saved data if exists
-            const saved = localStorage.getItem('judgeData_' + party);
-            if (saved) {
-                try {
-                    const savedDogs = JSON.parse(saved);
-                    state.dogs = savedDogs;
-                } catch (e) {}
+            // Load saved data if exists from API
+            try {
+                const resp = await fetch('/api/storage/judgeData_' + party);
+                if (resp.ok) {
+                    const { value } = await resp.json();
+                    if (value) {
+                        const savedDogs = typeof value === 'string' ? JSON.parse(value) : value;
+                        state.dogs = savedDogs;
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke laste lagret data:', e);
             }
 
             // Update UI
@@ -1166,9 +1171,17 @@
         }
 
         // Save Live
-        function saveLive() {
-            localStorage.setItem('judgeData_' + state.party, JSON.stringify(state.dogs));
-            console.log('Saved:', state.dogs);
+        async function saveLive() {
+            try {
+                await fetch('/api/storage/judgeData_' + state.party, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: state.dogs })
+                });
+                console.log('Saved:', state.dogs);
+            } catch (e) {
+                console.error('Kunne ikke lagre:', e);
+            }
         }
 
         // Show/Hide Legend

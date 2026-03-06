@@ -1534,11 +1534,16 @@
                         });
                     }
 
-                    console.log('Total parsed:', participants.length);
+                    console.log('Total parsed (before dedup):', participants.length);
                     if (skippedLines > 0) {
                         console.log('Skipped lines (no regnr):', skippedLines);
                     }
-                    console.log('By class:', {
+
+                    // Log all unique klasseRaw values to debug
+                    const uniqueKlasser = [...new Set(participants.map(p => p.klasseRaw))];
+                    console.log('Unique class values found:', uniqueKlasser);
+
+                    console.log('By class (before dedup):', {
                         UK: participants.filter(p => p.klasse === 'UK').length,
                         AK: participants.filter(p => p.klasse === 'AK').length,
                         VK: participants.filter(p => p.klasse === 'VK').length
@@ -1557,6 +1562,17 @@
 
                 // Filter out empty entries
                 participants = participants.filter(p => p.regnr && p.hundenavn);
+
+                // Remove exact duplicates (same regnr, navn, klasse, dag)
+                const seen = new Set();
+                participants = participants.filter(p => {
+                    const key = `${p.regnr}|${p.hundenavn}|${p.klasse}|${p.dag}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                console.log('After removing duplicates:', participants.length);
 
                 if (participants.length === 0) {
                     alert('Ingen deltakere funnet i filen. Sjekk at filen har riktig format:\nRegnr, Navn, Rase, Eier, Fører, Klasse, Epost');

@@ -13,7 +13,7 @@
   const SYNCED_KEYS = [
     'userProfile', 'userDogs', 'userTrials', 'userMandates',
     'judgeSession', 'clubLogo',
-    'uploadedDogs', 'uploadSummary', 'partiConfig'
+    'uploadedDogs', 'uploadSummary', 'partiConfig', 'partyLists'
   ];
   // judgeData_* keys are dynamic (per party)
   function isSyncedKey(key) {

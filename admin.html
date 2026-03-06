@@ -1904,32 +1904,216 @@
             localStorage.removeItem('uploadSummary');
         });
 
+        // Store party lists globally
+        let partyLists = [];
+
         document.getElementById('processUpload').addEventListener('click', () => {
             if (parsedDogs.length === 0) {
                 alert('Ingen hunder funnet i filen. Sjekk filformatet.');
                 return;
             }
 
+            // Get configuration
             const vkFormat = document.querySelector('input[name="vkFormat"]:checked').value;
+            const ukakPartiesDay1 = parseInt(document.getElementById('ukakPartiesDay1').value) || 0;
+            const ukakPartiesDay2 = parseInt(document.getElementById('ukakPartiesDay2').value) || 0;
+            const ukakPartiesDay3 = parseInt(document.getElementById('ukakPartiesDay3').value) || 0;
+            const vkKvalDay = parseInt(document.getElementById('vkKvalDay').value);
+            const vk1dayDay = parseInt(document.getElementById('vk1dayDay').value);
 
-            let message = `Fil behandlet! ${parsedDogs.length} hunder fordelt:\n\n`;
-            message += `• UK/AK Dag 1: ${uploadSummary.UKAK1} hunder\n`;
-            message += `• UK/AK Dag 2: ${uploadSummary.UKAK2} hunder\n`;
-            if (uploadSummary.UKAK3 > 0) message += `• UK/AK Dag 3: ${uploadSummary.UKAK3} hunder\n`;
-            if (uploadSummary.VK > 0) {
-                message += `• VK ${vkFormat === '2day' ? 'Kval' : ''}: ${uploadSummary.VK} hunder\n`;
-            }
-            message += `\nE-post sendes nå til alle deltakere.`;
+            // Create party lists
+            partyLists = createPartyLists(parsedDogs, {
+                vkFormat,
+                ukakPartiesDay1,
+                ukakPartiesDay2,
+                ukakPartiesDay3,
+                vkKvalDay,
+                vk1dayDay
+            });
 
-            alert(message);
+            // Render party lists
+            renderPartyLists(partyLists);
 
-            // Store parsed data in localStorage for other pages
+            // Store data in localStorage (synced to backend)
             localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
             localStorage.setItem('uploadSummary', JSON.stringify(uploadSummary));
+            localStorage.setItem('partyLists', JSON.stringify(partyLists));
 
             // Collapse the upload section
             collapseUploadSection();
+
+            // Show success message
+            const totalParties = partyLists.length;
+            alert(`${parsedDogs.length} hunder fordelt på ${totalParties} partier!`);
         });
+
+        // ========================================
+        // PARTY DISTRIBUTION LOGIC
+        // ========================================
+        function createPartyLists(dogs, config) {
+            const parties = [];
+            const maxDogsPerParty = 20;
+
+            // Group dogs by day and class
+            const ukakDay1 = dogs.filter(d => (d.klasse === 'UK' || d.klasse === 'AK') && d.dag === '1');
+            const ukakDay2 = dogs.filter(d => (d.klasse === 'UK' || d.klasse === 'AK') && d.dag === '2');
+            const ukakDay3 = dogs.filter(d => (d.klasse === 'UK' || d.klasse === 'AK') && d.dag === '3');
+            const vkDogs = dogs.filter(d => d.klasse === 'VK');
+
+            // Create UK/AK parties for each day
+            if (ukakDay1.length > 0 && config.ukakPartiesDay1 > 0) {
+                const day1Parties = distributeToParties(ukakDay1, config.ukakPartiesDay1, maxDogsPerParty, 'UK/AK', 1);
+                parties.push(...day1Parties);
+            }
+
+            if (ukakDay2.length > 0 && config.ukakPartiesDay2 > 0) {
+                const day2Parties = distributeToParties(ukakDay2, config.ukakPartiesDay2, maxDogsPerParty, 'UK/AK', 2);
+                parties.push(...day2Parties);
+            }
+
+            if (ukakDay3.length > 0 && config.ukakPartiesDay3 > 0) {
+                const day3Parties = distributeToParties(ukakDay3, config.ukakPartiesDay3, maxDogsPerParty, 'UK/AK', 3);
+                parties.push(...day3Parties);
+            }
+
+            // Create VK parties
+            if (vkDogs.length > 0) {
+                if (config.vkFormat === '2day') {
+                    // 2-day VK: 2 kval parties + 1 finale party
+                    const kvalParties = distributeToParties(vkDogs, 2, maxDogsPerParty, 'VK Kval', config.vkKvalDay);
+                    parties.push(...kvalParties);
+                    // Finale party (empty for now, filled after kval)
+                    parties.push({
+                        type: 'VK Finale',
+                        day: config.vkKvalDay + 1,
+                        partyNumber: 1,
+                        dogs: [],
+                        maxDogs: maxDogsPerParty
+                    });
+                } else {
+                    // 1-day VK: single party
+                    const vkParties = distributeToParties(vkDogs, 1, maxDogsPerParty, 'VK', config.vk1dayDay);
+                    parties.push(...vkParties);
+                }
+            }
+
+            return parties;
+        }
+
+        function distributeToParties(dogs, numParties, maxPerParty, type, day) {
+            const parties = [];
+            const shuffledDogs = [...dogs].sort(() => Math.random() - 0.5); // Shuffle for random distribution
+
+            for (let i = 0; i < numParties; i++) {
+                parties.push({
+                    type: type,
+                    day: day,
+                    partyNumber: i + 1,
+                    dogs: [],
+                    maxDogs: maxPerParty
+                });
+            }
+
+            // Distribute dogs evenly across parties
+            shuffledDogs.forEach((dog, index) => {
+                const partyIndex = index % numParties;
+                if (parties[partyIndex].dogs.length < maxPerParty) {
+                    parties[partyIndex].dogs.push({...dog, partyOrder: parties[partyIndex].dogs.length + 1});
+                }
+            });
+
+            return parties;
+        }
+
+        // ========================================
+        // RENDER PARTY LISTS
+        // ========================================
+        function renderPartyLists(parties) {
+            const container = document.getElementById('partyListsContainer');
+            const emptyState = container.previousElementSibling; // The empty state div
+
+            if (parties.length === 0) {
+                container.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
+            const typeColors = {
+                'UK/AK': 'warm',
+                'VK': 'amber',
+                'VK Kval': 'amber',
+                'VK Finale': 'yellow'
+            };
+
+            let html = '';
+
+            parties.forEach((party, index) => {
+                const colorClass = typeColors[party.type] || 'neutral';
+                const headerBg = party.type.includes('VK') ? 'bg-amber-50' : 'bg-warm-50';
+                const confirmedCount = party.dogs.filter(d => d.confirmed).length;
+
+                html += `
+                <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden" data-party-index="${index}">
+                    <div class="px-6 py-4 ${headerBg} border-b border-neutral-200 flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <h3 class="font-semibold text-neutral-800 font-rockwell">${party.type} Parti ${party.partyNumber}</h3>
+                                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">${dayNames[party.day]}</span>
+                            </div>
+                            <p class="text-sm text-neutral-500">${party.dogs.length} av ${party.maxDogs} plasser fylt</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="text-warm-500 hover:text-warm-600 p-2" title="Rediger" onclick="editParty(${index})">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="border-b border-neutral-200 bg-neutral-50">
+                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Nr</th>
+                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Hund</th>
+                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Reg.nr</th>
+                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Rase</th>
+                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Fører</th>
+                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Klasse</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${party.dogs.map((dog, dogIndex) => `
+                                <tr class="border-b border-neutral-100 hover:bg-warm-50/50">
+                                    <td class="py-3 px-4 font-medium">${dogIndex + 1}</td>
+                                    <td class="py-3 px-4">${dog.navn}</td>
+                                    <td class="py-3 px-4 text-neutral-500 text-xs font-mono">${dog.regnr}</td>
+                                    <td class="py-3 px-4 text-neutral-500">${dog.rase}</td>
+                                    <td class="py-3 px-4">${dog.forer || dog.eier}</td>
+                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-100 text-neutral-700 rounded text-xs">${dog.klasse}</span></td>
+                                </tr>
+                                `).join('')}
+                                ${party.dogs.length === 0 ? `
+                                <tr>
+                                    <td colspan="6" class="py-8 text-center text-neutral-400">Ingen hunder i dette partiet ennå</td>
+                                </tr>
+                                ` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function editParty(index) {
+            alert('Redigering av partier kommer snart!');
+        }
 
         // Function to collapse upload section
         function collapseUploadSection() {
@@ -2206,6 +2390,7 @@
         function loadSavedDogs() {
             const savedDogs = localStorage.getItem('uploadedDogs');
             const savedSummary = localStorage.getItem('uploadSummary');
+            const savedPartyLists = localStorage.getItem('partyLists');
 
             if (savedDogs) {
                 try {
@@ -2222,6 +2407,19 @@
                     }
                 } catch (e) {
                     console.error('Kunne ikke laste lagrede hunder:', e);
+                }
+            }
+
+            // Load and render saved party lists
+            if (savedPartyLists) {
+                try {
+                    partyLists = JSON.parse(savedPartyLists);
+                    if (partyLists.length > 0) {
+                        renderPartyLists(partyLists);
+                        console.log(`Lastet ${partyLists.length} lagrede partilister fra backend`);
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke laste lagrede partilister:', e);
                 }
             }
         }

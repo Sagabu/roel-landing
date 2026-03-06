@@ -263,7 +263,9 @@
             if (myAssignedParties.length === 0) {
                 showNoPartyMessage();
             } else {
-                renderAssignedParties();
+                await renderAssignedParties();
+                // Check for pending critiques after parties are loaded
+                await checkPendingCritiques();
             }
         }
 
@@ -273,7 +275,7 @@
         }
 
         // Render all assigned party cards
-        function renderAssignedParties() {
+        async function renderAssignedParties() {
             const container = document.getElementById('assignedPartyCard');
 
             if (myAssignedParties.length === 0) {
@@ -284,29 +286,42 @@
             const dayNames = ['', 'Dag 1', 'Dag 2', 'Dag 3', 'Dag 4'];
 
             let html = '';
-            myAssignedParties.forEach((party, idx) => {
+            for (const [idx, party] of myAssignedParties.entries()) {
                 const isVK = party.type.includes('VK');
                 const isFinale = party.type === 'VK Finale' || party.isFinale;
                 const requiredJudges = isVK ? 2 : 1;
 
-                // Get progress status from localStorage
+                // Get progress status from server first, then localStorage
                 let statusText = 'Ikke startet';
                 let statusClasses = 'bg-neutral-100 text-neutral-600';
-                const savedData = localStorage.getItem('judgeData_' + party.partyId);
-                if (savedData) {
-                    try {
-                        const dogs = JSON.parse(savedData);
-                        const done = dogs.filter(d => d.status === 'done').length;
-                        const total = dogs.length;
-                        if (done > 0) {
-                            statusText = `${done}/${total} ferdig`;
-                            if (done === total) {
-                                statusClasses = 'bg-green-100 text-green-700';
-                            } else {
-                                statusClasses = 'bg-blue-100 text-blue-700';
-                            }
+                let dogs = null;
+
+                try {
+                    const resp = await fetch('/api/storage/judgeData_' + party.partyId);
+                    if (resp.ok) {
+                        const { value } = await resp.json();
+                        dogs = value;
+                    }
+                } catch (e) {}
+
+                if (!dogs) {
+                    const savedData = localStorage.getItem('judgeData_' + party.partyId);
+                    if (savedData) {
+                        try { dogs = JSON.parse(savedData); } catch (e) {}
+                    }
+                }
+
+                if (dogs && Array.isArray(dogs)) {
+                    const done = dogs.filter(d => d.status === 'done').length;
+                    const total = dogs.length;
+                    if (done > 0) {
+                        statusText = `${done}/${total} ferdig`;
+                        if (done === total) {
+                            statusClasses = 'bg-green-100 text-green-700';
+                        } else {
+                            statusClasses = 'bg-blue-100 text-blue-700';
                         }
-                    } catch (e) {}
+                    }
                 }
 
                 // Determine colors based on party type
@@ -357,7 +372,7 @@
                         </button>
                     </div>
                 `;
-            });
+            }
 
             container.innerHTML = html;
             container.classList.remove('hidden');
@@ -366,25 +381,37 @@
 
         // Initialize
         loadAssignedParties();
-        checkPendingCritiques();
 
         // Check if there are pending critiques (all dogs done but critiques not sent)
-        function checkPendingCritiques() {
+        async function checkPendingCritiques() {
             // Check each assigned party
-            myAssignedParties.forEach(party => {
-                const saved = localStorage.getItem('judgeData_' + party.partyId);
-                if (!saved) return;
+            for (const party of myAssignedParties) {
+                // Try to load from server first
+                let dogs = null;
+                try {
+                    const resp = await fetch('/api/storage/judgeData_' + party.partyId);
+                    if (resp.ok) {
+                        const { value } = await resp.json();
+                        dogs = value;
+                    }
+                } catch (e) {}
+
+                // Fallback to localStorage
+                if (!dogs) {
+                    const saved = localStorage.getItem('judgeData_' + party.partyId);
+                    if (!saved) continue;
+                    dogs = JSON.parse(saved);
+                }
 
                 try {
-                    const data = JSON.parse(saved);
-                    const dogs = data.dogs || data;
+                    const dogList = Array.isArray(dogs) ? dogs : (dogs.dogs || []);
 
-                    if (!Array.isArray(dogs)) return;
+                    if (!Array.isArray(dogList) || dogList.length === 0) continue;
 
-                    const allDone = dogs.every(d => d.status === 'done' || d.knocked);
-                    if (!allDone) return;
+                    const allDone = dogList.every(d => d.status === 'done' || d.knocked);
+                    if (!allDone) continue;
 
-                    const hasPendingCritiques = dogs.some(d => d.status === 'done' && !d.critiqueSentToNKK);
+                    const hasPendingCritiques = dogList.some(d => d.status === 'done' && !d.critiqueSentToNKK);
 
                     if (hasPendingCritiques) {
                         document.getElementById('pendingCritiquesAlert').classList.remove('hidden');

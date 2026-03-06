@@ -309,13 +309,32 @@
         document.addEventListener('DOMContentLoaded', async () => {
             await loadTrialData();
 
+            // Check userSession first, then adminSession
             const savedSession = localStorage.getItem('userSession');
+            const adminSession = localStorage.getItem('adminSession');
+
             if (savedSession) {
                 try {
                     currentUser = JSON.parse(savedSession);
                     showDashboard();
                 } catch (e) {
                     localStorage.removeItem('userSession');
+                }
+            } else if (adminSession) {
+                // Admin is logged in - create user session from admin session
+                try {
+                    const admin = JSON.parse(adminSession);
+                    const userInfo = getUserByPhone(admin.phone);
+                    currentUser = {
+                        phone: admin.phone,
+                        name: userInfo.name || admin.name,
+                        trials: userInfo.trials,
+                        loggedInAt: admin.loggedInAt
+                    };
+                    localStorage.setItem('userSession', JSON.stringify(currentUser));
+                    showDashboard();
+                } catch (e) {
+                    localStorage.removeItem('adminSession');
                 }
             }
         });

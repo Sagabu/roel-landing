@@ -428,12 +428,26 @@
 
             // Slett fra localStorage
             localStorage.removeItem('judgeData_' + partyId);
+            localStorage.removeItem('partyLists');
 
             // Slett fra server
             try {
                 await fetch('/api/storage/judgeData_' + partyId, { method: 'DELETE' });
             } catch (e) {
                 console.log('Kunne ikke slette fra server:', e);
+            }
+
+            // Hent partyLists fra server og lagre i localStorage
+            try {
+                const resp = await fetch('/api/storage/partyLists');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        localStorage.setItem('partyLists', JSON.stringify(data.value));
+                    }
+                }
+            } catch (e) {
+                console.log('Kunne ikke hente partyLists:', e);
             }
 
             alert(`Parti ${partyId} er nullstilt. Du kan nå starte bedømmingen på nytt.`);

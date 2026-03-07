@@ -130,6 +130,40 @@ db.exec(`
     PRIMARY KEY (telefon, klubb_id)
   );
 
+  -- Kritikker-tabell (persisterer dommerkritikker)
+  CREATE TABLE IF NOT EXISTS kritikker (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT REFERENCES prover(id),
+    parti TEXT NOT NULL,
+    hund_regnr TEXT NOT NULL,
+    hund_navn TEXT,
+    hund_rase TEXT,
+    eier TEXT,
+    forer TEXT,
+    klasse TEXT DEFAULT 'AK',
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    dommer_rolle INTEGER,
+    -- Scores (JSON for fleksibilitet)
+    scores TEXT DEFAULT '{}',
+    -- Resultat
+    premie TEXT,
+    cacit TEXT,
+    -- Kritikktekst
+    tekst TEXT,
+    feltnotater TEXT,
+    -- Status: draft, submitted, approved, returned
+    status TEXT DEFAULT 'draft',
+    -- Timestamps
+    submitted_at TEXT,
+    submitted_by TEXT,
+    approved_at TEXT,
+    approved_by TEXT,
+    nkk_comment TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, parti, hund_regnr, dommer_telefon)
+  );
+
   INSERT OR IGNORE INTO trial_config (id) VALUES (1);
 `);
 
@@ -773,6 +807,202 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", async (c) => {
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
+});
+
+// --- Kritikker API ---
+
+// Hent alle kritikker for en prøve/parti
+app.get("/api/prover/:proveId/kritikker", (c) => {
+  const proveId = c.req.param("proveId");
+  const parti = c.req.query("parti");
+  const status = c.req.query("status"); // draft, submitted, approved, returned
+
+  let query = `
+    SELECT k.*, b.fornavn || ' ' || b.etternavn as dommer_navn
+    FROM kritikker k
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.prove_id = ?
+  `;
+  const params = [proveId];
+
+  if (parti) {
+    query += " AND k.parti = ?";
+    params.push(parti);
+  }
+  if (status) {
+    query += " AND k.status = ?";
+    params.push(status);
+  }
+
+  query += " ORDER BY k.parti, k.hund_regnr";
+
+  const rows = db.prepare(query).all(...params);
+  return c.json(rows.map(r => ({
+    ...r,
+    scores: JSON.parse(r.scores || '{}')
+  })));
+});
+
+// Hent kritikker for NKK-rep (alle submitted)
+app.get("/api/kritikker/pending", (c) => {
+  const rows = db.prepare(`
+    SELECT k.*, b.fornavn || ' ' || b.etternavn as dommer_navn,
+           p.navn as prove_navn, p.sted as prove_sted
+    FROM kritikker k
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    LEFT JOIN prover p ON k.prove_id = p.id
+    WHERE k.status = 'submitted'
+    ORDER BY k.submitted_at DESC
+  `).all();
+
+  return c.json(rows.map(r => ({
+    ...r,
+    scores: JSON.parse(r.scores || '{}')
+  })));
+});
+
+// Lagre/oppdater kritikk (brukes av dommer)
+app.post("/api/prover/:proveId/kritikker", async (c) => {
+  const proveId = c.req.param("proveId");
+  const body = await c.req.json();
+
+  const {
+    parti, hund_regnr, hund_navn, hund_rase, eier, forer, klasse,
+    dommer_telefon, dommer_rolle, scores, premie, cacit, tekst, feltnotater, status
+  } = body;
+
+  if (!parti || !hund_regnr || !dommer_telefon) {
+    return c.json({ error: "parti, hund_regnr og dommer_telefon er påkrevd" }, 400);
+  }
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO kritikker (
+        prove_id, parti, hund_regnr, hund_navn, hund_rase, eier, forer, klasse,
+        dommer_telefon, dommer_rolle, scores, premie, cacit, tekst, feltnotater, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(prove_id, parti, hund_regnr, dommer_telefon) DO UPDATE SET
+        hund_navn = excluded.hund_navn,
+        hund_rase = excluded.hund_rase,
+        eier = excluded.eier,
+        forer = excluded.forer,
+        klasse = excluded.klasse,
+        scores = excluded.scores,
+        premie = excluded.premie,
+        cacit = excluded.cacit,
+        tekst = excluded.tekst,
+        feltnotater = excluded.feltnotater,
+        status = excluded.status,
+        updated_at = datetime('now')
+    `).run(
+      proveId, parti, hund_regnr, hund_navn || '', hund_rase || '', eier || '', forer || '', klasse || 'AK',
+      dommer_telefon, dommer_rolle || null, JSON.stringify(scores || {}), premie || '', cacit || '', tekst || '', feltnotater || '', status || 'draft'
+    );
+
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Send kritikk til NKK-rep
+app.put("/api/kritikker/:id/submit", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { submitted_by } = body;
+
+  const result = db.prepare(`
+    UPDATE kritikker
+    SET status = 'submitted',
+        submitted_at = datetime('now'),
+        submitted_by = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(submitted_by || 'Dommer', id);
+
+  if (result.changes === 0) {
+    return c.json({ error: "Kritikk ikke funnet" }, 404);
+  }
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_submitted",
+    `Kritikk ${id} sendt til NKK-rep av ${submitted_by}`
+  );
+
+  return c.json({ success: true });
+});
+
+// NKK-rep godkjenner kritikk
+app.put("/api/kritikker/:id/godkjenn", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { approved_by } = body;
+
+  const result = db.prepare(`
+    UPDATE kritikker
+    SET status = 'approved',
+        approved_at = datetime('now'),
+        approved_by = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(approved_by || 'NKK-rep', id);
+
+  if (result.changes === 0) {
+    return c.json({ error: "Kritikk ikke funnet" }, 404);
+  }
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_godkjent",
+    `Kritikk ${id} godkjent av ${approved_by}`
+  );
+
+  return c.json({ success: true });
+});
+
+// NKK-rep returnerer kritikk til dommer
+app.put("/api/kritikker/:id/returner", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { nkk_comment, returned_by } = body;
+
+  const result = db.prepare(`
+    UPDATE kritikker
+    SET status = 'returned',
+        nkk_comment = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(nkk_comment || '', id);
+
+  if (result.changes === 0) {
+    return c.json({ error: "Kritikk ikke funnet" }, 404);
+  }
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_returnert",
+    `Kritikk ${id} returnert av ${returned_by}: ${nkk_comment}`
+  );
+
+  return c.json({ success: true });
+});
+
+// Hent godkjente kritikker for en hund (brukes av hund.html)
+app.get("/api/hunder/:regnr/kritikker", (c) => {
+  const regnr = c.req.param("regnr");
+
+  const rows = db.prepare(`
+    SELECT k.*, b.fornavn || ' ' || b.etternavn as dommer_navn,
+           p.navn as prove_navn, p.sted as prove_sted, p.start_dato
+    FROM kritikker k
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    LEFT JOIN prover p ON k.prove_id = p.id
+    WHERE k.hund_regnr = ? AND k.status = 'approved'
+    ORDER BY k.approved_at DESC
+  `).all(regnr);
+
+  return c.json(rows.map(r => ({
+    ...r,
+    scores: JSON.parse(r.scores || '{}')
+  })));
 });
 
 // --- Backup ---

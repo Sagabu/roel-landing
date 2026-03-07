@@ -534,7 +534,7 @@
         }
 
         // Submit critique
-        function submitCritique() {
+        async function submitCritique() {
             const dog = state.dogs.find(d => d.id === state.currentDogId);
             if (!dog) return;
 
@@ -577,15 +577,49 @@
             latestRound.scores.REVIERING = getVal('edit_REVIERING');
             latestRound.scores.SAMARBEID = getVal('edit_SAMARBEID');
 
-            // Save critique
+            // Save critique locally first
             dog.critique = critiqueText;
             dog.critiqueStatus = 'submitted';
             dog.critiqueSentToNKK = true;
             dog.critiqueSubmittedAt = new Date().toISOString();
             dog.critiqueSubmittedBy = state.judgeName;
 
-            // Save to localStorage
+            // Save to localStorage (for backward compatibility)
             localStorage.setItem('judgeData_' + state.party, JSON.stringify(state.dogs));
+
+            // Also persist to database via API
+            const proveId = state.proveId || 'vinterproven2026';
+            try {
+                // First save the critique
+                const saveResp = await fetch(`/api/prover/${proveId}/kritikker`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        parti: state.party,
+                        hund_regnr: dog.regnr,
+                        hund_navn: dog.name,
+                        hund_rase: dog.breed,
+                        eier: dog.owner,
+                        forer: dog.handler,
+                        klasse: dog.klasse || 'AK',
+                        dommer_telefon: state.judgePhone,
+                        dommer_rolle: state.judgeRole,
+                        scores: latestRound.scores,
+                        premie: dog.prize || '',
+                        cacit: dog.cacit || '',
+                        tekst: critiqueText,
+                        feltnotater: dog.rounds.map(r => r.notes).filter(Boolean).join('\n'),
+                        status: 'submitted'
+                    })
+                });
+
+                if (!saveResp.ok) {
+                    console.error('Kunne ikke lagre kritikk til database');
+                }
+            } catch (e) {
+                console.error('API-feil ved lagring av kritikk:', e);
+                // Continue anyway - localStorage backup is in place
+            }
 
             hideModal();
             renderDogList();

@@ -829,16 +829,32 @@
             }
         }
 
-        function approveCritique() {
+        async function approveCritique() {
             if (!currentReview) return;
 
-            const { partyId, dogId, dog, dogs } = currentReview;
+            const { partyId, dogId, dog, dogs, kritikkId } = currentReview;
 
             dog.critiqueStatus = 'approved';
             dog.approvedAt = new Date().toISOString();
             dog.approvedBy = nkkRepInfo?.name || 'NKK-representant';
 
+            // Save to localStorage (backward compatibility)
             localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+
+            // Also persist to database via API
+            if (kritikkId) {
+                try {
+                    await fetch(`/api/kritikker/${kritikkId}/godkjenn`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            approved_by: nkkRepInfo?.name || 'NKK-representant'
+                        })
+                    });
+                } catch (e) {
+                    console.error('API-feil ved godkjenning:', e);
+                }
+            }
 
             hideReview();
             render();
@@ -847,17 +863,34 @@
             showToast('Kritikken er godkjent!', 'success');
         }
 
-        function returnCritique() {
+        async function returnCritique() {
             if (!currentReview) return;
 
             const comment = document.getElementById('returnComment').value.trim();
-            const { partyId, dogId, dog, dogs } = currentReview;
+            const { partyId, dogId, dog, dogs, kritikkId } = currentReview;
 
             dog.critiqueStatus = 'returned';
             dog.nkkComment = comment || 'Vennligst se over kritikken på nytt.';
             dog.returnedAt = new Date().toISOString();
 
+            // Save to localStorage (backward compatibility)
             localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+
+            // Also persist to database via API
+            if (kritikkId) {
+                try {
+                    await fetch(`/api/kritikker/${kritikkId}/returner`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            nkk_comment: dog.nkkComment,
+                            returned_by: nkkRepInfo?.name || 'NKK-representant'
+                        })
+                    });
+                } catch (e) {
+                    console.error('API-feil ved retur:', e);
+                }
+            }
 
             hideReview();
             render();

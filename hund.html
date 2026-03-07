@@ -258,8 +258,37 @@
         let currentDog = null;
         let currentCritique = null;
 
-        // Hent godkjente kritikker fra judgeData localStorage
-        function getApprovedCritiquesForDog(regnr) {
+        // Hent godkjente kritikker fra API
+        async function getApprovedCritiquesFromAPI(regnr) {
+            try {
+                const resp = await fetch(`/api/hunder/${encodeURIComponent(regnr)}/kritikker`);
+                if (resp.ok) {
+                    const kritikker = await resp.json();
+                    return kritikker.map(k => ({
+                        id: `db_${k.id}`,
+                        trial: k.prove_navn || 'Ukjent prøve',
+                        date: k.approved_at ? k.approved_at.split('T')[0] : k.start_dato || '',
+                        location: k.prove_sted || '',
+                        class: k.klasse || 'AK',
+                        party: k.parti,
+                        judge: k.dommer_navn || 'Dommer',
+                        prize: k.premie || '',
+                        cacit: k.cacit || '',
+                        scores: k.scores || {},
+                        critique: k.tekst || '',
+                        approvedAt: k.approved_at,
+                        approvedBy: k.approved_by || 'NKK-rep',
+                        isApproved: true
+                    }));
+                }
+            } catch (e) {
+                console.log('Kunne ikke hente kritikker fra API:', e);
+            }
+            return [];
+        }
+
+        // Hent godkjente kritikker fra judgeData localStorage (fallback)
+        function getApprovedCritiquesFromLocalStorage(regnr) {
             const critiques = [];
 
             // Gå gjennom alle judgeData_* keys
@@ -277,7 +306,7 @@
                         // Finn denne hunden og sjekk om kritikken er godkjent
                         if (dog.regnr === regnr && dog.critiqueStatus === 'approved') {
                             critiques.push({
-                                id: `approved_${partiId}_${dog.regnr}`,
+                                id: `local_${partiId}_${dog.regnr}`,
                                 trial: dog.proveName || 'Vinterprøven 2026',
                                 date: dog.approvedAt ? dog.approvedAt.split('T')[0] : new Date().toISOString().split('T')[0],
                                 location: dog.proveLocation || 'Lierne',
@@ -300,6 +329,37 @@
             }
 
             return critiques;
+        }
+
+        // Kombiner kritikker fra API og localStorage
+        async function getApprovedCritiquesForDog(regnr) {
+            // Hent fra begge kilder
+            const apiCritiques = await getApprovedCritiquesFromAPI(regnr);
+            const localCritiques = getApprovedCritiquesFromLocalStorage(regnr);
+
+            // Kombiner og fjern duplikater (basert på parti + dato)
+            const seen = new Set();
+            const allCritiques = [];
+
+            // API-kritikker har prioritet
+            for (const c of apiCritiques) {
+                const key = `${c.party}_${c.date}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    allCritiques.push(c);
+                }
+            }
+
+            // Legg til lokale som ikke finnes i API
+            for (const c of localCritiques) {
+                const key = `${c.party}_${c.date}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    allCritiques.push(c);
+                }
+            }
+
+            return allCritiques;
         }
 
         // Hent hundeinfo fra API

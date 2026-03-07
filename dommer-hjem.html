@@ -42,7 +42,7 @@
                     </svg>
                     <div>
                         <h1 class="text-xl font-serif font-bold">Dommerportal</h1>
-                        <p class="text-sky-300 text-sm">Vinterprøven 2026</p>
+                        <p id="proveNavnHeader" class="text-sky-300 text-sm">Laster prøve...</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-4">
@@ -70,19 +70,19 @@
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-8">
             <h2 class="text-2xl font-bold font-serif text-bark-800 mb-2">Velkommen, <span id="judgeNameWelcome">Dommer</span>!</h2>
             <p class="text-bark-600" id="welcomeSubtext">Du er tildelt partiet nedenfor av prøveleder.</p>
-            <div class="mt-4 flex items-center gap-4 text-sm text-bark-500">
+            <div id="proveDatoStedInfo" class="mt-4 flex items-center gap-4 text-sm text-bark-500">
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
-                    17.-18. januar
+                    <span id="proveDatoTekst">Laster...</span>
                 </span>
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
                     </svg>
-                    Lierne
+                    <span id="proveStedTekst">Laster...</span>
                 </span>
             </div>
         </div>
@@ -167,6 +167,42 @@
         // Display judge name in header and welcome
         document.getElementById('judgeName').textContent = judgeData.name || 'Dommer';
         document.getElementById('judgeNameWelcome').textContent = judgeData.name || 'Dommer';
+
+        // Last prøveinfo fra API
+        async function loadProveInfo() {
+            const proveId = localStorage.getItem('currentTrialId');
+            try {
+                let prove;
+                if (proveId) {
+                    const resp = await fetch(`/api/prover/${proveId}`);
+                    if (resp.ok) prove = await resp.json();
+                }
+                if (!prove) {
+                    const resp = await fetch('/api/prover');
+                    if (resp.ok) {
+                        const prover = await resp.json();
+                        prove = prover.find(p => p.status === 'active') || prover[0];
+                    }
+                }
+                if (prove) {
+                    document.getElementById('proveNavnHeader').textContent = prove.navn;
+                    const start = new Date(prove.start_dato);
+                    const end = prove.slutt_dato ? new Date(prove.slutt_dato) : null;
+                    const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+                    let dateStr;
+                    if (end && end.getTime() !== start.getTime()) {
+                        dateStr = `${start.getDate()}.-${end.getDate()}. ${months[start.getMonth()]}`;
+                    } else {
+                        dateStr = `${start.getDate()}. ${months[start.getMonth()]}`;
+                    }
+                    document.getElementById('proveDatoTekst').textContent = dateStr;
+                    document.getElementById('proveStedTekst').textContent = prove.sted || 'Sted ikke satt';
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente prøveinfo:', e);
+            }
+        }
+        loadProveInfo();
 
         // Party configurations
         const PARTIES = {

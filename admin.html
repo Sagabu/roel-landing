@@ -159,8 +159,8 @@
                 <!-- Header -->
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <h1 class="text-3xl font-bold font-serif text-bark-900">Vinterprøven 2026</h1>
-                        <p class="text-bark-600">17.-18. januar 2026 - Lierne</p>
+                        <h1 id="proveNavn" class="text-3xl font-bold font-serif text-bark-900">Laster prøve...</h1>
+                        <p id="proveDatoSted" class="text-bark-600">Laster...</p>
                     </div>
                     <div class="flex gap-3">
                         <button id="exportPdfBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
@@ -1301,62 +1301,104 @@
         });
 
         // ========================================
-        // LOAD TRIAL DATA FROM URL PARAMETER
+        // LOAD TRIAL DATA FROM URL PARAMETER OR API
         // ========================================
-        (function loadTrialData() {
+        (async function loadTrialData() {
             const urlParams = new URLSearchParams(window.location.search);
-            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+            const trialId = urlParams.get('prove') || urlParams.get('trial') || localStorage.getItem('currentTrialId');
 
+            // Funksjon for å oppdatere UI med prøvedata
+            function updateTrialUI(trial) {
+                // Update page title
+                document.title = trial.navn + ' - Admin';
+
+                // Update header via ID
+                const headerTitle = document.getElementById('proveNavn');
+                if (headerTitle) {
+                    headerTitle.textContent = trial.navn;
+                }
+
+                // Update subheader with date and location via ID
+                const headerSub = document.getElementById('proveDatoSted');
+                if (headerSub) {
+                    const startDate = new Date(trial.start_dato);
+                    const endDate = trial.slutt_dato ? new Date(trial.slutt_dato) : null;
+                    let dateStr;
+                    if (endDate && endDate.getTime() !== startDate.getTime()) {
+                        dateStr = `${startDate.getDate()}.-${endDate.getDate()}. ${startDate.toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' })}`;
+                    } else {
+                        dateStr = startDate.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+                    }
+                    headerSub.textContent = dateStr + ' - ' + (trial.sted || 'Sted ikke satt');
+                }
+
+                // Update form fields in settings section
+                const trialNameInput = document.getElementById('trialName');
+                if (trialNameInput) trialNameInput.value = trial.navn;
+
+                const organizerInput = document.getElementById('organizerName');
+                if (organizerInput && trial.klubb_navn) organizerInput.value = trial.klubb_navn;
+
+                const trialDateInput = document.getElementById('trialDate');
+                if (trialDateInput) trialDateInput.value = trial.start_dato;
+
+                const locationInput = document.getElementById('trialLocation');
+                if (locationInput) locationInput.value = trial.sted;
+
+                // Set VK type based on trial config
+                const vkTypeSelect = document.getElementById('vkTypeSelect');
+                if (vkTypeSelect && trial.klasser && trial.klasser.vkType) {
+                    vkTypeSelect.value = trial.klasser.vkType;
+                    updateVKPartyConfig();
+                }
+
+                // Store current trial ID for reference
+                if (trial.id) localStorage.setItem('currentTrialId', trial.id);
+            }
+
+            // Prøv først å hente fra API
+            if (trialId) {
+                try {
+                    const resp = await fetch(`/api/prover/${trialId}`);
+                    if (resp.ok) {
+                        const trial = await resp.json();
+                        updateTrialUI(trial);
+                        return;
+                    }
+                } catch (e) {
+                    console.log('Kunne ikke hente prøve fra API, prøver localStorage');
+                }
+            }
+
+            // Fallback til localStorage (gammel metode)
             if (trialId) {
                 const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
                 const trial = trials.find(t => t.id === trialId);
-
                 if (trial) {
-                    // Update page title
-                    document.title = trial.name + ' - Admin';
+                    // Konverter gammel struktur til ny
+                    updateTrialUI({
+                        id: trial.id,
+                        navn: trial.name,
+                        sted: trial.location,
+                        start_dato: trial.startDate,
+                        klubb_navn: trial.club?.name,
+                        klasser: trial.classes
+                    });
+                }
+            }
 
-                    // Update header
-                    const headerTitle = document.querySelector('main h1.text-3xl');
-                    if (headerTitle) {
-                        headerTitle.textContent = trial.name;
-                    }
-
-                    // Update subheader with date and location
-                    const headerSub = document.querySelector('main h1.text-3xl + p');
-                    if (headerSub) {
-                        const startDate = new Date(trial.startDate);
-                        const formattedDate = startDate.toLocaleDateString('nb-NO', {
-                            day: 'numeric', month: 'long', year: 'numeric'
-                        });
-                        headerSub.textContent = formattedDate + ' - ' + trial.location;
-                    }
-
-                    // Update form fields in settings section
-                    const trialNameInput = document.getElementById('trialName');
-                    if (trialNameInput) trialNameInput.value = trial.name;
-
-                    const organizerInput = document.getElementById('organizerName');
-                    if (organizerInput && trial.club) organizerInput.value = trial.club.name || '';
-
-                    const trialDateInput = document.getElementById('trialDate');
-                    if (trialDateInput) trialDateInput.value = trial.startDate;
-
-                    const locationInput = document.getElementById('trialLocation');
-                    if (locationInput) locationInput.value = trial.location;
-
-                    // Set VK type based on trial config
-                    const vkTypeSelect = document.getElementById('vkTypeSelect');
-                    if (vkTypeSelect && trial.classes && trial.classes.VK) {
-                        if (trial.classes.VK.days === 1) {
-                            vkTypeSelect.value = '1day';
-                        } else if (trial.classes.VK.days === 2) {
-                            vkTypeSelect.value = '2day';
+            // Hvis ingen prøve-ID, hent første prøve fra API
+            if (!trialId) {
+                try {
+                    const resp = await fetch('/api/prover');
+                    if (resp.ok) {
+                        const prover = await resp.json();
+                        if (prover.length > 0) {
+                            updateTrialUI(prover[0]);
                         }
-                        updateVKPartyConfig();
                     }
-
-                    // Store current trial ID for reference
-                    localStorage.setItem('currentTrialId', trialId);
+                } catch (e) {
+                    console.log('Kunne ikke hente prøver fra API');
                 }
             }
         })();

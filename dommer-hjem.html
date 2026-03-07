@@ -168,7 +168,46 @@
         document.getElementById('judgeName').textContent = judgeData.name || 'Dommer';
         document.getElementById('judgeNameWelcome').textContent = judgeData.name || 'Dommer';
 
-        // Party configurations
+        // Party configurations - dynamisk basert på parti-ID
+        function getPartyConfig(partyId) {
+            // Parse parti-ID for å bestemme type
+            const id = partyId.toUpperCase();
+
+            // VK-partier
+            if (id.startsWith('V') || id.includes('VK')) {
+                const isFinale = id.includes('FINALE') || id.includes('FIN');
+                return {
+                    name: isFinale ? 'VK Finale' : `VK Parti ${id}`,
+                    type: isFinale ? 'vkfinale' : 'vk',
+                    judges: 2,
+                    dogs: isFinale ? 12 : 18,
+                    day: isFinale ? 'Dag 2' : 'Dag 1'
+                };
+            }
+
+            // UK/AK-partier (A1, A2, B1, osv.)
+            if (/^[A-Z]\d+$/.test(id)) {
+                const dayNum = parseInt(id.slice(1)) <= 2 ? 1 : 2;
+                return {
+                    name: `UK/AK Parti ${id}`,
+                    type: 'ukak',
+                    judges: 1,
+                    dogs: 15,
+                    day: `Dag ${dayNum}`
+                };
+            }
+
+            // Fallback
+            return {
+                name: `Parti ${partyId}`,
+                type: 'ukak',
+                judges: 1,
+                dogs: 10,
+                day: ''
+            };
+        }
+
+        // Legacy PARTIES for bakoverkompatibilitet
         const PARTIES = {
             ukak1: { name: 'UK/AK Parti 1', type: 'ukak', judges: 1, dogs: 15, day: 'Dag 1' },
             ukak2: { name: 'UK/AK Parti 2', type: 'ukak', judges: 1, dogs: 15, day: 'Dag 1' },
@@ -207,12 +246,8 @@
             container.innerHTML = assignedParties.map(assignment => {
                 const partyId = assignment.parti;
                 const judgeRole = assignment.rolle;
-                const party = PARTIES[partyId];
-
-                if (!party) {
-                    // Dynamisk parti som ikke er i PARTIES
-                    return renderUnknownPartyCard(partyId, judgeRole);
-                }
+                // Prøv legacy PARTIES først, ellers bruk dynamisk konfig
+                const party = PARTIES[partyId] || getPartyConfig(partyId);
 
                 return renderPartyCard(partyId, party, judgeRole);
             }).join('');

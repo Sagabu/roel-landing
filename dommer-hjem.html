@@ -328,12 +328,19 @@
                         ${isVK ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
                     </div>
 
-                    <button onclick="goToAssessment('${partyId}', ${judgeRole || 'null'})" class="w-full ${buttonClass} text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-                        </svg>
-                        ${buttonText}
-                    </button>
+                    <div class="flex gap-2">
+                        <button onclick="goToAssessment('${partyId}', ${judgeRole || 'null'})" class="flex-1 ${buttonClass} text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                            </svg>
+                            ${buttonText}
+                        </button>
+                        <button onclick="resetParty('${partyId}')" class="px-4 py-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-xl transition" title="Nullstill parti">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             `;
         }
@@ -412,6 +419,25 @@
 
             // Navigate to assessment page
             window.location.href = 'dommer-vk.html?party=' + partyId;
+        }
+
+        async function resetParty(partyId) {
+            if (!confirm(`Er du sikker på at du vil nullstille all bedømming for parti ${partyId}?\n\nDette kan ikke angres!`)) {
+                return;
+            }
+
+            // Slett fra localStorage
+            localStorage.removeItem('judgeData_' + partyId);
+
+            // Slett fra server
+            try {
+                await fetch('/api/storage/judgeData_' + partyId, { method: 'DELETE' });
+            } catch (e) {
+                console.log('Kunne ikke slette fra server:', e);
+            }
+
+            alert(`Parti ${partyId} er nullstilt. Du kan nå starte bedømmingen på nytt.`);
+            location.reload();
         }
 
         function logout() {

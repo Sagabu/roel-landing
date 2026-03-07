@@ -1159,12 +1159,25 @@
             }
         }
 
-        // Add Round
+        // Add Round - overfører tallkarakterer fra forrige slipp
         function addRound(dogId) {
             const dog = state.dogs.find(d => d.id === dogId);
             if (dog) {
                 const nextRoundNum = dog.rounds.length + 1;
-                dog.rounds.push(createEmptyRound(nextRoundNum));
+                const previousRound = dog.rounds[dog.rounds.length - 1];
+                const newRound = createEmptyRound(nextRoundNum);
+
+                // Overfør tallkarakterer fra forrige slipp (kan endres av dommer)
+                if (previousRound && previousRound.scores) {
+                    const transferFields = ['JAKTLYST', 'FART', 'SELVSTENDIGHET', 'SOKSBREDDE', 'REVIERING', 'SAMARBEID'];
+                    transferFields.forEach(field => {
+                        if (previousRound.scores[field] !== null) {
+                            newRound.scores[field] = previousRound.scores[field];
+                        }
+                    });
+                }
+
+                dog.rounds.push(newRound);
                 renderCards();
                 saveLive();
             }
@@ -1563,6 +1576,14 @@
             const latestRound = dog.rounds[dog.rounds.length - 1];
             const s = latestRound.scores;
 
+            // Beregn akkumulert slipptid fra alle slipp
+            const totalSlipptid = dog.rounds.reduce((sum, round) => {
+                const tid = parseInt(round.scores.SLIPPTID) || 0;
+                return sum + tid;
+            }, 0);
+            const slipptidDisplay = totalSlipptid > 0 ? totalSlipptid : '-';
+            const slippCount = dog.rounds.length;
+
             scoresContainer.innerHTML = `
                 <!-- Fuglebehandling -->
                 <div class="bg-sky-50 rounded-xl p-3">
@@ -1613,8 +1634,8 @@
                         </div>
                         <div class="bg-amber-50 rounded-lg p-1">
                             <span class="text-sm font-bold text-amber-600">SL</span>
-                            <div class="text-xl font-bold text-amber-700">${s.SLIPPTID ?? '-'}</div>
-                            <span class="text-[9px] italic text-amber-500">Slipptid</span>
+                            <div class="text-xl font-bold text-amber-700">${slipptidDisplay}</div>
+                            <span class="text-[9px] italic text-amber-500">${slippCount > 1 ? `Tot. (${slippCount} slipp)` : 'Slipptid'}</span>
                         </div>
                     </div>
                 </div>
@@ -1974,6 +1995,15 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-xl p-3 text-sm text-red-700"><b>Adfe
             const isUKAK = state.party.startsWith('ukak');
             const prizeDisplay = dog.prize || 'Ingen premie';
 
+            // Beregn akkumulert slipptid fra alle slipp
+            const totalSlipptid = dog.rounds.reduce((sum, round) => {
+                const tid = parseInt(round.scores.SLIPPTID) || 0;
+                return sum + tid;
+            }, 0);
+            const slipptidDisplay = totalSlipptid > 0 ? totalSlipptid : '-';
+            const slippCount = dog.rounds.length;
+            const slipptidLabel = slippCount > 1 ? `Slipptid tot. (${slippCount})` : 'Slipptid (min)';
+
             const html = `
                 <div style="font-family: Georgia, serif; font-size: 13px; color: #1f2937;">
                     <!-- Header -->
@@ -2033,8 +2063,8 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-xl p-3 text-sm text-red-700"><b>Adfe
                             <tr style="background: #f9fafb;">
                                 <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Sjanse på fugl</td>
                                 <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold;">${s.SJANSE ?? '-'}</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; background: #fef3c7;">Slipptid (min)</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; background: #fef3c7;">${s.SLIPPTID ?? '-'}</td>
+                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; background: #fef3c7;">${slipptidLabel}</td>
+                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; background: #fef3c7;">${slipptidDisplay}</td>
                             </tr>
                         </table>
                     </div>

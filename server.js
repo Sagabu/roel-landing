@@ -119,7 +119,7 @@ db.exec(`
     dommer_telefon TEXT REFERENCES brukere(telefon),
     parti TEXT NOT NULL,
     dommer_rolle INTEGER DEFAULT NULL,
-    UNIQUE(prove_id, dommer_telefon)
+    UNIQUE(prove_id, parti, dommer_telefon)
   );
 
   -- Klubb-administratorer
@@ -618,6 +618,151 @@ app.get("/api/brukere/:telefon/prover", (c) => {
   });
 
   return c.json(result);
+});
+
+// --- Dommer-tildelinger API ---
+
+// Hent alle dommere med rolle "dommer" (for dropdown)
+app.get("/api/dommere", (c) => {
+  const dommere = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost
+    FROM brukere
+    WHERE rolle LIKE '%dommer%'
+    ORDER BY etternavn, fornavn
+  `).all();
+  return c.json(dommere);
+});
+
+// Hent dommertildelinger for en prøve
+app.get("/api/prover/:id/dommer-tildelinger", (c) => {
+  const proveId = c.req.param("id");
+  const tildelinger = db.prepare(`
+    SELECT dt.id, dt.parti, dt.dommer_rolle, dt.dommer_telefon,
+           b.fornavn, b.etternavn, b.telefon
+    FROM dommer_tildelinger dt
+    JOIN brukere b ON dt.dommer_telefon = b.telefon
+    WHERE dt.prove_id = ?
+    ORDER BY dt.parti, dt.dommer_rolle
+  `).all(proveId);
+  return c.json(tildelinger);
+});
+
+// Legg til/oppdater dommertildeling
+app.post("/api/prover/:id/dommer-tildelinger", async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { parti, dommer_telefon, dommer_rolle } = body;
+
+  if (!parti || !dommer_telefon) {
+    return c.json({ error: "Parti og dommer_telefon er påkrevd" }, 400);
+  }
+
+  // Sjekk om prøven finnes
+  const prove = db.prepare("SELECT id FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk validering: UK/AK kan ha 1-2 dommere, VK må ha nøyaktig 2
+  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+  const eksisterende = db.prepare(`
+    SELECT COUNT(*) as antall FROM dommer_tildelinger
+    WHERE prove_id = ? AND parti = ? AND dommer_telefon != ?
+  `).get(proveId, parti, dommer_telefon);
+
+  if (partiType === 'VK' && eksisterende.antall >= 2) {
+    return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
+  }
+  if (partiType === 'UKAK' && eksisterende.antall >= 2) {
+    return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+  }
+
+  // Insert eller erstatt
+  try {
+    db.prepare(`
+      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(prove_id, parti, dommer_telefon) DO UPDATE SET
+        dommer_rolle = excluded.dommer_rolle
+    `).run(proveId, dommer_telefon, parti, dommer_rolle || null);
+
+    // Logg endringen
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_tildelt",
+      `Dommer ${dommer_telefon} tildelt ${parti} på prøve ${proveId}`
+    );
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Fjern dommertildeling
+app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", (c) => {
+  const proveId = c.req.param("id");
+  const tildelingId = c.req.param("tildelingId");
+
+  const result = db.prepare(`
+    DELETE FROM dommer_tildelinger
+    WHERE id = ? AND prove_id = ?
+  `).run(tildelingId, proveId);
+
+  if (result.changes === 0) {
+    return c.json({ error: "Tildeling ikke funnet" }, 404);
+  }
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "dommer_fjernet",
+    `Tildeling ${tildelingId} fjernet fra prøve ${proveId}`
+  );
+
+  return c.json({ success: true });
+});
+
+// Masseoppdatering av dommertildelinger for et parti
+app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", async (c) => {
+  const proveId = c.req.param("id");
+  const parti = c.req.param("parti");
+  const body = await c.req.json();
+  const { dommere } = body; // Array av { telefon, rolle }
+
+  if (!Array.isArray(dommere)) {
+    return c.json({ error: "dommere må være en array" }, 400);
+  }
+
+  // Validering
+  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+  if (partiType === 'VK' && dommere.length !== 2) {
+    return c.json({ error: "VK-partier må ha nøyaktig 2 dommere" }, 400);
+  }
+  if (partiType === 'UKAK' && (dommere.length < 1 || dommere.length > 2)) {
+    return c.json({ error: "UK/AK-partier må ha 1-2 dommere" }, 400);
+  }
+
+  try {
+    // Slett eksisterende for dette partiet
+    db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ? AND parti = ?").run(proveId, parti);
+
+    // Sett inn nye
+    const insert = db.prepare(`
+      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    for (const d of dommere) {
+      insert.run(proveId, d.telefon, parti, d.rolle || null);
+    }
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_parti_oppdatert",
+      `${parti}: ${dommere.map(d => d.telefon).join(', ')}`
+    );
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
 });
 
 // --- Backup ---

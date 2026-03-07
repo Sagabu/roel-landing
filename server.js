@@ -1308,7 +1308,7 @@ app.get("/:page{.+\\.html}", (c) => {
 // Static files
 app.use("/*", serveStatic({ root: __dirname }));
 
-serve({ fetch: app.fetch, port: PORT }, () => {
+serve({ fetch: app.fetch, port: PORT, hostname: '0.0.0.0' }, () => {
   console.log(`🐕 Fuglehundprøve running on http://localhost:${PORT}`);
   console.log(`   Admin: http://localhost:${PORT}/admin-panel.html`);
   console.log(`   Backup: http://localhost:${PORT}/api/backup`);

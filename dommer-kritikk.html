@@ -414,6 +414,15 @@
             // Scores - editable inputs
             const latestRound = dog.rounds[dog.rounds.length - 1];
             const s = latestRound.scores;
+
+            // Beregn total slipptid fra alle slipp
+            const totalSlipptid = dog.rounds.reduce((sum, round) => {
+                const tid = parseInt(round.scores.SLIPPTID) || 0;
+                return sum + tid;
+            }, 0);
+            const slippCount = dog.rounds.length;
+            const slipptidLabel = slippCount > 1 ? `SL (${slippCount})` : 'SL';
+
             document.getElementById('modalScores').innerHTML = `
                 <p class="text-xs text-bark-500 mb-2 italic">Du kan justere tallene ved behov før innsending</p>
                 <!-- Fuglebehandling -->
@@ -469,9 +478,11 @@
                                 class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" placeholder="-">
                         </div>
                         <div class="text-center">
-                            <label class="block text-[8px] text-amber-500">SL</label>
-                            <input type="number" min="0" max="99" id="edit_SLIPPTID" value="${s.SLIPPTID ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-amber-200 focus:border-amber-500 outline-none bg-amber-50" placeholder="-">
+                            <label class="block text-[8px] text-amber-500">${slipptidLabel}</label>
+                            <div class="w-full h-7 text-center text-xs font-bold rounded border border-amber-200 bg-amber-100 flex items-center justify-center text-amber-700" title="Total slipptid fra ${slippCount} slipp">
+                                ${totalSlipptid > 0 ? totalSlipptid : '-'}
+                            </div>
+                            <input type="hidden" id="edit_SLIPPTID" value="${totalSlipptid}">
                         </div>
                     </div>
                 </div>
@@ -569,7 +580,13 @@
             latestRound.scores.TOMSTAND = getVal('edit_TOMSTAND');
             latestRound.scores.MAKKER_STAND = getVal('edit_MAKKER_STAND');
             latestRound.scores.SJANSE = getVal('edit_SJANSE');
-            latestRound.scores.SLIPPTID = getVal('edit_SLIPPTID');
+            // SLIPPTID er nå total fra alle slipp (beregnes, ikke fra input)
+            const totalSlipptid = dog.rounds.reduce((sum, round) => {
+                const tid = parseInt(round.scores.SLIPPTID) || 0;
+                return sum + tid;
+            }, 0);
+            // Lagre total slipptid på siste runde for kritikken
+            latestRound.scores.SLIPPTID_TOTAL = totalSlipptid;
             latestRound.scores.JAKTLYST = getVal('edit_JAKTLYST');
             latestRound.scores.FART = getVal('edit_FART');
             latestRound.scores.SELVSTENDIGHET = getVal('edit_SELVSTENDIGHET');
@@ -604,7 +621,9 @@
                         klasse: dog.klasse || 'AK',
                         dommer_telefon: state.judgePhone,
                         dommer_rolle: state.judgeRole,
-                        scores: latestRound.scores,
+                        scores: { ...latestRound.scores, SLIPPTID: totalSlipptid },
+                        slipp_count: dog.rounds.length,
+                        total_slipptid: totalSlipptid,
                         premie: dog.prize || '',
                         cacit: dog.cacit || '',
                         tekst: critiqueText,

@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { randomBytes } from "crypto";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
@@ -13,6 +14,19 @@ const XLSX = require("xlsx");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(__dirname, "fuglehund.db");
 const PORT = Number(process.env.PORT || 8889);
+
+// --- Twilio config (from environment) ---
+const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_FROM = process.env.TWILIO_FROM_NUMBER || "";
+let twilioClient = null;
+if (TWILIO_SID && TWILIO_TOKEN) {
+  const Twilio = require("twilio");
+  twilioClient = Twilio(TWILIO_SID, TWILIO_TOKEN);
+  console.log("📱 Twilio SMS configured");
+} else {
+  console.log("⚠️  Twilio not configured — SMS codes will be logged to console (dev mode)");
+}
 
 // --- Database setup ---
 const db = new Database(DB_PATH);
@@ -60,8 +74,26 @@ db.exec(`
     rolle TEXT DEFAULT 'deltaker',
     medlem_siden TEXT DEFAULT (strftime('%Y', 'now')),
     profilbilde TEXT DEFAULT NULL,
+    samtykke_gitt TEXT DEFAULT NULL,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- OTP codes for SMS login
+  CREATE TABLE IF NOT EXISTS otp_codes (
+    telefon TEXT NOT NULL,
+    code TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0
+  );
+
+  -- Auth sessions
+  CREATE TABLE IF NOT EXISTS auth_sessions (
+    token TEXT PRIMARY KEY,
+    telefon TEXT NOT NULL REFERENCES brukere(telefon),
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
   );
 
   -- Klubber-tabell
@@ -264,8 +296,242 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500);
 });
 
-// --- localStorage bridge API ---
+// ============================================
+// AUTH: OTP + Sessions
+// ============================================
+
+function generateOTP() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function generateToken() {
+  return randomBytes(32).toString("hex");
+}
+
+// Clean expired OTPs and sessions periodically
+function cleanExpired() {
+  db.prepare("DELETE FROM otp_codes WHERE expires_at < datetime('now')").run();
+  db.prepare("DELETE FROM auth_sessions WHERE expires_at < datetime('now')").run();
+}
+setInterval(cleanExpired, 60 * 60 * 1000); // hourly
+
+// Get authenticated user from request (returns null if not authenticated)
+function getAuthUser(c) {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  const session = db.prepare(
+    "SELECT telefon FROM auth_sessions WHERE token = ? AND expires_at > datetime('now')"
+  ).get(token);
+  return session ? session.telefon : null;
+}
+
+// Middleware: require auth — returns 401 if not authenticated
+function requireAuth(c) {
+  const telefon = getAuthUser(c);
+  if (!telefon) return c.json({ error: "Ikke autentisert. Logg inn først." }, 401);
+  return telefon;
+}
+
+// Rate limiting for OTP (in-memory, simple)
+const otpAttempts = new Map();
+function checkOTPRate(telefon) {
+  const now = Date.now();
+  const attempts = otpAttempts.get(telefon) || [];
+  const recent = attempts.filter(t => now - t < 10 * 60 * 1000); // last 10 min
+  if (recent.length >= 5) return false; // max 5 per 10 min
+  recent.push(now);
+  otpAttempts.set(telefon, recent);
+  return true;
+}
+
+// POST /api/auth/send-code — send OTP via SMS
+app.post("/api/auth/send-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer (8 siffer)" }, 400);
+  }
+
+  // Check user exists
+  const user = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+  if (!user) {
+    return c.json({ error: "Telefonnummeret er ikke registrert" }, 404);
+  }
+
+  // Rate limit
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  // Invalidate old codes for this number
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  if (twilioClient) {
+    try {
+      await twilioClient.messages.create({
+        body: `Din innloggingskode for Fuglehundprøve: ${code}`,
+        from: TWILIO_FROM,
+        to: `+47${telefon}`
+      });
+    } catch (err) {
+      console.error("Twilio SMS error:", err.message);
+      return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+    }
+  } else {
+    // Dev mode: log code to console
+    console.log(`📱 OTP for ${telefon}: ${code}`);
+  }
+
+  return c.json({ ok: true, message: "Kode sendt på SMS" });
+});
+
+// POST /api/auth/verify-code — verify OTP, create session
+app.post("/api/auth/verify-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const code = (body.code || "").trim();
+
+  if (!telefon || !code) {
+    return c.json({ error: "Telefon og kode er påkrevd" }, 400);
+  }
+
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  // Mark OTP as used
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+
+  // Create session (30 days)
+  const token = generateToken();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare("INSERT INTO auth_sessions (token, telefon, expires_at) VALUES (?, ?, ?)").run(token, telefon, expiresAt);
+
+  // Get user info
+  const user = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  return c.json({
+    ok: true,
+    token,
+    user: {
+      telefon: user.telefon,
+      fornavn: user.fornavn,
+      etternavn: user.etternavn,
+      rolle: user.rolle,
+      samtykke_gitt: user.samtykke_gitt
+    }
+  });
+});
+
+// POST /api/auth/logout — destroy session
+app.post("/api/auth/logout", (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    db.prepare("DELETE FROM auth_sessions WHERE token = ?").run(authHeader.slice(7));
+  }
+  return c.json({ ok: true });
+});
+
+// GET /api/auth/me — check current session
+app.get("/api/auth/me", (c) => {
+  const telefon = getAuthUser(c);
+  if (!telefon) return c.json({ authenticated: false });
+  const user = db.prepare("SELECT telefon, fornavn, etternavn, rolle, samtykke_gitt FROM brukere WHERE telefon = ?").get(telefon);
+  return c.json({ authenticated: true, user });
+});
+
+// ============================================
+// CONSENT
+// ============================================
+
+// POST /api/auth/consent — record user consent
+app.post("/api/auth/consent", async (c) => {
+  const telefon = requireAuth(c);
+  if (typeof telefon !== "string") return telefon; // 401 response
+  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(telefon);
+  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+});
+
+// ============================================
+// USER DATA EXPORT (GDPR Art. 15/20)
+// ============================================
+
+app.get("/api/brukere/:telefon/export", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
+  const telefon = c.req.param("telefon");
+  // Users can only export their own data (admins could be extended later)
+  if (authed !== telefon) return c.json({ error: "Ingen tilgang" }, 403);
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  const hunder = db.prepare("SELECT * FROM hunder WHERE eier_telefon = ?").all(telefon);
+  const hundIds = hunder.map(h => h.id);
+  const resultater = hundIds.length > 0
+    ? db.prepare(`SELECT * FROM resultater WHERE hund_id IN (${hundIds.map(() => '?').join(',')})`)
+        .all(...hundIds)
+    : [];
+  const klubbRoller = db.prepare("SELECT * FROM klubb_admins WHERE telefon = ?").all(telefon);
+  const dommerTildelinger = db.prepare("SELECT * FROM dommer_tildelinger WHERE dommer_telefon = ?").all(telefon);
+
+  return c.json({
+    eksportert: new Date().toISOString(),
+    beskrivelse: "Alle personopplysninger lagret om deg i Fuglehundprøve-systemet",
+    bruker,
+    hunder,
+    resultater,
+    klubb_roller: klubbRoller,
+    dommer_tildelinger: dommerTildelinger
+  });
+});
+
+// ============================================
+// USER DELETION (GDPR Art. 17)
+// ============================================
+
+app.delete("/api/brukere/:telefon", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
+  const telefon = c.req.param("telefon");
+  if (authed !== telefon) return c.json({ error: "Ingen tilgang" }, 403);
+
+  const bruker = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  // Cascade delete
+  const hundIds = db.prepare("SELECT id FROM hunder WHERE eier_telefon = ?").all(telefon).map(h => h.id);
+  if (hundIds.length > 0) {
+    db.prepare(`DELETE FROM resultater WHERE hund_id IN (${hundIds.map(() => '?').join(',')})`).run(...hundIds);
+  }
+  db.prepare("DELETE FROM hunder WHERE eier_telefon = ?").run(telefon);
+  db.prepare("DELETE FROM dommer_tildelinger WHERE dommer_telefon = ?").run(telefon);
+  db.prepare("DELETE FROM klubb_admins WHERE telefon = ?").run(telefon);
+  db.prepare("DELETE FROM auth_sessions WHERE telefon = ?").run(telefon);
+  db.prepare("DELETE FROM otp_codes WHERE telefon = ?").run(telefon);
+  db.prepare("DELETE FROM brukere WHERE telefon = ?").run(telefon);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_slettet", `Bruker ${telefon} slettet sine data (GDPR Art. 17)`
+  );
+
+  return c.json({ ok: true, message: "Alle dine data er slettet" });
+});
+
+// --- localStorage bridge API (auth required) ---
 app.get("/api/storage/:key", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const key = c.req.param("key");
   const row = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(key);
   if (!row) return c.json({ value: null });
@@ -273,6 +539,8 @@ app.get("/api/storage/:key", (c) => {
 });
 
 app.put("/api/storage/:key", async (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const key = c.req.param("key");
   const body = await c.req.json();
   const value = JSON.stringify(body.value);
@@ -281,12 +549,16 @@ app.put("/api/storage/:key", async (c) => {
 });
 
 app.delete("/api/storage/:key", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const key = c.req.param("key");
   db.prepare("DELETE FROM kv_store WHERE key = ?").run(key);
   return c.json({ ok: true });
 });
 
 app.get("/api/storage", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const rows = db.prepare("SELECT key, updated_at FROM kv_store ORDER BY key").all();
   return c.json({ keys: rows });
 });
@@ -298,6 +570,8 @@ app.get("/api/trial", (c) => {
 });
 
 app.put("/api/trial", async (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const body = await c.req.json();
   const fields = ["name", "location", "start_date", "end_date", "organizing_club", "club_logo", "description", "contact_email", "contact_phone", "is_published"];
   const sets = [];
@@ -340,19 +614,28 @@ app.get("/api/stats", (c) => {
 // BRUKERE API
 // ============================================
 
-// Hent alle brukere
+// Hent alle brukere (requires auth — admin only in future, for now any logged-in user)
 app.get("/api/brukere", (c) => {
-  const rows = db.prepare("SELECT * FROM brukere ORDER BY etternavn, fornavn").all();
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
+  const rows = db.prepare("SELECT telefon, fornavn, etternavn, rolle FROM brukere ORDER BY etternavn, fornavn").all();
   return c.json(rows);
 });
 
-// Hent én bruker på telefon
+// Hent én bruker på telefon (auth required)
 app.get("/api/brukere/:telefon", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const telefon = c.req.param("telefon");
   const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!row) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  // Hent også klubb-info hvis bruker er admin
+  // Non-self access: return limited info
+  if (authed !== telefon) {
+    return c.json({ telefon: row.telefon, fornavn: row.fornavn, etternavn: row.etternavn, rolle: row.rolle });
+  }
+
+  // Self access: full info
   const klubbAdmin = db.prepare(`
     SELECT ka.rolle as klubb_rolle, k.id as klubb_id, k.navn as klubb_navn
     FROM klubb_admins ka
@@ -363,9 +646,12 @@ app.get("/api/brukere/:telefon", (c) => {
   return c.json({ ...row, klubbAdmin: klubbAdmin || null });
 });
 
-// Opprett eller oppdater bruker
+// Opprett eller oppdater bruker (auth required, self only)
 app.put("/api/brukere/:telefon", async (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const telefon = c.req.param("telefon");
+  if (authed !== telefon) return c.json({ error: "Ingen tilgang" }, 403);
   const body = await c.req.json();
 
   const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
@@ -406,8 +692,10 @@ app.put("/api/brukere/:telefon", async (c) => {
   return c.json(row);
 });
 
-// Sjekk om bruker er dommer for en prøve
+// Sjekk om bruker er dommer for en prøve (auth required)
 app.get("/api/brukere/:telefon/dommer-info", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const telefon = c.req.param("telefon");
   const proveId = c.req.query("prove_id");
 
@@ -448,8 +736,10 @@ app.get("/api/brukere/:telefon/dommer-info", (c) => {
 // HUNDER API
 // ============================================
 
-// Hent alle hunder for en bruker
+// Hent alle hunder for en bruker (auth required)
 app.get("/api/brukere/:telefon/hunder", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const telefon = c.req.param("telefon");
   const hunder = db.prepare(`
     SELECT h.*, k.navn as klubb_navn
@@ -647,8 +937,10 @@ app.get("/api/prover/:id/dommer-tildelinger", (c) => {
   return c.json(tildelinger);
 });
 
-// Legg til/oppdater dommertildeling
+// Legg til/oppdater dommertildeling (auth required)
 app.post("/api/prover/:id/dommer-tildelinger", async (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const { parti, dommer_telefon, dommer_rolle } = body;
@@ -698,8 +990,10 @@ app.post("/api/prover/:id/dommer-tildelinger", async (c) => {
   }
 });
 
-// Fjern dommertildeling
+// Fjern dommertildeling (auth required)
 app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const proveId = c.req.param("id");
   const tildelingId = c.req.param("tildelingId");
 
@@ -720,8 +1014,10 @@ app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", (c) => {
   return c.json({ success: true });
 });
 
-// Masseoppdatering av dommertildelinger for et parti
+// Masseoppdatering av dommertildelinger for et parti (auth required)
 app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", async (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
   const proveId = c.req.param("id");
   const parti = c.req.param("parti");
   const body = await c.req.json();
@@ -765,8 +1061,15 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", async (c) => {
   }
 });
 
-// --- Backup ---
+// --- Backup (auth required) ---
 app.get("/api/backup", (c) => {
+  const authed = requireAuth(c);
+  if (typeof authed !== "string") return authed;
+  // Only allow users with admin/proveleder/klubbleder role
+  const user = db.prepare("SELECT rolle FROM brukere WHERE telefon = ?").get(authed);
+  if (!user || !/(admin|proveleder|klubbleder)/.test(user.rolle)) {
+    return c.json({ error: "Kun administratorer kan laste ned backup" }, 403);
+  }
   if (!existsSync(DB_PATH)) return c.text("No database", 404);
   const data = readFileSync(DB_PATH);
   c.header("Content-Type", "application/octet-stream");
@@ -1030,6 +1333,67 @@ app.post("/api/parse-participants", async (c) => {
     console.error("Parse error:", err);
     return c.json({ error: "Kunne ikke lese filen: " + err.message }, 500);
   }
+});
+
+// --- Privacy policy ---
+app.get("/personvern", (c) => {
+  c.header("Content-Type", "text/html; charset=utf-8");
+  return c.body(`<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personvern - Fuglehundprøve</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <div class="max-w-3xl mx-auto px-6 py-12">
+    <a href="/" class="text-blue-600 hover:underline text-sm">&larr; Tilbake</a>
+    <h1 class="text-3xl font-bold mt-4 mb-8">Personvernerklæring</h1>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-semibold mb-3">Hva vi lagrer</h2>
+      <p class="mb-2">For at systemet skal fungere lagrer vi:</p>
+      <ul class="list-disc pl-6 space-y-1">
+        <li><strong>Kontaktinfo:</strong> Navn, telefonnummer, e-post, adresse</li>
+        <li><strong>Medlemskap:</strong> Klubbtilhørighet og rolle (deltaker, dommer, etc.)</li>
+        <li><strong>Hunder:</strong> Registreringsnummer, navn, rase, eierskap</li>
+        <li><strong>Prøveresultater:</strong> Klasse, premie, dommer, dato</li>
+        <li><strong>Kritikker:</strong> Dommerens vurdering av hunden under prøven</li>
+      </ul>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-semibold mb-3">Hvorfor</h2>
+      <p>Dataen brukes utelukkende til å administrere jaktprøver: påmelding, partilister, dommertildeling og kritikkskjemaer. Ingen data deles med tredjeparter eller brukes til markedsføring.</p>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-semibold mb-3">Hvor</h2>
+      <p>All data lagres lokalt i en SQLite-database. Ingen skylagring. SMS-koder for innlogging sendes via Twilio (USA-basert tjeneste, kun telefonnummeret ditt sendes dit).</p>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-semibold mb-3">Dine rettigheter</h2>
+      <ul class="list-disc pl-6 space-y-1">
+        <li><strong>Innsyn:</strong> Last ned alle dine data via Min side &rarr; Eksporter data</li>
+        <li><strong>Retting:</strong> Oppdater profilen din via Min side</li>
+        <li><strong>Sletting:</strong> Slett all din data via Min side &rarr; Slett konto</li>
+      </ul>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-semibold mb-3">Sikkerhet</h2>
+      <p>Innlogging skjer via engangskode på SMS. Sesjoner utløper etter 30 dager. API-endepunkter krever autentisering for tilgang til persondata.</p>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-xl font-semibold mb-3">Kontakt</h2>
+      <p>Spørsmål om personvern rettes til arrangøren av prøven du deltar på.</p>
+    </section>
+  </div>
+</body>
+</html>`);
 });
 
 // --- Serve shim ---

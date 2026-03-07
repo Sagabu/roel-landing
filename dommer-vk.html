@@ -551,14 +551,14 @@
 
             // Try to load dogs from partyLists (API/localStorage)
             let dogsFromPartyLists = null;
-            try {
-                const resp = await fetch('/api/storage/partyLists');
-                if (resp.ok) {
-                    const { value } = await resp.json();
-                    const partyLists = typeof value === 'string' ? JSON.parse(value) : value;
-                    if (partyLists && partyLists[party]) {
-                        const partyData = partyLists[party];
-                        dogsFromPartyLists = (partyData.hunder || []).map((h, idx) => ({
+
+            // Først prøv localStorage (synkront)
+            const localPartyLists = localStorage.getItem('partyLists');
+            if (localPartyLists) {
+                try {
+                    const parsed = JSON.parse(localPartyLists);
+                    if (parsed && parsed[party] && parsed[party].hunder) {
+                        dogsFromPartyLists = parsed[party].hunder.map((h, idx) => ({
                             id: idx + 1,
                             nr: idx + 1,
                             name: h.navn,
@@ -568,9 +568,34 @@
                             owner: h.eier
                         }));
                     }
+                } catch (e) {}
+            }
+
+            // Hvis ikke i localStorage, hent fra API
+            if (!dogsFromPartyLists) {
+                try {
+                    const resp = await fetch('/api/storage/partyLists');
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const partyLists = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                        if (partyLists && partyLists[party]) {
+                            const partyData = partyLists[party];
+                            dogsFromPartyLists = (partyData.hunder || []).map((h, idx) => ({
+                                id: idx + 1,
+                                nr: idx + 1,
+                                name: h.navn,
+                                regnr: h.regnr,
+                                breed: h.rase?.substring(0, 2).toUpperCase() || 'UK',
+                                handler: h.forer || h.eier,
+                                owner: h.eier
+                            }));
+                            // Lagre i localStorage for neste gang
+                            localStorage.setItem('partyLists', JSON.stringify(partyLists));
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not load party lists from API:', e);
                 }
-            } catch (e) {
-                console.log('Could not load party lists from API');
             }
 
             // Load dogs: saved data > partyLists > sample dogs

@@ -1535,8 +1535,16 @@
 
             // Fill in scores - organized by sections
             const scoresContainer = document.getElementById('critiqueScores');
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
+            const slippCount = dog.rounds.length;
+
+            // Samle alle verdier fra alle slipp - ta siste registrerte verdi for hvert felt
+            const getLastValue = (field) => {
+                for (let i = dog.rounds.length - 1; i >= 0; i--) {
+                    const val = dog.rounds[i].scores[field];
+                    if (val !== null && val !== undefined && val !== '') return val;
+                }
+                return null;
+            };
 
             // Beregn akkumulert slipptid fra alle slipp
             const totalSlipptid = dog.rounds.reduce((sum, round) => {
@@ -1544,7 +1552,39 @@
                 return sum + tid;
             }, 0);
             const slipptidDisplay = totalSlipptid > 0 ? totalSlipptid : '-';
-            const slippCount = dog.rounds.length;
+
+            // Samle slipptid per slipp for visning
+            const slipptidPerSlipp = dog.rounds.map((r, i) => {
+                const tid = parseInt(r.scores.SLIPPTID) || 0;
+                return tid > 0 ? `S${i+1}: ${tid}` : null;
+            }).filter(Boolean).join(' + ');
+
+            // Samle stand-verdier fra alle slipp (summeres)
+            const sumField = (field) => {
+                return dog.rounds.reduce((sum, round) => {
+                    const val = parseInt(round.scores[field]) || 0;
+                    return sum + val;
+                }, 0);
+            };
+            const totalStandM = sumField('STAND_M');
+            const totalStandU = sumField('STAND_U');
+            const totalTomstand = sumField('TOMSTAND');
+            const totalMakkerStand = sumField('MAKKER_STAND');
+            const totalSjanse = sumField('SJANSE');
+
+            // Fuglebehandling - siste verdier
+            const s = {
+                PRESISJON: getLastValue('PRESISJON'),
+                REISING: getLastValue('REISING'),
+                GODKJENT_REISING: getLastValue('GODKJENT_REISING'),
+                JAKTLYST: getLastValue('JAKTLYST'),
+                FART: getLastValue('FART'),
+                SELVSTENDIGHET: getLastValue('SELVSTENDIGHET'),
+                SOKSBREDDE: getLastValue('SOKSBREDDE'),
+                REVIERING: getLastValue('REVIERING'),
+                SAMARBEID: getLastValue('SAMARBEID'),
+                ADFERD: getLastValue('ADFERD')
+            };
 
             scoresContainer.innerHTML = `
                 <!-- Fuglebehandling -->
@@ -1565,33 +1605,40 @@
                         </div>
                     </div>
                 </div>
+                <!-- Slipp-oversikt -->
+                ${slippCount > 1 ? `
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                    <span class="text-xs font-bold text-blue-700 uppercase">Slipp-oversikt (${slippCount} slipp)</span>
+                    <div class="text-sm text-blue-600 mt-1">${slipptidPerSlipp ? `Tid: ${slipptidPerSlipp} = ${totalSlipptid} min` : ''}</div>
+                </div>
+                ` : ''}
                 <!-- Stand/Arbeid -->
                 <div class="bg-bark-50 rounded-xl p-3 border border-bark-100">
-                    <span class="text-xs font-bold text-bark-600 uppercase">Stand & Arbeid</span>
+                    <span class="text-xs font-bold text-bark-600 uppercase">Stand & Arbeid ${slippCount > 1 ? '(sum alle slipp)' : ''}</span>
                     <div class="grid grid-cols-6 gap-2 mt-2 text-center">
                         <div>
                             <span class="text-sm font-bold text-bark-600">St.M</span>
-                            <div class="text-xl font-bold text-bark-800">${s.STAND_M ?? '-'}</div>
+                            <div class="text-xl font-bold text-bark-800">${totalStandM || '-'}</div>
                             <span class="text-[9px] italic text-bark-400">Stand m/makker</span>
                         </div>
                         <div>
                             <span class="text-sm font-bold text-bark-600">St.U</span>
-                            <div class="text-xl font-bold text-bark-800">${s.STAND_U ?? '-'}</div>
+                            <div class="text-xl font-bold text-bark-800">${totalStandU || '-'}</div>
                             <span class="text-[9px] italic text-bark-400">Stand u/makker</span>
                         </div>
                         <div>
                             <span class="text-sm font-bold text-bark-600">TS</span>
-                            <div class="text-xl font-bold text-bark-800">${s.TOMSTAND ?? '-'}</div>
+                            <div class="text-xl font-bold text-bark-800">${totalTomstand || '-'}</div>
                             <span class="text-[9px] italic text-bark-400">Tomstand</span>
                         </div>
                         <div>
                             <span class="text-sm font-bold text-bark-600">MS</span>
-                            <div class="text-xl font-bold text-bark-800">${s.MAKKER_STAND ?? '-'}</div>
+                            <div class="text-xl font-bold text-bark-800">${totalMakkerStand || '-'}</div>
                             <span class="text-[9px] italic text-bark-400">Makkerstand</span>
                         </div>
                         <div>
                             <span class="text-sm font-bold text-bark-600">SJ</span>
-                            <div class="text-xl font-bold text-bark-800">${s.SJANSE ?? '-'}</div>
+                            <div class="text-xl font-bold text-bark-800">${totalSjanse || '-'}</div>
                             <span class="text-[9px] italic text-bark-400">Sjanse</span>
                         </div>
                         <div class="bg-amber-50 rounded-lg p-1">

@@ -12,7 +12,9 @@
   const API = '/api/storage';
   const SYNCED_KEYS = [
     'userProfile', 'userDogs', 'userTrials', 'userMandates',
-    'judgeSession', 'clubLogo'
+    'judgeSession', 'clubLogo',
+    'uploadedDogs', 'uploadSummary', 'partiConfig', 'partyLists',
+    'trialDetails'
   ];
   // judgeData_* keys are dynamic (per party)
   function isSyncedKey(key) {
@@ -27,20 +29,29 @@
   localStorage.setItem = function(key, value) {
     _setItem(key, value);
     if (isSyncedKey(key)) {
+      console.log('[storage-shim] Syncing key to server:', key);
       try {
         const parsed = JSON.parse(value);
         fetch(`${API}/${encodeURIComponent(key)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ value: parsed })
-        }).catch(() => {}); // fire and forget
+        }).then(r => {
+          console.log('[storage-shim] Saved', key, r.ok ? 'OK' : 'FAILED');
+        }).catch(e => {
+          console.error('[storage-shim] Error saving', key, e);
+        });
       } catch {
         // Not JSON, store as string
         fetch(`${API}/${encodeURIComponent(key)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ value: value })
-        }).catch(() => {});
+        }).then(r => {
+          console.log('[storage-shim] Saved (string)', key, r.ok ? 'OK' : 'FAILED');
+        }).catch(e => {
+          console.error('[storage-shim] Error saving', key, e);
+        });
       }
     }
   };
@@ -55,24 +66,34 @@
 
   // Hydrate on load: pull server state into localStorage
   async function hydrate() {
+    console.log('[storage-shim] Starting hydration...');
     try {
       const resp = await fetch(API);
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        console.log('[storage-shim] API not available');
+        return;
+      }
       const { keys } = await resp.json();
+      console.log('[storage-shim] Found keys on server:', keys.map(k => k.key));
       for (const { key } of keys) {
         if (isSyncedKey(key)) {
           const r = await fetch(`${API}/${encodeURIComponent(key)}`);
           if (r.ok) {
             const { value } = await r.json();
             if (value !== null) {
+              console.log('[storage-shim] Hydrating key:', key);
               _setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
             }
           }
         }
       }
-    } catch {
-      // Server down — localStorage still works offline
+    } catch (e) {
+      console.error('[storage-shim] Hydration error:', e);
     }
+    // Signal that hydration is complete
+    console.log('[storage-shim] Hydration complete, dispatching event');
+    window._storageHydrated = true;
+    window.dispatchEvent(new CustomEvent('storageHydrated'));
   }
 
   // Hydrate when DOM is ready (non-blocking)

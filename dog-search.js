@@ -6,59 +6,119 @@
     // Uses official FKF prizes: CACIT, ResCacit, CK, Finale, Semifinale, ÅP for VK
     // and 1-3. premie + ÅP for UK/AK
     const allDogs = [
+        // Chris Niebel - Breton XXL
         {
             id: '1',
-            name: "Fjelljeger's Storm",
-            regNumber: 'NO45678/22',
-            breed: 'Engelsk Setter',
+            name: "Breton XXL",
+            regNumber: 'NO12345/22',
+            breed: 'Breton',
             gender: 'male',
-            owner: 'Kari Nordmann',
+            owner: 'Chris Niebel',
             results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'UK', prize: '1. premie', judge: 'Bjørn Haugen' },
-                { trial: 'Rørosprøven 2025', date: '2025-08-15', class: 'UK', prize: '2. premie', judge: 'Anne Kristiansen' }
+                { trial: 'Rørosprøven 2025', date: '2025-08-15', class: 'UK', prize: '1. premie', judge: 'Ole Berg' },
+                { trial: 'Namdalsprøven 2025', date: '2025-09-10', class: 'AK', prize: '2. premie', judge: 'Bjørn Haugen' }
             ]
         },
+        // Gæggen Wågert - Gordon Setter Zico
         {
             id: '2',
-            name: "Villmarkens Troll",
-            regNumber: 'NO34521/21',
+            name: "Gordon Setter Zico",
+            regNumber: 'NO23456/21',
             breed: 'Gordon Setter',
             gender: 'male',
-            owner: 'Per Hansen',
+            owner: 'Gæggen Wågert',
             results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: 'CK', judge: 'Monja Aakert' }
+                { trial: 'Malvikprøven 2025', date: '2025-09-05', class: 'VK', prize: 'CK', judge: 'Anne Kristiansen' },
+                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'AK', prize: '1. premie', judge: 'Knut Moen' }
             ]
         },
+        // Gæggen Wågert - Gordon Setter Mainoo
         {
             id: '3',
-            name: "Skogsprinsessen",
-            regNumber: 'NO56789/23',
-            breed: 'Irsk Setter',
-            gender: 'female',
-            owner: 'Lise Johansen',
-            results: []
-        },
-        {
-            id: '4',
-            name: "Nordlys av Fjellheim",
-            regNumber: 'NO12398/20',
-            breed: 'Pointer',
+            name: "Gordon Setter Mainoo",
+            regNumber: 'NO23457/23',
+            breed: 'Gordon Setter',
             gender: 'male',
-            owner: 'Erik Svendsen',
+            owner: 'Gæggen Wågert',
             results: [
-                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: 'CACIT', judge: 'Knut Moen' },
-                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'VK', prize: 'CK', judge: 'Anne Kristiansen' }
+                { trial: 'Malvikprøven 2025', date: '2025-09-05', class: 'UK', prize: '2. premie', judge: 'Anne Kristiansen' }
             ]
         },
+        // Monja Aakert - Gordon Setter Tripp
+        {
+            id: '4',
+            name: "Gordon Setter Tripp",
+            regNumber: 'NO34567/20',
+            breed: 'Gordon Setter',
+            gender: 'male',
+            owner: 'Monja Aakert',
+            results: [
+                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: 'CACIT', judge: 'Knut Moen' },
+                { trial: 'Namdalsprøven 2024', date: '2024-09-01', class: 'VK', prize: 'CK', judge: 'Ole Berg' }
+            ]
+        },
+        // Monja Aakert - Gordon Setter Trapp
         {
             id: '5',
-            name: "Bella",
-            regNumber: 'NO78234/22',
-            breed: 'Breton',
+            name: "Gordon Setter Trapp",
+            regNumber: 'NO34568/22',
+            breed: 'Gordon Setter',
             gender: 'female',
-            owner: 'Marte Olsen',
+            owner: 'Monja Aakert',
             results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'AK', prize: '1. premie', judge: 'Bjørn Haugen' }
+                { trial: 'Namdalsprøven 2025', date: '2025-09-10', class: 'UK', prize: '1. premie', judge: 'Bjørn Haugen' },
+                { trial: 'Rørosprøven 2025', date: '2025-08-15', class: 'UK', prize: '3. premie', judge: 'Anne Kristiansen' }
+            ]
+        },
+        // Torstein Møstn - Irsk Setter Stora
+        {
+            id: '6',
+            name: "Irsk Setter Stora",
+            regNumber: 'NO45678/21',
+            breed: 'Irsk Setter',
+            gender: 'female',
+            owner: 'Torstein Møstn',
+            results: [
+                { trial: 'Selbuprøven 2025', date: '2025-08-25', class: 'VK', prize: 'CK', judge: 'Ole Berg' },
+                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'AK', prize: '1. premie', judge: 'Bjørn Haugen' }
+            ]
+        },
+        // Torstein Møstn - Irsk Setter Petra
+        {
+            id: '7',
+            name: "Irsk Setter Petra",
+            regNumber: 'NO45679/23',
+            breed: 'Irsk Setter',
+            gender: 'female',
+            owner: 'Torstein Møstn',
+            results: [
+                { trial: 'Selbuprøven 2025', date: '2025-08-25', class: 'UK', prize: '2. premie', judge: 'Ole Berg' }
+            ]
+        },
+        // Marstein Manstein - Irsk Setter Bleiebøtte
+        {
+            id: '8',
+            name: "Irsk Setter Bleiebøtte",
+            regNumber: 'NO56789/22',
+            breed: 'Irsk Setter',
+            gender: 'male',
+            owner: 'Marstein Manstein',
+            results: [
+                { trial: 'Sørfjeldprøven 2025', date: '2025-09-01', class: 'AK', prize: '1. premie', judge: 'Anne Kristiansen' },
+                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'UK', prize: '2. premie', judge: 'Knut Moen' }
+            ]
+        },
+        // Roar Storseth - Engelsk Setter Kjemperask
+        {
+            id: '9',
+            name: "Engelsk Setter Kjemperask",
+            regNumber: 'NO67890/21',
+            breed: 'Engelsk Setter',
+            gender: 'male',
+            owner: 'Roar Storseth',
+            results: [
+                { trial: 'Stjørdalsprøven 2025', date: '2025-09-15', class: 'VK', prize: 'ResCacit', judge: 'Knut Moen' },
+                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: 'Finale', judge: 'Ole Berg' }
             ]
         }
     ];

@@ -28,7 +28,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS trial_config (
     id INTEGER PRIMARY KEY DEFAULT 1,
-    name TEXT NOT NULL DEFAULT 'Høgkjølprøven 2026',
+    name TEXT NOT NULL DEFAULT '',
     location TEXT DEFAULT '',
     start_date TEXT DEFAULT '',
     end_date TEXT DEFAULT '',
@@ -1035,6 +1035,7 @@ app.post("/api/parse-participants", async (c) => {
 // --- Serve shim ---
 app.get("/storage-shim.js", (c) => {
   c.header("Content-Type", "application/javascript");
+  c.header("Cache-Control", "no-cache, no-store, must-revalidate");
   return c.body(readFileSync(join(__dirname, "storage-shim.js"), "utf-8"));
 });
 

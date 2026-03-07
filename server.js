@@ -471,6 +471,8 @@ app.get("/api/brukere/:telefon/hunder", (c) => {
 // Hent alle hunder (for søk)
 app.get("/api/hunder", (c) => {
   const search = c.req.query("search");
+  const regnr = c.req.query("regnr");
+
   let query = `
     SELECT h.*, k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as eier_navn
     FROM hunder h
@@ -478,6 +480,14 @@ app.get("/api/hunder", (c) => {
     LEFT JOIN brukere b ON h.eier_telefon = b.telefon
   `;
 
+  // Eksakt oppslag på regnr
+  if (regnr) {
+    query += ` WHERE h.regnr = ?`;
+    const rows = db.prepare(query).all(regnr);
+    return c.json(rows);
+  }
+
+  // Søk
   if (search) {
     query += ` WHERE h.navn LIKE ? OR h.regnr LIKE ? OR b.fornavn LIKE ? OR b.etternavn LIKE ?`;
     const searchPattern = `%${search}%`;

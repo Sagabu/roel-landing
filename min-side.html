@@ -262,6 +262,7 @@
         </div>
     </div>
 
+    <script src="/auth.js"></script>
     <script>
         let phoneNumber = '';
         let currentUser = null;
@@ -271,24 +272,31 @@
         document.addEventListener('DOMContentLoaded', async () => {
             await loadTrialData();
 
-            const savedSession = localStorage.getItem('userSession');
-            if (savedSession) {
-                try {
-                    const saved = JSON.parse(savedSession);
+            // Use Auth helper to check login state
+            if (Auth.isLoggedIn()) {
+                const authUser = Auth.getUser();
+                if (authUser) {
+                    phoneNumber = authUser.telefon;
                     // Re-hent brukerinfo fra API for å sikre at alle egenskaper er oppdatert
-                    const userInfo = await getUserByPhoneAsync(saved.phone?.replace(/\D/g, ''));
+                    const userInfo = await getUserByPhoneAsync(authUser.telefon);
                     currentUser = {
-                        ...saved,
-                        name: userInfo.name || saved.name,
+                        phone: authUser.telefon,
+                        name: userInfo.name || `${authUser.fornavn} ${authUser.etternavn}`,
                         trials: userInfo.trials,
                         isTrialAdmin: userInfo.isTrialAdmin || false,
                         clubName: userInfo.clubName || null,
-                        clubRole: userInfo.clubRole || null
+                        clubRole: userInfo.clubRole || null,
+                        samtykke_gitt: authUser.samtykke_gitt,
+                        loggedInAt: new Date().toISOString()
                     };
+
+                    // Check consent
+                    if (!authUser.samtykke_gitt) {
+                        showConsentDialog();
+                        return;
+                    }
+
                     showDashboard();
-                } catch (e) {
-                    console.error('Session restore error:', e);
-                    localStorage.removeItem('userSession');
                 }
             }
         });
@@ -317,8 +325,8 @@
             input.value = formatted;
         }
 
-        // Send verification code
-        function sendCode() {
+        // Send verification code via Auth API
+        async function sendCode() {
             const input = document.getElementById('phoneNumber');
             const rawPhone = input.value.replace(/\D/g, '');
 
@@ -332,13 +340,24 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Sender kode...';
 
-            setTimeout(() => {
+            try {
+                const result = await Auth.sendCode(phoneNumber);
                 document.getElementById('loadingOverlay').classList.add('hidden');
+
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+
                 document.getElementById('step1').classList.add('hidden');
                 document.getElementById('step2').classList.remove('hidden');
                 document.getElementById('displayPhone').textContent = '+47 ' + input.value;
                 document.getElementById('code1').focus();
-            }, 1500);
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                alert('Kunne ikke sende kode. Prøv igjen.');
+                console.error('sendCode error:', err);
+            }
         }
 
         function handleCodeInput(input, nextId) {
@@ -371,32 +390,37 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Verifiserer...';
 
-            // Hent brukerdata fra API
-            const userInfo = await getUserByPhoneAsync(phoneNumber);
+            try {
+                const result = await Auth.verifyCode(phoneNumber, code);
+                document.getElementById('loadingOverlay').classList.add('hidden');
 
-            document.getElementById('loadingOverlay').classList.add('hidden');
+                if (result.error) {
+                    document.getElementById('codeError').classList.remove('hidden');
+                    document.getElementById('codeError').textContent = result.error;
+                    clearCodeInputs();
+                    document.getElementById('code1').focus();
+                    return;
+                }
 
-            if (code.length === 4) {
+                // Hent utvidet brukerdata fra API
+                const userInfo = await getUserByPhoneAsync(phoneNumber);
+
                 currentUser = {
                     phone: phoneNumber,
-                    name: userInfo.name || 'Bruker',
+                    name: userInfo.name || `${result.user.fornavn} ${result.user.etternavn}`,
                     trials: userInfo.trials,
                     isTrialAdmin: userInfo.isTrialAdmin || false,
                     clubName: userInfo.clubName || null,
                     clubRole: userInfo.clubRole || null,
+                    samtykke_gitt: result.user.samtykke_gitt,
                     loggedInAt: new Date().toISOString()
                 };
 
-                localStorage.setItem('userSession', JSON.stringify(currentUser));
-
-                // Also set userProfile for backward compatibility with other pages
-                const userProfile = {
-                    name: currentUser.name,
-                    phone: phoneNumber,
-                    email: cachedUserData?.epost || '',
-                    loggedInAt: currentUser.loggedInAt
-                };
-                localStorage.setItem('userProfile', JSON.stringify(userProfile));
+                // Check consent
+                if (!result.user.samtykke_gitt) {
+                    showConsentDialog();
+                    return;
+                }
 
                 // Set judgeSession if user has judge role
                 const judgeRole = currentUser.trials?.find(t => t.roles?.some(r => r.type === 'dommer'));
@@ -414,11 +438,63 @@
                 }
 
                 showDashboard();
-            } else {
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.add('hidden');
                 document.getElementById('codeError').classList.remove('hidden');
+                document.getElementById('codeError').textContent = 'Feil ved verifisering. Prøv igjen.';
                 clearCodeInputs();
                 document.getElementById('code1').focus();
+                console.error('verifyCode error:', err);
             }
+        }
+
+        // Consent dialog
+        function showConsentDialog() {
+            const modal = document.createElement('div');
+            modal.id = 'consentModal';
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
+                    <h2 class="text-xl font-bold font-serif text-bark-900 mb-4">Personvern</h2>
+                    <p class="text-bark-600 mb-4">
+                        For å bruke Fuglehundprøve-systemet må du godta vår personvernerklæring.
+                    </p>
+                    <p class="text-sm text-bark-500 mb-6">
+                        Vi lagrer dine kontaktopplysninger, hunder og prøveresultater.
+                        Du kan når som helst eksportere eller slette alle dine data.
+                        <a href="/personvern" target="_blank" class="text-sky-500 hover:underline">Les hele personvernerklæringen</a>
+                    </p>
+                    <div class="flex gap-3">
+                        <button onclick="acceptConsent()" class="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 rounded-xl transition">
+                            Jeg godtar
+                        </button>
+                        <button onclick="declineConsent()" class="px-6 bg-bark-200 hover:bg-bark-300 text-bark-700 font-semibold py-3 rounded-xl transition">
+                            Avbryt
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function acceptConsent() {
+            try {
+                await Auth.giveConsent();
+                document.getElementById('consentModal')?.remove();
+                currentUser.samtykke_gitt = new Date().toISOString();
+                showDashboard();
+            } catch (err) {
+                alert('Kunne ikke registrere samtykke. Prøv igjen.');
+            }
+        }
+
+        function declineConsent() {
+            document.getElementById('consentModal')?.remove();
+            Auth.logout();
+            currentUser = null;
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('step1').classList.remove('hidden');
+            document.getElementById('step2').classList.add('hidden');
         }
 
         // Cache for API-data
@@ -902,10 +978,8 @@
             return 0;
         }
 
-        function logout() {
-            localStorage.removeItem('userSession');
-            localStorage.removeItem('userProfile');
-            localStorage.removeItem('judgeSession');
+        async function logout() {
+            await Auth.logout();
             currentUser = null;
             document.getElementById('dashboardSection').classList.add('hidden');
             document.getElementById('tabNavigation').classList.add('hidden');

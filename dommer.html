@@ -235,11 +235,15 @@
         </div>
     </div>
 
+    <script src="/auth.js"></script>
     <script>
-        // Check if already logged in
-        const savedJudge = localStorage.getItem('judgeSession');
-        if (savedJudge) {
-            window.location.href = 'dommer-hjem.html';
+        // Check if already logged in via Auth helper
+        if (Auth.isLoggedIn()) {
+            // Sjekk om bruker er dommer
+            const user = Auth.getUser();
+            if (user?.rolle?.includes('dommer')) {
+                window.location.href = 'dommer-hjem.html';
+            }
         }
 
         let phoneNumber = '';
@@ -259,8 +263,8 @@
             input.value = formatted;
         }
 
-        // Send verification code
-        function sendCode() {
+        // Send verification code via Auth API
+        async function sendCode() {
             const input = document.getElementById('phoneNumber');
             const rawPhone = input.value.replace(/\D/g, '');
 
@@ -275,9 +279,14 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Sender kode...';
 
-            // Simulate SMS sending (in production this would be an API call)
-            setTimeout(() => {
+            try {
+                const result = await Auth.sendCode(phoneNumber);
                 document.getElementById('loadingOverlay').classList.add('hidden');
+
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
 
                 // Show step 2
                 document.getElementById('step1').classList.add('hidden');
@@ -289,7 +298,11 @@
 
                 // Start resend cooldown
                 startResendCooldown();
-            }, 1500);
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                alert('Kunne ikke sende kode. Prøv igjen.');
+                console.error('sendCode error:', err);
+            }
         }
 
         // Handle code input - auto advance to next field
@@ -323,7 +336,7 @@
                    document.getElementById('code4').value;
         }
 
-        // Verify the code
+        // Verify the code via Auth API
         async function verifyCode() {
             const code = getEnteredCode();
 
@@ -335,23 +348,33 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Verifiserer...';
 
-            // For demo: accept any 4-digit code
-            // In production: verify against the actual sent code
-            if (code.length === 4) {
-                // Get judge info from partyLists (dynamic lookup)
-                const judgeInfo = await getJudgeByPhone(phoneNumber);
-
+            try {
+                const result = await Auth.verifyCode(phoneNumber, code);
                 document.getElementById('loadingOverlay').classList.add('hidden');
 
-                if (!judgeInfo) {
-                    // Phone number not registered as a judge
+                if (result.error) {
+                    document.getElementById('codeError').classList.remove('hidden');
+                    document.getElementById('codeError').textContent = result.error;
+                    clearCodeInputs();
+                    document.getElementById('code1').focus();
+                    return;
+                }
+
+                // Check if user is a judge
+                if (!result.user?.rolle?.includes('dommer')) {
                     showNotJudgeError();
                     return;
                 }
 
-                // Save session with judge info
+                // Check consent
+                if (!result.user.samtykke_gitt) {
+                    showConsentDialog(result.user);
+                    return;
+                }
+
+                // Save judge session for backward compat
                 const session = {
-                    name: judgeInfo.name,
+                    name: `${result.user.fornavn} ${result.user.etternavn}`,
                     phone: phoneNumber,
                     isJudge: true,
                     loggedInAt: new Date().toISOString()
@@ -360,13 +383,70 @@
 
                 // Redirect to judge home
                 window.location.href = 'dommer-hjem.html';
-            } else {
+            } catch (err) {
                 document.getElementById('loadingOverlay').classList.add('hidden');
-                // Show error
                 document.getElementById('codeError').classList.remove('hidden');
+                document.getElementById('codeError').textContent = 'Feil ved verifisering. Prøv igjen.';
                 clearCodeInputs();
                 document.getElementById('code1').focus();
+                console.error('verifyCode error:', err);
             }
+        }
+
+        // Consent dialog
+        function showConsentDialog(user) {
+            // Create consent modal
+            const modal = document.createElement('div');
+            modal.id = 'consentModal';
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
+                    <h2 class="text-xl font-bold font-rockwell text-neutral-800 mb-4">Personvern</h2>
+                    <p class="text-neutral-600 mb-4">
+                        For å bruke Fuglehundprøve-systemet må du godta vår personvernerklæring.
+                    </p>
+                    <p class="text-sm text-neutral-500 mb-6">
+                        Vi lagrer dine kontaktopplysninger, hunder og prøveresultater.
+                        Du kan når som helst eksportere eller slette alle dine data.
+                        <a href="/personvern" target="_blank" class="text-warm-500 hover:underline">Les hele personvernerklæringen</a>
+                    </p>
+                    <div class="flex gap-3">
+                        <button onclick="acceptConsent()" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white font-semibold py-3 rounded-xl transition">
+                            Jeg godtar
+                        </button>
+                        <button onclick="declineConsent()" class="px-6 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 font-semibold py-3 rounded-xl transition">
+                            Avbryt
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        async function acceptConsent() {
+            try {
+                await Auth.giveConsent();
+                document.getElementById('consentModal')?.remove();
+
+                // Save judge session and redirect
+                const user = Auth.getUser();
+                const session = {
+                    name: `${user.fornavn} ${user.etternavn}`,
+                    phone: phoneNumber,
+                    isJudge: true,
+                    loggedInAt: new Date().toISOString()
+                };
+                localStorage.setItem('judgeSession', JSON.stringify(session));
+                window.location.href = 'dommer-hjem.html';
+            } catch (err) {
+                alert('Kunne ikke registrere samtykke. Prøv igjen.');
+            }
+        }
+
+        function declineConsent() {
+            document.getElementById('consentModal')?.remove();
+            Auth.logout();
+            goBack();
         }
 
         // Show error when phone is not registered as judge
@@ -434,21 +514,31 @@
             document.getElementById('code4').value = '';
         }
 
-        // Resend code with cooldown
-        function resendCode() {
+        // Resend code with cooldown - uses real API
+        async function resendCode() {
             if (resendCooldown > 0) return;
 
             // Show loading
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Sender ny kode...';
 
-            setTimeout(() => {
+            try {
+                const result = await Auth.sendCode(phoneNumber);
                 document.getElementById('loadingOverlay').classList.add('hidden');
+
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+
                 clearCodeInputs();
                 document.getElementById('code1').focus();
                 document.getElementById('codeError').classList.add('hidden');
                 startResendCooldown();
-            }, 1500);
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                alert('Kunne ikke sende kode. Prøv igjen.');
+            }
         }
 
         // Start cooldown timer for resend

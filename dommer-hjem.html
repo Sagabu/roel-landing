@@ -69,7 +69,7 @@
         <!-- Welcome Section -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-8">
             <h2 class="text-2xl font-bold font-serif text-bark-800 mb-2">Velkommen, <span id="judgeNameWelcome">Dommer</span>!</h2>
-            <p class="text-bark-600">Du er tildelt partiet nedenfor av prøveleder.</p>
+            <p class="text-bark-600" id="welcomeSubtext">Du er tildelt partiet nedenfor av prøveleder.</p>
             <div class="mt-4 flex items-center gap-4 text-sm text-bark-500">
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,10 +111,10 @@
             </div>
         </div>
 
-        <!-- Assigned Party -->
-        <h3 class="text-lg font-semibold text-bark-700 mb-4">Ditt tildelte parti</h3>
+        <!-- Assigned Parties -->
+        <h3 class="text-lg font-semibold text-bark-700 mb-4" id="partiesHeader">Dine tildelte partier</h3>
 
-        <div id="assignedPartyCard" class="mb-8">
+        <div id="assignedPartiesContainer" class="mb-8 space-y-4">
             <!-- Will be populated by JavaScript -->
         </div>
 
@@ -179,30 +179,55 @@
             vkfinale: { name: 'VK Finale', type: 'vkfinale', judges: 2, dogs: 12, day: 'Dag 2 (søndag)' }
         };
 
-        // Get assigned party from session
-        const assignedPartyId = judgeData.assignedParty;
-        const judgeRole = judgeData.judgeRole;
+        // Get assigned parties from session (support both old and new format)
+        const assignedParties = judgeData.assignedParties ||
+            (judgeData.assignedParty ? [{ parti: judgeData.assignedParty, rolle: judgeData.judgeRole }] : []);
 
-        // Render assigned party card
-        function renderAssignedParty() {
-            const container = document.getElementById('assignedPartyCard');
+        // Render all assigned party cards
+        function renderAssignedParties() {
+            const container = document.getElementById('assignedPartiesContainer');
+            const header = document.getElementById('partiesHeader');
+            const subtext = document.getElementById('welcomeSubtext');
 
-            if (!assignedPartyId || !PARTIES[assignedPartyId]) {
-                // No party assigned
-                container.classList.add('hidden');
+            if (assignedParties.length === 0) {
+                container.innerHTML = '';
                 document.getElementById('noPartyMessage').classList.remove('hidden');
                 return;
             }
 
-            const party = PARTIES[assignedPartyId];
+            // Update text based on number of parties
+            if (assignedParties.length === 1) {
+                header.textContent = 'Ditt tildelte parti';
+                subtext.textContent = 'Du er tildelt partiet nedenfor av prøveleder.';
+            } else {
+                header.textContent = `Dine ${assignedParties.length} tildelte partier`;
+                subtext.textContent = 'Du er tildelt partiene nedenfor av prøveleder. Velg et parti for å starte bedømming.';
+            }
+
+            container.innerHTML = assignedParties.map(assignment => {
+                const partyId = assignment.parti;
+                const judgeRole = assignment.rolle;
+                const party = PARTIES[partyId];
+
+                if (!party) {
+                    // Dynamisk parti som ikke er i PARTIES
+                    return renderUnknownPartyCard(partyId, judgeRole);
+                }
+
+                return renderPartyCard(partyId, party, judgeRole);
+            }).join('');
+        }
+
+        function renderPartyCard(partyId, party, judgeRole) {
             const isVK = party.type === 'vk' || party.type === 'vkfinale';
             const isFinale = party.type === 'vkfinale';
 
             // Get progress status
             let statusText = 'Ikke startet';
-            let statusClasses = isFinale ? 'bg-amber-200 text-amber-800' : (isVK ? 'bg-sky-100 text-sky-700' : 'bg-sky-100 text-sky-700');
+            let statusClasses = isFinale ? 'bg-amber-200 text-amber-800' : (isVK ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700');
+            let allDone = false;
 
-            const saved = localStorage.getItem('judgeData_' + assignedPartyId);
+            const saved = localStorage.getItem('judgeData_' + partyId);
             if (saved) {
                 try {
                     const dogs = JSON.parse(saved);
@@ -212,6 +237,7 @@
                         statusText = `${done}/${total} ferdig`;
                         if (done === total) {
                             statusClasses = 'bg-green-100 text-green-700';
+                            allDone = true;
                         } else {
                             statusClasses = 'bg-blue-100 text-blue-700';
                         }
@@ -227,94 +253,130 @@
                 badgeColor = 'bg-amber-200';
                 badgeText = 'text-amber-700';
             } else if (isVK) {
-                borderColor = 'border-sky-300';
-                bgColor = 'bg-white';
-                badgeColor = 'bg-sky-100';
-                badgeText = 'text-sky-700';
+                borderColor = 'border-purple-200';
+                bgColor = 'bg-purple-50/50';
+                badgeColor = 'bg-purple-100';
+                badgeText = 'text-purple-700';
             } else {
-                borderColor = 'border-sky-300';
-                bgColor = 'bg-white';
+                borderColor = 'border-sky-200';
+                bgColor = 'bg-sky-50/50';
                 badgeColor = 'bg-sky-100';
                 badgeText = 'text-sky-700';
             }
 
             // Party number for badge
-            let partyBadge = assignedPartyId.replace('ukak', '').replace('vk', 'K').replace('finale', '');
-            if (isFinale) partyBadge = 'F';
+            let partyBadge = partyId.replace('ukak', '').replace('vk', 'K').replace('finale', '');
+            if (isFinale) partyBadge = '★';
 
-            container.innerHTML = `
-                <div class="${bgColor} rounded-xl border-2 ${borderColor} p-6 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
+            const buttonClass = allDone
+                ? 'bg-green-500 hover:bg-green-600'
+                : 'bg-sky-500 hover:bg-sky-600';
+            const buttonText = allDone ? 'Se/rediger bedømming' : 'Start bedømming';
+
+            return `
+                <div class="${bgColor} rounded-xl border-2 ${borderColor} p-5 shadow-sm party-card">
+                    <div class="flex items-center justify-between mb-3">
                         <div>
                             <div class="flex items-center gap-2">
-                                <h3 class="text-xl font-bold font-serif text-bark-800">${party.name}</h3>
-                                ${isFinale ? '<span class="text-amber-600">★</span>' : ''}
+                                <h3 class="text-lg font-bold font-serif text-bark-800">${party.name}</h3>
+                                ${isFinale ? '<span class="text-amber-500 text-lg">★</span>' : ''}
                             </div>
-                            <p class="text-bark-500">${party.dogs} hunder • ${party.day}</p>
+                            <p class="text-bark-500 text-sm">${party.dogs} hunder • ${party.day}</p>
                         </div>
-                        <div class="w-14 h-14 ${badgeColor} rounded-full flex items-center justify-center">
-                            <span class="${badgeText} font-bold text-xl">${partyBadge}</span>
+                        <div class="w-12 h-12 ${badgeColor} rounded-full flex items-center justify-center">
+                            <span class="${badgeText} font-bold text-lg">${partyBadge}</span>
                         </div>
                     </div>
 
                     <div class="flex items-center gap-3 mb-4">
-                        <span class="text-xs ${statusClasses} px-3 py-1 rounded-full">${statusText}</span>
+                        <span class="text-xs ${statusClasses} px-3 py-1 rounded-full font-medium">${statusText}</span>
                         ${isVK ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
                     </div>
 
-                    <button onclick="goToAssessment()" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                    <button onclick="goToAssessment('${partyId}', ${judgeRole || 'null'})" class="w-full ${buttonClass} text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
                         </svg>
-                        Start bedømming
+                        ${buttonText}
                     </button>
                 </div>
             `;
         }
 
-        renderAssignedParty();
+        function renderUnknownPartyCard(partyId, judgeRole) {
+            // For partier som ikke er definert i PARTIES-konstanten
+            const isVK = partyId.toLowerCase().includes('vk');
+            return `
+                <div class="bg-white rounded-xl border-2 border-bark-200 p-5 shadow-sm party-card">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 class="text-lg font-bold font-serif text-bark-800">${partyId}</h3>
+                            <p class="text-bark-500 text-sm">Parti ikke funnet i konfigurasjon</p>
+                        </div>
+                    </div>
+                    <button onclick="goToAssessment('${partyId}', ${judgeRole || 'null'})" class="w-full bg-bark-500 hover:bg-bark-600 text-white font-semibold py-3 rounded-xl transition">
+                        Åpne parti
+                    </button>
+                </div>
+            `;
+        }
+
+        renderAssignedParties();
         checkPendingCritiques();
 
-        // Check if there are pending critiques (all dogs done but critiques not sent)
+        // Check if there are pending critiques across all assigned parties
         function checkPendingCritiques() {
-            if (!assignedPartyId) return;
+            let hasPendingCritiques = false;
+            let pendingParty = null;
 
-            const saved = localStorage.getItem('judgeData_' + assignedPartyId);
-            if (!saved) return;
+            for (const assignment of assignedParties) {
+                const partyId = assignment.parti;
+                const saved = localStorage.getItem('judgeData_' + partyId);
+                if (!saved) continue;
 
-            try {
-                const data = JSON.parse(saved);
-                const dogs = data.dogs || data; // Handle both old and new formats
+                try {
+                    const data = JSON.parse(saved);
+                    const dogs = data.dogs || data;
 
-                if (!Array.isArray(dogs)) return;
+                    if (!Array.isArray(dogs)) continue;
 
-                // Check if all dogs are done
-                const allDone = dogs.every(d => d.status === 'done' || d.knocked);
-                if (!allDone) return;
+                    const allDone = dogs.every(d => d.status === 'done' || d.knocked);
+                    if (!allDone) continue;
 
-                // Check if any dog is missing final critique submission
-                const hasPendingCritiques = dogs.some(d => d.status === 'done' && !d.critiqueSentToNKK);
-
-                if (hasPendingCritiques) {
-                    document.getElementById('pendingCritiquesAlert').classList.remove('hidden');
+                    const pending = dogs.some(d => d.status === 'done' && !d.critiqueSentToNKK);
+                    if (pending) {
+                        hasPendingCritiques = true;
+                        pendingParty = partyId;
+                        break;
+                    }
+                } catch (e) {
+                    console.error('Error checking pending critiques for', partyId, e);
                 }
-            } catch (e) {
-                console.error('Error checking pending critiques:', e);
+            }
+
+            if (hasPendingCritiques && pendingParty) {
+                document.getElementById('pendingCritiquesAlert').classList.remove('hidden');
+                // Update the button to go to correct party
+                const btn = document.querySelector('#pendingCritiquesAlert button');
+                if (btn) {
+                    btn.onclick = () => goToFinalCritique(pendingParty);
+                }
             }
         }
 
-        function goToFinalCritique() {
-            window.location.href = 'dommer-kritikk.html?party=' + assignedPartyId;
+        function goToFinalCritique(partyId) {
+            window.location.href = 'dommer-kritikk.html?party=' + partyId;
         }
 
-        function goToAssessment() {
+        function goToAssessment(partyId, judgeRole) {
             // Update session with selected party info
             const sessionData = JSON.parse(localStorage.getItem('judgeSession') || '{}');
-            sessionData.selectedParty = assignedPartyId;
+            sessionData.selectedParty = partyId;
+            sessionData.selectedJudgeRole = judgeRole;
             localStorage.setItem('judgeSession', JSON.stringify(sessionData));
 
             // Navigate to assessment page
-            window.location.href = 'dommer-vk.html?party=' + assignedPartyId;
+            window.location.href = 'dommer-vk.html?party=' + partyId;
         }
 
         function logout() {

@@ -340,12 +340,17 @@
                 if (resp.ok) {
                     const data = await resp.json();
                     if (data.isDommer && data.tildelinger?.length > 0) {
-                        // Returner første tildeling (kan utvides til å støtte flere prøver)
-                        const tildeling = data.tildelinger[0];
+                        // Returner alle tildelinger (støtter flere partier)
                         return {
-                            name: tildeling.navn,
-                            assignedParty: tildeling.parti,
-                            judgeRole: tildeling.dommerRolle
+                            name: data.tildelinger[0].navn,
+                            // For bakoverkompatibilitet: sett første parti som assignedParty
+                            assignedParty: data.tildelinger[0].parti,
+                            judgeRole: data.tildelinger[0].dommerRolle,
+                            // Ny: alle tildelinger
+                            assignedParties: data.tildelinger.map(t => ({
+                                parti: t.parti,
+                                rolle: t.dommerRolle
+                            }))
                         };
                     }
                 }

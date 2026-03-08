@@ -43,6 +43,42 @@ Hunden må være **"ren"**:
 
 ---
 
+## Validering av kritikkskjema (OBLIGATORISK)
+
+### Felt som ALLTID må fylles ut
+
+| Felt | Krav |
+|------|------|
+| **Slipptid** | MÅ alltid være med på alle kritikker |
+| **Jaktlyst** | MÅ fylles ut (1-6) |
+| **Fart** | MÅ fylles ut (1-6) |
+| **Selvstendighet** | MÅ fylles ut (1-6) |
+| **Søksbredde** | MÅ fylles ut (1-6) |
+| **Reviering** | MÅ fylles ut (1-6) |
+| **Samarbeid** | MÅ fylles ut (1-6) |
+
+**Alle egenskaper (1-6 skala) MÅ fylles ut - ingen ruter kan stå tomme!**
+
+### Automatisk validering: Godkjent reis
+
+Hvis hunden har fuglearbeid (stand_m > 0 ELLER stand_u > 0) OG reis er satt (reising > 0):
+- → **godkjent_reising MÅ være huket av (= 1)**
+
+```javascript
+// Valideringslogikk
+if ((stand_m > 0 || stand_u > 0) && reising > 0) {
+    godkjent_reising = 1; // MÅ være true
+}
+```
+
+### Oppsummering valideringsregler
+
+1. ❌ Kritikk uten slipptid = UGYLDIG
+2. ❌ Kritikk med tomme egenskapsruter = UGYLDIG
+3. ❌ Fuglearbeid + reis uten godkjent_reising = UGYLDIG
+
+---
+
 ## Avlsindekser (NISK-modell)
 
 Referanse: "Avlsindekser på irsksetter", Avlsrådet NISK 2008

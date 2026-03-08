@@ -37,14 +37,14 @@
         <div class="max-w-4xl mx-auto px-4 py-4">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <a href="dommer-vk.html" id="backLink" class="p-2 -ml-2 hover:bg-white/20 rounded-xl transition">
+                    <a href="dommer-hjem.html" id="backLink" class="p-2 -ml-2 hover:bg-white/20 rounded-xl transition">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                         </svg>
                     </a>
                     <div>
                         <h1 class="text-xl font-serif font-bold">Skriv kritikk</h1>
-                        <p class="text-bark-300 text-sm" id="headerPartyName">-</p>
+                        <p class="text-sky-200 text-sm" id="headerPartyName">-</p>
                     </div>
                 </div>
                 <div class="text-right">
@@ -307,7 +307,7 @@
             // Update header
             document.getElementById('headerPartyName').textContent = state.partyConfig.name;
             document.getElementById('judgeName').textContent = state.judgeName;
-            document.getElementById('backLink').href = 'dommer-vk.html?party=' + state.party;
+            document.getElementById('backLink').href = 'dommer-hjem.html';
 
             // Load dogs from localStorage
             const saved = localStorage.getItem('judgeData_' + state.party);
@@ -458,37 +458,80 @@
                 prizeBadge.classList.add('hidden');
             }
 
-            // Scores - editable inputs
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
-
-            // Beregn total slipptid fra alle slipp
-            const totalSlipptid = dog.rounds.reduce((sum, round) => {
-                const tid = parseInt(round.scores.SLIPPTID) || 0;
-                return sum + tid;
-            }, 0);
+            // Aggregate scores from all rounds
             const slippCount = dog.rounds.length;
+
+            // Helper to sum a field across all rounds
+            const sumField = (field) => {
+                return dog.rounds.reduce((sum, round) => {
+                    const val = parseInt(round.scores[field]) || 0;
+                    return sum + val;
+                }, 0);
+            };
+
+            // Helper to get last non-empty value (for egenskaper som settes én gang)
+            const lastValue = (field) => {
+                for (let i = dog.rounds.length - 1; i >= 0; i--) {
+                    const val = dog.rounds[i].scores[field];
+                    if (val !== null && val !== undefined && val !== '') {
+                        return val;
+                    }
+                }
+                return '';
+            };
+
+            // Helper to check if any round has a boolean true
+            const anyTrue = (field) => {
+                return dog.rounds.some(r => r.scores[field] === true);
+            };
+
+            // Stand & Arbeid - summeres fra alle slipp
+            const totalStandM = sumField('STAND_M');
+            const totalStandU = sumField('STAND_U');
+            const totalTomstand = sumField('TOMSTAND');
+            const totalMakkerStand = sumField('MAKKER_STAND');
+            const totalSjanse = sumField('SJANSE');
+            const totalSlipptid = sumField('SLIPPTID');
+
+            // Fuglebehandling - siste verdi (skjer typisk én gang)
+            const presisjon = lastValue('PRESISJON');
+            const reising = lastValue('REISING');
+            const godkjentReising = anyTrue('GODKJENT_REISING');
+
+            // Egenskaper - siste verdi
+            const jaktlyst = lastValue('JAKTLYST');
+            const fart = lastValue('FART');
+            const selvstendighet = lastValue('SELVSTENDIGHET');
+            const soksbredde = lastValue('SOKSBREDDE');
+            const reviering = lastValue('REVIERING');
+            const samarbeid = lastValue('SAMARBEID');
+
+            // Adferd - siste verdi
+            const adferd = lastValue('ADFERD');
+            const adferdAnnet = lastValue('ADFERD_ANNET');
+
             const slipptidLabel = slippCount > 1 ? `SL (${slippCount})` : 'SL';
+            const sumLabel = slippCount > 1 ? ` (sum ${slippCount} slipp)` : '';
 
             document.getElementById('modalScores').innerHTML = `
-                <p class="text-xs text-bark-500 mb-2 italic">Du kan justere tallene ved behov før innsending</p>
+                <p class="text-xs text-bark-500 mb-2 italic">Totaler fra ${slippCount} slipp. Du kan justere tallene ved behov.</p>
                 <!-- Fuglebehandling -->
                 <div class="bg-sky-50 rounded-xl p-2 mb-2">
                     <span class="text-[10px] font-bold text-sky-700 uppercase">Fuglebehandling</span>
                     <div class="grid grid-cols-3 gap-2 mt-1">
                         <div class="text-center">
                             <label class="block text-[9px] text-bark-500">Pres</label>
-                            <input type="number" min="1" max="4" id="edit_PRESISJON" value="${s.PRESISJON ?? ''}"
-                                class="w-full h-8 text-center text-sm font-bold rounded border border-sky-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="4" id="edit_PRESISJON" value="${presisjon}"
+                                class="w-full h-8 text-center text-sm font-bold rounded border border-sky-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] text-bark-500">Reis</label>
-                            <input type="number" min="1" max="6" id="edit_REISING" value="${s.REISING ?? ''}"
-                                class="w-full h-8 text-center text-sm font-bold rounded border border-sky-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_REISING" value="${reising}"
+                                class="w-full h-8 text-center text-sm font-bold rounded border border-sky-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center flex items-end justify-center pb-1">
                             <label class="flex items-center gap-1 cursor-pointer">
-                                <input type="checkbox" id="edit_GODKJENT_REISING" ${s.GODKJENT_REISING ? 'checked' : ''}
+                                <input type="checkbox" id="edit_GODKJENT_REISING" ${godkjentReising ? 'checked' : ''}
                                     class="w-4 h-4 rounded border-sky-300 text-sky-600">
                                 <span class="text-[9px] text-bark-600">Godkj.</span>
                             </label>
@@ -497,32 +540,32 @@
                 </div>
                 <!-- Stand & Arbeid -->
                 <div class="bg-bark-50 rounded-xl p-2 mb-2">
-                    <span class="text-[10px] font-bold text-bark-600 uppercase">Stand & Arbeid</span>
+                    <span class="text-[10px] font-bold text-bark-600 uppercase">Stand & Arbeid${sumLabel}</span>
                     <div class="grid grid-cols-6 gap-1 mt-1">
                         <div class="text-center">
                             <label class="block text-[8px] text-bark-400">St.M</label>
-                            <input type="number" min="0" max="99" id="edit_STAND_M" value="${s.STAND_M ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="0" max="99" id="edit_STAND_M" value="${totalStandM || ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-bark-400">St.U</label>
-                            <input type="number" min="0" max="99" id="edit_STAND_U" value="${s.STAND_U ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="0" max="99" id="edit_STAND_U" value="${totalStandU || ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-bark-400">TS</label>
-                            <input type="number" min="0" max="99" id="edit_TOMSTAND" value="${s.TOMSTAND ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="0" max="99" id="edit_TOMSTAND" value="${totalTomstand || ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-bark-400">MS</label>
-                            <input type="number" min="0" max="99" id="edit_MAKKER_STAND" value="${s.MAKKER_STAND ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="0" max="99" id="edit_MAKKER_STAND" value="${totalMakkerStand || ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-bark-400">SJ</label>
-                            <input type="number" min="0" max="99" id="edit_SJANSE" value="${s.SJANSE ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="0" max="99" id="edit_SJANSE" value="${totalSjanse || ''}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-200 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-amber-500">${slipptidLabel}</label>
@@ -534,41 +577,48 @@
                     </div>
                 </div>
                 <!-- Egenskaper -->
-                <div class="bg-sky-50 rounded-xl p-2">
+                <div class="bg-sky-50 rounded-xl p-2 mb-2">
                     <span class="text-[10px] font-bold text-sky-700 uppercase">Egenskaper (1-6)</span>
                     <div class="grid grid-cols-6 gap-1 mt-1">
                         <div class="text-center">
                             <label class="block text-[8px] text-sky-500">JL</label>
-                            <input type="number" min="1" max="6" id="edit_JAKTLYST" value="${s.JAKTLYST ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_JAKTLYST" value="${jaktlyst}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-sky-500">FA</label>
-                            <input type="number" min="1" max="6" id="edit_FART" value="${s.FART ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_FART" value="${fart}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-sky-500">SE</label>
-                            <input type="number" min="1" max="6" id="edit_SELVSTENDIGHET" value="${s.SELVSTENDIGHET ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_SELVSTENDIGHET" value="${selvstendighet}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-sky-500">SB</label>
-                            <input type="number" min="1" max="6" id="edit_SOKSBREDDE" value="${s.SOKSBREDDE ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_SOKSBREDDE" value="${soksbredde}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-sky-500">RE</label>
-                            <input type="number" min="1" max="6" id="edit_REVIERING" value="${s.REVIERING ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_REVIERING" value="${reviering}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                         <div class="text-center">
                             <label class="block text-[8px] text-sky-500">SA</label>
-                            <input type="number" min="1" max="6" id="edit_SAMARBEID" value="${s.SAMARBEID ?? ''}"
-                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" placeholder="-">
+                            <input type="number" min="1" max="6" id="edit_SAMARBEID" value="${samarbeid}"
+                                class="w-full h-7 text-center text-xs font-bold rounded border border-bark-100 focus:border-sky-500 outline-none" inputmode="numeric" placeholder="-">
                         </div>
                     </div>
                 </div>
+                <!-- Adferd -->
+                ${adferd ? `
+                <div class="bg-amber-50 rounded-xl p-2">
+                    <span class="text-[10px] font-bold text-amber-700 uppercase">Adferd</span>
+                    <p class="text-sm text-amber-800 mt-1">${adferd}${adferdAnnet ? ': ' + adferdAnnet : ''}</p>
+                </div>
+                ` : ''}
             `;
 
             // Field notes - combine all round notes

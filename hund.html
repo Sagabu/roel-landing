@@ -255,6 +255,49 @@
             }
         };
 
+        // Rasesnitt for egenskaper (basert på aggregert statistikk)
+        // Verdier er snitt fra alle registrerte kritikker per rase
+        const breedAverages = {
+            'Engelsk Setter': { JAKTLYST: 4.5, FART: 4.6, SELVSTENDIGHET: 4.0, SOKSBREDDE: 4.2, REVIERING: 4.1, SAMARBEID: 4.0 },
+            'Gordon Setter': { JAKTLYST: 4.3, FART: 4.2, SELVSTENDIGHET: 4.2, SOKSBREDDE: 3.9, REVIERING: 4.0, SAMARBEID: 4.1 },
+            'Irsk Setter': { JAKTLYST: 4.8, FART: 4.9, SELVSTENDIGHET: 4.1, SOKSBREDDE: 4.4, REVIERING: 4.2, SAMARBEID: 3.8 },
+            'Pointer': { JAKTLYST: 5.0, FART: 5.2, SELVSTENDIGHET: 4.5, SOKSBREDDE: 4.6, REVIERING: 4.4, SAMARBEID: 4.0 },
+            'Breton': { JAKTLYST: 4.6, FART: 4.0, SELVSTENDIGHET: 3.8, SOKSBREDDE: 3.5, REVIERING: 4.0, SAMARBEID: 4.2 }
+        };
+
+        // Beregn indeks: 100 = rasesnitt, >100 = over, <100 = under
+        function calculateIndex(value, breed, property) {
+            const avg = breedAverages[breed]?.[property];
+            if (!avg || value === null || value === undefined) return null;
+            return Math.round((value / avg) * 100);
+        }
+
+        // Formater verdi med indeks og pil
+        function formatWithIndex(value, breed, property) {
+            if (value === null || value === undefined || value === '-') return '-';
+
+            const index = calculateIndex(value, breed, property);
+            if (index === null) return value;
+
+            const diff = index - 100;
+            let arrow = '';
+            let colorClass = 'text-bark-500';
+
+            if (diff > 5) {
+                arrow = '▲';
+                colorClass = 'text-green-600';
+            } else if (diff < -5) {
+                arrow = '▼';
+                colorClass = 'text-red-600';
+            } else {
+                arrow = '—';
+                colorClass = 'text-bark-400';
+            }
+
+            const sign = diff > 0 ? '+' : '';
+            return `<span class="text-lg font-bold text-sky-700">${value}</span> <span class="${colorClass} text-xs">${arrow} ${sign}${diff}%</span>`;
+        }
+
         let currentDog = null;
         let currentCritique = null;
 
@@ -540,30 +583,31 @@
 
                     <!-- EGENSKAPER (SUM) Section -->
                     <div class="p-5 bg-sky-50 border-b border-bark-200">
-                        <h3 class="text-xs font-bold text-sky-700 uppercase mb-3">Egenskaper (1-6 skala)</h3>
-                        <div class="grid grid-cols-6 gap-2">
+                        <h3 class="text-xs font-bold text-sky-700 uppercase mb-1">Egenskaper (1-6 skala)</h3>
+                        <p class="text-[10px] text-bark-400 mb-3">Indeks: 100 = rasesnitt for ${currentDog.breed}</p>
+                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p class="text-lg font-bold text-sky-700">${s.JAKTLYST ?? '-'}</p>
+                                <p>${formatWithIndex(s.JAKTLYST, currentDog.breed, 'JAKTLYST')}</p>
                                 <p class="text-[9px] text-bark-500">Jaktlyst</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p class="text-lg font-bold text-sky-700">${s.FART ?? '-'}</p>
+                                <p>${formatWithIndex(s.FART, currentDog.breed, 'FART')}</p>
                                 <p class="text-[9px] text-bark-500">Fart</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p class="text-lg font-bold text-sky-700">${s.SELVSTENDIGHET ?? '-'}</p>
+                                <p>${formatWithIndex(s.SELVSTENDIGHET, currentDog.breed, 'SELVSTENDIGHET')}</p>
                                 <p class="text-[9px] text-bark-500">Selvst.</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p class="text-lg font-bold text-sky-700">${s.SOKSBREDDE ?? '-'}</p>
+                                <p>${formatWithIndex(s.SOKSBREDDE, currentDog.breed, 'SOKSBREDDE')}</p>
                                 <p class="text-[9px] text-bark-500">Søksbr.</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p class="text-lg font-bold text-sky-700">${s.REVIERING ?? '-'}</p>
+                                <p>${formatWithIndex(s.REVIERING, currentDog.breed, 'REVIERING')}</p>
                                 <p class="text-[9px] text-bark-500">Reviering</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p class="text-lg font-bold text-sky-700">${s.SAMARBEID ?? '-'}</p>
+                                <p>${formatWithIndex(s.SAMARBEID, currentDog.breed, 'SAMARBEID')}</p>
                                 <p class="text-[9px] text-bark-500">Samarb.</p>
                             </div>
                         </div>

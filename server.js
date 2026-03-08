@@ -130,6 +130,55 @@ db.exec(`
     PRIMARY KEY (telefon, klubb_id)
   );
 
+  -- Kritikker-tabell (fullstendige FKF kritikkskjemaer)
+  CREATE TABLE IF NOT EXISTS kritikker (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hund_id INTEGER REFERENCES hunder(id),
+    prove_id TEXT REFERENCES prover(id),
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    dato TEXT NOT NULL,
+    klasse TEXT DEFAULT 'AK',
+    parti TEXT DEFAULT '',
+    sted TEXT DEFAULT '',
+
+    -- Fuglebehandling
+    presisjon INTEGER DEFAULT NULL,
+    reising INTEGER DEFAULT NULL,
+    godkjent_reising INTEGER DEFAULT 0,
+
+    -- Stand og arbeid
+    stand_m INTEGER DEFAULT 0,
+    stand_u INTEGER DEFAULT 0,
+    tomstand INTEGER DEFAULT 0,
+    makker_stand INTEGER DEFAULT 0,
+    sjanse INTEGER DEFAULT 0,
+    slipptid INTEGER DEFAULT NULL,
+
+    -- Egenskaper (1-6 skala)
+    jaktlyst INTEGER DEFAULT NULL,
+    fart INTEGER DEFAULT NULL,
+    selvstendighet INTEGER DEFAULT NULL,
+    soksbredde INTEGER DEFAULT NULL,
+    reviering INTEGER DEFAULT NULL,
+    samarbeid INTEGER DEFAULT NULL,
+
+    -- Sekundering og apport
+    sek_spontan INTEGER DEFAULT 0,
+    sek_forbi INTEGER DEFAULT 0,
+    apport INTEGER DEFAULT NULL,
+    rapport_spontan INTEGER DEFAULT 0,
+
+    -- Adferd og premie
+    adferd TEXT DEFAULT '',
+    premie TEXT DEFAULT '',
+
+    -- Fritekst kritikk
+    kritikk_tekst TEXT DEFAULT '',
+
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
   INSERT OR IGNORE INTO trial_config (id) VALUES (1);
 `);
 
@@ -250,6 +299,62 @@ function seedData() {
   insertDommer.run('vinterproven2026', '99999999', 'ukak1', null);
   insertDommer.run('vinterproven2026', '99999997', 'vkfinale', 1);
   insertDommer.run('vinterproven2026', '99999994', 'ukak2', null);
+
+  // Seed kritikker med fullstendige FKF-data
+  const insertKritikk = db.prepare(`
+    INSERT INTO kritikker (
+      hund_id, prove_id, dommer_telefon, dato, klasse, parti, sted,
+      presisjon, reising, godkjent_reising,
+      stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid,
+      jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
+      sek_spontan, sek_forbi, apport, rapport_spontan,
+      adferd, premie, kritikk_tekst
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Kritikk for Bleiebøtte (hund_id 8) - Irsk Setter
+  insertKritikk.run(
+    8, 'vinterproven2026', '99999997', '2024-09-08', 'UK', 'UK Parti 1', 'Oppdal',
+    3, 5, 1,  // presisjon, reising, godkjent_reising
+    2, 1, 0, 1, 3, 42,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
+    5, 5, 4, 4, 4, 4,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
+    1, 0, null, 0,  // sek_spontan, sek_forbi, apport, rapport_spontan
+    '', '1. UK',  // adferd, premie
+    'Flott irsk setter med masse energi og arbeidsvilje. Viser meget god jaktlyst og fart i terrenget. Søket er systematisk og effektivt. Ved fuglkontakt viser hunden fast og sikker stand med god marking. Reiser villig på kommando. En lovende unghund med stort potensial.'
+  );
+
+  // Kritikk for Breton XXL (hund_id 1)
+  insertKritikk.run(
+    1, 'vinterproven2026', '99999999', '2024-09-14', 'AK', 'AK Parti 2', 'Namdalseid',
+    3, 4, 1,
+    2, 1, 1, 0, 2, 38,
+    5, 4, 4, 3, 4, 4,
+    0, 0, 1, 0,
+    '', '2. AK',
+    'Fin Breton med god arbeidsvilje. Dekker terrenget effektivt med tilpasset søk. Viser god fart og fin stil. Fuglearbeidet er pålitelig med fast stand. Noe forsiktig ved sekundering, men viser god ro. En trivelig hund.'
+  );
+
+  // Kritikk for Kjemperask (hund_id 9) - Engelsk Setter
+  insertKritikk.run(
+    9, 'vinterproven2026', '99999994', '2024-10-08', 'VK', 'VK Kval 1', 'Stjørdal',
+    4, 5, 1,
+    3, 2, 0, 2, 4, 50,
+    5, 5, 5, 4, 4, 4,
+    2, 0, 1, 1,
+    '', 'CK',
+    'Solid engelsk setter med meget god arbeidsvilje gjennom hele slippet. Godt tilpasset terreng med effektivt søk. Fuglarbeidet er stabilt og pålitelig med fast stand og fin marking. Viser god ro ved stand og reiser fint. Utmerket samarbeid med fører. Et godt VK-slipp som viser at hunden har kvaliteter for videre avl.'
+  );
+
+  // Kritikk for Tripp (hund_id 4) - Gordon Setter
+  insertKritikk.run(
+    4, 'vinterproven2026', '99999997', '2024-10-12', 'VK', 'VK Finale', 'Namdal',
+    4, 6, 1,
+    3, 2, 0, 2, 5, 55,
+    6, 5, 5, 4, 5, 4,
+    2, 0, 1, 1,
+    '', 'CERT',
+    'Eksepsjonell Gordon Setter med imponerende arbeidskapasitet og stil. Dekker store områder med presisjon og intensitet. Fuglearbeidet er på høyeste nivå med fast, sikker stand og fin marking. Reiser elegant på kommando. Viser utmerket samarbeid med fører gjennom hele slippet. En verdig CERT-vinner.'
+  );
 
   console.log("✅ Initial data seeded successfully");
 }
@@ -618,6 +723,100 @@ app.get("/api/brukere/:telefon/prover", (c) => {
   });
 
   return c.json(result);
+});
+
+// ============================================
+// KRITIKKER API
+// ============================================
+
+// Hent alle kritikker for en hund
+app.get("/api/hunder/:id/kritikker", (c) => {
+  const id = c.req.param("id");
+  const kritikker = db.prepare(`
+    SELECT k.*,
+           p.navn as prove_navn, p.sted as prove_sted,
+           b.fornavn || ' ' || b.etternavn as dommer_navn
+    FROM kritikker k
+    LEFT JOIN prover p ON k.prove_id = p.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.hund_id = ?
+    ORDER BY k.dato DESC
+  `).all(id);
+  return c.json(kritikker);
+});
+
+// Hent én kritikk
+app.get("/api/kritikker/:id", (c) => {
+  const id = c.req.param("id");
+  const kritikk = db.prepare(`
+    SELECT k.*,
+           h.navn as hund_navn, h.regnr, h.rase,
+           p.navn as prove_navn, p.sted as prove_sted,
+           b.fornavn || ' ' || b.etternavn as dommer_navn
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN prover p ON k.prove_id = p.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.id = ?
+  `).get(id);
+  if (!kritikk) return c.json({ error: "Kritikk ikke funnet" }, 404);
+  return c.json(kritikk);
+});
+
+// Opprett eller oppdater kritikk
+app.post("/api/kritikker", async (c) => {
+  const body = await c.req.json();
+
+  const result = db.prepare(`
+    INSERT INTO kritikker (
+      hund_id, prove_id, dommer_telefon, dato, klasse, parti, sted,
+      presisjon, reising, godkjent_reising,
+      stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid,
+      jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
+      sek_spontan, sek_forbi, apport, rapport_spontan,
+      adferd, premie, kritikk_tekst
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    body.hund_id, body.prove_id, body.dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
+    body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
+    body.stand_m, body.stand_u, body.tomstand, body.makker_stand, body.sjanse, body.slipptid,
+    body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+    body.sek_spontan, body.sek_forbi, body.apport, body.rapport_spontan ? 1 : 0,
+    body.adferd, body.premie, body.kritikk_tekst
+  );
+
+  return c.json({ id: result.lastInsertRowid, ok: true });
+});
+
+// Oppdater kritikk
+app.put("/api/kritikker/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const fields = [
+    "presisjon", "reising", "godkjent_reising",
+    "stand_m", "stand_u", "tomstand", "makker_stand", "sjanse", "slipptid",
+    "jaktlyst", "fart", "selvstendighet", "soksbredde", "reviering", "samarbeid",
+    "sek_spontan", "sek_forbi", "apport", "rapport_spontan",
+    "adferd", "premie", "kritikk_tekst"
+  ];
+
+  const sets = [];
+  const vals = [];
+  for (const f of fields) {
+    if (f in body) {
+      sets.push(`${f} = ?`);
+      vals.push(body[f]);
+    }
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    db.prepare(`UPDATE kritikker SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+  }
+
+  const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(id);
+  return c.json(kritikk);
 });
 
 // --- Backup ---

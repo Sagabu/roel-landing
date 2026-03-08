@@ -327,6 +327,10 @@
                 }
                 const data = await response.json();
 
+                // Hent kritikker for hunden
+                const kritikkerResponse = await fetch(`/api/hunder/${dogId}/kritikker`);
+                const kritikker = kritikkerResponse.ok ? await kritikkerResponse.json() : [];
+
                 // Konverter API-data til formatet som brukes av renderDogProfile
                 currentDog = {
                     id: data.id,
@@ -335,17 +339,38 @@
                     breed: data.rase || 'Ukjent rase',
                     gender: data.kjonn || 'male',
                     owner: data.eier_navn || 'Ukjent',
-                    critiques: (data.results || []).map(r => ({
-                        id: `result-${r.id}`,
-                        trial: r.prove_navn,
-                        date: r.dato,
-                        location: '',
-                        class: r.klasse,
-                        party: r.klasse,
-                        judge: r.dommer || 'Ukjent',
-                        prize: r.premie || '',
-                        scores: {},
-                        critique: ''
+                    critiques: kritikker.map(k => ({
+                        id: `kritikk-${k.id}`,
+                        trial: k.prove_navn || 'Ukjent prøve',
+                        date: k.dato,
+                        location: k.sted || k.prove_sted || '',
+                        class: k.klasse,
+                        party: k.parti || k.klasse,
+                        judge: k.dommer_navn || 'Ukjent',
+                        prize: k.premie || '',
+                        scores: {
+                            PRESISJON: k.presisjon,
+                            REISING: k.reising,
+                            GODKJENT_REISING: k.godkjent_reising === 1,
+                            STAND_M: k.stand_m,
+                            STAND_U: k.stand_u,
+                            TOMSTAND: k.tomstand,
+                            MAKKER_STAND: k.makker_stand,
+                            SJANSE: k.sjanse,
+                            SLIPPTID: k.slipptid,
+                            JAKTLYST: k.jaktlyst,
+                            FART: k.fart,
+                            SELVSTENDIGHET: k.selvstendighet,
+                            SOKSBREDDE: k.soksbredde,
+                            REVIERING: k.reviering,
+                            SAMARBEID: k.samarbeid,
+                            SEK_SPONTAN: k.sek_spontan,
+                            SEK_FORBI: k.sek_forbi,
+                            APPORT: k.apport,
+                            RAPPORT_SPONTAN: k.rapport_spontan === 1,
+                            ADFERD: k.adferd || ''
+                        },
+                        critique: k.kritikk_tekst || ''
                     }))
                 };
                 renderDogProfile();

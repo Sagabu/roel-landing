@@ -21,10 +21,14 @@ const DB_PATH = process.env.DB_PATH ? join(__dirname, process.env.DB_PATH) : joi
 const PORT = Number(process.env.PORT || 8889);
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-not-for-production";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 
 // Warn if using default secret
 if (!process.env.JWT_SECRET) {
   console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt i .env - bruker usikker dev-secret!");
+}
+if (SITE_PIN) {
+  console.log("🔒 Site-lock aktivert med PIN");
 }
 
 // --- Database setup ---
@@ -632,6 +636,40 @@ app.post("/api/auth/refresh", requireAuth, (c) => {
   const newToken = generateToken(bruker);
 
   return c.json({ token: newToken });
+});
+
+// ============================================
+// SITE-LOCK (passordbeskyttelse for hele siden)
+// ============================================
+
+// Sjekk om site-lock er aktivert
+app.get("/api/site-lock/status", (c) => {
+  return c.json({ enabled: !!SITE_PIN });
+});
+
+// Verifiser PIN
+app.post("/api/site-lock/verify", async (c) => {
+  if (!SITE_PIN) {
+    return c.json({ ok: true });
+  }
+
+  const body = await c.req.json();
+  const { pin } = body;
+
+  if (pin === SITE_PIN) {
+    return c.json({ ok: true });
+  }
+
+  return c.json({ error: "Feil PIN" }, 401);
+});
+
+// Admin: Sett/endre PIN (krever admin)
+app.put("/api/site-lock/pin", requireAdmin, async (c) => {
+  const body = await c.req.json();
+  // I produksjon ville vi lagret dette i database
+  // For nå: logg at admin vil endre PIN
+  console.log("Admin vil endre site PIN - må gjøres i .env");
+  return c.json({ message: "PIN må endres i .env filen og server restartes" });
 });
 
 // --- localStorage bridge API ---
@@ -1620,18 +1658,23 @@ app.get("/auth.js", (c) => {
   return c.body(readFileSync(join(__dirname, "auth.js"), "utf-8"));
 });
 
+app.get("/site-lock.js", (c) => {
+  c.header("Content-Type", "application/javascript");
+  return c.body(readFileSync(join(__dirname, "site-lock.js"), "utf-8"));
+});
+
 // --- Admin panel ---
 app.get("/admin-panel.html", (c) => {
   c.header("Content-Type", "text/html; charset=utf-8");
   return c.body(readFileSync(join(__dirname, "admin-panel.html"), "utf-8"));
 });
 
-// --- Inject auth + shim into HTML pages ---
+// --- Inject scripts into HTML pages ---
 function serveWithShim(filePath, c) {
   if (!existsSync(filePath)) return c.text("Not found", 404);
   let html = readFileSync(filePath, "utf-8");
-  // Auth må lastes først, så storage-shim kan bruke token
-  const scripts = `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>`;
+  // Site-lock først (viser PIN-skjerm), deretter auth og storage-shim
+  const scripts = `<script src="/site-lock.js"></script>\n<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>`;
   if (html.includes("<head>")) {
     html = html.replace("<head>", `<head>\n${scripts}`);
   } else {

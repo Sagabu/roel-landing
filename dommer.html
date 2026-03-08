@@ -184,10 +184,22 @@
     </div>
 
     <script>
-        // Check if already logged in
+        // Check if already logged in (sjekk både JWT og gammel session)
+        const token = localStorage.getItem('fuglehund_token');
         const savedJudge = localStorage.getItem('judgeSession');
-        if (savedJudge) {
-            window.location.href = 'dommer-hjem.html';
+        if (token && savedJudge) {
+            // Verifiser at token er gyldig
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                if (payload.exp * 1000 > Date.now()) {
+                    window.location.href = 'dommer-hjem.html';
+                }
+            } catch (e) {
+                // Ugyldig token, fortsett til login
+                localStorage.removeItem('fuglehund_token');
+                localStorage.removeItem('fuglehund_user');
+                localStorage.removeItem('judgeSession');
+            }
         }
 
         let phoneNumber = '';
@@ -283,16 +295,39 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Verifiserer...';
 
-            // For demo: accept any 4-digit code
-            // In production: verify against the actual sent code
-            if (code.length === 4) {
-                // Get judge info from API
+            try {
+                // Logg inn via JWT API
+                const loginResp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: phoneNumber, kode: code })
+                });
+
+                const loginData = await loginResp.json();
+
+                if (!loginResp.ok) {
+                    document.getElementById('loadingOverlay').classList.add('hidden');
+                    if (loginResp.status === 404) {
+                        showNotJudgeError();
+                    } else {
+                        document.getElementById('codeError').classList.remove('hidden');
+                        clearCodeInputs();
+                        document.getElementById('code1').focus();
+                    }
+                    return;
+                }
+
+                // Lagre JWT token (auth.js bruker dette)
+                localStorage.setItem('fuglehund_token', loginData.token);
+                localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
+
+                // Hent dommer-info for parti-tildeling
                 const judgeInfo = await getJudgeByPhone(phoneNumber);
 
                 document.getElementById('loadingOverlay').classList.add('hidden');
 
                 if (!judgeInfo) {
-                    // Phone number not registered as a judge
+                    // Bruker finnes men er ikke dommer
                     showNotJudgeError();
                     return;
                 }
@@ -310,9 +345,10 @@
 
                 // Redirect to judge home
                 window.location.href = 'dommer-hjem.html';
-            } else {
+
+            } catch (err) {
+                console.error('Login error:', err);
                 document.getElementById('loadingOverlay').classList.add('hidden');
-                // Show error
                 document.getElementById('codeError').classList.remove('hidden');
                 clearCodeInputs();
                 document.getElementById('code1').focus();

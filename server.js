@@ -575,7 +575,18 @@ app.get("/api/klubber/:id", (c) => {
     WHERE ka.klubb_id = ?
   `).all(id);
 
-  return c.json({ ...row, admins });
+  // Tell antall brukere (hundeeiere i klubben)
+  const brukerCount = db.prepare(`
+    SELECT COUNT(DISTINCT eier_telefon) as n FROM hunder WHERE klubb_id = ?
+  `).get(id)?.n || 0;
+
+  // Tell antall prøver for klubben i år
+  const currentYear = new Date().getFullYear();
+  const proveCount = db.prepare(`
+    SELECT COUNT(*) as n FROM prover WHERE klubb_id = ? AND strftime('%Y', start_dato) = ?
+  `).get(id, String(currentYear))?.n || 0;
+
+  return c.json({ ...row, admins, brukerCount, proveCount });
 });
 
 // ============================================

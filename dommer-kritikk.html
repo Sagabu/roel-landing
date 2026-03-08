@@ -175,6 +175,12 @@
                     </svg>
                     Ferdigstill og send til NKK rep
                 </button>
+                <button onclick="hideModal()" class="w-full bg-bark-100 hover:bg-bark-200 text-bark-700 font-medium py-2 rounded-xl transition flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                    Tilbake til hundelisten
+                </button>
                 <p class="text-xs text-bark-500 text-center">Kritikken sendes til NKK-representant for godkjenning</p>
             </div>
         </div>
@@ -328,7 +334,26 @@
 
             renderDogList();
             updateProgress();
+
+            // Handle browser back button - close modal instead of leaving page
+            window.addEventListener('popstate', function(e) {
+                const modal = document.getElementById('critiqueModal');
+                if (modal && !modal.classList.contains('hidden')) {
+                    e.preventDefault();
+                    hideModal();
+                    // Push state back so we stay on this page
+                    history.pushState({ modal: 'closed' }, '');
+                }
+            });
+
+            // Push initial state
+            history.pushState({ page: 'critiques' }, '');
         })();
+
+        // When opening modal, push history state
+        function pushModalState() {
+            history.pushState({ modal: 'open' }, '');
+        }
 
         // Render dog list
         function renderDogList() {
@@ -442,6 +467,9 @@
 
         function showCritiqueModal(dog) {
             state.currentDogId = dog.id;
+
+            // Push history state so back button closes modal
+            pushModalState();
 
             // Fill modal
             document.getElementById('modalDogName').textContent = dog.name;

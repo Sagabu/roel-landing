@@ -920,6 +920,26 @@ app.get("/:page{.+\\.html}", (c) => {
   return serveWithShim(join(__dirname, page), c);
 });
 
+// Serve .vibe-images directory explicitly (hidden folders aren't served by default)
+app.get("/.vibe-images/:filename", (c) => {
+  const filename = c.req.param("filename");
+  const filePath = join(__dirname, ".vibe-images", filename);
+  if (!existsSync(filePath)) return c.text("Not found", 404);
+  const data = readFileSync(filePath);
+  // Determine content type from extension
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const mimeTypes = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml'
+  };
+  c.header("Content-Type", mimeTypes[ext] || "application/octet-stream");
+  return c.body(data);
+});
+
 // Static files
 app.use("/*", serveStatic({ root: __dirname }));
 

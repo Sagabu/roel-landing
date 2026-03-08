@@ -2,66 +2,9 @@
 // Include this on all pages to add search functionality
 
 (function() {
-    // Sample dog database (in production, this would come from server)
-    // Uses official FKF prizes: CACIT, ResCacit, CK, Finale, Semifinale, ÅP for VK
-    // and 1-3. premie + ÅP for UK/AK
-    const allDogs = [
-        {
-            id: '1',
-            name: "Fjelljeger's Storm",
-            regNumber: 'NO45678/22',
-            breed: 'Engelsk Setter',
-            gender: 'male',
-            owner: 'Kari Nordmann',
-            results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'UK', prize: '1. premie', judge: 'Bjørn Haugen' },
-                { trial: 'Rørosprøven 2025', date: '2025-08-15', class: 'UK', prize: '2. premie', judge: 'Anne Kristiansen' }
-            ]
-        },
-        {
-            id: '2',
-            name: "Villmarkens Troll",
-            regNumber: 'NO34521/21',
-            breed: 'Gordon Setter',
-            gender: 'male',
-            owner: 'Per Hansen',
-            results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: 'CK', judge: 'Monja Aakert' }
-            ]
-        },
-        {
-            id: '3',
-            name: "Skogsprinsessen",
-            regNumber: 'NO56789/23',
-            breed: 'Irsk Setter',
-            gender: 'female',
-            owner: 'Lise Johansen',
-            results: []
-        },
-        {
-            id: '4',
-            name: "Nordlys av Fjellheim",
-            regNumber: 'NO12398/20',
-            breed: 'Pointer',
-            gender: 'male',
-            owner: 'Erik Svendsen',
-            results: [
-                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: 'CACIT', judge: 'Knut Moen' },
-                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'VK', prize: 'CK', judge: 'Anne Kristiansen' }
-            ]
-        },
-        {
-            id: '5',
-            name: "Bella",
-            regNumber: 'NO78234/22',
-            breed: 'Breton',
-            gender: 'female',
-            owner: 'Marte Olsen',
-            results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'AK', prize: '1. premie', judge: 'Bjørn Haugen' }
-            ]
-        }
-    ];
+    // Cache for search results
+    let searchCache = {};
+    let searchTimeout = null;
 
     // Create search modal HTML
     function createSearchModal() {
@@ -129,8 +72,8 @@
         return 'bg-bark-100 text-bark-600';
     }
 
-    // Search function
-    function performSearch(query) {
+    // Search function - fetches from API
+    async function performSearch(query) {
         const resultsContainer = document.getElementById('globalSearchResults');
 
         if (!query || query.length < 2) {
@@ -138,60 +81,57 @@
             return;
         }
 
-        const q = query.toLowerCase();
-        const results = allDogs.filter(dog =>
-            dog.name.toLowerCase().includes(q) ||
-            dog.regNumber.toLowerCase().includes(q)
-        );
+        // Show loading
+        resultsContainer.innerHTML = '<p class="text-center text-bark-500 py-8">Søker...</p>';
 
-        if (results.length === 0) {
-            resultsContainer.innerHTML = `
-                <p class="text-center text-bark-500 py-8">
-                    Ingen hunder funnet for "${query}"
-                </p>
-            `;
-            return;
-        }
+        // Debounce
+        if (searchTimeout) clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(async () => {
+            try {
+                const response = await fetch(`/api/hunder?search=${encodeURIComponent(query)}`);
+                const dogs = await response.json();
 
-        resultsContainer.innerHTML = results.map(dog => `
-            <div class="p-4 hover:bg-bark-50 rounded-xl cursor-pointer transition border border-transparent hover:border-bark-200"
-                 onclick="viewDogProfile('${dog.id}')">
-                <div class="flex items-start gap-4">
-                    <div class="w-14 h-14 bg-bark-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <svg class="w-7 h-7 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                        </svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-start justify-between gap-2">
-                            <div>
-                                <h4 class="font-bold text-bark-800">${dog.name}</h4>
-                                <p class="text-sm text-bark-500">${dog.breed} • ${dog.gender === 'male' ? 'Hannhund' : 'Tispe'}</p>
+                if (dogs.length === 0) {
+                    resultsContainer.innerHTML = `
+                        <p class="text-center text-bark-500 py-8">
+                            Ingen hunder funnet for "${query}"
+                        </p>
+                    `;
+                    return;
+                }
+
+                resultsContainer.innerHTML = dogs.map(dog => `
+                    <div class="p-4 hover:bg-bark-50 rounded-xl cursor-pointer transition border border-transparent hover:border-bark-200"
+                         onclick="viewDogProfile('${dog.id}')">
+                        <div class="flex items-start gap-4">
+                            <div class="w-14 h-14 bg-bark-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                <svg class="w-7 h-7 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                                </svg>
                             </div>
-                            <span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full font-medium">${dog.regNumber}</span>
-                        </div>
-                        <div class="mt-2 flex items-center gap-3 text-sm">
-                            <span class="text-bark-500">Eier: ${dog.owner}</span>
-                            <span class="text-bark-300">•</span>
-                            <span class="text-bark-500">${dog.results.length} prøve${dog.results.length !== 1 ? 'r' : ''}</span>
-                        </div>
-                        ${dog.results.length > 0 ? `
-                            <div class="mt-2 flex flex-wrap gap-1">
-                                ${dog.results.slice(0, 3).map(r => `
-                                    <span class="text-xs ${getPrizeClass(r.prize)} px-2 py-0.5 rounded">
-                                        ${r.prize}
-                                    </span>
-                                `).join('')}
-                                ${dog.results.length > 3 ? `<span class="text-xs text-bark-400">+${dog.results.length - 3} mer</span>` : ''}
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div>
+                                        <h4 class="font-bold text-bark-800">${dog.navn}</h4>
+                                        <p class="text-sm text-bark-500">${dog.rase || 'Ukjent rase'} • ${dog.kjonn === 'male' ? 'Hannhund' : 'Tispe'}</p>
+                                    </div>
+                                    <span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full font-medium">${dog.regnr}</span>
+                                </div>
+                                <div class="mt-2 flex items-center gap-3 text-sm">
+                                    <span class="text-bark-500">Eier: ${dog.eier_navn || 'Ukjent'}</span>
+                                </div>
                             </div>
-                        ` : ''}
+                            <svg class="w-5 h-5 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </div>
                     </div>
-                    <svg class="w-5 h-5 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                </div>
-            </div>
-        `).join('');
+                `).join('');
+            } catch (err) {
+                console.error('Search error:', err);
+                resultsContainer.innerHTML = '<p class="text-center text-red-500 py-8">Feil ved søk. Prøv igjen.</p>';
+            }
+        }, 200);
     }
 
     // Open search modal

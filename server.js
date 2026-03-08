@@ -22,6 +22,7 @@ const PORT = Number(process.env.PORT || 8889);
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-not-for-production";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
+const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
 // Warn if using default secret
 if (!process.env.JWT_SECRET) {
@@ -29,6 +30,9 @@ if (!process.env.JWT_SECRET) {
 }
 if (SITE_PIN) {
   console.log("🔒 Site-lock aktivert med PIN");
+}
+if (ADMIN_PIN) {
+  console.log("🔐 Admin-lock aktivert med PIN");
 }
 
 // --- Database setup ---
@@ -670,6 +674,31 @@ app.put("/api/site-lock/pin", requireAdmin, async (c) => {
   // For nå: logg at admin vil endre PIN
   console.log("Admin vil endre site PIN - må gjøres i .env");
   return c.json({ message: "PIN må endres i .env filen og server restartes" });
+});
+
+// ============================================
+// ADMIN-LOCK API (beskytter admin-sider)
+// ============================================
+
+// Sjekk om admin-lock er aktivert
+app.get("/api/admin-lock/status", (c) => {
+  return c.json({ enabled: !!ADMIN_PIN });
+});
+
+// Verifiser admin PIN
+app.post("/api/admin-lock/verify", async (c) => {
+  if (!ADMIN_PIN) {
+    return c.json({ ok: true });
+  }
+
+  const body = await c.req.json();
+  const { pin } = body;
+
+  if (pin === ADMIN_PIN) {
+    return c.json({ ok: true });
+  }
+
+  return c.json({ error: "Feil admin-PIN" }, 401);
 });
 
 // --- localStorage bridge API ---
@@ -1811,18 +1840,25 @@ app.get("/site-lock.js", (c) => {
   return c.body(readFileSync(join(__dirname, "site-lock.js"), "utf-8"));
 });
 
-// --- Admin panel ---
-app.get("/admin-panel.html", (c) => {
-  c.header("Content-Type", "text/html; charset=utf-8");
-  return c.body(readFileSync(join(__dirname, "admin-panel.html"), "utf-8"));
+app.get("/admin-lock.js", (c) => {
+  c.header("Content-Type", "application/javascript");
+  return c.body(readFileSync(join(__dirname, "admin-lock.js"), "utf-8"));
 });
 
 // --- Inject scripts into HTML pages ---
-function serveWithShim(filePath, c) {
+const ADMIN_PAGES = ['admin.html', 'admin-panel.html'];
+
+function serveWithShim(filePath, c, isAdmin = false) {
   if (!existsSync(filePath)) return c.text("Not found", 404);
   let html = readFileSync(filePath, "utf-8");
-  // Site-lock først (viser PIN-skjerm), deretter auth og storage-shim
-  const scripts = `<script src="/site-lock.js"></script>\n<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>`;
+
+  // Site-lock først, deretter admin-lock (hvis admin-side), deretter auth og storage-shim
+  let scripts = `<script src="/site-lock.js"></script>\n`;
+  if (isAdmin) {
+    scripts += `<script src="/admin-lock.js"></script>\n`;
+  }
+  scripts += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>`;
+
   if (html.includes("<head>")) {
     html = html.replace("<head>", `<head>\n${scripts}`);
   } else {
@@ -1836,7 +1872,8 @@ app.get("/", (c) => serveWithShim(join(__dirname, "index.html"), c));
 
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");
-  return serveWithShim(join(__dirname, page), c);
+  const isAdmin = ADMIN_PAGES.includes(page);
+  return serveWithShim(join(__dirname, page), c, isAdmin);
 });
 
 // Serve .vibe-images directory explicitly (hidden folders aren't served by default)

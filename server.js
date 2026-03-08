@@ -1034,6 +1034,154 @@ app.get("/api/brukere/:telefon/prover", (c) => {
 });
 
 // ============================================
+// FULLMAKTER API
+// ============================================
+
+// Hent fullmakter for en bruker
+app.get("/api/brukere/:telefon/fullmakter", (c) => {
+  const telefon = c.req.param("telefon");
+
+  // Sjekk om fullmakter-tabell eksisterer, hvis ikke opprett den
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fullmakter (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL CHECK(type IN ('given', 'received')),
+      giver_telefon TEXT NOT NULL,
+      mottaker_telefon TEXT,
+      mottaker_navn TEXT,
+      hund_id INTEGER,
+      dog_name TEXT,
+      dog_owner TEXT,
+      trial TEXT,
+      valid_from TEXT,
+      valid_to TEXT,
+      permissions TEXT DEFAULT '["run","results"]',
+      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (hund_id) REFERENCES hunder(id)
+    )
+  `);
+
+  // Hent fullmakter gitt av brukeren
+  const given = db.prepare(`
+    SELECT f.*, h.navn as dog_name_from_hund
+    FROM fullmakter f
+    LEFT JOIN hunder h ON f.hund_id = h.id
+    WHERE f.giver_telefon = ?
+  `).all(telefon);
+
+  // Hent fullmakter mottatt av brukeren
+  const received = db.prepare(`
+    SELECT f.*, h.navn as dog_name_from_hund,
+           b.fornavn || ' ' || b.etternavn as dog_owner_name
+    FROM fullmakter f
+    LEFT JOIN hunder h ON f.hund_id = h.id
+    LEFT JOIN brukere b ON f.giver_telefon = b.telefon
+    WHERE f.mottaker_telefon = ?
+  `).all(telefon);
+
+  // Kombiner og formater resultatet
+  const result = [
+    ...given.map(f => ({
+      ...f,
+      type: 'given',
+      dogName: f.dog_name || f.dog_name_from_hund || 'Ukjent',
+      recipientName: f.mottaker_navn,
+      recipientPhone: f.mottaker_telefon,
+      validFrom: f.valid_from,
+      validTo: f.valid_to,
+      permissions: JSON.parse(f.permissions || '[]')
+    })),
+    ...received.map(f => ({
+      ...f,
+      type: 'received',
+      dogName: f.dog_name || f.dog_name_from_hund || 'Ukjent',
+      dogOwner: f.dog_owner || f.dog_owner_name || 'Ukjent',
+      validFrom: f.valid_from,
+      validTo: f.valid_to,
+      permissions: JSON.parse(f.permissions || '[]')
+    }))
+  ];
+
+  return c.json(result);
+});
+
+// Opprett ny fullmakt
+app.post("/api/brukere/:telefon/fullmakter", async (c) => {
+  const telefon = c.req.param("telefon");
+  const body = await c.req.json();
+
+  // Opprett tabell hvis den ikke finnes
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fullmakter (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL CHECK(type IN ('given', 'received')),
+      giver_telefon TEXT NOT NULL,
+      mottaker_telefon TEXT,
+      mottaker_navn TEXT,
+      hund_id INTEGER,
+      dog_name TEXT,
+      dog_owner TEXT,
+      trial TEXT,
+      valid_from TEXT,
+      valid_to TEXT,
+      permissions TEXT DEFAULT '["run","results"]',
+      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (hund_id) REFERENCES hunder(id)
+    )
+  `);
+
+  const result = db.prepare(`
+    INSERT INTO fullmakter (type, giver_telefon, mottaker_telefon, mottaker_navn, hund_id, dog_name, trial, valid_from, valid_to, permissions, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'given',
+    telefon,
+    body.recipientPhone || null,
+    body.recipientName || null,
+    body.dogId || null,
+    body.dogName || null,
+    body.trial || null,
+    body.validFrom || null,
+    body.validTo || null,
+    JSON.stringify(body.permissions || ['run', 'results']),
+    'active'
+  );
+
+  return c.json({
+    id: result.lastInsertRowid,
+    type: 'given',
+    dogName: body.dogName,
+    recipientName: body.recipientName,
+    recipientPhone: body.recipientPhone,
+    trial: body.trial,
+    validFrom: body.validFrom,
+    validTo: body.validTo,
+    permissions: body.permissions || ['run', 'results'],
+    status: 'active'
+  }, 201);
+});
+
+// Slett/revoke fullmakt
+app.delete("/api/brukere/:telefon/fullmakter/:id", (c) => {
+  const telefon = c.req.param("telefon");
+  const id = c.req.param("id");
+
+  // Sjekk at fullmakten tilhører brukeren
+  const fullmakt = db.prepare("SELECT * FROM fullmakter WHERE id = ? AND giver_telefon = ?").get(id, telefon);
+
+  if (!fullmakt) {
+    return c.json({ error: "Fullmakt ikke funnet" }, 404);
+  }
+
+  // Oppdater status til revoked
+  db.prepare("UPDATE fullmakter SET status = 'revoked' WHERE id = ?").run(id);
+
+  return c.json({ success: true });
+});
+
+// ============================================
 // AVLSSTATISTIKK API (Kun Irsk Setter)
 // ============================================
 

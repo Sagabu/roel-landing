@@ -141,4 +141,135 @@ Hund født: 2021-11-30 (fyller 2 år: 2023-11-30)
 
 ---
 
+## Implementert i koden
+
+### API-endepunkter for statistikk
+
+| Endepunkt | Beskrivelse |
+|-----------|-------------|
+| `GET /api/hunder/:id/statistikk` | Avlsstatistikk for én hund |
+| `GET /api/hunder/:id/kritikker` | Alle kritikker for én hund |
+| `GET /api/hunder/:id/avkom` | Avkom for en hund |
+| `GET /api/hunder/:id/avkom-statistikk` | Aggregert statistikk for avkom |
+
+### Statistikk-beregninger (server.js: `beregnHundestatistikk()`)
+
+```javascript
+// Viltfinnerevne = (stand_m + stand_u) / antall_starter
+viltfinnerevne: (stats.stand_m + stats.stand_u) / stats.starter
+
+// Andel tomstand = tomstand / (stand_m + stand_u + tomstand) * 100
+andel_tomstand: (stats.tomstand / totalStand) * 100
+
+// Jaktlyst = gjennomsnitt av alle jaktlyst-karakterer
+jaktlyst: stats.jaktlyst_sum / stats.jaktlyst_count
+
+// Slipptid snitt
+slipptid_snitt: stats.slipptid_sum / stats.slipptid_count
+```
+
+### NISK-indeks beregning (hund.html)
+
+```javascript
+// Indeks = (hundens verdi / rasesnitt) * 100
+// 100 = rasesnitt, over 100 = bedre, under 100 = dårligere
+function beregnIndeks(verdi, rasesnitt) {
+    return Math.round((verdi / rasesnitt) * 100);
+}
+
+// Samlet avlsverdi = jaktlyst_indeks + viltfinnerevne_indeks
+// Bør være over 200 for anbefalt avl
+```
+
+### Rasesnitt brukt i koden (hund.html: `RASESNITT_IRSK_SETTER`)
+
+```javascript
+const RASESNITT_IRSK_SETTER = {
+    viltfinnerevne: 2.45,    // stander per prøve
+    jaktlyst: 4.8,           // gjennomsnittlig karakter
+    andel_tomstand: 12.5,    // prosent
+    fart: 4.6,
+    bredde: 4.2,
+    reviering: 4.1,
+    samarbeid: 4.3,
+    presisjon: 3.2,
+    premie_prosent: 42
+};
+```
+
+### Sikkerhet på indeks
+
+| Antall starter | Sikkerhet |
+|----------------|-----------|
+| < 5 | Lav (advarsel vises) |
+| 5-9 | Middels |
+| ≥ 10 | Høy |
+
+### Statistikk-felt returnert fra API
+
+```javascript
+{
+    starter: number,           // Antall prøvestarter
+    stand_m: number,           // Totalt stand med makker
+    stand_u: number,           // Totalt stand uten makker
+    makker_stand: number,      // Totalt makkerstand
+    tomstand: number,          // Totalt tomstand
+    andel_tomstand: number,    // Prosent tomstand
+    viltfinnerevne: number,    // Stander per prøve
+    jaktlyst: number,          // Snitt 1-6
+    fart: number,              // Snitt 1-6
+    bredde: number,            // Snitt 1-6
+    reviering: number,         // Snitt 1-6
+    samarbeid: number,         // Snitt 1-6
+    selvstendighet: number,    // Snitt 1-6
+    slipptid_snitt: number,    // Snitt minutter
+    sekundering: {
+        spontan: number,
+        forbi: number,
+        total: number
+    },
+    reis: {
+        nekter: number,
+        svart_forsiktig: number,
+        forsiktig: number,
+        kontrollert: number,
+        villig: number,
+        djerv: number
+    },
+    presisjon: {
+        meget_upresis: number,
+        upresis: number,
+        noe_upresis: number,
+        presis: number,
+        gjennomsnitt: number
+    },
+    premierte: number,
+    premie_prosent: number
+}
+```
+
+### Visning i avlsstatistikk (hund.html)
+
+1. **Hovedtall**: Starter, stand m/, stand u/, makkerstand, tomstand, premiert %
+2. **Avlsindekser**: Viltfinnerevne-indeks, Jaktlyst-indeks (begge med 100=rasesnitt)
+3. **Sikkerhet**: Høy/Middels/Lav basert på antall starter
+4. **Samlet avlsverdi**: Jaktlyst + Viltfinnerevne indeks (bør være ≥200)
+5. **Fuglearbeid-detaljer**: Totale stander, makkerstand, tomstand, tomstand-andel
+6. **Sekundering**: Spontan, går forbi, total
+7. **Tallkarakterer**: Jaktlyst (avlsindeks), Fart (≈jaktlyst), Selvst., Bredde, Reviering, Samarb., Presisjon
+8. **Reis-statistikk**: Fordeling nekter → djerv
+9. **Presisjon-fordeling**: Meget upresis → presis
+
+### Klassefiltrering
+
+Statistikk kan filtreres per klasse:
+- **Samlet** - alle prøver
+- **UK** - kun unghundklasse
+- **AK** - kun åpen klasse
+- **VK** - kun vinnerklasse
+
+NB: Skogsfuglprøver er ekskludert fra klassevalget (NISK-regel).
+
+---
+
 *Sist oppdatert: 2026-03-08*

@@ -207,33 +207,24 @@
         let currentFilter = 'all';
         let nkkRepInfo = null;
 
-        // No test data initialization - use real data only
-
-        // Load NKK rep info
+        // Load NKK rep info from logged in user session
         async function loadNkkRepInfo() {
-            try {
-                const resp = await fetch('/api/storage/trialTeam');
-                if (resp.ok) {
-                    const { value } = await resp.json();
-                    if (value) {
-                        const team = typeof value === 'string' ? JSON.parse(value) : value;
-                        if (team.nkkrep) {
-                            nkkRepInfo = team.nkkrep;
-                            document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
-                        }
-                    }
-                }
-            } catch (e) {
-                const saved = localStorage.getItem('trialTeam');
-                if (saved) {
-                    const team = JSON.parse(saved);
-                    if (team.nkkrep) {
-                        nkkRepInfo = team.nkkrep;
-                        document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
-                    }
+            // Get logged in user from judgeSession
+            const session = localStorage.getItem('judgeSession');
+            if (session) {
+                try {
+                    const sessionData = JSON.parse(session);
+                    nkkRepInfo = {
+                        name: sessionData.name || 'NKK-representant',
+                        phone: sessionData.phone || ''
+                    };
+                    document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
+                } catch (e) {
+                    console.error('Error parsing session:', e);
                 }
             }
 
+            // Load trial name
             try {
                 const resp = await fetch('/api/trial');
                 if (resp.ok) {
@@ -243,6 +234,26 @@
                     }
                 }
             } catch (e) {}
+        }
+
+        // Clean up old test data from ukak1 if it contains fake dogs
+        function cleanupTestData() {
+            const ukak1Data = localStorage.getItem('judgeData_ukak1');
+            if (ukak1Data) {
+                try {
+                    const dogs = JSON.parse(ukak1Data);
+                    // Check if this is test data (contains "Fjelljegerens Odin" or similar)
+                    const isTestData = Array.isArray(dogs) && dogs.some(d =>
+                        d.name === 'Fjelljegerens Odin' ||
+                        d.name === 'Skogsprinsessen' ||
+                        d.name === 'Fjellkongen Rex'
+                    );
+                    if (isTestData) {
+                        console.log('Removing test data from ukak1');
+                        localStorage.removeItem('judgeData_ukak1');
+                    }
+                } catch (e) {}
+            }
         }
 
         function loadAllCritiques() {
@@ -879,6 +890,7 @@
         }
 
         // Initialize
+        cleanupTestData();
         loadNkkRepInfo();
         render();
     </script>

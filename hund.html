@@ -301,27 +301,73 @@
         let currentDog = null;
         let currentCritique = null;
 
-        function init() {
+        async function init() {
             const urlParams = new URLSearchParams(window.location.search);
             const dogId = urlParams.get('id');
 
-            if (dogId && dogDatabase[dogId]) {
+            if (!dogId) {
+                showNotFound();
+                return;
+            }
+
+            // Først sjekk om det er en hardkodet demo-hund (for kritikk-visning)
+            if (dogDatabase[dogId]) {
                 currentDog = dogDatabase[dogId];
                 renderDogProfile();
                 renderCritiques();
-            } else {
-                document.getElementById('dogProfile').innerHTML = `
-                    <div class="p-8 text-center">
-                        <div class="w-16 h-16 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </div>
-                        <h3 class="text-lg font-semibold text-bark-700 mb-2">Hund ikke funnet</h3>
-                        <p class="text-bark-500">Beklager, vi fant ikke hunden du leter etter.</p>
-                    </div>
-                `;
+                return;
             }
+
+            // Hent fra API
+            try {
+                const response = await fetch(`/api/hunder/${dogId}`);
+                if (!response.ok) {
+                    showNotFound();
+                    return;
+                }
+                const data = await response.json();
+
+                // Konverter API-data til formatet som brukes av renderDogProfile
+                currentDog = {
+                    id: data.id,
+                    name: data.navn,
+                    regNumber: data.regnr,
+                    breed: data.rase || 'Ukjent rase',
+                    gender: data.kjonn || 'male',
+                    owner: data.eier_navn || 'Ukjent',
+                    critiques: (data.results || []).map(r => ({
+                        id: `result-${r.id}`,
+                        trial: r.prove_navn,
+                        date: r.dato,
+                        location: '',
+                        class: r.klasse,
+                        party: r.klasse,
+                        judge: r.dommer || 'Ukjent',
+                        prize: r.premie || '',
+                        scores: {},
+                        critique: ''
+                    }))
+                };
+                renderDogProfile();
+                renderCritiques();
+            } catch (err) {
+                console.error('Feil ved henting av hund:', err);
+                showNotFound();
+            }
+        }
+
+        function showNotFound() {
+            document.getElementById('dogProfile').innerHTML = `
+                <div class="p-8 text-center">
+                    <div class="w-16 h-16 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-bark-700 mb-2">Hund ikke funnet</h3>
+                    <p class="text-bark-500">Beklager, vi fant ikke hunden du leter etter.</p>
+                </div>
+            `;
         }
 
         function renderDogProfile() {

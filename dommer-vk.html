@@ -257,6 +257,34 @@
                     </div>
                 </div>
 
+                <!-- Critique Text with Voice Input -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-[11px] font-semibold text-bark-700 flex items-center gap-1">
+                            <svg class="w-3 h-3 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Kritikktekst
+                        </label>
+                        <button onclick="toggleCritiqueVoice()" id="critiqueVoiceBtn"
+                            class="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-[10px] font-medium transition">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                            </svg>
+                            <span id="critiqueVoiceBtnText">Dikter</span>
+                        </button>
+                    </div>
+                    <div class="relative">
+                        <textarea id="critiqueText" rows="4" placeholder="Skriv eller dikter kritikken her..."
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none text-[12px] resize-none bg-white"></textarea>
+                        <div id="critiqueVoiceStatus" class="hidden absolute right-2 top-2 text-[9px] text-red-600 flex items-center gap-1">
+                            <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
+                            <span>Lytter...</span>
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-bark-400 mt-1">Beskriv hundens prestasjoner og oppførsel</p>
+                </div>
+
                 <!-- Prize Selection - Kompakt -->
                 <div>
                     <label class="block text-[11px] font-semibold text-bark-700 mb-1 flex items-center gap-1">
@@ -1706,6 +1734,12 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-[11px] text-red-700"><b>
                 fieldNotes.classList.remove('text-bark-700');
             }
 
+            // Pre-fill critique text if exists
+            const critiqueTextarea = document.getElementById('critiqueText');
+            if (critiqueTextarea) {
+                critiqueTextarea.value = dog.critiqueText || '';
+            }
+
             // Render prize selector based on party type
             renderPrizeSelector();
 
@@ -1803,8 +1837,10 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-[11px] text-red-700"><b>
                     }
                 }
                 if (finalTranscript) {
-                    const textarea = document.getElementById('critiqueFinalText');
-                    textarea.value += finalTranscript;
+                    const textarea = document.getElementById('critiqueText');
+                    if (textarea) {
+                        textarea.value += finalTranscript;
+                    }
                 }
             };
 
@@ -1818,9 +1854,13 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-[11px] text-red-700"><b>
 
             const btn = document.getElementById('critiqueVoiceBtn');
             const btnText = document.getElementById('critiqueVoiceBtnText');
-            btn.classList.remove('bg-red-100', 'hover:bg-red-200', 'text-red-700');
-            btn.classList.add('bg-red-500', 'text-white', 'recording');
-            btnText.textContent = 'Stopp';
+            const status = document.getElementById('critiqueVoiceStatus');
+            if (btn) {
+                btn.classList.remove('bg-red-100', 'hover:bg-red-200', 'text-red-700');
+                btn.classList.add('bg-red-500', 'text-white', 'recording');
+            }
+            if (btnText) btnText.textContent = 'Stopp';
+            if (status) status.classList.remove('hidden');
         }
 
         function stopCritiqueVoice() {
@@ -1831,11 +1871,13 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-[11px] text-red-700"><b>
 
             const btn = document.getElementById('critiqueVoiceBtn');
             const btnText = document.getElementById('critiqueVoiceBtnText');
+            const status = document.getElementById('critiqueVoiceStatus');
             if (btn) {
                 btn.classList.add('bg-red-100', 'hover:bg-red-200', 'text-red-700');
                 btn.classList.remove('bg-red-500', 'text-white', 'recording');
             }
             if (btnText) btnText.textContent = 'Dikter';
+            if (status) status.classList.add('hidden');
 
             // Restore original recognition handler
             if (recognition) {
@@ -1868,6 +1910,9 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-[11px] text-red-700"><b>
             const dog = state.dogs.find(d => d.id === currentCritiqueDogId);
             if (!dog) return;
 
+            // Stop voice recording if active
+            stopCritiqueVoice();
+
             // Consolidate all round notes into dog.notes for later critique writing
             if (dog.rounds && dog.rounds.length > 0) {
                 let allNotes = '';
@@ -1883,6 +1928,12 @@ ${s.ADFERD ? `<div class="bg-red-50 rounded-lg p-2 text-[11px] text-red-700"><b>
                 if (allNotes.trim()) {
                     dog.notes = allNotes.trim();
                 }
+            }
+
+            // Save critique text
+            const critiqueTextarea = document.getElementById('critiqueText');
+            if (critiqueTextarea && critiqueTextarea.value.trim()) {
+                dog.critiqueText = critiqueTextarea.value.trim();
             }
 
             // Save prize selection

@@ -57,6 +57,7 @@ db.exec(`
     adresse TEXT DEFAULT '',
     postnummer TEXT DEFAULT '',
     sted TEXT DEFAULT '',
+    klubb_id TEXT DEFAULT '' REFERENCES klubber(id),
     rolle TEXT DEFAULT 'deltaker',
     medlem_siden TEXT DEFAULT (strftime('%Y', 'now')),
     profilbilde TEXT DEFAULT NULL,
@@ -166,6 +167,20 @@ db.exec(`
 
   INSERT OR IGNORE INTO trial_config (id) VALUES (1);
 `);
+
+// --- Migrations for existing databases ---
+// Add klubb_id column to brukere if it doesn't exist
+try {
+  const columns = db.prepare("PRAGMA table_info(brukere)").all();
+  const hasKlubbId = columns.some(c => c.name === 'klubb_id');
+  if (!hasKlubbId) {
+    console.log("🔧 Adding klubb_id column to brukere table...");
+    db.exec("ALTER TABLE brukere ADD COLUMN klubb_id TEXT");
+    console.log("✅ klubb_id column added successfully");
+  }
+} catch (err) {
+  console.error("Migration error:", err);
+}
 
 // --- Seed initial data if tables are empty ---
 function seedData() {
@@ -406,7 +421,7 @@ app.put("/api/brukere/:telefon", async (c) => {
 
   if (existing) {
     // Oppdater
-    const fields = ["fornavn", "etternavn", "epost", "adresse", "postnummer", "sted", "rolle", "profilbilde"];
+    const fields = ["fornavn", "etternavn", "epost", "adresse", "postnummer", "sted", "klubb_id", "rolle", "profilbilde"];
     const sets = [];
     const vals = [];
     for (const f of fields) {
@@ -422,8 +437,8 @@ app.put("/api/brukere/:telefon", async (c) => {
   } else {
     // Opprett ny
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, klubb_id, rolle)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       telefon,
       body.fornavn || '',
@@ -432,6 +447,7 @@ app.put("/api/brukere/:telefon", async (c) => {
       body.adresse || '',
       body.postnummer || '',
       body.sted || '',
+      body.klubb_id || '',
       body.rolle || 'deltaker'
     );
   }

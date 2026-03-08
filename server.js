@@ -794,6 +794,9 @@ function beregnHundestatistikk(kritikker, klasse = null) {
     bredde_sum: 0, bredde_count: 0,
     reviering_sum: 0, reviering_count: 0,
     samarbeid_sum: 0, samarbeid_count: 0,
+    selvstendighet_sum: 0, selvstendighet_count: 0,
+    slipptid_sum: 0, slipptid_count: 0,
+    sek_spontan: 0, sek_forbi: 0,
     reis_nekter: 0, reis_svart_forsiktig: 0, reis_forsiktig: 0,
     reis_kontrollert: 0, reis_villig: 0, reis_djerv: 0,
     presis_meget_upresis: 0, presis_upresis: 0, presis_noe_upresis: 0, presis_presis: 0,
@@ -811,6 +814,10 @@ function beregnHundestatistikk(kritikker, klasse = null) {
     if (k.soksbredde) { stats.bredde_sum += Number(k.soksbredde); stats.bredde_count++; }
     if (k.reviering) { stats.reviering_sum += Number(k.reviering); stats.reviering_count++; }
     if (k.samarbeid) { stats.samarbeid_sum += Number(k.samarbeid); stats.samarbeid_count++; }
+    if (k.selvstendighet) { stats.selvstendighet_sum += Number(k.selvstendighet); stats.selvstendighet_count++; }
+    if (k.slipptid) { stats.slipptid_sum += Number(k.slipptid); stats.slipptid_count++; }
+    stats.sek_spontan += Number(k.sek_spontan) || 0;
+    stats.sek_forbi += Number(k.sek_forbi) || 0;
 
     const reis = Number(k.reising) || 0;
     if (reis === 1) stats.reis_nekter++;
@@ -847,6 +854,13 @@ function beregnHundestatistikk(kritikker, klasse = null) {
     bredde: stats.bredde_count > 0 ? Math.round((stats.bredde_sum / stats.bredde_count) * 100) / 100 : 0,
     reviering: stats.reviering_count > 0 ? Math.round((stats.reviering_sum / stats.reviering_count) * 100) / 100 : 0,
     samarbeid: stats.samarbeid_count > 0 ? Math.round((stats.samarbeid_sum / stats.samarbeid_count) * 100) / 100 : 0,
+    selvstendighet: stats.selvstendighet_count > 0 ? Math.round((stats.selvstendighet_sum / stats.selvstendighet_count) * 100) / 100 : 0,
+    slipptid_snitt: stats.slipptid_count > 0 ? Math.round((stats.slipptid_sum / stats.slipptid_count) * 100) / 100 : null,
+    sekundering: {
+      spontan: stats.sek_spontan,
+      forbi: stats.sek_forbi,
+      total: stats.sek_spontan + stats.sek_forbi
+    },
     reis: {
       nekter: stats.reis_nekter, svart_forsiktig: stats.reis_svart_forsiktig,
       forsiktig: stats.reis_forsiktig, kontrollert: stats.reis_kontrollert,

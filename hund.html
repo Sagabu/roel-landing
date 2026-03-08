@@ -105,11 +105,8 @@
                             class="px-4 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200">
                         VK
                     </button>
-                    <button onclick="selectStatClass('skog')" id="stat-class-skog"
-                            class="px-4 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200">
-                        Skog
-                    </button>
                 </div>
+                <p class="text-[10px] text-bark-400 mt-2">NB: Skogsfuglprøver er ekskludert fra indeksberegning (mangler makkerkonkurranse)</p>
 
                 <!-- År-filter -->
                 <div class="flex items-center gap-3 text-sm">
@@ -1066,7 +1063,7 @@
         function selectStatClass(klasse) {
             currentStatClass = klasse;
             // Update button styles
-            ['samlet', 'UK', 'AK', 'VK', 'skog'].forEach(k => {
+            ['samlet', 'UK', 'AK', 'VK'].forEach(k => {
                 const btn = document.getElementById(`stat-class-${k}`);
                 if (k === klasse) {
                     btn.classList.remove('bg-bark-100', 'text-bark-700', 'hover:bg-bark-200');
@@ -1227,11 +1224,28 @@
                 </div>
 
                 <!-- NISK Avlsindekser (100 = rasesnitt) -->
+                ${(() => {
+                    // NISK krever minimum 5 starter for pålitelig indeks
+                    const harNokStarter = stats.starter >= 5;
+                    const sikkerhet = stats.starter >= 10 ? 'Høy' : (stats.starter >= 5 ? 'Middels' : 'Lav');
+                    const sikkerhetFarge = stats.starter >= 10 ? 'green' : (stats.starter >= 5 ? 'amber' : 'red');
+
+                    return `
                 <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
                     <div class="flex items-center justify-between mb-2">
                         <h3 class="text-xs font-bold text-bark-600 uppercase">Avlsindekser</h3>
                         <span class="text-[10px] text-bark-400 bg-bark-50 px-2 py-1 rounded">NISK-modell • 100 = rasesnitt</span>
                     </div>
+
+                    ${!harNokStarter ? `
+                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                        <p class="text-xs text-amber-700">
+                            <strong>⚠ Foreløpig indeks:</strong> NISK krever minimum 5 prøvestarter for pålitelig avlsindeks.
+                            Denne hunden har ${stats.starter} starter. Indeksene er usikre og basert hovedsakelig på slektningers prestasjoner.
+                        </p>
+                    </div>
+                    ` : ''}
+
                     <p class="text-xs text-bark-400 mb-4">Indeks over 100 = bedre enn rasesnitt. Ved parring bør samlet indeks være over 200.</p>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1274,6 +1288,20 @@
                         </div>
                     </div>
 
+                    <!-- Sikkerhet på indeks -->
+                    <div class="mt-4 grid grid-cols-2 gap-4">
+                        <div class="p-3 bg-bark-50 rounded-xl">
+                            <p class="text-[10px] text-bark-500 uppercase">Sikkerhet</p>
+                            <p class="text-sm font-bold text-${sikkerhetFarge}-600">${sikkerhet}</p>
+                            <p class="text-[10px] text-bark-400">${stats.starter} av min. 5 starter</p>
+                        </div>
+                        <div class="p-3 bg-bark-50 rounded-xl">
+                            <p class="text-[10px] text-bark-500 uppercase">Slipptid (snitt)</p>
+                            <p class="text-sm font-bold text-bark-700">${stats.slipptid_snitt ? stats.slipptid_snitt.toFixed(0) + ' min' : '-'}</p>
+                            <p class="text-[10px] text-bark-400">Tid i terrenget</p>
+                        </div>
+                    </div>
+
                     <!-- Samlet avlsverdi -->
                     <div class="mt-4 p-4 bg-bark-50 rounded-xl">
                         <div class="flex items-center justify-between">
@@ -1298,14 +1326,17 @@
                         </div>
                     </div>
                 </div>
+                    `;
+                })()}
 
-                <!-- Tilleggsstatistikk (tomstand) -->
+                <!-- Tilleggsstatistikk (fuglearbeid) -->
                 <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
                     <h3 class="text-xs font-bold text-bark-600 uppercase mb-4">Fuglearbeid-detaljer</h3>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                         <div class="text-center bg-sky-50 rounded-xl p-3">
                             <p class="text-2xl font-bold text-sky-700">${stats.stand_m + stats.stand_u}</p>
                             <p class="text-xs text-bark-500">Totale stander</p>
+                            <p class="text-[9px] text-bark-400">(m/${stats.stand_m} u/${stats.stand_u})</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
                             <p class="text-2xl font-bold text-bark-700">${stats.makker_stand}</p>
@@ -1323,6 +1354,25 @@
                             </p>
                         </div>
                     </div>
+
+                    <!-- Sekundering (støkk) -->
+                    <div class="border-t border-bark-100 pt-4">
+                        <h4 class="text-[10px] text-bark-500 uppercase mb-2">Sekundering (støkk)</h4>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="text-center bg-green-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-green-700">${stats.sekundering?.spontan || 0}</p>
+                                <p class="text-[10px] text-bark-500">Spontan</p>
+                            </div>
+                            <div class="text-center bg-amber-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-amber-700">${stats.sekundering?.forbi || 0}</p>
+                                <p class="text-[10px] text-bark-500">Går forbi</p>
+                            </div>
+                            <div class="text-center bg-bark-50 rounded-lg p-2">
+                                <p class="text-lg font-bold text-bark-700">${stats.sekundering?.total || 0}</p>
+                                <p class="text-[10px] text-bark-500">Totalt</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Tallkarakterer (rådata, ikke indekser) -->
@@ -1330,9 +1380,9 @@
                     <h3 class="text-xs font-bold text-bark-600 uppercase mb-2">Tallkarakterer (gjennomsnitt)</h3>
                     <p class="text-xs text-bark-400 mb-4">
                         Rådata fra kritikkskjemaer. NB: Fart/stil korrelerer 95%+ med jaktlyst (samme gener).
-                        Søksbredde, reviering og samarbeid brukes ikke i avlsindeks da høyeste karakter ikke er best.
+                        Søksbredde, reviering, selvstendighet og samarbeid brukes ikke i avlsindeks da høyeste karakter ikke er best.
                     </p>
-                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                    <div class="grid grid-cols-4 sm:grid-cols-7 gap-2">
                         <div class="text-center bg-sky-50 rounded-xl p-3 border-2 border-sky-200">
                             ${formatWithIndex(stats.jaktlyst, rs.jaktlyst, 'Jaktlyst')}
                             <p class="text-[8px] text-sky-600 mt-1">Avlsindeks</p>
@@ -1340,6 +1390,11 @@
                         <div class="text-center bg-bark-50 rounded-xl p-3">
                             ${formatWithIndex(stats.fart, rs.fart, 'Fart')}
                             <p class="text-[8px] text-bark-400 mt-1">≈ Jaktlyst</p>
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            <p class="text-xl font-bold text-bark-700">${stats.selvstendighet ? stats.selvstendighet.toFixed(1) : '-'}</p>
+                            <p class="text-[10px] text-bark-500">Selvst.</p>
+                            <p class="text-[8px] text-bark-400 mt-1">Ikke indeks</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
                             <p class="text-xl font-bold text-bark-700">${stats.bredde ? stats.bredde.toFixed(1) : '-'}</p>
@@ -1353,7 +1408,7 @@
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
                             <p class="text-xl font-bold text-bark-700">${stats.samarbeid ? stats.samarbeid.toFixed(1) : '-'}</p>
-                            <p class="text-[10px] text-bark-500">Samarbeid</p>
+                            <p class="text-[10px] text-bark-500">Samarb.</p>
                             <p class="text-[8px] text-bark-400 mt-1">Ikke indeks</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">

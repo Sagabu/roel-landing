@@ -141,6 +141,34 @@
                     </div>
                 </div>
 
+                <!-- Prize Selection -->
+                <div>
+                    <h3 class="text-sm font-semibold text-bark-600 mb-2">Tildelt premie</h3>
+                    <div class="grid grid-cols-5 gap-2" id="prizeSelection">
+                        <button type="button" onclick="selectPrize(null)" data-prize=""
+                            class="prize-btn py-3 px-2 rounded-xl border-2 border-bark-200 text-bark-500 text-sm font-medium hover:border-bark-400 transition">
+                            Ingen
+                        </button>
+                        <button type="button" onclick="selectPrize('1. AK')" data-prize="1. AK"
+                            class="prize-btn py-3 px-2 rounded-xl border-2 border-bark-200 bg-amber-50 text-amber-700 text-sm font-bold hover:border-amber-400 transition">
+                            1. AK
+                        </button>
+                        <button type="button" onclick="selectPrize('2. AK')" data-prize="2. AK"
+                            class="prize-btn py-3 px-2 rounded-xl border-2 border-bark-200 bg-slate-50 text-slate-600 text-sm font-bold hover:border-slate-400 transition">
+                            2. AK
+                        </button>
+                        <button type="button" onclick="selectPrize('3. AK')" data-prize="3. AK"
+                            class="prize-btn py-3 px-2 rounded-xl border-2 border-bark-200 bg-orange-50 text-orange-700 text-sm font-bold hover:border-orange-400 transition">
+                            3. AK
+                        </button>
+                        <button type="button" onclick="selectPrize('0-pr')" data-prize="0-pr"
+                            class="prize-btn py-3 px-2 rounded-xl border-2 border-bark-200 bg-bark-100 text-bark-600 text-sm font-medium hover:border-bark-400 transition">
+                            0-pr
+                        </button>
+                    </div>
+                    <input type="hidden" id="selectedPrize" value="">
+                </div>
+
                 <!-- Critique Text Input -->
                 <div>
                     <div class="flex items-center justify-between mb-2">
@@ -788,10 +816,34 @@
 
             document.getElementById('modalFieldNotes').textContent = allNotes || 'Ingen notater registrert';
 
+            // Existing prize
+            selectPrize(dog.prize || null, false);
+
             // Existing critique
             document.getElementById('critiqueText').value = dog.critique || '';
 
             document.getElementById('critiqueModal').classList.remove('hidden');
+        }
+
+        function selectPrize(prize, updateHidden = true) {
+            // Update hidden input
+            if (updateHidden) {
+                document.getElementById('selectedPrize').value = prize || '';
+            } else {
+                document.getElementById('selectedPrize').value = prize || '';
+            }
+
+            // Update button styles
+            document.querySelectorAll('.prize-btn').forEach(btn => {
+                const btnPrize = btn.dataset.prize;
+                const isSelected = (prize === null && btnPrize === '') || btnPrize === prize;
+
+                if (isSelected) {
+                    btn.classList.add('ring-2', 'ring-sky-500', 'ring-offset-1');
+                } else {
+                    btn.classList.remove('ring-2', 'ring-sky-500', 'ring-offset-1');
+                }
+            });
         }
 
         function hideModal() {
@@ -866,7 +918,9 @@
             latestRound.scores.REVIERING = getVal('edit_REVIERING');
             latestRound.scores.SAMARBEID = getVal('edit_SAMARBEID');
 
-            // Save critique locally first
+            // Save prize and critique locally first
+            const selectedPrize = document.getElementById('selectedPrize').value;
+            dog.prize = selectedPrize || null;
             dog.critique = critiqueText;
             dog.critiqueStatus = 'submitted';
             dog.critiqueSentToNKK = true;

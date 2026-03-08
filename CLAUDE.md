@@ -2,6 +2,36 @@
 
 Event management platform for Norwegian bird dog field trials.
 
+## ⚠️ VIKTIG: Les reglene først!
+
+**Før du gjør NOEN endringer på kritikker, premieberegning, eller avlsstatistikk:**
+
+Les `REGLER_FUGLEHUNDPROVER.md` - den inneholder alle offisielle regler som MÅ følges.
+
+### Kritiske regler (kortversjon):
+
+1. **Klasser:**
+   - UK = 9 mnd til 2 år
+   - AK = fra fylte 2 år
+   - VK = etter oppnådd 1. AK
+   - **Man kan ALDRI gå tilbake til lavere klasse**
+
+2. **1. premie krever:**
+   - Minimum 60 min slipptid (men garanterer ikke 1. premie alene)
+
+3. **1. AK krever (hunden må være "ren"):**
+   - Fuglearbeid med godkjent reis
+   - **makker_stand = 0** (ingen makkerstand)
+   - **sjanse = 0** (ingen sjanser på fugl)
+   - tomstand = 0
+   - slipptid ≥ 60 min
+
+4. **Avlsindekser (NISK-modell):**
+   - 100 = rasesnitt
+   - Kun jaktlyst og viltfinnerevne brukes
+   - Minimum 5 starter for pålitelig indeks
+   - Skogsprøver ekskluderes
+
 ## Architecture
 
 **Frontend**: 13 HTML pages (Tailwind CDN, vanilla JS) — already built, fully functional.

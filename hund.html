@@ -65,9 +65,71 @@
             </div>
         </div>
 
+        <!-- Tab Navigation -->
+        <div id="tabNav" class="hidden mb-6">
+            <div class="flex border-b border-bark-200">
+                <button onclick="switchTab('kritikker')" id="tab-kritikker"
+                        class="px-6 py-3 font-medium text-sm border-b-2 border-sky-500 text-sky-600">
+                    Kritikker
+                </button>
+                <button onclick="switchTab('statistikk')" id="tab-statistikk"
+                        class="px-6 py-3 font-medium text-sm border-b-2 border-transparent text-bark-500 hover:text-bark-700">
+                    Avlsstatistikk
+                </button>
+            </div>
+        </div>
+
         <!-- Critiques List -->
         <div id="critiquesList" class="space-y-4">
             <!-- Critiques will be rendered here -->
+        </div>
+
+        <!-- Statistics Section (hidden by default, only for Irsk Setter) -->
+        <div id="statistikkSection" class="hidden space-y-6">
+            <!-- Klasse-velger -->
+            <div class="bg-white rounded-xl border border-bark-100 p-4">
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <button onclick="selectStatClass('samlet')" id="stat-class-samlet"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-sky-500 text-white">
+                        Samlet
+                    </button>
+                    <button onclick="selectStatClass('UK')" id="stat-class-UK"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200">
+                        UK
+                    </button>
+                    <button onclick="selectStatClass('AK')" id="stat-class-AK"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200">
+                        AK
+                    </button>
+                    <button onclick="selectStatClass('VK')" id="stat-class-VK"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200">
+                        VK
+                    </button>
+                    <button onclick="selectStatClass('skog')" id="stat-class-skog"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200">
+                        Skog
+                    </button>
+                </div>
+
+                <!-- År-filter -->
+                <div class="flex items-center gap-3 text-sm">
+                    <span class="text-bark-500">Periode:</span>
+                    <select id="statYearFrom" onchange="loadStatistikk()" class="border border-bark-200 rounded-lg px-3 py-1.5 text-sm">
+                        <option value="">Fra start</option>
+                    </select>
+                    <span class="text-bark-400">–</span>
+                    <select id="statYearTo" onchange="loadStatistikk()" class="border border-bark-200 rounded-lg px-3 py-1.5 text-sm">
+                        <option value="">Til nå</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Statistikk-innhold -->
+            <div id="statistikkContent">
+                <div class="p-8 text-center text-bark-500">
+                    Laster statistikk...
+                </div>
+            </div>
         </div>
     </main>
 
@@ -255,144 +317,332 @@
             }
         };
 
-        // Rasesnitt for egenskaper (basert på aggregert statistikk)
-        // Verdier er snitt fra alle registrerte kritikker per rase
-        const breedAverages = {
-            'Engelsk Setter': { JAKTLYST: 4.5, FART: 4.6, SELVSTENDIGHET: 4.0, SOKSBREDDE: 4.2, REVIERING: 4.1, SAMARBEID: 4.0 },
-            'Gordon Setter': { JAKTLYST: 4.3, FART: 4.2, SELVSTENDIGHET: 4.2, SOKSBREDDE: 3.9, REVIERING: 4.0, SAMARBEID: 4.1 },
-            'Irsk Setter': { JAKTLYST: 4.8, FART: 4.9, SELVSTENDIGHET: 4.1, SOKSBREDDE: 4.4, REVIERING: 4.2, SAMARBEID: 3.8 },
-            'Pointer': { JAKTLYST: 5.0, FART: 5.2, SELVSTENDIGHET: 4.5, SOKSBREDDE: 4.6, REVIERING: 4.4, SAMARBEID: 4.0 },
-            'Breton': { JAKTLYST: 4.6, FART: 4.0, SELVSTENDIGHET: 3.8, SOKSBREDDE: 3.5, REVIERING: 4.0, SAMARBEID: 4.2 }
-        };
-
-        // Beregn indeks: 100 = rasesnitt, >100 = over, <100 = under
-        function calculateIndex(value, breed, property) {
-            const avg = breedAverages[breed]?.[property];
-            if (!avg || value === null || value === undefined) return null;
-            return Math.round((value / avg) * 100);
-        }
-
-        // Formater verdi med indeks og pil
-        function formatWithIndex(value, breed, property) {
-            if (value === null || value === undefined || value === '-') return '-';
-
-            const index = calculateIndex(value, breed, property);
-            if (index === null) return value;
-
-            const diff = index - 100;
-            let arrow = '';
-            let colorClass = 'text-bark-500';
-
-            if (diff > 5) {
-                arrow = '▲';
-                colorClass = 'text-green-600';
-            } else if (diff < -5) {
-                arrow = '▼';
-                colorClass = 'text-red-600';
-            } else {
-                arrow = '—';
-                colorClass = 'text-bark-400';
-            }
-
-            const sign = diff > 0 ? '+' : '';
-            return `<span class="text-lg font-bold text-sky-700">${value}</span> <span class="${colorClass} text-xs">${arrow} ${sign}${diff}%</span>`;
-        }
-
         let currentDog = null;
         let currentCritique = null;
+        let currentStatClass = 'samlet';
+        let statistikkData = null;
+        let avkomData = null;
+
+        // Hent godkjente kritikker fra API
+        async function getApprovedCritiquesFromAPI(regnr) {
+            try {
+                const resp = await fetch(`/api/hunder/${encodeURIComponent(regnr)}/kritikker`);
+                if (resp.ok) {
+                    const kritikker = await resp.json();
+                    return kritikker.map(k => ({
+                        id: `db_${k.id}`,
+                        trial: k.prove_navn || 'Ukjent prøve',
+                        date: k.approved_at ? k.approved_at.split('T')[0] : k.start_dato || '',
+                        location: k.prove_sted || '',
+                        class: k.klasse || 'AK',
+                        party: k.parti,
+                        judge: k.dommer_navn || 'Dommer',
+                        prize: k.premie || '',
+                        cacit: k.cacit || '',
+                        scores: k.scores || {},
+                        critique: k.tekst || '',
+                        approvedAt: k.approved_at,
+                        approvedBy: k.approved_by || 'NKK-rep',
+                        isApproved: true
+                    }));
+                }
+            } catch (e) {
+                console.log('Kunne ikke hente kritikker fra API:', e);
+            }
+            return [];
+        }
+
+        // Hent godkjente kritikker fra judgeData localStorage (fallback)
+        function getApprovedCritiquesFromLocalStorage(regnr) {
+            const critiques = [];
+
+            // Gå gjennom alle judgeData_* keys
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key.startsWith('judgeData_')) continue;
+
+                const partiId = key.replace('judgeData_', '');
+
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    const dogs = Array.isArray(data) ? data : (data.dogs || []);
+
+                    dogs.forEach(dog => {
+                        // Finn denne hunden og sjekk om kritikken er godkjent
+                        if (dog.regnr === regnr && dog.critiqueStatus === 'approved') {
+                            critiques.push({
+                                id: `local_${partiId}_${dog.regnr}`,
+                                trial: dog.proveName || 'Vinterprøven 2026',
+                                date: dog.approvedAt ? dog.approvedAt.split('T')[0] : new Date().toISOString().split('T')[0],
+                                location: dog.proveLocation || 'Lierne',
+                                class: dog.klasse || 'AK',
+                                party: partiId,
+                                judge: dog.critiqueSubmittedBy || 'Dommer',
+                                prize: dog.prize || dog.premie || '',
+                                cacit: dog.cacit || '',
+                                scores: dog.scores || {},
+                                critique: dog.critiqueText || dog.critique || '',
+                                approvedAt: dog.approvedAt,
+                                approvedBy: dog.approvedBy || 'NKK-rep',
+                                isApproved: true
+                            });
+                        }
+                    });
+                } catch (e) {
+                    console.error('Feil ved parsing av', key, e);
+                }
+            }
+
+            return critiques;
+        }
+
+        // Kombiner kritikker fra API og localStorage
+        async function getApprovedCritiquesForDog(regnr) {
+            // Hent fra begge kilder
+            const apiCritiques = await getApprovedCritiquesFromAPI(regnr);
+            const localCritiques = getApprovedCritiquesFromLocalStorage(regnr);
+
+            // Kombiner og fjern duplikater (basert på parti + dato)
+            const seen = new Set();
+            const allCritiques = [];
+
+            // API-kritikker har prioritet
+            for (const c of apiCritiques) {
+                const key = `${c.party}_${c.date}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    allCritiques.push(c);
+                }
+            }
+
+            // Legg til lokale som ikke finnes i API
+            for (const c of localCritiques) {
+                const key = `${c.party}_${c.date}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    allCritiques.push(c);
+                }
+            }
+
+            return allCritiques;
+        }
+
+        // Hent hundeinfo fra API
+        async function fetchDogFromAPI(regnr) {
+            try {
+                const resp = await fetch(`/api/hunder?regnr=${encodeURIComponent(regnr)}`);
+                if (resp.ok) {
+                    const dogs = await resp.json();
+                    if (dogs.length > 0) {
+                        return dogs[0];
+                    }
+                }
+            } catch (e) {
+                console.log('Kunne ikke hente hund fra API:', e);
+            }
+            return null;
+        }
 
         async function init() {
             const urlParams = new URLSearchParams(window.location.search);
             const dogId = urlParams.get('id');
+            const regnr = urlParams.get('regnr');
+            const partyId = urlParams.get('party');
 
-            if (!dogId) {
-                showNotFound();
-                return;
-            }
+            // Prøv å finne hunden
+            let dog = null;
 
-            // Først sjekk om det er en hardkodet demo-hund (for kritikk-visning)
-            if (dogDatabase[dogId]) {
-                currentDog = dogDatabase[dogId];
-                renderDogProfile();
-                renderCritiques();
-                return;
-            }
+            // 1. Sjekk om vi har party-parameter (fra søk i bedømmingsdata)
+            if (partyId && dogId) {
+                const saved = localStorage.getItem('judgeData_' + partyId);
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        const dogs = Array.isArray(data) ? data : (data.dogs || []);
+                        const foundDog = dogs.find(d => String(d.id) === String(dogId));
+                        if (foundDog) {
+                            const dogRegnr = foundDog.regNr || foundDog.regnr || foundDog.regNumber || '';
+                            dog = {
+                                id: foundDog.id,
+                                name: foundDog.name,
+                                regNumber: dogRegnr,
+                                breed: foundDog.breed || 'Ukjent rase',
+                                gender: foundDog.gender || 'unknown',
+                                owner: foundDog.owner || foundDog.handler || 'Ukjent',
+                                handler: foundDog.handler,
+                                critiques: []
+                            };
 
-            // Hent fra API
-            try {
-                const response = await fetch(`/api/hunder/${dogId}`);
-                if (!response.ok) {
-                    showNotFound();
-                    return;
+                            // Hvis hunden har godkjent kritikk, legg den til
+                            if (foundDog.critiqueStatus === 'approved' && foundDog.critique) {
+                                // Aggreger scores fra alle runder
+                                let scores = {};
+                                if (foundDog.rounds && foundDog.rounds.length > 0) {
+                                    const lastRound = foundDog.rounds[foundDog.rounds.length - 1];
+                                    scores = lastRound.scores || {};
+                                    // Sum stand-felt
+                                    ['STAND_M', 'STAND_U', 'TOMSTAND', 'MAKKER_STAND', 'SJANSE', 'SLIPPTID'].forEach(field => {
+                                        scores[field] = foundDog.rounds.reduce((sum, r) => sum + (parseInt(r.scores?.[field]) || 0), 0);
+                                    });
+                                }
+
+                                dog.critiques.push({
+                                    id: `local_${partyId}_${foundDog.id}`,
+                                    trial: 'Vinterprøven 2026',
+                                    date: foundDog.approvedAt ? foundDog.approvedAt.split('T')[0] : new Date().toISOString().split('T')[0],
+                                    location: 'Lierne',
+                                    class: partyId.toUpperCase().includes('V') ? 'VK' : 'AK',
+                                    party: partyId,
+                                    judge: foundDog.critiqueSubmittedBy || 'Dommer',
+                                    prize: foundDog.prize || '',
+                                    cacit: foundDog.cacit || '',
+                                    scores: scores,
+                                    critique: foundDog.critique || '',
+                                    approvedAt: foundDog.approvedAt,
+                                    approvedBy: foundDog.approvedBy || 'NKK-rep',
+                                    isApproved: true
+                                });
+                            }
+
+                            // Hent også andre godkjente kritikker for denne hunden
+                            if (dogRegnr) {
+                                const otherCritiques = await getApprovedCritiquesForDog(dogRegnr);
+                                otherCritiques.forEach(c => {
+                                    if (!dog.critiques.some(existing => existing.id === c.id)) {
+                                        dog.critiques.push(c);
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Feil ved parsing av judgeData:', e);
+                    }
                 }
-                const data = await response.json();
+            }
 
-                // Hent kritikker for hunden
-                const kritikkerResponse = await fetch(`/api/hunder/${dogId}/kritikker`);
-                const kritikker = kritikkerResponse.ok ? await kritikkerResponse.json() : [];
+            // 2. Sjekk om vi har regnr i URL
+            if (!dog && regnr) {
+                // Prøv API først
+                const apiDog = await fetchDogFromAPI(regnr);
+                if (apiDog) {
+                    dog = {
+                        id: apiDog.id,
+                        name: apiDog.navn,
+                        regNumber: apiDog.regnr,
+                        breed: apiDog.rase,
+                        gender: apiDog.kjonn,
+                        owner: apiDog.eier_navn || '',
+                        critiques: []
+                    };
+                }
 
-                // Konverter API-data til formatet som brukes av renderDogProfile
-                currentDog = {
-                    id: data.id,
-                    name: data.navn,
-                    regNumber: data.regnr,
-                    breed: data.rase || 'Ukjent rase',
-                    gender: data.kjonn || 'male',
-                    owner: data.eier_navn || 'Ukjent',
-                    critiques: kritikker.map(k => ({
-                        id: `kritikk-${k.id}`,
-                        trial: k.prove_navn || 'Ukjent prøve',
-                        date: k.dato,
-                        location: k.sted || k.prove_sted || '',
-                        class: k.klasse,
-                        party: k.parti || k.klasse,
-                        judge: k.dommer_navn || 'Ukjent',
-                        prize: k.premie || '',
-                        scores: {
-                            PRESISJON: k.presisjon,
-                            REISING: k.reising,
-                            GODKJENT_REISING: k.godkjent_reising === 1,
-                            STAND_M: k.stand_m,
-                            STAND_U: k.stand_u,
-                            TOMSTAND: k.tomstand,
-                            MAKKER_STAND: k.makker_stand,
-                            SJANSE: k.sjanse,
-                            SLIPPTID: k.slipptid,
-                            JAKTLYST: k.jaktlyst,
-                            FART: k.fart,
-                            SELVSTENDIGHET: k.selvstendighet,
-                            SOKSBREDDE: k.soksbredde,
-                            REVIERING: k.reviering,
-                            SAMARBEID: k.samarbeid,
-                            SEK_SPONTAN: k.sek_spontan,
-                            SEK_FORBI: k.sek_forbi,
-                            APPORT: k.apport,
-                            RAPPORT_SPONTAN: k.rapport_spontan === 1,
-                            ADFERD: k.adferd || ''
-                        },
-                        critique: k.kritikk_tekst || ''
-                    }))
-                };
+                // Hvis ikke i API, sjekk dogDatabase for demo
+                if (!dog) {
+                    const dbDog = Object.values(dogDatabase).find(d => d.regNumber === regnr);
+                    if (dbDog) dog = dbDog;
+                }
+
+                // Hent godkjente kritikker fra localStorage
+                if (dog) {
+                    const approvedCritiques = await getApprovedCritiquesForDog(regnr);
+                    // Kombiner med eksisterende kritikker (unngå duplikater)
+                    const existingIds = new Set(dog.critiques.map(c => c.id));
+                    approvedCritiques.forEach(c => {
+                        if (!existingIds.has(c.id)) {
+                            dog.critiques.push(c);
+                        }
+                    });
+                    // Sorter etter dato (nyeste først)
+                    dog.critiques.sort((a, b) => new Date(b.date) - new Date(a.date));
+                }
+            }
+
+            // 3. Fallback: Sjekk gammel id-parameter (uten party)
+            if (!dog && dogId && !partyId) {
+                // Først sjekk demo-database
+                if (dogDatabase[dogId]) {
+                    dog = dogDatabase[dogId];
+                } else {
+                    // Prøv API med ID
+                    try {
+                        const resp = await fetch(`/api/hunder/${dogId}`);
+                        if (resp.ok) {
+                            const apiDog = await resp.json();
+                            // Hent kritikker fra API
+                            const kritikkerResp = await fetch(`/api/hunder/${dogId}/kritikker`);
+                            const kritikker = kritikkerResp.ok ? await kritikkerResp.json() : [];
+
+                            dog = {
+                                id: apiDog.id,
+                                name: apiDog.navn,
+                                regNumber: apiDog.regnr,
+                                breed: apiDog.rase || 'Ukjent rase',
+                                gender: apiDog.kjonn || 'male',
+                                owner: apiDog.eier_navn || 'Ukjent',
+                                critiques: kritikker.map(k => ({
+                                    id: `db-${k.id}`,
+                                    trial: k.prove_navn || 'Ukjent prøve',
+                                    date: k.dato,
+                                    location: k.sted || k.prove_sted || '',
+                                    class: k.klasse,
+                                    party: k.parti || k.klasse,
+                                    judge: k.dommer_navn || 'Ukjent',
+                                    prize: k.premie || '',
+                                    scores: {
+                                        PRESISJON: k.presisjon,
+                                        REISING: k.reising,
+                                        GODKJENT_REISING: k.godkjent_reising === 1,
+                                        STAND_M: k.stand_m,
+                                        STAND_U: k.stand_u,
+                                        TOMSTAND: k.tomstand,
+                                        MAKKER_STAND: k.makker_stand,
+                                        SJANSE: k.sjanse,
+                                        SLIPPTID: k.slipptid,
+                                        JAKTLYST: k.jaktlyst,
+                                        FART: k.fart,
+                                        SELVSTENDIGHET: k.selvstendighet,
+                                        SOKSBREDDE: k.soksbredde,
+                                        REVIERING: k.reviering,
+                                        SAMARBEID: k.samarbeid,
+                                        SEK_SPONTAN: k.sek_spontan,
+                                        SEK_FORBI: k.sek_forbi,
+                                        APPORT: k.apport,
+                                        RAPPORT_SPONTAN: k.rapport_spontan === 1,
+                                        ADFERD: k.adferd || ''
+                                    },
+                                    critique: k.kritikk_tekst || ''
+                                }))
+                            };
+                        }
+                    } catch (e) {
+                        console.error('Feil ved henting fra API:', e);
+                    }
+                }
+            }
+
+            if (dog) {
+                currentDog = dog;
                 renderDogProfile();
                 renderCritiques();
-            } catch (err) {
-                console.error('Feil ved henting av hund:', err);
-                showNotFound();
-            }
-        }
 
-        function showNotFound() {
-            document.getElementById('dogProfile').innerHTML = `
-                <div class="p-8 text-center">
-                    <div class="w-16 h-16 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
+                // Vis statistikk-tab kun for Irsk Setter
+                if (currentDog.breed && currentDog.breed.toLowerCase().includes('irsk setter')) {
+                    document.getElementById('tabNav').classList.remove('hidden');
+                }
+            } else {
+                document.getElementById('dogProfile').innerHTML = `
+                    <div class="p-8 text-center">
+                        <div class="w-16 h-16 bg-bark-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-bark-700 mb-2">Hund ikke funnet</h3>
+                        <p class="text-bark-500">Beklager, vi fant ikke hunden du leter etter.</p>
+                        <p class="text-sm text-bark-400 mt-2">Regnr: ${regnr || dogId || 'ukjent'}</p>
                     </div>
-                    <h3 class="text-lg font-semibold text-bark-700 mb-2">Hund ikke funnet</h3>
-                    <p class="text-bark-500">Beklager, vi fant ikke hunden du leter etter.</p>
-                </div>
-            `;
+                `;
+            }
         }
 
         function renderDogProfile() {
@@ -406,7 +656,7 @@
                         </div>
                         <div class="text-center sm:text-left">
                             <h1 class="text-2xl sm:text-3xl font-bold font-serif text-white">${currentDog.name}</h1>
-                            <p class="text-bark-300 mt-1">${currentDog.breed} • ${currentDog.gender === 'male' ? 'Hannhund' : 'Tispe'}</p>
+                            <p class="text-bark-300 mt-1">${currentDog.breed}${currentDog.gender === 'male' ? ' • Hannhund' : (currentDog.gender === 'female' ? ' • Tispe' : '')}</p>
                             <p class="text-bark-400 text-sm mt-2">${currentDog.regNumber}</p>
                         </div>
                     </div>
@@ -654,31 +904,30 @@
 
                     <!-- EGENSKAPER (SUM) Section -->
                     <div class="p-5 bg-sky-50 border-b border-bark-200">
-                        <h3 class="text-xs font-bold text-sky-700 uppercase mb-1">Egenskaper (1-6 skala)</h3>
-                        <p class="text-[10px] text-bark-400 mb-3">Indeks: 100 = rasesnitt for ${currentDog.breed}</p>
-                        <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        <h3 class="text-xs font-bold text-sky-700 uppercase mb-3">Egenskaper (1-6 skala)</h3>
+                        <div class="grid grid-cols-6 gap-2">
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p>${formatWithIndex(s.JAKTLYST, currentDog.breed, 'JAKTLYST')}</p>
+                                <p class="text-lg font-bold text-sky-700">${s.JAKTLYST ?? '-'}</p>
                                 <p class="text-[9px] text-bark-500">Jaktlyst</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p>${formatWithIndex(s.FART, currentDog.breed, 'FART')}</p>
+                                <p class="text-lg font-bold text-sky-700">${s.FART ?? '-'}</p>
                                 <p class="text-[9px] text-bark-500">Fart</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p>${formatWithIndex(s.SELVSTENDIGHET, currentDog.breed, 'SELVSTENDIGHET')}</p>
+                                <p class="text-lg font-bold text-sky-700">${s.SELVSTENDIGHET ?? '-'}</p>
                                 <p class="text-[9px] text-bark-500">Selvst.</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p>${formatWithIndex(s.SOKSBREDDE, currentDog.breed, 'SOKSBREDDE')}</p>
+                                <p class="text-lg font-bold text-sky-700">${s.SOKSBREDDE ?? '-'}</p>
                                 <p class="text-[9px] text-bark-500">Søksbr.</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p>${formatWithIndex(s.REVIERING, currentDog.breed, 'REVIERING')}</p>
+                                <p class="text-lg font-bold text-sky-700">${s.REVIERING ?? '-'}</p>
                                 <p class="text-[9px] text-bark-500">Reviering</p>
                             </div>
                             <div class="text-center bg-white rounded-xl p-2">
-                                <p>${formatWithIndex(s.SAMARBEID, currentDog.breed, 'SAMARBEID')}</p>
+                                <p class="text-lg font-bold text-sky-700">${s.SAMARBEID ?? '-'}</p>
                                 <p class="text-[9px] text-bark-500">Samarb.</p>
                             </div>
                         </div>
@@ -789,7 +1038,324 @@
             return date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
         }
 
+        // Tab switching
+        function switchTab(tab) {
+            const kritikkerTab = document.getElementById('tab-kritikker');
+            const statistikkTab = document.getElementById('tab-statistikk');
+            const kritikkerList = document.getElementById('critiquesList');
+            const statistikkSection = document.getElementById('statistikkSection');
+
+            if (tab === 'kritikker') {
+                kritikkerTab.classList.add('border-sky-500', 'text-sky-600');
+                kritikkerTab.classList.remove('border-transparent', 'text-bark-500');
+                statistikkTab.classList.remove('border-sky-500', 'text-sky-600');
+                statistikkTab.classList.add('border-transparent', 'text-bark-500');
+                kritikkerList.classList.remove('hidden');
+                statistikkSection.classList.add('hidden');
+            } else {
+                statistikkTab.classList.add('border-sky-500', 'text-sky-600');
+                statistikkTab.classList.remove('border-transparent', 'text-bark-500');
+                kritikkerTab.classList.remove('border-sky-500', 'text-sky-600');
+                kritikkerTab.classList.add('border-transparent', 'text-bark-500');
+                statistikkSection.classList.remove('hidden');
+                kritikkerList.classList.add('hidden');
+                loadStatistikk();
+            }
+        }
+
+        function selectStatClass(klasse) {
+            currentStatClass = klasse;
+            // Update button styles
+            ['samlet', 'UK', 'AK', 'VK', 'skog'].forEach(k => {
+                const btn = document.getElementById(`stat-class-${k}`);
+                if (k === klasse) {
+                    btn.classList.remove('bg-bark-100', 'text-bark-700', 'hover:bg-bark-200');
+                    btn.classList.add('bg-sky-500', 'text-white');
+                } else {
+                    btn.classList.add('bg-bark-100', 'text-bark-700', 'hover:bg-bark-200');
+                    btn.classList.remove('bg-sky-500', 'text-white');
+                }
+            });
+            renderStatistikk();
+        }
+
+        async function loadStatistikk() {
+            if (!currentDog || !currentDog.regNumber) return;
+
+            const yearFrom = document.getElementById('statYearFrom').value;
+            const yearTo = document.getElementById('statYearTo').value;
+
+            let url = `/api/hunder/${encodeURIComponent(currentDog.regNumber)}/statistikk`;
+            const params = [];
+            if (yearFrom) params.push(`fra_aar=${yearFrom}`);
+            if (yearTo) params.push(`til_aar=${yearTo}`);
+            if (params.length) url += '?' + params.join('&');
+
+            try {
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    statistikkData = data.statistikk || data;
+                    renderStatistikk();
+                } else {
+                    const err = await resp.json();
+                    document.getElementById('statistikkContent').innerHTML = `
+                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+                            <p class="text-amber-700">${err.error || 'Kunne ikke laste statistikk'}</p>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('Feil ved lasting av statistikk:', e);
+                document.getElementById('statistikkContent').innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                        <p class="text-red-700">Feil ved lasting av statistikk</p>
+                    </div>
+                `;
+            }
+
+            // Load avkom also
+            try {
+                const avkomResp = await fetch(`/api/hunder/${encodeURIComponent(currentDog.regNumber)}/avkom-statistikk`);
+                if (avkomResp.ok) {
+                    avkomData = await avkomResp.json();
+                }
+            } catch (e) {
+                console.log('Ingen avkom-data:', e);
+            }
+        }
+
+        function renderStatistikk() {
+            if (!statistikkData) return;
+
+            // Map UI-klasse til API-klasse
+            const apiClass = currentStatClass === 'samlet' ? 'SAMLET' :
+                             currentStatClass === 'skog' ? 'SKOG' : currentStatClass.toUpperCase();
+            const stats = statistikkData[apiClass];
+
+            if (!stats || stats.starter === 0) {
+                document.getElementById('statistikkContent').innerHTML = `
+                    <div class="bg-bark-50 border border-bark-100 rounded-xl p-6 text-center">
+                        <p class="text-bark-500">Ingen data for ${currentStatClass === 'samlet' ? 'samlet statistikk' : currentStatClass + '-klassen'}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const container = document.getElementById('statistikkContent');
+            container.innerHTML = `
+                <!-- Hovedtall -->
+                <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-4">Hovedtall</h3>
+                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                        <div class="text-center bg-sky-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-sky-700">${stats.starter}</p>
+                            <p class="text-xs text-bark-500">Starter</p>
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-bark-700">${stats.stand_m}</p>
+                            <p class="text-xs text-bark-500">Stand m/</p>
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-bark-700">${stats.stand_u}</p>
+                            <p class="text-xs text-bark-500">Stand u/</p>
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-bark-700">${stats.makker_stand}</p>
+                            <p class="text-xs text-bark-500">Makkerst.</p>
+                        </div>
+                        <div class="text-center bg-amber-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-amber-700">${stats.tomstand}</p>
+                            <p class="text-xs text-bark-500">Tomstand</p>
+                        </div>
+                        <div class="text-center bg-green-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-green-700">${stats.premie_prosent.toFixed(0)}%</p>
+                            <p class="text-xs text-bark-500">Premiert</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Viltfinnerevne & Tomstand -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl p-5 text-white">
+                        <h3 class="text-xs font-medium uppercase opacity-80 mb-2">Viltfinnerevne</h3>
+                        <p class="text-4xl font-bold">${stats.viltfinnerevne.toFixed(2)}</p>
+                        <p class="text-sm opacity-80 mt-1">gjennomsnittlig stander per prøve</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white">
+                        <h3 class="text-xs font-medium uppercase opacity-80 mb-2">Andel tomstand</h3>
+                        <p class="text-4xl font-bold">${stats.andel_tomstand.toFixed(1)}%</p>
+                        <p class="text-sm opacity-80 mt-1">av alle fuglearbeid</p>
+                    </div>
+                </div>
+
+                <!-- Egenskaper (gjennomsnitt) -->
+                <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-4">Egenskaper (gjennomsnitt)</h3>
+                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                        ${renderEgenskapBoks('Jaktlyst', stats.jaktlyst)}
+                        ${renderEgenskapBoks('Fart', stats.fart)}
+                        ${renderEgenskapBoks('Bredde', stats.bredde)}
+                        ${renderEgenskapBoks('Reviering', stats.reviering)}
+                        ${renderEgenskapBoks('Samarbeid', stats.samarbeid)}
+                        ${renderEgenskapBoks('Presisjon', stats.presisjon.gjennomsnitt, 4)}
+                    </div>
+                </div>
+
+                <!-- Reis-fordeling -->
+                <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-2">Reis-statistikk</h3>
+                    <p class="text-xs text-bark-400 mb-4">Fordeling av reiskarakterer (råtall, ikke indeks)</p>
+                    <div class="grid grid-cols-6 gap-2 text-center text-xs">
+                        <div class="bg-red-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-red-600">${stats.reis.nekter}</p>
+                            <p class="text-red-700">Nekter</p>
+                        </div>
+                        <div class="bg-amber-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-amber-600">${stats.reis.svart_forsiktig}</p>
+                            <p class="text-amber-700">Sv. fors.</p>
+                        </div>
+                        <div class="bg-yellow-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-yellow-600">${stats.reis.forsiktig}</p>
+                            <p class="text-yellow-700">Forsikt.</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-green-600">${stats.reis.kontrollert}</p>
+                            <p class="text-green-700">Kontroll.</p>
+                        </div>
+                        <div class="bg-sky-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-sky-600">${stats.reis.villig}</p>
+                            <p class="text-sky-700">Villig</p>
+                        </div>
+                        <div class="bg-blue-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-blue-600">${stats.reis.djerv}</p>
+                            <p class="text-blue-700">Djerv</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Presisjon-fordeling -->
+                <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-4">Presisjon-fordeling</h3>
+                    <div class="grid grid-cols-4 gap-3 text-center text-xs">
+                        <div class="bg-red-50 rounded-lg p-3">
+                            <p class="text-xl font-bold text-red-600">${stats.presisjon.meget_upresis}</p>
+                            <p class="text-red-700">Meget upresis</p>
+                        </div>
+                        <div class="bg-amber-50 rounded-lg p-3">
+                            <p class="text-xl font-bold text-amber-600">${stats.presisjon.upresis}</p>
+                            <p class="text-amber-700">Upresis</p>
+                        </div>
+                        <div class="bg-yellow-50 rounded-lg p-3">
+                            <p class="text-xl font-bold text-yellow-600">${stats.presisjon.noe_upresis}</p>
+                            <p class="text-yellow-700">Noe upresis</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-3">
+                            <p class="text-xl font-bold text-green-600">${stats.presisjon.presis}</p>
+                            <p class="text-green-700">Presis</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Avkom-statistikk (hvis data finnes) -->
+                ${renderAvkomStatistikk()}
+            `;
+        }
+
+        function renderEgenskapBoks(label, value, max = 6) {
+            const pct = value ? (value / max) * 100 : 0;
+            const color = pct >= 80 ? 'sky' : pct >= 60 ? 'green' : pct >= 40 ? 'amber' : 'bark';
+            return `
+                <div class="text-center">
+                    <div class="relative bg-bark-100 rounded-xl p-3">
+                        <p class="text-xl font-bold text-${color}-700">${value ? value.toFixed(1) : '-'}</p>
+                        <p class="text-[10px] text-bark-500">${label}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderAvkomStatistikk() {
+            if (!avkomData || !avkomData.avkom || avkomData.avkom.length === 0) {
+                return '';
+            }
+
+            const avkom = avkomData.avkom;
+            const apiClass = currentStatClass === 'samlet' ? 'SAMLET' :
+                             currentStatClass === 'skog' ? 'SKOG' : currentStatClass.toUpperCase();
+            const stats = avkomData.statistikk?.[apiClass];
+
+            return `
+                <div class="bg-white rounded-xl border border-bark-100 p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xs font-bold text-bark-600 uppercase">Avkom (${avkom.length} stk)</h3>
+                        ${stats ? `<span class="text-xs text-bark-400">Aggregert statistikk for avkom</span>` : ''}
+                    </div>
+
+                    ${stats ? `
+                    <div class="grid grid-cols-4 gap-3 mb-4">
+                        <div class="text-center bg-sky-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-sky-700">${stats.viltfinnerevne?.toFixed(2) || '-'}</p>
+                            <p class="text-[10px] text-bark-500">Viltfinnerevne</p>
+                        </div>
+                        <div class="text-center bg-green-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-green-700">${stats.premie_prosent?.toFixed(0) || 0}%</p>
+                            <p class="text-[10px] text-bark-500">Premiert</p>
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-bark-700">${stats.starter || 0}</p>
+                            <p class="text-[10px] text-bark-500">Starter</p>
+                        </div>
+                        <div class="text-center bg-amber-50 rounded-lg p-2">
+                            <p class="text-lg font-bold text-amber-700">${stats.jaktlyst?.toFixed(1) || '-'}</p>
+                            <p class="text-[10px] text-bark-500">Jaktlyst</p>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-bark-50 text-xs text-bark-500 uppercase">
+                                <tr>
+                                    <th class="px-3 py-2 text-left">Navn</th>
+                                    <th class="px-3 py-2 text-left">Regnr</th>
+                                    <th class="px-3 py-2 text-center">Starter</th>
+                                    <th class="px-3 py-2 text-center">VF</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-bark-100">
+                                ${avkom.slice(0, 10).map(a => `
+                                    <tr class="hover:bg-bark-50">
+                                        <td class="px-3 py-2">
+                                            <a href="hund.html?regnr=${encodeURIComponent(a.regnr)}" class="text-sky-600 hover:underline">${a.navn}</a>
+                                        </td>
+                                        <td class="px-3 py-2 text-bark-500">${a.regnr}</td>
+                                        <td class="px-3 py-2 text-center">${a.starter || 0}</td>
+                                        <td class="px-3 py-2 text-center">${a.viltfinnerevne?.toFixed(2) || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        ${avkom.length > 10 ? `<p class="text-xs text-bark-400 mt-2 text-center">Viser 10 av ${avkom.length} avkom</p>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function populateYearFilters() {
+            const currentYear = new Date().getFullYear();
+            const startYear = 2010;
+            const fromSelect = document.getElementById('statYearFrom');
+            const toSelect = document.getElementById('statYearTo');
+
+            for (let y = currentYear; y >= startYear; y--) {
+                fromSelect.innerHTML += `<option value="${y}">${y}</option>`;
+                toSelect.innerHTML += `<option value="${y}">${y}</option>`;
+            }
+        }
+
         // Initialize
+        populateYearFilters();
         init();
     </script>
 </body>

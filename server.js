@@ -82,6 +82,10 @@ db.exec(`
     fodt TEXT DEFAULT '',
     eier_telefon TEXT REFERENCES brukere(telefon),
     klubb_id TEXT REFERENCES klubber(id),
+    far_id INTEGER REFERENCES hunder(id),
+    mor_id INTEGER REFERENCES hunder(id),
+    far_regnr TEXT DEFAULT '',
+    mor_regnr TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -723,6 +727,220 @@ app.get("/api/brukere/:telefon/prover", (c) => {
   });
 
   return c.json(result);
+});
+
+// ============================================
+// AVLSSTATISTIKK API (Kun Irsk Setter)
+// ============================================
+
+// Hjelpefunksjon: Beregn statistikk fra kritikker
+function beregnHundestatistikk(kritikker, klasse = null) {
+  let filtrert = kritikker;
+  if (klasse && klasse !== 'SAMLET') {
+    filtrert = kritikker.filter(k => (k.klasse || '').toUpperCase() === klasse.toUpperCase());
+  }
+
+  if (filtrert.length === 0) return null;
+
+  const stats = {
+    starter: filtrert.length,
+    stand_m: 0, stand_u: 0, makker_stand: 0, tomstand: 0,
+    jaktlyst_sum: 0, jaktlyst_count: 0,
+    fart_sum: 0, fart_count: 0,
+    bredde_sum: 0, bredde_count: 0,
+    reviering_sum: 0, reviering_count: 0,
+    samarbeid_sum: 0, samarbeid_count: 0,
+    reis_nekter: 0, reis_svart_forsiktig: 0, reis_forsiktig: 0,
+    reis_kontrollert: 0, reis_villig: 0, reis_djerv: 0,
+    presis_meget_upresis: 0, presis_upresis: 0, presis_noe_upresis: 0, presis_presis: 0,
+    premierte: 0
+  };
+
+  for (const k of filtrert) {
+    stats.stand_m += Number(k.stand_m) || 0;
+    stats.stand_u += Number(k.stand_u) || 0;
+    stats.makker_stand += Number(k.makker_stand) || 0;
+    stats.tomstand += Number(k.tomstand) || 0;
+
+    if (k.jaktlyst) { stats.jaktlyst_sum += Number(k.jaktlyst); stats.jaktlyst_count++; }
+    if (k.fart) { stats.fart_sum += Number(k.fart); stats.fart_count++; }
+    if (k.soksbredde) { stats.bredde_sum += Number(k.soksbredde); stats.bredde_count++; }
+    if (k.reviering) { stats.reviering_sum += Number(k.reviering); stats.reviering_count++; }
+    if (k.samarbeid) { stats.samarbeid_sum += Number(k.samarbeid); stats.samarbeid_count++; }
+
+    const reis = Number(k.reising) || 0;
+    if (reis === 1) stats.reis_nekter++;
+    else if (reis === 2) stats.reis_svart_forsiktig++;
+    else if (reis === 3) stats.reis_forsiktig++;
+    else if (reis === 4) stats.reis_kontrollert++;
+    else if (reis === 5) stats.reis_villig++;
+    else if (reis === 6) stats.reis_djerv++;
+
+    const presisjon = Number(k.presisjon) || 0;
+    if (presisjon === 1) stats.presis_meget_upresis++;
+    else if (presisjon === 2) stats.presis_upresis++;
+    else if (presisjon === 3) stats.presis_noe_upresis++;
+    else if (presisjon === 4) stats.presis_presis++;
+
+    if (k.premie && k.premie.trim() !== '' && !k.premie.toLowerCase().includes('ingen')) {
+      stats.premierte++;
+    }
+  }
+
+  const totalStand = stats.stand_m + stats.stand_u + stats.tomstand;
+
+  return {
+    klasse: klasse || 'SAMLET',
+    starter: stats.starter,
+    stand_m: stats.stand_m,
+    stand_u: stats.stand_u,
+    makker_stand: stats.makker_stand,
+    tomstand: stats.tomstand,
+    andel_tomstand: totalStand > 0 ? Math.round((stats.tomstand / totalStand) * 1000) / 10 : 0,
+    viltfinnerevne: stats.starter > 0 ? Math.round(((stats.stand_m + stats.stand_u) / stats.starter) * 100) / 100 : 0,
+    jaktlyst: stats.jaktlyst_count > 0 ? Math.round((stats.jaktlyst_sum / stats.jaktlyst_count) * 100) / 100 : 0,
+    fart: stats.fart_count > 0 ? Math.round((stats.fart_sum / stats.fart_count) * 100) / 100 : 0,
+    bredde: stats.bredde_count > 0 ? Math.round((stats.bredde_sum / stats.bredde_count) * 100) / 100 : 0,
+    reviering: stats.reviering_count > 0 ? Math.round((stats.reviering_sum / stats.reviering_count) * 100) / 100 : 0,
+    samarbeid: stats.samarbeid_count > 0 ? Math.round((stats.samarbeid_sum / stats.samarbeid_count) * 100) / 100 : 0,
+    reis: {
+      nekter: stats.reis_nekter, svart_forsiktig: stats.reis_svart_forsiktig,
+      forsiktig: stats.reis_forsiktig, kontrollert: stats.reis_kontrollert,
+      villig: stats.reis_villig, djerv: stats.reis_djerv
+    },
+    presisjon: {
+      meget_upresis: stats.presis_meget_upresis, upresis: stats.presis_upresis,
+      noe_upresis: stats.presis_noe_upresis, presis: stats.presis_presis,
+      gjennomsnitt: (() => {
+        const total = stats.presis_meget_upresis + stats.presis_upresis + stats.presis_noe_upresis + stats.presis_presis;
+        if (total === 0) return 0;
+        const sum = stats.presis_meget_upresis * 1 + stats.presis_upresis * 2 + stats.presis_noe_upresis * 3 + stats.presis_presis * 4;
+        return Math.round((sum / total) * 100) / 100;
+      })()
+    },
+    premierte: stats.premierte,
+    premie_prosent: stats.starter > 0 ? Math.round((stats.premierte / stats.starter) * 1000) / 10 : 0
+  };
+}
+
+// Hent avlsstatistikk for en hund
+app.get("/api/hunder/:id/statistikk", (c) => {
+  const id = c.req.param("id");
+  const fraAar = c.req.query("fra") || null;
+  const tilAar = c.req.query("til") || null;
+
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ? OR regnr = ?").get(id, id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  // Hent kritikker for hunden
+  let kritikkQuery = `SELECT * FROM kritikker WHERE hund_id = ?`;
+  const params = [hund.id];
+
+  if (fraAar) {
+    kritikkQuery += " AND strftime('%Y', dato) >= ?";
+    params.push(fraAar);
+  }
+  if (tilAar) {
+    kritikkQuery += " AND strftime('%Y', dato) <= ?";
+    params.push(tilAar);
+  }
+
+  const kritikker = db.prepare(kritikkQuery).all(...params);
+
+  const klasser = ['UK', 'AK', 'VK', 'SAMLET'];
+  const statistikk = {};
+
+  for (const klasse of klasser) {
+    const stats = beregnHundestatistikk(kritikker, klasse);
+    if (stats) statistikk[klasse] = stats;
+  }
+
+  return c.json({
+    hund: { id: hund.id, regnr: hund.regnr, navn: hund.navn, rase: hund.rase, kjonn: hund.kjonn, fodt: hund.fodt },
+    filter: { fraAar, tilAar },
+    statistikk
+  });
+});
+
+// Hent avkom for en hund
+app.get("/api/hunder/:id/avkom", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ? OR regnr = ?").get(id, id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const avkom = db.prepare(`
+    SELECT h.*, b.fornavn || ' ' || b.etternavn as eier_navn,
+           CASE WHEN h.far_id = ? THEN 'far' ELSE 'mor' END as forelder_rolle
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    WHERE h.far_id = ? OR h.mor_id = ?
+    ORDER BY h.fodt DESC
+  `).all(hund.id, hund.id, hund.id);
+
+  return c.json({ forelder: { id: hund.id, regnr: hund.regnr, navn: hund.navn }, antall_avkom: avkom.length, avkom });
+});
+
+// Hent aggregert avkomsstatistikk
+app.get("/api/hunder/:id/avkom-statistikk", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ? OR regnr = ?").get(id, id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const avkom = db.prepare(`SELECT id FROM hunder WHERE far_id = ? OR mor_id = ?`).all(hund.id, hund.id);
+
+  if (avkom.length === 0) {
+    return c.json({ forelder: { id: hund.id, regnr: hund.regnr, navn: hund.navn }, antall_avkom: 0, statistikk: {} });
+  }
+
+  const avkomIds = avkom.map(a => a.id);
+  const placeholders = avkomIds.map(() => '?').join(',');
+  const kritikker = db.prepare(`SELECT * FROM kritikker WHERE hund_id IN (${placeholders})`).all(...avkomIds);
+
+  const klasser = ['UK', 'AK', 'VK', 'SAMLET'];
+  const statistikk = {};
+
+  for (const klasse of klasser) {
+    const stats = beregnHundestatistikk(kritikker, klasse);
+    if (stats) {
+      statistikk[klasse] = { viltfinnerevne: stats.viltfinnerevne, premie_prosent: stats.premie_prosent, starter: stats.starter, jaktlyst: stats.jaktlyst };
+    }
+  }
+
+  return c.json({ forelder: { id: hund.id, regnr: hund.regnr, navn: hund.navn }, antall_avkom: avkom.length, statistikk });
+});
+
+// Sett foreldre for en hund
+app.put("/api/hunder/:id/foreldre", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ? OR regnr = ?").get(id, id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const updates = [];
+  const values = [];
+
+  if (body.far_regnr !== undefined) {
+    const far = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(body.far_regnr);
+    if (far) { updates.push("far_id = ?"); values.push(far.id); }
+    updates.push("far_regnr = ?");
+    values.push(body.far_regnr || null);
+  }
+
+  if (body.mor_regnr !== undefined) {
+    const mor = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(body.mor_regnr);
+    if (mor) { updates.push("mor_id = ?"); values.push(mor.id); }
+    updates.push("mor_regnr = ?");
+    values.push(body.mor_regnr || null);
+  }
+
+  if (updates.length > 0) {
+    values.push(hund.id);
+    db.prepare(`UPDATE hunder SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  }
+
+  const oppdatert = db.prepare("SELECT * FROM hunder WHERE id = ?").get(hund.id);
+  return c.json(oppdatert);
 });
 
 // ============================================

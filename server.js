@@ -6,13 +6,148 @@ import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { config } from "dotenv";
+
+// Last miljøvariabler
+config();
+
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 const XLSX = require("xlsx");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, "fuglehund.db");
-const PORT = Number(process.env.PORT || 8889);
+
+// Konfigurasjon fra miljøvariabler
+const ENV = {
+  PORT: Number(process.env.PORT || 5173),
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  DB_PATH: process.env.DB_PATH || join(__dirname, "fuglehund.db"),
+  SESSION_SECRET: process.env.SESSION_SECRET || 'dev-secret',
+  ADMIN_PHONE: process.env.ADMIN_PHONE || '99999999'
+};
+
+const DB_PATH = ENV.DB_PATH;
+const PORT = ENV.PORT;
+
+// --- Input-validering ---
+const validate = {
+  // Telefon: 8 siffer (norsk mobilnummer)
+  phone: (val) => {
+    if (!val) return { valid: false, error: 'Telefonnummer er påkrevd' };
+    const digits = String(val).replace(/\D/g, '');
+    // Fjern +47 eller 0047 prefix
+    const normalized = digits.length === 10 && digits.startsWith('47')
+      ? digits.slice(2)
+      : digits.length > 8 ? digits.slice(-8) : digits;
+    if (normalized.length !== 8 || !/^[49]\d{7}$/.test(normalized)) {
+      return { valid: false, error: 'Ugyldig norsk mobilnummer' };
+    }
+    return { valid: true, value: normalized };
+  },
+
+  // E-post
+  email: (val) => {
+    if (!val) return { valid: true, value: '' }; // Optional
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(val)) {
+      return { valid: false, error: 'Ugyldig e-postadresse' };
+    }
+    return { valid: true, value: val.toLowerCase().trim() };
+  },
+
+  // Navn (fornavn/etternavn)
+  name: (val, field = 'Navn') => {
+    if (!val || !val.trim()) return { valid: false, error: `${field} er påkrevd` };
+    const cleaned = val.trim().slice(0, 100); // Max 100 tegn
+    if (cleaned.length < 2) {
+      return { valid: false, error: `${field} må være minst 2 tegn` };
+    }
+    // Fjern potensielt farlige tegn (men tillat norske bokstaver)
+    const safe = cleaned.replace(/[<>\"'`;]/g, '');
+    return { valid: true, value: safe };
+  },
+
+  // Generell tekst (sanitering)
+  text: (val, maxLen = 500) => {
+    if (!val) return { valid: true, value: '' };
+    const cleaned = String(val).trim().slice(0, maxLen);
+    // Fjern potensielt farlige tegn
+    const safe = cleaned.replace(/[<>\"'`;]/g, '');
+    return { valid: true, value: safe };
+  },
+
+  // Postnummer (4 siffer)
+  postalCode: (val) => {
+    if (!val) return { valid: true, value: '' };
+    const digits = String(val).replace(/\D/g, '');
+    if (digits.length !== 4) {
+      return { valid: false, error: 'Postnummer må være 4 siffer' };
+    }
+    return { valid: true, value: digits };
+  }
+};
+
+// Hjelpefunksjon for å validere request body
+function validateBody(body, schema) {
+  const errors = [];
+  const validated = {};
+
+  for (const [field, validator] of Object.entries(schema)) {
+    const result = validator(body[field]);
+    if (!result.valid) {
+      errors.push({ field, error: result.error });
+    } else {
+      validated[field] = result.value;
+    }
+  }
+
+  return { valid: errors.length === 0, errors, data: validated };
+}
+
+// --- Rate Limiting ---
+const rateLimitStore = new Map();
+
+function rateLimit(options = {}) {
+  const {
+    windowMs = 60000,      // 1 minutt
+    maxRequests = 100,     // Maks forespørsler per vindu
+    keyGenerator = (c) => c.req.header('x-forwarded-for') || 'unknown'
+  } = options;
+
+  return async (c, next) => {
+    const key = keyGenerator(c);
+    const now = Date.now();
+
+    if (!rateLimitStore.has(key)) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+    } else {
+      const record = rateLimitStore.get(key);
+      if (now > record.resetAt) {
+        // Nytt vindu
+        record.count = 1;
+        record.resetAt = now + windowMs;
+      } else {
+        record.count++;
+        if (record.count > maxRequests) {
+          c.header('Retry-After', String(Math.ceil((record.resetAt - now) / 1000)));
+          return c.json({ error: 'For mange forespørsler. Prøv igjen senere.' }, 429);
+        }
+      }
+    }
+
+    await next();
+  };
+}
+
+// Rydd opp gamle rate limit-oppføringer hvert minutt
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of rateLimitStore.entries()) {
+    if (now > record.resetAt + 60000) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, 60000);
 
 // --- Database setup ---
 const db = new Database(DB_PATH);
@@ -324,10 +459,54 @@ seedData();
 
 const app = new Hono();
 
+// --- Global middleware ---
+// Rate limiting for alle API-endepunkter
+app.use('/api/*', rateLimit({ windowMs: 60000, maxRequests: 100 }));
+
+// Strengere rate limiting for autentisering/brukere (hindre brute force)
+app.use('/api/brukere/*', rateLimit({ windowMs: 60000, maxRequests: 30 }));
+
+// Request logging middleware
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  const method = c.req.method;
+  const path = c.req.path;
+
+  await next();
+
+  const duration = Date.now() - start;
+  const status = c.res.status;
+
+  // Logg kun API-kall og feil
+  if (path.startsWith('/api') || status >= 400) {
+    const logLevel = status >= 500 ? 'ERROR' : status >= 400 ? 'WARN' : 'INFO';
+    const ip = c.req.header('x-forwarded-for') || 'local';
+    console.log(`[${new Date().toISOString()}] ${logLevel} ${method} ${path} ${status} ${duration}ms [${ip}]`);
+  }
+});
+
 // --- Global error handler ---
 app.onError((err, c) => {
-  console.error("Server error:", err);
-  return c.json({ error: err.message }, 500);
+  const errorId = Math.random().toString(36).substring(2, 10);
+  const ip = c.req.header('x-forwarded-for') || 'local';
+
+  // Detaljert logging for debugging
+  console.error(`[${new Date().toISOString()}] ERROR [${errorId}] ${c.req.method} ${c.req.path}`);
+  console.error(`  IP: ${ip}`);
+  console.error(`  Error: ${err.message}`);
+  if (ENV.NODE_ENV === 'development') {
+    console.error(`  Stack: ${err.stack}`);
+  }
+
+  // Brukervennlig feilmelding (skjul tekniske detaljer i produksjon)
+  const message = ENV.NODE_ENV === 'development'
+    ? err.message
+    : 'En feil oppstod. Prøv igjen senere.';
+
+  return c.json({
+    error: message,
+    errorId: errorId // For support/debugging
+  }, 500);
 });
 
 // --- localStorage bridge API ---
@@ -432,55 +611,85 @@ app.get("/api/brukere/:telefon", (c) => {
 // Opprett eller oppdater bruker
 app.put("/api/brukere/:telefon", async (c) => {
   const telefon = c.req.param("telefon");
+
+  // Valider telefonnummer i URL
+  const phoneValidation = validate.phone(telefon);
+  if (!phoneValidation.valid) {
+    return c.json({ error: phoneValidation.error }, 400);
+  }
+  const validPhone = phoneValidation.value;
+
   const body = await c.req.json();
 
-  const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+  // Valider input-data
+  const validation = validateBody(body, {
+    fornavn: (v) => validate.name(v, 'Fornavn'),
+    etternavn: (v) => validate.name(v, 'Etternavn'),
+    epost: validate.email,
+    adresse: (v) => validate.text(v, 200),
+    postnummer: validate.postalCode,
+    sted: (v) => validate.text(v, 100)
+  });
+
+  // For oppdatering: ikke krev alle felt
+  const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(validPhone);
 
   if (existing) {
-    // Oppdater
+    // Oppdater - bruk validerte verdier der de finnes
     const fields = ["fornavn", "etternavn", "epost", "adresse", "postnummer", "sted", "klubb_id", "rolle", "profilbilde"];
     const sets = [];
     const vals = [];
     for (const f of fields) {
       if (f in body) {
+        // Bruk validert verdi hvis tilgjengelig, ellers original
+        const val = validation.data[f] !== undefined ? validation.data[f] : body[f];
         sets.push(`${f} = ?`);
-        vals.push(body[f]);
+        vals.push(val);
       }
     }
     if (sets.length > 0) {
       sets.push("updated_at = datetime('now')");
-      db.prepare(`UPDATE brukere SET ${sets.join(", ")} WHERE telefon = ?`).run(...vals, telefon);
+      db.prepare(`UPDATE brukere SET ${sets.join(", ")} WHERE telefon = ?`).run(...vals, validPhone);
     }
   } else {
-    // Opprett ny
+    // Opprett ny - krev fornavn og etternavn
+    if (!body.fornavn || !body.etternavn) {
+      return c.json({ error: 'Fornavn og etternavn er påkrevd for nye brukere' }, 400);
+    }
+
+    // Sjekk at fornavn og etternavn er gyldige
+    const fornavnVal = validate.name(body.fornavn, 'Fornavn');
+    const etternavnVal = validate.name(body.etternavn, 'Etternavn');
+    if (!fornavnVal.valid) return c.json({ error: fornavnVal.error }, 400);
+    if (!etternavnVal.valid) return c.json({ error: etternavnVal.error }, 400);
+
     db.prepare(`
       INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, klubb_id, rolle)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      telefon,
-      body.fornavn || '',
-      body.etternavn || '',
-      body.epost || '',
-      body.adresse || '',
-      body.postnummer || '',
-      body.sted || '',
+      validPhone,
+      fornavnVal.value,
+      etternavnVal.value,
+      validation.data.epost || '',
+      validation.data.adresse || '',
+      validation.data.postnummer || '',
+      validation.data.sted || '',
       body.klubb_id || '',
       body.rolle || 'deltaker'
     );
   }
 
-  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(validPhone);
 
   // Automatisk matching: Oppdater klubb_medlemmer hvis telefon matcher
-  const normalizedPhone = normalizePhone(telefon);
-  if (normalizedPhone) {
+  if (validPhone) {
     db.prepare(`
       UPDATE klubb_medlemmer
       SET matched_bruker_telefon = ?,
           matched_at = datetime('now')
       WHERE telefon_normalized = ?
       AND matched_bruker_telefon IS NULL
-    `).run(telefon, normalizedPhone);
+    `).run(validPhone, validPhone);
   }
 
   return c.json(row);

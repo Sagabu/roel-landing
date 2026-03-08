@@ -1125,6 +1125,36 @@
             }
         }
 
+        // Rasesnitt for Irsk Setter (offisielle FKF-data)
+        const RASESNITT_IRSK_SETTER = {
+            viltfinnerevne: 2.45,
+            andel_tomstand: 12.5,
+            jaktlyst: 4.8,
+            fart: 4.6,
+            bredde: 4.2,
+            reviering: 4.1,
+            samarbeid: 4.3,
+            presisjon: 3.2,
+            premie_prosent: 42
+        };
+
+        // Formater verdi med indeks-sammenligning mot rasesnitt
+        function formatWithIndex(value, breedAvg, label, max = 6, higherIsBetter = true) {
+            if (!value || !breedAvg) return `<p class="text-xl font-bold text-bark-700">-</p><p class="text-[10px] text-bark-500">${label}</p>`;
+
+            const indeks = Math.round((value / breedAvg) * 100);
+            const diff = value - breedAvg;
+            const isGood = higherIsBetter ? diff >= 0 : diff <= 0;
+            const arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '');
+            const arrowColor = isGood ? 'text-green-600' : 'text-red-500';
+
+            return `
+                <p class="text-xl font-bold text-bark-700">${value.toFixed(1)}</p>
+                <p class="text-[10px] text-bark-500">${label}</p>
+                <p class="text-[9px] ${arrowColor} font-medium">${arrow} ${indeks}%</p>
+            `;
+        }
+
         function renderStatistikk() {
             if (!statistikkData) return;
 
@@ -1141,6 +1171,9 @@
                 `;
                 return;
             }
+
+            // Bruk rasesnitt for Irsk Setter
+            const rs = RASESNITT_IRSK_SETTER;
 
             const container = document.getElementById('statistikkContent');
             container.innerHTML = `
@@ -1175,30 +1208,58 @@
                     </div>
                 </div>
 
-                <!-- Viltfinnerevne & Tomstand -->
+                <!-- Viltfinnerevne & Tomstand med rasesnitt-sammenligning -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div class="bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl p-5 text-white">
                         <h3 class="text-xs font-medium uppercase opacity-80 mb-2">Viltfinnerevne</h3>
                         <p class="text-4xl font-bold">${stats.viltfinnerevne.toFixed(2)}</p>
                         <p class="text-sm opacity-80 mt-1">gjennomsnittlig stander per prøve</p>
+                        ${(() => {
+                            const indeks = Math.round((stats.viltfinnerevne / rs.viltfinnerevne) * 100);
+                            const diff = stats.viltfinnerevne - rs.viltfinnerevne;
+                            const arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '');
+                            const color = diff >= 0 ? 'bg-white/20' : 'bg-red-400/30';
+                            return `<p class="mt-2 text-xs ${color} inline-block px-2 py-1 rounded-full">${arrow} ${indeks}% av rasesnitt (${rs.viltfinnerevne})</p>`;
+                        })()}
                     </div>
                     <div class="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white">
                         <h3 class="text-xs font-medium uppercase opacity-80 mb-2">Andel tomstand</h3>
                         <p class="text-4xl font-bold">${stats.andel_tomstand.toFixed(1)}%</p>
                         <p class="text-sm opacity-80 mt-1">av alle fuglearbeid</p>
+                        ${(() => {
+                            const indeks = Math.round((stats.andel_tomstand / rs.andel_tomstand) * 100);
+                            const diff = stats.andel_tomstand - rs.andel_tomstand;
+                            const arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '');
+                            // Lavere tomstand er bedre
+                            const color = diff <= 0 ? 'bg-white/20' : 'bg-red-400/30';
+                            return `<p class="mt-2 text-xs ${color} inline-block px-2 py-1 rounded-full">${arrow} ${indeks}% av rasesnitt (${rs.andel_tomstand}%)</p>`;
+                        })()}
                     </div>
                 </div>
 
-                <!-- Egenskaper (gjennomsnitt) -->
+                <!-- Egenskaper (gjennomsnitt) med rasesnitt-sammenligning -->
                 <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
-                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-4">Egenskaper (gjennomsnitt)</h3>
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-2">Egenskaper (gjennomsnitt)</h3>
+                    <p class="text-xs text-bark-400 mb-4">Indeks viser hundens verdi i % av rasesnittet for Irsk Setter</p>
                     <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                        ${renderEgenskapBoks('Jaktlyst', stats.jaktlyst)}
-                        ${renderEgenskapBoks('Fart', stats.fart)}
-                        ${renderEgenskapBoks('Bredde', stats.bredde)}
-                        ${renderEgenskapBoks('Reviering', stats.reviering)}
-                        ${renderEgenskapBoks('Samarbeid', stats.samarbeid)}
-                        ${renderEgenskapBoks('Presisjon', stats.presisjon.gjennomsnitt, 4)}
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            ${formatWithIndex(stats.jaktlyst, rs.jaktlyst, 'Jaktlyst')}
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            ${formatWithIndex(stats.fart, rs.fart, 'Fart')}
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            ${formatWithIndex(stats.bredde, rs.bredde, 'Bredde')}
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            ${formatWithIndex(stats.reviering, rs.reviering, 'Reviering')}
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            ${formatWithIndex(stats.samarbeid, rs.samarbeid, 'Samarbeid')}
+                        </div>
+                        <div class="text-center bg-bark-50 rounded-xl p-3">
+                            ${formatWithIndex(stats.presisjon.gjennomsnitt, rs.presisjon, 'Presisjon', 4)}
+                        </div>
                     </div>
                 </div>
 

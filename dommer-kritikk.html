@@ -235,16 +235,48 @@
             currentDogId: null
         };
 
-        // Party configurations
-        const PARTIES = {
-            ukak1: { name: 'UK/AK Parti 1', color: 'forest' },
-            ukak2: { name: 'UK/AK Parti 2', color: 'forest' },
-            ukak3: { name: 'UK/AK Parti 3', color: 'forest' },
-            ukak4: { name: 'UK/AK Parti 4', color: 'forest' },
-            vk1: { name: 'VK Kval Parti 1', color: 'earth' },
-            vk2: { name: 'VK Kval Parti 2', color: 'earth' },
-            vkfinale: { name: 'VK Finale', color: 'amber' }
-        };
+        // Dynamic party configuration based on party ID
+        function getPartyConfig(partyId) {
+            const id = partyId.toUpperCase();
+
+            // VK-partier
+            if (id.startsWith('V') || id.includes('VK')) {
+                const isFinale = id.includes('FINALE') || id.includes('FIN');
+                return {
+                    name: isFinale ? 'VK Finale' : `VK Parti ${partyId}`,
+                    color: isFinale ? 'amber' : 'earth'
+                };
+            }
+
+            // UK/AK-partier (A1, A2, B1, osv.)
+            if (/^[A-Z]\d+$/.test(id)) {
+                return {
+                    name: `UK/AK Parti ${partyId}`,
+                    color: 'forest'
+                };
+            }
+
+            // Fallback for gamle format (ukak1, vk1 osv.)
+            const legacyParties = {
+                ukak1: { name: 'UK/AK Parti 1', color: 'forest' },
+                ukak2: { name: 'UK/AK Parti 2', color: 'forest' },
+                ukak3: { name: 'UK/AK Parti 3', color: 'forest' },
+                ukak4: { name: 'UK/AK Parti 4', color: 'forest' },
+                vk1: { name: 'VK Kval Parti 1', color: 'earth' },
+                vk2: { name: 'VK Kval Parti 2', color: 'earth' },
+                vkfinale: { name: 'VK Finale', color: 'amber' }
+            };
+
+            if (legacyParties[partyId.toLowerCase()]) {
+                return legacyParties[partyId.toLowerCase()];
+            }
+
+            // Generic fallback
+            return {
+                name: `Parti ${partyId}`,
+                color: 'bark'
+            };
+        }
 
         // Initialize
         (function init() {
@@ -256,17 +288,21 @@
 
             const sessionData = JSON.parse(session);
             state.judgeName = sessionData.name || 'Dommer';
+            state.judgePhone = sessionData.phone || '';
+            state.judgeRole = sessionData.judgeRole || '';
 
             // Get party from URL
             const urlParams = new URLSearchParams(window.location.search);
-            state.party = urlParams.get('party') || sessionData.assignedParty;
+            state.party = urlParams.get('party') || sessionData.assignedParty || sessionData.selectedParty;
 
-            if (!state.party || !PARTIES[state.party]) {
+            if (!state.party) {
+                console.error('No party found in URL or session');
                 window.location.href = 'dommer-hjem.html';
                 return;
             }
 
-            state.partyConfig = PARTIES[state.party];
+            state.partyConfig = getPartyConfig(state.party);
+            console.log('Party config:', state.partyConfig);
 
             // Update header
             document.getElementById('headerPartyName').textContent = state.partyConfig.name;
@@ -275,8 +311,19 @@
 
             // Load dogs from localStorage
             const saved = localStorage.getItem('judgeData_' + state.party);
+            console.log('Loading dogs for party:', state.party, 'saved:', saved ? 'found' : 'not found');
             if (saved) {
-                state.dogs = JSON.parse(saved);
+                try {
+                    const data = JSON.parse(saved);
+                    // Handle both formats: array directly or object with .dogs property
+                    state.dogs = Array.isArray(data) ? data : (data.dogs || []);
+                    console.log('Loaded', state.dogs.length, 'dogs:', state.dogs);
+                } catch (e) {
+                    console.error('Error parsing saved data:', e);
+                    state.dogs = [];
+                }
+            } else {
+                console.log('No saved data found for party:', state.party);
             }
 
             renderDogList();

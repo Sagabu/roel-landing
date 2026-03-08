@@ -1125,18 +1125,36 @@
             }
         }
 
-        // Rasesnitt for Irsk Setter (offisielle FKF-data)
+        // Avlsindekser for Irsk Setter basert på NISK-dokumentasjon
+        // Referanse: "Avlsindekser på irsksetter", Avlsrådet NISK 2008
+        //
+        // Indeks-skala: 100 = rasens gjennomsnitt for siste generasjon
+        // Over 100 = bedre enn rasesnitt, under 100 = dårligere
+        // Ved parring: samlet indeks bør være over 200 for avlsfremgang
+        //
+        // Viltfinnerevne = gjennomsnittelig antall stander per prøve (stand_m + stand_u)
+        // Jaktlyst = eneste "intensitets-egenskap" (fart/stil korrelerer 95%+)
+
         const RASESNITT_IRSK_SETTER = {
-            viltfinnerevne: 2.45,
-            andel_tomstand: 12.5,
-            jaktlyst: 4.8,
-            fart: 4.6,
-            bredde: 4.2,
+            // Hovedindekser (NISK-modell)
+            viltfinnerevne: 2.45,    // Gjennomsnittlig stander per prøve
+            jaktlyst: 4.8,           // Gjennomsnittlig tallkarakter
+
+            // Tilleggstall (for visning, ikke offisiell indeks)
+            andel_tomstand: 12.5,    // Prosent tomstand av totale fuglearbeid
+            fart: 4.6,               // Korrelerer sterkt med jaktlyst
+            bredde: 4.2,             // Søksbredde
             reviering: 4.1,
             samarbeid: 4.3,
             presisjon: 3.2,
             premie_prosent: 42
         };
+
+        // Beregn NISK-stil indeks (100 = rasesnitt)
+        function beregnIndeks(verdi, rasesnitt) {
+            if (!verdi || !rasesnitt) return null;
+            return Math.round((verdi / rasesnitt) * 100);
+        }
 
         // Formater verdi med indeks-sammenligning mot rasesnitt
         function formatWithIndex(value, breedAvg, label, max = 6, higherIsBetter = true) {
@@ -1208,57 +1226,140 @@
                     </div>
                 </div>
 
-                <!-- Viltfinnerevne & Tomstand med rasesnitt-sammenligning -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                    <div class="bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl p-5 text-white">
-                        <h3 class="text-xs font-medium uppercase opacity-80 mb-2">Viltfinnerevne</h3>
-                        <p class="text-4xl font-bold">${stats.viltfinnerevne.toFixed(2)}</p>
-                        <p class="text-sm opacity-80 mt-1">gjennomsnittlig stander per prøve</p>
-                        ${(() => {
-                            const indeks = Math.round((stats.viltfinnerevne / rs.viltfinnerevne) * 100);
-                            const diff = stats.viltfinnerevne - rs.viltfinnerevne;
-                            const arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '');
-                            const color = diff >= 0 ? 'bg-white/20' : 'bg-red-400/30';
-                            return `<p class="mt-2 text-xs ${color} inline-block px-2 py-1 rounded-full">${arrow} ${indeks}% av rasesnitt (${rs.viltfinnerevne})</p>`;
-                        })()}
+                <!-- NISK Avlsindekser (100 = rasesnitt) -->
+                <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-bold text-bark-600 uppercase">Avlsindekser</h3>
+                        <span class="text-[10px] text-bark-400 bg-bark-50 px-2 py-1 rounded">NISK-modell • 100 = rasesnitt</span>
                     </div>
-                    <div class="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white">
-                        <h3 class="text-xs font-medium uppercase opacity-80 mb-2">Andel tomstand</h3>
-                        <p class="text-4xl font-bold">${stats.andel_tomstand.toFixed(1)}%</p>
-                        <p class="text-sm opacity-80 mt-1">av alle fuglearbeid</p>
-                        ${(() => {
-                            const indeks = Math.round((stats.andel_tomstand / rs.andel_tomstand) * 100);
-                            const diff = stats.andel_tomstand - rs.andel_tomstand;
-                            const arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '');
-                            // Lavere tomstand er bedre
-                            const color = diff <= 0 ? 'bg-white/20' : 'bg-red-400/30';
-                            return `<p class="mt-2 text-xs ${color} inline-block px-2 py-1 rounded-full">${arrow} ${indeks}% av rasesnitt (${rs.andel_tomstand}%)</p>`;
-                        })()}
+                    <p class="text-xs text-bark-400 mb-4">Indeks over 100 = bedre enn rasesnitt. Ved parring bør samlet indeks være over 200.</p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <!-- Viltfinnerevne-indeks -->
+                        <div class="bg-gradient-to-br from-sky-500 to-sky-600 rounded-xl p-5 text-white">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-xs font-medium uppercase opacity-80">Viltfinnerevne</h4>
+                                <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full">Avlsindeks</span>
+                            </div>
+                            ${(() => {
+                                const indeks = beregnIndeks(stats.viltfinnerevne, rs.viltfinnerevne);
+                                const isGood = indeks >= 100;
+                                return `
+                                    <p class="text-5xl font-bold">${indeks}</p>
+                                    <p class="text-sm opacity-80 mt-1">${stats.viltfinnerevne.toFixed(2)} stander/prøve</p>
+                                    <p class="text-xs mt-2 ${isGood ? 'text-green-200' : 'text-red-200'}">
+                                        ${isGood ? '▲' : '▼'} ${isGood ? 'Over' : 'Under'} rasesnitt (${rs.viltfinnerevne})
+                                    </p>
+                                `;
+                            })()}
+                        </div>
+
+                        <!-- Jaktlyst-indeks -->
+                        <div class="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-xs font-medium uppercase opacity-80">Jaktlyst</h4>
+                                <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full">Avlsindeks</span>
+                            </div>
+                            ${(() => {
+                                const indeks = beregnIndeks(stats.jaktlyst, rs.jaktlyst);
+                                const isGood = indeks >= 100;
+                                return `
+                                    <p class="text-5xl font-bold">${indeks}</p>
+                                    <p class="text-sm opacity-80 mt-1">Snitt ${stats.jaktlyst.toFixed(1)} av 6</p>
+                                    <p class="text-xs mt-2 ${isGood ? 'text-green-200' : 'text-red-200'}">
+                                        ${isGood ? '▲' : '▼'} ${isGood ? 'Over' : 'Under'} rasesnitt (${rs.jaktlyst})
+                                    </p>
+                                `;
+                            })()}
+                        </div>
+                    </div>
+
+                    <!-- Samlet avlsverdi -->
+                    <div class="mt-4 p-4 bg-bark-50 rounded-xl">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-bark-500 uppercase font-medium">Samlet avlsverdi</p>
+                                <p class="text-xs text-bark-400 mt-1">Jaktlyst + Viltfinnerevne</p>
+                            </div>
+                            ${(() => {
+                                const jaktIndeks = beregnIndeks(stats.jaktlyst, rs.jaktlyst);
+                                const vfIndeks = beregnIndeks(stats.viltfinnerevne, rs.viltfinnerevne);
+                                const samlet = jaktIndeks + vfIndeks;
+                                const isGood = samlet >= 200;
+                                return `
+                                    <div class="text-right">
+                                        <p class="text-3xl font-bold ${isGood ? 'text-green-600' : 'text-amber-600'}">${samlet}</p>
+                                        <p class="text-xs ${isGood ? 'text-green-600' : 'text-amber-600'}">
+                                            ${isGood ? '✓ Anbefalt for avl' : '⚠ Under anbefalt nivå (200)'}
+                                        </p>
+                                    </div>
+                                `;
+                            })()}
+                        </div>
                     </div>
                 </div>
 
-                <!-- Egenskaper (gjennomsnitt) med rasesnitt-sammenligning -->
+                <!-- Tilleggsstatistikk (tomstand) -->
                 <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
-                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-2">Egenskaper (gjennomsnitt)</h3>
-                    <p class="text-xs text-bark-400 mb-4">Indeks viser hundens verdi i % av rasesnittet for Irsk Setter</p>
-                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-4">Fuglearbeid-detaljer</h3>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="text-center bg-sky-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-sky-700">${stats.stand_m + stats.stand_u}</p>
+                            <p class="text-xs text-bark-500">Totale stander</p>
+                        </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-bark-700">${stats.makker_stand}</p>
+                            <p class="text-xs text-bark-500">Makkerstand</p>
+                        </div>
+                        <div class="text-center bg-amber-50 rounded-xl p-3">
+                            <p class="text-2xl font-bold text-amber-700">${stats.tomstand}</p>
+                            <p class="text-xs text-bark-500">Tomstand</p>
+                        </div>
+                        <div class="text-center ${stats.andel_tomstand <= rs.andel_tomstand ? 'bg-green-50' : 'bg-red-50'} rounded-xl p-3">
+                            <p class="text-2xl font-bold ${stats.andel_tomstand <= rs.andel_tomstand ? 'text-green-700' : 'text-red-700'}">${stats.andel_tomstand.toFixed(1)}%</p>
+                            <p class="text-xs text-bark-500">Tomstand-andel</p>
+                            <p class="text-[9px] ${stats.andel_tomstand <= rs.andel_tomstand ? 'text-green-600' : 'text-red-500'}">
+                                ${stats.andel_tomstand <= rs.andel_tomstand ? '▼ Bedre' : '▲ Dårligere'} enn snitt (${rs.andel_tomstand}%)
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tallkarakterer (rådata, ikke indekser) -->
+                <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
+                    <h3 class="text-xs font-bold text-bark-600 uppercase mb-2">Tallkarakterer (gjennomsnitt)</h3>
+                    <p class="text-xs text-bark-400 mb-4">
+                        Rådata fra kritikkskjemaer. NB: Fart/stil korrelerer 95%+ med jaktlyst (samme gener).
+                        Søksbredde, reviering og samarbeid brukes ikke i avlsindeks da høyeste karakter ikke er best.
+                    </p>
+                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                        <div class="text-center bg-sky-50 rounded-xl p-3 border-2 border-sky-200">
                             ${formatWithIndex(stats.jaktlyst, rs.jaktlyst, 'Jaktlyst')}
+                            <p class="text-[8px] text-sky-600 mt-1">Avlsindeks</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
                             ${formatWithIndex(stats.fart, rs.fart, 'Fart')}
+                            <p class="text-[8px] text-bark-400 mt-1">≈ Jaktlyst</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
-                            ${formatWithIndex(stats.bredde, rs.bredde, 'Bredde')}
+                            <p class="text-xl font-bold text-bark-700">${stats.bredde ? stats.bredde.toFixed(1) : '-'}</p>
+                            <p class="text-[10px] text-bark-500">Bredde</p>
+                            <p class="text-[8px] text-bark-400 mt-1">Ikke indeks</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
-                            ${formatWithIndex(stats.reviering, rs.reviering, 'Reviering')}
+                            <p class="text-xl font-bold text-bark-700">${stats.reviering ? stats.reviering.toFixed(1) : '-'}</p>
+                            <p class="text-[10px] text-bark-500">Reviering</p>
+                            <p class="text-[8px] text-bark-400 mt-1">Ikke indeks</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
-                            ${formatWithIndex(stats.samarbeid, rs.samarbeid, 'Samarbeid')}
+                            <p class="text-xl font-bold text-bark-700">${stats.samarbeid ? stats.samarbeid.toFixed(1) : '-'}</p>
+                            <p class="text-[10px] text-bark-500">Samarbeid</p>
+                            <p class="text-[8px] text-bark-400 mt-1">Ikke indeks</p>
                         </div>
                         <div class="text-center bg-bark-50 rounded-xl p-3">
-                            ${formatWithIndex(stats.presisjon.gjennomsnitt, rs.presisjon, 'Presisjon', 4)}
+                            <p class="text-xl font-bold text-bark-700">${stats.presisjon.gjennomsnitt ? stats.presisjon.gjennomsnitt.toFixed(1) : '-'}</p>
+                            <p class="text-[10px] text-bark-500">Presisjon</p>
+                            <p class="text-[8px] text-bark-400 mt-1">1-4 skala</p>
                         </div>
                     </div>
                 </div>
@@ -1266,7 +1367,9 @@
                 <!-- Reis-fordeling -->
                 <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
                     <h3 class="text-xs font-bold text-bark-600 uppercase mb-2">Reis-statistikk</h3>
-                    <p class="text-xs text-bark-400 mb-4">Fordeling av reiskarakterer (råtall, ikke indeks)</p>
+                    <p class="text-xs text-bark-400 mb-4">
+                        Fordeling av reiskarakterer. NB: Reis brukes ikke i avlsindeks – registreres ikke ved hvert fuglearbeid og styres ikke av hunden selv.
+                    </p>
                     <div class="grid grid-cols-6 gap-2 text-center text-xs">
                         <div class="bg-red-50 rounded-lg p-2">
                             <p class="text-lg font-bold text-red-600">${stats.reis.nekter}</p>

@@ -220,10 +220,40 @@
             'stråhåret vorsteh': 'SV'
         };
 
+        // Mapping fra gamle/feil forkortelser til riktige
+        const BREED_CODE_FIXES = {
+            'GO': 'GS',  // Gordon Setter
+            'IR': 'IS',  // Irsk Setter
+            'EN': 'ES',  // Engelsk Setter
+            'KL': 'KM',  // Kleiner Munsterlander
+            'KO': 'KV',  // Korthår Vorsteh
+            'LA': 'LV',  // Langhåra Vorsteh
+            'ST': 'SV'   // Strihår Vorsteh
+        };
+
         function getBreedCode(breed) {
             if (!breed) return 'UK';
             const lower = breed.toLowerCase().trim();
-            return BREED_CODES[lower] || breed.substring(0, 2).toUpperCase();
+
+            // Sjekk om det er et fullt rasenavn
+            if (BREED_CODES[lower]) {
+                return BREED_CODES[lower];
+            }
+
+            // Sjekk om det er en gammel/feil forkortelse som må fikses
+            const upper = breed.toUpperCase().trim();
+            if (BREED_CODE_FIXES[upper]) {
+                return BREED_CODE_FIXES[upper];
+            }
+
+            // Sjekk om det allerede er en gyldig forkortelse
+            const validCodes = ['BR', 'GS', 'IS', 'ES', 'PO', 'KM', 'KV', 'LV', 'SV'];
+            if (validCodes.includes(upper)) {
+                return upper;
+            }
+
+            // Fallback
+            return breed.substring(0, 2).toUpperCase();
         }
 
         let allCritiques = [];

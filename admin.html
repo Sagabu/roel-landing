@@ -92,19 +92,105 @@
                 <span class="text-xl font-bold text-white font-display">FUGLEHUNDPRØVE</span>
                 <span class="bg-accent-400 text-neutral-800 text-xs px-2 py-1 rounded-full font-semibold">ADMIN</span>
             </a>
-            <div class="flex gap-3 items-center">
-                <a href="klubb.html" class="text-white/80 hover:text-white px-4 py-2 text-sm font-medium transition">Min klubb</a>
-                <a href="profil.html" class="bg-accent-400 hover:bg-accent-500 text-neutral-800 px-4 py-2 rounded-full text-sm font-semibold transition flex items-center gap-2">
+            <div id="navLoggedIn" class="hidden gap-3 items-center">
+                <span id="navUserName" class="text-white/80 text-sm">-</span>
+                <a href="min-side.html" class="bg-accent-400 hover:bg-accent-500 text-neutral-800 px-4 py-2 rounded-full text-sm font-semibold transition flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                     </svg>
-                    Min profil
+                    Min side
                 </a>
-                <a href="index.html" class="text-white/80 hover:text-white px-4 py-2 text-sm font-medium transition">Logg ut</a>
+                <button onclick="logoutAdmin()" class="text-white/80 hover:text-white px-4 py-2 text-sm font-medium transition">Logg ut</button>
             </div>
         </div>
     </nav>
 
+    <!-- Login Section (shown when not logged in) -->
+    <div id="loginSection" class="min-h-screen pt-24 px-4 flex items-start justify-center">
+        <div class="max-w-md w-full">
+            <div class="bg-white rounded-2xl shadow-xl p-8">
+                <div class="text-center mb-8">
+                    <div class="w-20 h-20 bg-warm-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-10 h-10 text-warm-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold font-rockwell text-neutral-800">Logg inn som arrangør</h2>
+                    <p class="text-neutral-500 mt-2">Skriv inn mobilnummeret ditt for å administrere prøven</p>
+                </div>
+
+                <!-- Step 1: Phone Number -->
+                <div id="loginStep1">
+                    <div class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-neutral-700 mb-2">Mobilnummer</label>
+                            <div class="flex">
+                                <span class="inline-flex items-center px-4 rounded-l-xl border-2 border-r-0 border-neutral-200 bg-neutral-100 text-neutral-500 text-lg">
+                                    +47
+                                </span>
+                                <input type="tel" id="loginPhone" placeholder="XXX XX XXX" maxlength="11"
+                                    class="flex-1 px-4 py-3 rounded-r-xl border-2 border-neutral-200 focus:border-warm-400 focus:ring-0 outline-none text-lg"
+                                    oninput="formatLoginPhone(this)">
+                            </div>
+                            <p class="text-xs text-neutral-400 mt-2">Vi sender deg en engangskode på SMS</p>
+                        </div>
+
+                        <button onclick="sendLoginCode()" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                            Send meg kode
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Enter Code -->
+                <div id="loginStep2" class="hidden">
+                    <div class="text-center mb-6">
+                        <p class="text-neutral-500 text-sm">
+                            Vi har sendt en kode til<br>
+                            <span class="font-semibold text-neutral-700" id="loginDisplayPhone">+47 XXX XX XXX</span>
+                        </p>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-neutral-700 mb-3 text-center">Engangskode (4 siffer)</label>
+                            <div class="flex justify-center gap-3">
+                                <input type="text" maxlength="1" class="w-12 h-14 text-center text-xl font-bold rounded-xl border-2 border-neutral-200 focus:border-warm-400 focus:outline-none"
+                                    id="loginCode1" oninput="handleLoginCodeInput(this, 'loginCode2')" onkeydown="handleLoginCodeKeydown(event, null, 'loginCode2')">
+                                <input type="text" maxlength="1" class="w-12 h-14 text-center text-xl font-bold rounded-xl border-2 border-neutral-200 focus:border-warm-400 focus:outline-none"
+                                    id="loginCode2" oninput="handleLoginCodeInput(this, 'loginCode3')" onkeydown="handleLoginCodeKeydown(event, 'loginCode1', 'loginCode3')">
+                                <input type="text" maxlength="1" class="w-12 h-14 text-center text-xl font-bold rounded-xl border-2 border-neutral-200 focus:border-warm-400 focus:outline-none"
+                                    id="loginCode3" oninput="handleLoginCodeInput(this, 'loginCode4')" onkeydown="handleLoginCodeKeydown(event, 'loginCode2', 'loginCode4')">
+                                <input type="text" maxlength="1" class="w-12 h-14 text-center text-xl font-bold rounded-xl border-2 border-neutral-200 focus:border-warm-400 focus:outline-none"
+                                    id="loginCode4" oninput="handleLoginCodeInput(this, null)" onkeydown="handleLoginCodeKeydown(event, 'loginCode3', null)">
+                            </div>
+                            <p id="loginCodeError" class="text-red-500 text-sm text-center mt-2 hidden">Du har ikke tilgang som arrangør.</p>
+                        </div>
+
+                        <button onclick="verifyLoginCode()" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition">
+                            Bekreft og logg inn
+                        </button>
+
+                        <button onclick="goBackToLoginStep1()" class="w-full text-neutral-500 hover:text-neutral-700 text-sm font-medium flex items-center justify-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                            Tilbake - endre nummer
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-center text-neutral-400 text-sm mt-6">
+                <a href="min-side.html" class="text-warm-500 hover:text-warm-600 underline">Logg inn som deltaker/dommer</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Admin Content (shown when logged in) -->
+    <div id="adminContent" class="hidden">
     <div class="flex pt-16">
         <!-- Sidebar -->
         <aside class="fixed left-0 top-16 w-64 h-[calc(100vh-4rem)] bg-white border-r border-neutral-200 p-4 overflow-y-auto hidden lg:block">
@@ -201,8 +287,8 @@
                 <!-- Header -->
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <h1 class="text-3xl font-bold font-rockwell text-neutral-800">Vinterprøven 2026</h1>
-                        <p class="text-neutral-500">14.-15. februar 2026 - Namsos, Trøndelag</p>
+                        <h1 id="headerTrialName" class="text-3xl font-bold font-rockwell text-neutral-800">Ingen prøve opprettet</h1>
+                        <p id="headerTrialInfo" class="text-neutral-500">Opprett en ny prøve under "Innstillinger"</p>
                     </div>
                     <div class="flex gap-3">
                         <button id="exportPdfBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
@@ -226,7 +312,7 @@
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-neutral-500 text-sm">Totalt påmeldt</p>
-                                <p class="text-3xl font-bold text-neutral-800 font-rockwell">46</p>
+                                <p id="statTotalRegistered" class="text-3xl font-bold text-neutral-800 font-rockwell">0</p>
                             </div>
                             <div class="w-12 h-12 bg-neutral-50 rounded-lg flex items-center justify-center">
                                 <svg class="w-6 h-6 text-warm-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -234,14 +320,14 @@
                                 </svg>
                             </div>
                         </div>
-                        <p class="text-sm text-neutral-500 mt-2">UK/AK: 32 | VK: 14</p>
+                        <p id="statClassBreakdown" class="text-sm text-neutral-500 mt-2">UK/AK: 0 | VK: 0</p>
                     </div>
 
                     <div class="bg-white rounded-xl p-6 shadow-sm border border-neutral-200">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-neutral-500 text-sm">Bekreftet</p>
-                                <p class="text-3xl font-bold text-green-600 font-rockwell">28</p>
+                                <p id="statConfirmed" class="text-3xl font-bold text-green-600 font-rockwell">0</p>
                             </div>
                             <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                                 <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,14 +335,14 @@
                                 </svg>
                             </div>
                         </div>
-                        <p class="text-sm text-neutral-500 mt-2">61% av påmeldte</p>
+                        <p id="statConfirmedPercent" class="text-sm text-neutral-500 mt-2">-</p>
                     </div>
 
                     <div class="bg-white rounded-xl p-6 shadow-sm border border-neutral-200 cursor-pointer hover:border-yellow-300 transition" onclick="document.getElementById('bekreftelser').scrollIntoView({behavior:'smooth'})">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-neutral-500 text-sm">Venter svar</p>
-                                <p class="text-3xl font-bold text-yellow-600 font-rockwell">12</p>
+                                <p id="statPending" class="text-3xl font-bold text-yellow-600 font-rockwell">0</p>
                             </div>
                             <div class="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
                                 <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -271,7 +357,7 @@
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-neutral-500 text-sm">Venteliste</p>
-                                <p class="text-3xl font-bold text-accent-500 font-rockwell">6</p>
+                                <p id="statWaitlist" class="text-3xl font-bold text-accent-500 font-rockwell">0</p>
                             </div>
                             <div class="w-12 h-12 bg-neutral-100 rounded-lg flex items-center justify-center">
                                 <svg class="w-6 h-6 text-accent-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -290,18 +376,19 @@
 
                     <!-- File format info -->
                     <div class="bg-warm-50 rounded-lg p-4 mb-6 border border-primary-200">
-                        <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat:</h4>
+                        <h4 class="font-medium text-neutral-800 mb-2">Forventet filformat (DogWeb-eksport):</h4>
                         <p class="text-sm text-warm-600 mb-2">Filen må inneholde følgende kolonner:</p>
                         <div class="flex flex-wrap gap-2">
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">hundenavn</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">regnr</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">rase</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">eier_navn</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">eier_epost</span>
-                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">klasse</span>
-                            <span class="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-mono">dag</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Regnr</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Navn</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Rase</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Eier</span>
+                            <span class="px-2 py-1 bg-neutral-200 text-neutral-600 rounded text-xs font-mono">Fører</span>
+                            <span class="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-mono">Klasser</span>
+                            <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-mono">Epost</span>
                         </div>
-                        <p class="text-xs text-warm-500 mt-2">Klasse: UK, AK eller VK | Dag: 1, 2, 3 eller 4 (hvilken prøvedag påmeldingen gjelder)</p>
+                        <p class="text-xs text-warm-500 mt-2"><strong>Klasser:</strong> UK1, UK2, AK1, AK2, VK (klasse + dag kombinert)</p>
+                        <p class="text-xs text-warm-500 mt-1">Samme hund kan stå på flere rader hvis påmeldt flere dager.</p>
                         <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                             <p class="text-xs text-blue-800 flex items-start gap-2">
                                 <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -312,101 +399,166 @@
                         </div>
                     </div>
 
-                    <!-- Parti Configuration -->
-                    <div class="grid md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                        <div>
-                            <label class="block text-sm font-medium text-neutral-700 mb-2">Antall prøvedager</label>
-                            <select id="trialDays" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
-                                <option value="1">1 dag</option>
-                                <option value="2" selected>2 dager</option>
-                                <option value="3">3 dager</option>
-                                <option value="4">4 dager</option>
-                            </select>
+                    <!-- Upload Summary (shown after file parsed) -->
+                    <div id="uploadSummary" class="hidden bg-green-50 rounded-lg p-4 mb-6 border border-green-200">
+                        <h4 class="font-medium text-green-800 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Oppsummering av opplastet fil
+                        </h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div class="bg-white rounded-lg p-3 border border-green-200">
+                                <p class="text-xs text-green-600 font-medium">UK/AK Dag 1</p>
+                                <p id="summaryUKAK1" class="text-2xl font-bold text-green-800">0</p>
+                            </div>
+                            <div class="bg-white rounded-lg p-3 border border-green-200">
+                                <p class="text-xs text-green-600 font-medium">UK/AK Dag 2</p>
+                                <p id="summaryUKAK2" class="text-2xl font-bold text-green-800">0</p>
+                            </div>
+                            <div class="bg-white rounded-lg p-3 border border-green-200">
+                                <p class="text-xs text-green-600 font-medium">UK/AK Dag 3</p>
+                                <p id="summaryUKAK3" class="text-2xl font-bold text-green-800">0</p>
+                            </div>
+                            <div class="bg-white rounded-lg p-3 border border-green-200">
+                                <p class="text-xs text-green-600 font-medium">VK</p>
+                                <p id="summaryVK" class="text-2xl font-bold text-green-800">0</p>
+                            </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-neutral-700 mb-2">Antall UK/AK-partier</label>
-                            <input type="number" id="ukakParties" value="2" min="1" max="10"
-                                class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-neutral-700 mb-2">Antall VK-partier</label>
-                            <input type="number" id="vkParties" value="1" min="1" max="2"
-                                class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-neutral-700 mb-2">Maks per parti</label>
-                            <input type="number" id="maxPerParty" value="20" min="1" max="30"
-                                class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-neutral-700 mb-2">VK-finale?</label>
-                            <select id="vkFinale" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
-                                <option value="nei">Nei</option>
-                                <option value="ja">Ja</option>
-                            </select>
-                        </div>
+                        <p class="text-sm text-green-700">
+                            <strong>Totalt:</strong> <span id="summaryTotalUKAK">0</span> UK/AK + <span id="summaryTotalVK">0</span> VK = <span id="summaryGrandTotal">0</span> hunder
+                        </p>
                     </div>
 
-                    <!-- Day distribution info -->
-                    <div id="dayDistributionInfo" class="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
-                        <h4 class="font-medium text-blue-800 mb-2 flex items-center gap-2">
+                    <!-- Parti Configuration per Day -->
+                    <div class="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
+                        <h4 class="font-medium text-blue-800 mb-3 flex items-center gap-2">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                             </svg>
-                            Dagfordeling av partier
+                            Antall partier per dag
                         </h4>
-                        <p class="text-sm text-blue-700 mb-3">Partiene fordeles over <span id="dayCountDisplay" class="font-semibold">2</span> prøvedager. Deltakerlisten må inneholde hvilken dag hver påmelding gjelder.</p>
-                        <div id="daySchedule" class="space-y-2 text-sm text-blue-700">
-                            <div class="flex items-center gap-2">
-                                <span class="px-2 py-1 bg-blue-200 text-blue-800 rounded text-xs font-medium">Dag 1</span>
-                                <span>UK/AK Parti 1, VK Parti 1</span>
+                        <p class="text-sm text-blue-700 mb-4">Angi hvor mange UK/AK-partier som skal settes opp for hver prøvedag:</p>
+
+                        <div class="grid md:grid-cols-3 gap-4 mb-4">
+                            <div class="bg-white rounded-lg p-4 border border-blue-200">
+                                <h5 class="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                                    <span class="w-6 h-6 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                                    Dag 1
+                                </h5>
+                                <div>
+                                    <label class="block text-xs text-neutral-600 mb-1">UK/AK-partier</label>
+                                    <input type="number" id="ukakPartiesDay1" value="1" min="0" max="5"
+                                        class="w-full px-3 py-2 rounded border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-sm">
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <span class="px-2 py-1 bg-blue-200 text-blue-800 rounded text-xs font-medium">Dag 2</span>
-                                <span>UK/AK Parti 2</span>
+                            <div class="bg-white rounded-lg p-4 border border-blue-200">
+                                <h5 class="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                                    <span class="w-6 h-6 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                                    Dag 2
+                                </h5>
+                                <div>
+                                    <label class="block text-xs text-neutral-600 mb-1">UK/AK-partier</label>
+                                    <input type="number" id="ukakPartiesDay2" value="1" min="0" max="5"
+                                        class="w-full px-3 py-2 rounded border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-sm">
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg p-4 border border-blue-200">
+                                <h5 class="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                                    <span class="w-6 h-6 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-sm font-bold">3</span>
+                                    Dag 3
+                                </h5>
+                                <div>
+                                    <label class="block text-xs text-neutral-600 mb-1">UK/AK-partier</label>
+                                    <input type="number" id="ukakPartiesDay3" value="0" min="0" max="5"
+                                        class="w-full px-3 py-2 rounded border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-sm">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- VK Section -->
+                        <div class="mt-4 pt-4 border-t border-blue-200">
+                            <h5 class="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                                </svg>
+                                VK-oppsett
+                            </h5>
+
+                            <!-- VK Format Selection -->
+                            <div class="space-y-3 mb-4">
+                                <label class="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-200 cursor-pointer hover:border-warm-400 transition">
+                                    <input type="radio" name="vkFormat" value="2day" checked class="mt-1 text-warm-500 focus:ring-warm-500">
+                                    <div class="flex-1">
+                                        <p class="font-medium text-neutral-800">2-dagers VK (Kval + Finale)</p>
+                                        <p class="text-sm text-neutral-600">2 VK-partier kjøres parallelt på kvalifiseringsdag. Beste hunder går til finale dagen etter.</p>
+                                    </div>
+                                </label>
+                                <label class="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-200 cursor-pointer hover:border-warm-400 transition">
+                                    <input type="radio" name="vkFormat" value="1day" class="mt-1 text-warm-500 focus:ring-warm-500">
+                                    <div class="flex-1">
+                                        <p class="font-medium text-neutral-800">1-dags VK</p>
+                                        <p class="text-sm text-neutral-600">1 VK-parti kjøres på én dag. Ingen finale.</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- 2-day VK Config -->
+                            <div id="vk2dayConfig" class="bg-warm-50 rounded-lg p-4 border border-warm-200">
+                                <div class="grid md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-warm-800 mb-2">VK Kval gjennomføres på</label>
+                                        <select id="vkKvalDay" class="w-full px-3 py-2 rounded border border-warm-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-sm bg-white">
+                                            <option value="1">Dag 1</option>
+                                            <option value="2" selected>Dag 2</option>
+                                            <option value="3">Dag 3</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <div class="bg-white rounded-lg p-3 border border-warm-200 w-full">
+                                            <p class="text-xs text-warm-600 mb-1">VK Finale</p>
+                                            <p id="vkFinaleDay" class="font-semibold text-warm-800">Dag 3 (automatisk)</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3 p-3 bg-white rounded border border-warm-200">
+                                    <p class="text-sm text-warm-700">
+                                        <strong>VK Kval:</strong> 2 partier, maks 20 hunder per parti (40 totalt)<br>
+                                        <strong>VK Finale:</strong> 1 parti, maks 20 hunder
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- 1-day VK Config -->
+                            <div id="vk1dayConfig" class="hidden bg-warm-50 rounded-lg p-4 border border-warm-200">
+                                <div class="max-w-xs">
+                                    <label class="block text-sm font-medium text-warm-800 mb-2">VK gjennomføres på</label>
+                                    <select id="vk1dayDay" class="w-full px-3 py-2 rounded border border-warm-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-sm bg-white">
+                                        <option value="1">Dag 1</option>
+                                        <option value="2" selected>Dag 2</option>
+                                        <option value="3">Dag 3</option>
+                                    </select>
+                                </div>
+                                <div class="mt-3 p-3 bg-white rounded border border-warm-200">
+                                    <p class="text-sm text-warm-700">
+                                        <strong>1-dags VK:</strong> 1 parti, maks 20 hunder
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- VK Finale info (conditional) -->
-                    <div id="vkFinaleInfo" class="hidden bg-warm-50 rounded-lg p-4 mb-6 border border-primary-200">
+                    <!-- Day Schedule Summary -->
+                    <div id="dayDistributionInfo" class="bg-neutral-100 rounded-lg p-4 mb-6 border border-neutral-300">
                         <h4 class="font-medium text-neutral-800 mb-2 flex items-center gap-2">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                             </svg>
-                            VK Finale-oppsett
+                            Planlagt oppsett
                         </h4>
-                        <div class="text-sm text-warm-600 space-y-2 mb-4">
-                            <p>• VK Finale arrangeres <strong>dagen etter</strong> siste VK kvalifiseringsdag</p>
-                            <p>• Finalelisten settes opp <strong>manuelt</strong> etter at kvalifiseringen er ferdig</p>
-                            <p>• Typisk oppsett: VK kval fredag/lørdag → VK Finale søndag</p>
+                        <div id="daySchedule" class="space-y-2 text-sm text-neutral-700">
+                            <!-- Dynamically populated -->
                         </div>
-                        <div class="grid md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-warm-600 mb-1">VK Kvalik-dato(er)</label>
-                                <input type="text" id="vkQualDate" value="20.-21. sept 2026"
-                                    class="w-full px-3 py-2 rounded border border-primary-300 text-sm bg-white">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-warm-600 mb-1">VK Finale-dato</label>
-                                <input type="date" id="vkFinaleDate"
-                                    class="w-full px-3 py-2 rounded border border-primary-300 text-sm bg-white">
-                            </div>
-                        </div>
-                        <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <p class="text-sm text-yellow-800 flex items-start gap-2">
-                                <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                                </svg>
-                                <span><strong>Merk:</strong> VK Finale-deltakerlisten legges inn manuelt etter kvalifiseringen. Bruk "Legg til VK Finale-deltakere" knappen nedenfor etter kvalikdagen.</span>
-                            </p>
-                        </div>
-                        <button id="addVkFinaleParticipants" class="mt-4 bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                            </svg>
-                            Legg til VK Finale-deltakere
-                        </button>
                     </div>
 
                     <!-- Upload area -->
@@ -440,6 +592,25 @@
                                 </svg>
                             </button>
                         </div>
+
+                        <!-- Debug info (temporary) -->
+                        <div id="debugInfo" class="hidden mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-300">
+                            <h4 class="font-medium text-yellow-800 mb-2">Debug Info:</h4>
+                            <pre id="debugText" class="text-xs text-yellow-700 whitespace-pre-wrap overflow-auto max-h-48"></pre>
+                        </div>
+
+                        <!-- Upload errors (shown if parsing found issues) -->
+                        <div id="uploadErrors" class="hidden mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                            <h4 class="font-medium text-red-800 mb-2 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                Problemer funnet i filen
+                            </h4>
+                            <ul id="uploadErrorList" class="text-sm text-red-700 space-y-1 list-disc list-inside">
+                            </ul>
+                        </div>
+
                         <div class="mt-4 flex gap-3">
                             <button id="processUpload" class="bg-warm-500 hover:bg-warm-600 text-white px-6 py-2 rounded-lg font-medium transition flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -456,175 +627,24 @@
 
                 <!-- Confirmation Status Section -->
                 <section id="bekreftelser" class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
-                    <div class="px-6 py-4 bg-yellow-50 border-b border-yellow-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div class="px-6 py-4 bg-neutral-50 border-b border-neutral-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
-                            <h2 class="text-xl font-bold font-rockwell text-yellow-800">Bekreftelse-status</h2>
-                            <p class="text-sm text-yellow-700">Oversikt over hvem som har/ikke har bekreftet deltakelse</p>
+                            <h2 class="text-xl font-bold font-rockwell text-neutral-800">Bekreftelse-status</h2>
+                            <p class="text-sm text-neutral-500">Oversikt over hvem som har/ikke har bekreftet deltakelse</p>
                         </div>
                         <div class="flex gap-2">
-                            <button class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-lg text-sm font-medium border border-yellow-300" id="filterAll">Alle (46)</button>
-                            <button class="bg-white text-neutral-500 px-3 py-1 rounded-lg text-sm border border-neutral-200" id="filterConfirmed">Bekreftet (28)</button>
-                            <button class="bg-white text-neutral-500 px-3 py-1 rounded-lg text-sm border border-neutral-200" id="filterPending">Venter (12)</button>
-                            <button class="bg-white text-red-600 px-3 py-1 rounded-lg text-sm border border-red-200" id="filterUrgent">Haster (3)</button>
+                            <button class="bg-neutral-100 text-neutral-600 px-3 py-1 rounded-lg text-sm font-medium border border-neutral-300" id="filterAll">Alle (0)</button>
+                            <button class="bg-white text-neutral-500 px-3 py-1 rounded-lg text-sm border border-neutral-200" id="filterConfirmed">Bekreftet (0)</button>
+                            <button class="bg-white text-neutral-500 px-3 py-1 rounded-lg text-sm border border-neutral-200" id="filterPending">Venter (0)</button>
                         </div>
                     </div>
 
-                    <!-- Automatikk info box -->
-                    <div class="px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-start gap-3">
-                        <svg class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    <div class="px-6 py-12 text-center">
+                        <svg class="w-16 h-16 text-neutral-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                         </svg>
-                        <div class="text-sm text-blue-800">
-                            <strong>Automatikk aktivert:</strong>
-                            <ul class="mt-1 space-y-0.5">
-                                <li>• <strong>48 timer før prøvestart:</strong> Automatisk SMS-påminnelse sendes til de som ikke har bekreftet</li>
-                                <li>• <strong>24 timer før prøvestart:</strong> Ubekreftede hunder fjernes, venteliste rykker opp (får 5 timer på å bekrefte)</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead>
-                                <tr class="border-b border-neutral-200 bg-neutral-100">
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Fører</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Hund</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Klasse</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Parti</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Status</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Tid igjen</th>
-                                    <th class="text-left py-3 px-4 text-xs font-medium text-neutral-500 uppercase">Handling</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Urgent - less than 24h -->
-                                <tr class="border-b border-red-100 bg-red-50/50">
-                                    <td class="py-3 px-4">
-                                        <div>
-                                            <p class="font-medium">Petter Nilsen</p>
-                                            <p class="text-xs text-neutral-500">922 33 444</p>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">Buster</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-50 text-warm-600 rounded text-xs">UK</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">Parti 1</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">Ikke bekreftet</span></td>
-                                    <td class="py-3 px-4">
-                                        <span class="text-red-600 font-medium">18 timer</span>
-                                        <p class="text-xs text-red-500">Fjernes automatisk</p>
-                                    </td>
-                                    <td class="py-3 px-4">
-                                        <button class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-xs font-medium">
-                                            Send påminnelse
-                                        </button>
-                                    </td>
-                                </tr>
-                                <tr class="border-b border-red-100 bg-red-50/50">
-                                    <td class="py-3 px-4">
-                                        <div>
-                                            <p class="font-medium">Hilde Strand</p>
-                                            <p class="text-xs text-neutral-500">933 44 555</p>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">Tessa</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-50 text-warm-600 rounded text-xs">AK</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">Parti 2</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">Ikke bekreftet</span></td>
-                                    <td class="py-3 px-4">
-                                        <span class="text-red-600 font-medium">22 timer</span>
-                                        <p class="text-xs text-red-500">Fjernes automatisk</p>
-                                    </td>
-                                    <td class="py-3 px-4">
-                                        <button class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-xs font-medium">
-                                            Send påminnelse
-                                        </button>
-                                    </td>
-                                </tr>
-
-                                <!-- Pending - yellow -->
-                                <tr class="border-b border-neutral-100 hover:bg-yellow-50/50">
-                                    <td class="py-3 px-4">
-                                        <div>
-                                            <p class="font-medium">Erik Johansen</p>
-                                            <p class="text-xs text-neutral-500">456 78 901</p>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">Luna</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-50 text-warm-600 rounded text-xs">UK</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">Parti 1</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs">Venter</span></td>
-                                    <td class="py-3 px-4">
-                                        <span class="text-yellow-600 font-medium">3 dager</span>
-                                    </td>
-                                    <td class="py-3 px-4">
-                                        <button class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-xs font-medium">
-                                            Send påminnelse
-                                        </button>
-                                    </td>
-                                </tr>
-
-                                <!-- Confirmed - green -->
-                                <tr class="border-b border-neutral-100 hover:bg-warm-50/50">
-                                    <td class="py-3 px-4">
-                                        <div>
-                                            <p class="font-medium">Ole Berg</p>
-                                            <p class="text-xs text-neutral-500">912 34 567</p>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">Bella</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-50 text-warm-600 rounded text-xs">UK</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">Parti 1</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">Bekreftet</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">-</td>
-                                    <td class="py-3 px-4 text-neutral-400">-</td>
-                                </tr>
-                                <tr class="border-b border-neutral-100 hover:bg-warm-50/50">
-                                    <td class="py-3 px-4">
-                                        <div>
-                                            <p class="font-medium">Kari Hansen</p>
-                                            <p class="text-xs text-neutral-500">987 65 432</p>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">Rex</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-50 text-warm-600 rounded text-xs">AK</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">Parti 1</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">Bekreftet</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">-</td>
-                                    <td class="py-3 px-4 text-neutral-400">-</td>
-                                </tr>
-
-                                <!-- Recently promoted from waitlist -->
-                                <tr class="border-b border-neutral-100 bg-blue-50/50">
-                                    <td class="py-3 px-4">
-                                        <div>
-                                            <p class="font-medium">Trond Olsen</p>
-                                            <p class="text-xs text-neutral-500">555 12 345</p>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-4">Tara</td>
-                                    <td class="py-3 px-4"><span class="px-2 py-1 bg-neutral-50 text-warm-600 rounded text-xs">UK</span></td>
-                                    <td class="py-3 px-4 text-neutral-500">Parti 2</td>
-                                    <td class="py-3 px-4">
-                                        <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">Fra venteliste</span>
-                                    </td>
-                                    <td class="py-3 px-4">
-                                        <span class="text-blue-600 font-medium">4t 32min</span>
-                                        <p class="text-xs text-blue-500">Må bekrefte innen 5t</p>
-                                    </td>
-                                    <td class="py-3 px-4">
-                                        <button class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium">
-                                            Send påminnelse
-                                        </button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="px-6 py-3 bg-neutral-100 border-t border-neutral-200 flex justify-between items-center">
-                        <span class="text-sm text-neutral-500">Viser 6 av 46 deltakere</span>
-                        <button class="text-warm-500 hover:text-warm-600 text-sm font-medium">
-                            Se alle deltakere →
-                        </button>
+                        <p class="text-neutral-500 text-lg mb-2">Ingen deltakere ennå</p>
+                        <p class="text-neutral-400 text-sm">Last opp en deltakerliste for å komme i gang</p>
                     </div>
                 </section>
 
@@ -656,11 +676,11 @@
                         <div class="flex-1 space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-neutral-500 mb-2">Prøvenavn (vises på PDF)</label>
-                                <input type="text" id="trialName" value="Vinterprøven 2026" class="w-full px-4 py-3 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-lg font-semibold">
+                                <input type="text" id="trialName" value="" placeholder="F.eks. Høstprøven 2026" class="w-full px-4 py-3 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-lg font-semibold">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-neutral-500 mb-2">Arrangør (vises på PDF)</label>
-                                <input type="text" id="organizerName" value="Namdal Fuglehundklubb" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                <input type="text" id="organizerName" value="" placeholder="F.eks. Namdal Fuglehundklubb" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                             </div>
                         </div>
                     </div>
@@ -668,7 +688,7 @@
                     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div>
                             <label class="block text-sm font-medium text-neutral-500 mb-2">Dato</label>
-                            <input type="date" id="trialDate" value="2026-09-21" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="date" id="trialDate" value="" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-neutral-500 mb-2">Oppmøtetid</label>
@@ -676,7 +696,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-neutral-500 mb-2">Sted / Område</label>
-                            <input type="text" id="trialLocation" value="Namsos, Trøndelag" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="text" id="trialLocation" value="" placeholder="F.eks. Namsos, Trøndelag" class="w-full px-4 py-2 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-neutral-500 mb-2">Maks per parti</label>
@@ -721,19 +741,17 @@
                 <section id="partilister" class="space-y-6">
                     <div class="flex items-center justify-between">
                         <h2 class="text-xl font-bold font-rockwell text-neutral-800">Partilister</h2>
-                        <div class="flex gap-2">
-                            <button class="bg-neutral-50 text-warm-600 px-3 py-1 rounded-lg text-sm font-medium">UK/AK</button>
-                            <button class="bg-white text-neutral-500 px-3 py-1 rounded-lg text-sm border border-neutral-200">VK</button>
-                        </div>
                     </div>
 
-                    <!-- UK/AK Parti 1 -->
-                    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
-                        <div class="px-6 py-4 bg-warm-50 border-b border-neutral-200 flex items-center justify-between">
-                            <div>
-                                <div class="flex items-center gap-2 mb-1">
-                                    <h3 class="font-semibold text-neutral-800 font-rockwell">UK/AK Parti 1</h3>
-                                    <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">Dag 1 - Lørdag 20. sept</span>
+                    <!-- Empty state -->
+                    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 p-12 text-center">
+                        <svg class="w-16 h-16 text-neutral-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        <p class="text-neutral-500 text-lg mb-2">Ingen partilister opprettet</p>
+                        <p class="text-neutral-400 text-sm">Last opp deltakere for å opprette partilister automatisk</p>
+                    </div>
+                </section>
                                 </div>
                                 <p class="text-sm text-neutral-500">18 av 20 plasser fylt • 14 bekreftet</p>
                             </div>
@@ -1698,89 +1716,303 @@
     </div>
 
     <script>
-        // Toggle VK Finale info
-        document.getElementById('vkFinale').addEventListener('change', function() {
-            const vkFinaleInfo = document.getElementById('vkFinaleInfo');
-            if (this.value === 'ja') {
-                vkFinaleInfo.classList.remove('hidden');
-            } else {
-                vkFinaleInfo.classList.add('hidden');
-            }
-            updateDaySchedule();
+        // ========================================
+        // PARSED DATA STORAGE
+        // ========================================
+        let parsedDogs = [];
+        let uploadSummary = {
+            UKAK1: 0, UKAK2: 0, UKAK3: 0,
+            VK: 0,
+            total: 0
+        };
+
+        // ========================================
+        // VK FORMAT TOGGLE
+        // ========================================
+        document.querySelectorAll('input[name="vkFormat"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const is2day = this.value === '2day';
+                document.getElementById('vk2dayConfig').classList.toggle('hidden', !is2day);
+                document.getElementById('vk1dayConfig').classList.toggle('hidden', is2day);
+                updateDaySchedule();
+            });
         });
 
-        // Update day schedule display
-        function updateDaySchedule() {
-            const days = parseInt(document.getElementById('trialDays').value);
-            const ukakParties = parseInt(document.getElementById('ukakParties').value);
-            const vkParties = parseInt(document.getElementById('vkParties').value);
-            const hasVkFinale = document.getElementById('vkFinale').value === 'ja';
+        // Update VK Finale day when VK Kval day changes
+        function updateVkFinaleDay() {
+            const vkKvalDay = parseInt(document.getElementById('vkKvalDay').value);
+            const finaleDay = vkKvalDay + 1;
+            document.getElementById('vkFinaleDay').textContent = `Dag ${finaleDay} (automatisk)`;
+            updateDaySchedule();
+        }
 
-            document.getElementById('dayCountDisplay').textContent = hasVkFinale ? days + 1 : days;
+        document.getElementById('vkKvalDay').addEventListener('change', updateVkFinaleDay);
+        document.getElementById('vk1dayDay').addEventListener('change', updateDaySchedule);
+
+        // ========================================
+        // UPDATE DAY SCHEDULE DISPLAY
+        // ========================================
+        function updateDaySchedule() {
+            const ukakDay1 = parseInt(document.getElementById('ukakPartiesDay1').value) || 0;
+            const ukakDay2 = parseInt(document.getElementById('ukakPartiesDay2').value) || 0;
+            const ukakDay3 = parseInt(document.getElementById('ukakPartiesDay3').value) || 0;
+
+            const vkFormat = document.querySelector('input[name="vkFormat"]:checked').value;
 
             const scheduleDiv = document.getElementById('daySchedule');
             let scheduleHtml = '';
 
-            // Distribute UK/AK and VK parties across days
-            const ukakPerDay = Math.ceil(ukakParties / days);
-            const vkPerDay = Math.ceil(vkParties / days);
+            // Build schedule for each day
+            const daySchedule = {1: [], 2: [], 3: [], 4: []};
 
-            let ukakAssigned = 0;
-            let vkAssigned = 0;
+            // Add UK/AK parties
+            if (ukakDay1 > 0) daySchedule[1].push(`${ukakDay1} UK/AK-parti${ukakDay1 > 1 ? 'er' : ''}`);
+            if (ukakDay2 > 0) daySchedule[2].push(`${ukakDay2} UK/AK-parti${ukakDay2 > 1 ? 'er' : ''}`);
+            if (ukakDay3 > 0) daySchedule[3].push(`${ukakDay3} UK/AK-parti${ukakDay3 > 1 ? 'er' : ''}`);
 
-            for (let day = 1; day <= days; day++) {
-                let dayContent = [];
+            // Add VK parties based on format
+            if (vkFormat === '2day') {
+                const vkKvalDay = parseInt(document.getElementById('vkKvalDay').value);
+                const vkFinaleDay = vkKvalDay + 1;
+                daySchedule[vkKvalDay].push('VK Kval (2 partier)');
+                daySchedule[vkFinaleDay].push('VK Finale (1 parti)');
+            } else {
+                const vk1dayDay = parseInt(document.getElementById('vk1dayDay').value);
+                daySchedule[vk1dayDay].push('VK (1 parti)');
+            }
 
-                // UK/AK parties for this day
-                const ukakThisDay = Math.min(ukakPerDay, ukakParties - ukakAssigned);
-                if (ukakThisDay > 0) {
-                    for (let p = 1; p <= ukakThisDay; p++) {
-                        dayContent.push(`UK/AK Parti ${ukakAssigned + p}`);
-                    }
-                    ukakAssigned += ukakThisDay;
-                }
-
-                // VK parties for this day
-                const vkThisDay = Math.min(vkPerDay, vkParties - vkAssigned);
-                if (vkThisDay > 0) {
-                    for (let p = 1; p <= vkThisDay; p++) {
-                        dayContent.push(`VK Parti ${vkAssigned + p}`);
-                    }
-                    vkAssigned += vkThisDay;
-                }
-
-                if (dayContent.length > 0) {
+            // Generate HTML
+            for (let day = 1; day <= 4; day++) {
+                if (daySchedule[day].length > 0) {
                     scheduleHtml += `
                         <div class="flex items-center gap-2">
                             <span class="px-2 py-1 bg-blue-200 text-blue-800 rounded text-xs font-medium">Dag ${day}</span>
-                            <span>${dayContent.join(', ')}</span>
+                            <span>${daySchedule[day].join(', ')}</span>
                         </div>
                     `;
                 }
             }
 
-            // Add VK Finale day if enabled
-            if (hasVkFinale) {
-                scheduleHtml += `
-                    <div class="flex items-center gap-2">
-                        <span class="px-2 py-1 bg-primary-200 text-neutral-800 rounded text-xs font-medium">Dag ${days + 1}</span>
-                        <span class="font-semibold text-warm-600">VK Finale (settes opp manuelt)</span>
-                    </div>
-                `;
+            if (!scheduleHtml) {
+                scheduleHtml = '<p class="text-neutral-500 italic">Ingen partier konfigurert ennå</p>';
             }
 
             scheduleDiv.innerHTML = scheduleHtml;
         }
 
         // Listen for changes to update schedule
-        document.getElementById('trialDays').addEventListener('change', updateDaySchedule);
-        document.getElementById('ukakParties').addEventListener('input', updateDaySchedule);
-        document.getElementById('vkParties').addEventListener('input', updateDaySchedule);
+        ['ukakPartiesDay1', 'ukakPartiesDay2', 'ukakPartiesDay3'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateDaySchedule);
+        });
 
         // Initial schedule update
         updateDaySchedule();
 
-        // File upload demo
+        // ========================================
+        // CSV PARSING
+        // ========================================
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) {
+                return { dogs: [], errors: ['Filen inneholder ingen data (må ha minst en header-rad og en data-rad)'] };
+            }
+
+            // Parse header - handle different separators
+            const headerLine = lines[0];
+            let separator = ',';
+            if (headerLine.includes('\t')) separator = '\t';
+            else if (headerLine.includes(';')) separator = ';';
+            else if (headerLine.includes('|')) separator = '|'; // Markdown table format
+
+            // Clean headers: remove markdown bold (**), quotes, asterisks, and trim
+            let headers = headerLine.split(separator).map(h =>
+                h.trim().toLowerCase().replace(/\*\*/g, '').replace(/["'*]/g, '').trim()
+            );
+
+            // For pipe-separated (markdown), remove empty first/last elements
+            if (separator === '|') {
+                if (headers[0] === '') headers.shift();
+                if (headers[headers.length - 1] === '') headers.pop();
+            }
+
+            // Find column indices - match actual column names from DogWeb export
+            const colMap = {
+                regnr: headers.findIndex(h => h === 'regnr' || h.includes('regnr')),
+                navn: headers.findIndex(h => h === 'navn' || (h.includes('navn') && !h.includes('eier') && !h.includes('fører'))),
+                rase: headers.findIndex(h => h === 'rase' || h.includes('rase')),
+                eier: headers.findIndex(h => h === 'eier' || h.includes('eier')),
+                forer: headers.findIndex(h => h === 'fører' || h.includes('fører') || h === 'forer'),
+                klasser: headers.findIndex(h => h === 'klasser' || h.includes('klasse')),
+                epost: headers.findIndex(h => h === 'epost' || h.includes('epost') || h.includes('e-post') || h.includes('email'))
+            };
+
+            // Validate required columns
+            const errors = [];
+            const missingCols = [];
+            if (colMap.regnr < 0) missingCols.push('Regnr');
+            if (colMap.navn < 0) missingCols.push('Navn');
+            if (colMap.klasser < 0) missingCols.push('Klasser');
+            if (colMap.epost < 0) missingCols.push('Epost');
+
+            if (missingCols.length > 0) {
+                errors.push(`Manglende kolonner: ${missingCols.join(', ')}`);
+                errors.push(`Fant kolonner: ${headers.filter(h => h).join(', ')}`);
+            }
+
+            const dogs = [];
+            let rowErrors = 0;
+
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                // Skip markdown separator rows (| --- | --- | etc)
+                if (line.match(/^[\|\s\-:]+$/)) continue;
+
+                // Clean values: remove markdown formatting and extract clean data
+                let values = line.split(separator).map(v => {
+                    let clean = v.trim();
+                    // Remove markdown bold **text**
+                    clean = clean.replace(/\*\*/g, '');
+                    // Extract email from markdown link [email](mailto:email)
+                    const emailMatch = clean.match(/\[([^\]]+)\]\(mailto:[^)]+\)/);
+                    if (emailMatch) {
+                        clean = emailMatch[1];
+                    }
+                    // Remove any remaining markdown links [text](url)
+                    clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+                    // Remove quotes
+                    clean = clean.replace(/["']/g, '');
+                    return clean.trim();
+                });
+
+                // For pipe-separated (markdown), remove empty first/last elements
+                if (separator === '|') {
+                    if (values[0] === '') values.shift();
+                    if (values[values.length - 1] === '') values.pop();
+                }
+
+                // Extract class and day - handle formats like "UK1", "UK2", "AK1", "AK2", "VK"
+                let klasseRaw = colMap.klasser >= 0 ? values[colMap.klasser]?.toUpperCase().trim() : '';
+                let klasse = '';
+                let dag = '1';
+
+                // Parse class format: UK1, UK2, AK1, AK2, VK
+                const classMatch = klasseRaw.match(/^(UK|AK|VK)(\d)?$/i);
+                if (classMatch) {
+                    klasse = classMatch[1].toUpperCase();
+                    if (classMatch[2]) {
+                        dag = classMatch[2];
+                    }
+                } else if (klasseRaw) {
+                    // Unknown class format
+                    rowErrors++;
+                    if (rowErrors <= 3) {
+                        errors.push(`Rad ${i + 1}: Ukjent klasseformat "${klasseRaw}" (forventet UK1, UK2, AK1, AK2, VK)`);
+                    }
+                }
+
+                // Validate row data
+                const regnr = colMap.regnr >= 0 ? values[colMap.regnr]?.trim() : '';
+                const navn = colMap.navn >= 0 ? values[colMap.navn]?.trim() : '';
+                const epost = colMap.epost >= 0 ? values[colMap.epost]?.trim() : '';
+
+                if (!regnr && !navn) {
+                    continue; // Skip empty rows
+                }
+
+                if (!klasse) {
+                    rowErrors++;
+                    if (rowErrors <= 3) {
+                        errors.push(`Rad ${i + 1}: Mangler klasse for "${navn || regnr}"`);
+                    }
+                    continue;
+                }
+
+                dogs.push({
+                    regnr: regnr,
+                    navn: navn,
+                    rase: colMap.rase >= 0 ? values[colMap.rase]?.trim() : '',
+                    eier: colMap.eier >= 0 ? values[colMap.eier]?.trim() : '',
+                    forer: colMap.forer >= 0 ? values[colMap.forer]?.trim() : '',
+                    epost: epost,
+                    klasse: klasse,
+                    dag: dag
+                });
+            }
+
+            if (rowErrors > 3) {
+                errors.push(`... og ${rowErrors - 3} flere rader med feil`);
+            }
+
+            // Remove exact duplicates (same regnr + same klasse + same dag)
+            const seen = new Set();
+            const uniqueDogs = [];
+            let duplicateCount = 0;
+
+            for (const dog of dogs) {
+                const key = `${dog.regnr}|${dog.klasse}|${dog.dag}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueDogs.push(dog);
+                } else {
+                    duplicateCount++;
+                }
+            }
+
+            if (duplicateCount > 0) {
+                errors.push(`${duplicateCount} duplikat${duplicateCount > 1 ? 'er' : ''} fjernet (identiske rader)`);
+            }
+
+            return { dogs: uniqueDogs, errors };
+        }
+
+        function updateUploadSummary(dogs) {
+            // Reset summary
+            uploadSummary = {
+                UKAK1: 0, UKAK2: 0, UKAK3: 0,
+                VK: 0,
+                total: dogs.length
+            };
+
+            // Count per class and day (UK and AK combined per day)
+            dogs.forEach(dog => {
+                const klasse = dog.klasse?.toUpperCase() || '';
+                const dag = dog.dag || '1';
+
+                if (klasse === 'UK' || klasse === 'AK') {
+                    if (dag === '1') uploadSummary.UKAK1++;
+                    else if (dag === '2') uploadSummary.UKAK2++;
+                    else if (dag === '3') uploadSummary.UKAK3++;
+                } else if (klasse === 'VK') {
+                    uploadSummary.VK++;
+                }
+            });
+
+            // Update UI
+            document.getElementById('summaryUKAK1').textContent = uploadSummary.UKAK1;
+            document.getElementById('summaryUKAK2').textContent = uploadSummary.UKAK2;
+            document.getElementById('summaryUKAK3').textContent = uploadSummary.UKAK3;
+            document.getElementById('summaryVK').textContent = uploadSummary.VK;
+
+            const totalUKAK = uploadSummary.UKAK1 + uploadSummary.UKAK2 + uploadSummary.UKAK3;
+            const totalVK = uploadSummary.VK;
+
+            document.getElementById('summaryTotalUKAK').textContent = totalUKAK;
+            document.getElementById('summaryTotalVK').textContent = totalVK;
+            document.getElementById('summaryGrandTotal').textContent = totalUKAK + totalVK;
+
+            // Show summary section
+            document.getElementById('uploadSummary').classList.remove('hidden');
+
+            // Update file stats text
+            document.getElementById('fileStats').textContent =
+                `${uploadSummary.total} hunder funnet (UK/AK: ${totalUKAK}, VK: ${totalVK})`;
+        }
+
+        // ========================================
+        // FILE UPLOAD HANDLING
+        // ========================================
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const uploadPreview = document.getElementById('uploadPreview');
@@ -1808,18 +2040,86 @@
 
         function handleFile(file) {
             document.getElementById('fileName').textContent = file.name;
+
+            // Read and parse file
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+
+                // Show debug info on page
+                let debugInfo = '';
+                debugInfo += 'Fil størrelse: ' + text.length + ' tegn\n';
+                debugInfo += 'Antall linjer: ' + text.split('\n').length + '\n';
+                debugInfo += 'Første 300 tegn:\n' + text.substring(0, 300) + '\n\n';
+
+                const result = parseCSV(text);
+                parsedDogs = result.dogs;
+
+                debugInfo += 'Parsede hunder: ' + parsedDogs.length + '\n';
+                debugInfo += 'Feil: ' + result.errors.join(', ') + '\n';
+                if (parsedDogs.length > 0) {
+                    debugInfo += 'Første hund: ' + JSON.stringify(parsedDogs[0]) + '\n';
+                }
+
+                document.getElementById('debugText').textContent = debugInfo;
+                document.getElementById('debugInfo').classList.remove('hidden');
+
+                // Show errors if any
+                if (result.errors.length > 0) {
+                    showUploadErrors(result.errors);
+                } else {
+                    hideUploadErrors();
+                }
+
+                updateUploadSummary(parsedDogs);
+            };
+            reader.readAsText(file);
+
             dropZone.classList.add('hidden');
             uploadPreview.classList.remove('hidden');
+        }
+
+        function showUploadErrors(errors) {
+            const errorList = document.getElementById('uploadErrorList');
+            errorList.innerHTML = errors.map(e => `<li>${e}</li>`).join('');
+            document.getElementById('uploadErrors').classList.remove('hidden');
+        }
+
+        function hideUploadErrors() {
+            document.getElementById('uploadErrors').classList.add('hidden');
         }
 
         document.getElementById('removeFile').addEventListener('click', () => {
             dropZone.classList.remove('hidden');
             uploadPreview.classList.add('hidden');
+            document.getElementById('uploadSummary').classList.add('hidden');
+            hideUploadErrors();
             fileInput.value = '';
+            parsedDogs = [];
         });
 
         document.getElementById('processUpload').addEventListener('click', () => {
-            alert('Fil behandlet! 48 hunder fordelt på partier:\n\n• UK/AK Parti 1: 20 hunder\n• UK/AK Parti 2: 16 hunder\n• VK Parti: 12 hunder\n\nSMS sendes nå til alle deltakere.');
+            if (parsedDogs.length === 0) {
+                alert('Ingen hunder funnet i filen. Sjekk filformatet.');
+                return;
+            }
+
+            const vkFormat = document.querySelector('input[name="vkFormat"]:checked').value;
+
+            let message = `Fil behandlet! ${parsedDogs.length} hunder fordelt:\n\n`;
+            message += `• UK/AK Dag 1: ${uploadSummary.UKAK1} hunder\n`;
+            message += `• UK/AK Dag 2: ${uploadSummary.UKAK2} hunder\n`;
+            if (uploadSummary.UKAK3 > 0) message += `• UK/AK Dag 3: ${uploadSummary.UKAK3} hunder\n`;
+            if (uploadSummary.VK > 0) {
+                message += `• VK ${vkFormat === '2day' ? 'Kval' : ''}: ${uploadSummary.VK} hunder\n`;
+            }
+            message += `\nE-post sendes nå til alle deltakere.`;
+
+            alert(message);
+
+            // Store parsed data in localStorage for other pages
+            localStorage.setItem('uploadedDogs', JSON.stringify(parsedDogs));
+            localStorage.setItem('uploadSummary', JSON.stringify(uploadSummary));
         });
 
         // Send SMS button scroll
@@ -2067,6 +2367,149 @@
             // Save the PDF
             const fileName = `${trialName.replace(/\s+/g, '_')}_Partilister.pdf`;
             doc.save(fileName);
+        }
+    </script>
+
+    </div><!-- End adminContent -->
+
+    <!-- Login Scripts -->
+    <script>
+        let loginPhoneNumber = '';
+        let adminUser = null;
+
+        // Authorized admins (phone -> name and club)
+        const authorizedAdmins = {
+            '99999997': { name: 'Monja Aakert', club: 'Namdal Fuglehundklubb' },
+            '99999998': { name: 'Test Admin', club: 'Test Klubb' }
+        };
+
+        // Check for existing admin session on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedSession = localStorage.getItem('adminSession');
+            if (savedSession) {
+                try {
+                    adminUser = JSON.parse(savedSession);
+                    // Verify the user is still authorized
+                    if (authorizedAdmins[adminUser.phone]) {
+                        showAdminContent();
+                    } else {
+                        localStorage.removeItem('adminSession');
+                    }
+                } catch (e) {
+                    localStorage.removeItem('adminSession');
+                }
+            }
+        });
+
+        function formatLoginPhone(input) {
+            let value = input.value.replace(/\D/g, '');
+            if (value.length > 8) value = value.slice(0, 8);
+
+            let formatted = '';
+            if (value.length > 0) formatted = value.slice(0, 3);
+            if (value.length > 3) formatted += ' ' + value.slice(3, 5);
+            if (value.length > 5) formatted += ' ' + value.slice(5, 8);
+
+            input.value = formatted;
+        }
+
+        function sendLoginCode() {
+            const input = document.getElementById('loginPhone');
+            const rawPhone = input.value.replace(/\D/g, '');
+
+            if (rawPhone.length !== 8) {
+                alert('Vennligst skriv inn et gyldig mobilnummer (8 siffer)');
+                return;
+            }
+
+            loginPhoneNumber = rawPhone;
+
+            // Simulate sending code
+            document.getElementById('loginStep1').classList.add('hidden');
+            document.getElementById('loginStep2').classList.remove('hidden');
+            document.getElementById('loginDisplayPhone').textContent = '+47 ' + input.value;
+            document.getElementById('loginCode1').focus();
+        }
+
+        function handleLoginCodeInput(input, nextId) {
+            input.value = input.value.replace(/\D/g, '');
+            if (input.value.length === 1 && nextId) {
+                document.getElementById(nextId).focus();
+            }
+            if (getLoginCode().length === 4) {
+                verifyLoginCode();
+            }
+        }
+
+        function handleLoginCodeKeydown(event, prevId, nextId) {
+            if (event.key === 'Backspace' && event.target.value === '' && prevId) {
+                document.getElementById(prevId).focus();
+            }
+        }
+
+        function getLoginCode() {
+            return document.getElementById('loginCode1').value +
+                   document.getElementById('loginCode2').value +
+                   document.getElementById('loginCode3').value +
+                   document.getElementById('loginCode4').value;
+        }
+
+        function verifyLoginCode() {
+            const code = getLoginCode();
+            if (code.length !== 4) return;
+
+            // Check if user is authorized admin
+            const adminInfo = authorizedAdmins[loginPhoneNumber];
+
+            if (adminInfo) {
+                adminUser = {
+                    phone: loginPhoneNumber,
+                    name: adminInfo.name,
+                    club: adminInfo.club,
+                    loggedInAt: new Date().toISOString()
+                };
+
+                localStorage.setItem('adminSession', JSON.stringify(adminUser));
+                showAdminContent();
+            } else {
+                document.getElementById('loginCodeError').classList.remove('hidden');
+                clearLoginCodeInputs();
+                document.getElementById('loginCode1').focus();
+            }
+        }
+
+        function clearLoginCodeInputs() {
+            ['loginCode1', 'loginCode2', 'loginCode3', 'loginCode4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+        }
+
+        function goBackToLoginStep1() {
+            document.getElementById('loginStep2').classList.add('hidden');
+            document.getElementById('loginStep1').classList.remove('hidden');
+            clearLoginCodeInputs();
+            document.getElementById('loginCodeError').classList.add('hidden');
+        }
+
+        function showAdminContent() {
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('adminContent').classList.remove('hidden');
+            document.getElementById('navLoggedIn').classList.remove('hidden');
+            document.getElementById('navLoggedIn').classList.add('flex');
+            document.getElementById('navUserName').textContent = adminUser.name;
+        }
+
+        function logoutAdmin() {
+            localStorage.removeItem('adminSession');
+            adminUser = null;
+            document.getElementById('adminContent').classList.add('hidden');
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('navLoggedIn').classList.add('hidden');
+            document.getElementById('navLoggedIn').classList.remove('flex');
+
+            // Reset login form
+            document.getElementById('loginPhone').value = '';
+            goBackToLoginStep1();
         }
     </script>
 

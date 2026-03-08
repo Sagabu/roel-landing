@@ -96,7 +96,7 @@
                         Alle hundene er bedømt, men de endelige kritikkene er ikke skrevet ennå.
                         Fullfør kritikkene og send til NKK-representant.
                     </p>
-                    <button onclick="goToFinalCritique()" class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 px-6 rounded-xl transition flex items-center gap-2 shadow-md">
+                    <button id="finishCritiquesBtn" class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 px-6 rounded-xl transition flex items-center gap-2 shadow-md">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                         </svg>
@@ -358,32 +358,39 @@
             `;
         }
 
-        renderAssignedParties();
-        checkPendingCritiques();
-
         // Check if there are pending critiques across all assigned parties
+        let pendingPartyGlobal = null;
+
         function checkPendingCritiques() {
             let hasPendingCritiques = false;
-            let pendingParty = null;
+
+            console.log('Checking pending critiques for parties:', assignedParties);
 
             for (const assignment of assignedParties) {
                 const partyId = assignment.parti;
                 const saved = localStorage.getItem('judgeData_' + partyId);
+                console.log('Party', partyId, 'saved data:', saved ? 'found' : 'not found');
                 if (!saved) continue;
 
                 try {
                     const data = JSON.parse(saved);
                     const dogs = data.dogs || data;
+                    console.log('Party', partyId, 'dogs:', dogs);
 
-                    if (!Array.isArray(dogs)) continue;
+                    if (!Array.isArray(dogs)) {
+                        console.log('Party', partyId, 'dogs is not an array');
+                        continue;
+                    }
 
                     const allDone = dogs.every(d => d.status === 'done' || d.knocked);
+                    console.log('Party', partyId, 'allDone:', allDone);
                     if (!allDone) continue;
 
                     const pending = dogs.some(d => d.status === 'done' && !d.critiqueSentToNKK);
+                    console.log('Party', partyId, 'pending critiques:', pending);
                     if (pending) {
                         hasPendingCritiques = true;
-                        pendingParty = partyId;
+                        pendingPartyGlobal = partyId;
                         break;
                     }
                 } catch (e) {
@@ -391,18 +398,33 @@
                 }
             }
 
-            if (hasPendingCritiques && pendingParty) {
+            if (hasPendingCritiques && pendingPartyGlobal) {
+                console.log('Showing pending critiques alert for party:', pendingPartyGlobal);
                 document.getElementById('pendingCritiquesAlert').classList.remove('hidden');
                 // Update the button to go to correct party
-                const btn = document.querySelector('#pendingCritiquesAlert button');
+                const btn = document.getElementById('finishCritiquesBtn');
                 if (btn) {
-                    btn.onclick = () => goToFinalCritique(pendingParty);
+                    console.log('Setting up click handler for button');
+                    btn.onclick = function() {
+                        console.log('Button clicked, going to party:', pendingPartyGlobal);
+                        goToFinalCritique(pendingPartyGlobal);
+                    };
                 }
             }
         }
 
         function goToFinalCritique(partyId) {
-            window.location.href = 'dommer-kritikk.html?party=' + partyId;
+            console.log('goToFinalCritique called with:', partyId);
+            if (!partyId) {
+                // Fallback: try to use the global pending party or first assigned party
+                partyId = pendingPartyGlobal || (assignedParties.length > 0 ? assignedParties[0].parti : null);
+                console.log('Using fallback partyId:', partyId);
+            }
+            if (partyId) {
+                window.location.href = 'dommer-kritikk.html?party=' + partyId;
+            } else {
+                alert('Kunne ikke finne parti. Vennligst prøv igjen.');
+            }
         }
 
         function goToAssessment(partyId, judgeRole) {
@@ -456,6 +478,10 @@
                 window.location.href = 'dommer.html';
             }
         }
+
+        // Initialize the page
+        renderAssignedParties();
+        checkPendingCritiques();
     </script>
     <script src="dog-search.js"></script>
 </body>

@@ -2,6 +2,30 @@
 // Include this on all pages to add search functionality
 
 (function() {
+    // Raseforkortelser - offisielle forkortelser
+    const BREED_CODES = {
+        'breton': 'BR',
+        'gordon setter': 'GS',
+        'irsk setter': 'IS',
+        'engelsk setter': 'ES',
+        'pointer': 'PO',
+        'kleiner munsterlander': 'KM',
+        'korthår vorsteh': 'KV',
+        'korthåret vorsteh': 'KV',
+        'korthåra vorsteh': 'KV',
+        'langhåra vorsteh': 'LV',
+        'langhåret vorsteh': 'LV',
+        'strihår vorsteh': 'SV',
+        'strihåret vorsteh': 'SV',
+        'stråhåret vorsteh': 'SV'
+    };
+
+    function getBreedCode(breed) {
+        if (!breed) return 'UK';
+        const lower = breed.toLowerCase().trim();
+        return BREED_CODES[lower] || breed.substring(0, 2).toUpperCase();
+    }
+
     // Load dogs from localStorage (judgeData) and combine with any static data
     function loadAllDogs() {
         const dogs = [];

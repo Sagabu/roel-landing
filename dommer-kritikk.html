@@ -271,6 +271,30 @@
             currentDogId: null
         };
 
+        // Raseforkortelser - offisielle forkortelser
+        const BREED_CODES = {
+            'breton': 'BR',
+            'gordon setter': 'GS',
+            'irsk setter': 'IS',
+            'engelsk setter': 'ES',
+            'pointer': 'PO',
+            'kleiner munsterlander': 'KM',
+            'korthår vorsteh': 'KV',
+            'korthåret vorsteh': 'KV',
+            'korthåra vorsteh': 'KV',
+            'langhåra vorsteh': 'LV',
+            'langhåret vorsteh': 'LV',
+            'strihår vorsteh': 'SV',
+            'strihåret vorsteh': 'SV',
+            'stråhåret vorsteh': 'SV'
+        };
+
+        function getBreedCode(breed) {
+            if (!breed) return 'UK';
+            const lower = breed.toLowerCase().trim();
+            return BREED_CODES[lower] || breed.substring(0, 2).toUpperCase();
+        }
+
         // Dynamic party configuration based on party ID
         function getPartyConfig(partyId) {
             const id = partyId.toUpperCase();
@@ -434,7 +458,9 @@
                     statusBadge = '<span class="px-2 py-1 bg-bark-100 text-bark-500 rounded-full text-xs font-medium">Ikke skrevet</span>';
                 }
 
-                const prizeDisplay = dog.prize ? `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">${dog.prize}</span>` : '';
+                const breedCode = dog.breedCode || getBreedCode(dog.breed);
+                const klasse = dog.klasse || 'AK';
+                const prizeFromField = dog.prize ? `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">${dog.prize}</span>` : '<span class="px-2 py-1 bg-bark-100 text-bark-400 rounded-full text-xs">Ingen premie</span>';
 
                 return `
                     <button onclick="openCritique(${dog.id})"
@@ -445,10 +471,10 @@
                             </div>
                             <div class="flex-1 min-w-0">
                                 <p class="font-bold text-bark-800 truncate">${dog.name}</p>
-                                <p class="text-sm text-bark-500">${dog.breed} • ${dog.handler}</p>
+                                <p class="text-sm text-bark-500">${breedCode} • ${klasse} • ${dog.handler}</p>
                             </div>
                             <div class="flex flex-col items-end gap-1">
-                                ${prizeDisplay}
+                                ${prizeFromField}
                                 ${statusBadge}
                             </div>
                         </div>
@@ -467,7 +493,10 @@
                 container.innerHTML += `
                     <div class="mt-6">
                         <h3 class="text-sm font-medium text-bark-500 mb-2">Utslåtte hunder (ingen kritikk)</h3>
-                        ${knockedDogs.map(dog => `
+                        ${knockedDogs.map(dog => {
+                            const breedCode = dog.breedCode || getBreedCode(dog.breed);
+                            const klasse = dog.klasse || 'AK';
+                            return `
                             <div class="bg-red-50 rounded-xl border border-red-200 p-3 mb-2 opacity-60">
                                 <div class="flex items-center gap-3">
                                     <div class="w-8 h-8 bg-red-100 rounded-xl flex items-center justify-center">
@@ -475,11 +504,11 @@
                                     </div>
                                     <div>
                                         <p class="font-medium text-red-800">${dog.name}</p>
-                                        <p class="text-xs text-red-600">${dog.breed}</p>
+                                        <p class="text-xs text-red-600">${breedCode} • ${klasse}</p>
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                 `;
             }

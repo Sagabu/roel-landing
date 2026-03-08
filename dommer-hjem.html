@@ -268,21 +268,21 @@
                     const dogs = Array.isArray(data) ? data : (data.dogs || []);
                     const activeDogs = dogs.filter(d => !d.knocked);
                     totalActiveDogs = activeDogs.length;
-                    const done = activeDogs.filter(d => d.status === 'done').length;
+                    // En hund er "ferdig" hvis den har status 'done' ELLER critiqueStatus 'approved'/'submitted'
+                    const done = activeDogs.filter(d => d.status === 'done' || d.critiqueStatus === 'approved' || d.critiqueStatus === 'submitted').length;
                     approvedCount = activeDogs.filter(d => d.critiqueStatus === 'approved').length;
 
-                    if (done > 0) {
+                    // Sjekk først om alle kritikker er godkjent av NKK
+                    if (approvedCount === totalActiveDogs && totalActiveDogs > 0) {
+                        allApproved = true;
+                        allDone = true;
+                        statusText = 'Alle kritikker godkjent';
+                        statusClasses = 'bg-green-200 text-green-800';
+                    } else if (done > 0) {
                         statusText = `${done}/${totalActiveDogs} ferdig`;
                         if (done === totalActiveDogs) {
                             allDone = true;
-                            // Sjekk om alle kritikker er godkjent
-                            if (approvedCount === totalActiveDogs && totalActiveDogs > 0) {
-                                allApproved = true;
-                                statusText = 'Alle kritikker godkjent';
-                                statusClasses = 'bg-green-200 text-green-800';
-                            } else {
-                                statusClasses = 'bg-green-100 text-green-700';
-                            }
+                            statusClasses = 'bg-green-100 text-green-700';
                         } else {
                             statusClasses = 'bg-blue-100 text-blue-700';
                         }

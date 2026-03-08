@@ -59,7 +59,7 @@
                     </a>
                     <div class="text-right">
                         <p class="text-xs text-blue-200">NKK-representant</p>
-                        <p class="font-semibold" id="nkkRepName">Marte Haugen</p>
+                        <p class="font-semibold" id="nkkRepName">-</p>
                     </div>
                 </div>
             </div>
@@ -209,11 +209,14 @@
 
         // Load NKK rep info from logged in user session
         async function loadNkkRepInfo() {
-            // Get logged in user from judgeSession
+            // Try judgeSession first
             const session = localStorage.getItem('judgeSession');
+            console.log('judgeSession:', session);
+
             if (session) {
                 try {
                     const sessionData = JSON.parse(session);
+                    console.log('Parsed session:', sessionData);
                     nkkRepInfo = {
                         name: sessionData.name || 'NKK-representant',
                         phone: sessionData.phone || ''
@@ -221,6 +224,25 @@
                     document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
                 } catch (e) {
                     console.error('Error parsing session:', e);
+                }
+            }
+
+            // Fallback to userProfile if no judgeSession
+            if (!nkkRepInfo || !nkkRepInfo.name || nkkRepInfo.name === 'NKK-representant') {
+                const profile = localStorage.getItem('userProfile');
+                console.log('userProfile:', profile);
+                if (profile) {
+                    try {
+                        const profileData = JSON.parse(profile);
+                        console.log('Parsed profile:', profileData);
+                        nkkRepInfo = {
+                            name: profileData.name || profileData.fullName || 'NKK-representant',
+                            phone: profileData.phone || ''
+                        };
+                        document.getElementById('nkkRepName').textContent = nkkRepInfo.name;
+                    } catch (e) {
+                        console.error('Error parsing profile:', e);
+                    }
                 }
             }
 

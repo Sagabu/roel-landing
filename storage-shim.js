@@ -10,6 +10,7 @@
  */
 (function() {
   const API = '/api/storage';
+  const TOKEN_KEY = 'fuglehund_token';
   const SYNCED_KEYS = [
     'userProfile', 'userDogs', 'userTrials', 'userMandates',
     'judgeSession', 'clubLogo'
@@ -17,6 +18,16 @@
   // judgeData_* keys are dynamic (per party)
   function isSyncedKey(key) {
     return SYNCED_KEYS.includes(key) || key.startsWith('judgeData_');
+  }
+
+  // Hent auth headers for requests
+  function getAuthHeaders() {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
   }
 
   const _setItem = localStorage.setItem.bind(localStorage);
@@ -31,14 +42,14 @@
         const parsed = JSON.parse(value);
         fetch(`${API}/${encodeURIComponent(key)}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ value: parsed })
         }).catch(() => {}); // fire and forget
       } catch {
         // Not JSON, store as string
         fetch(`${API}/${encodeURIComponent(key)}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ value: value })
         }).catch(() => {});
       }
@@ -49,7 +60,10 @@
   localStorage.removeItem = function(key) {
     _removeItem(key);
     if (isSyncedKey(key)) {
-      fetch(`${API}/${encodeURIComponent(key)}`, { method: 'DELETE' }).catch(() => {});
+      fetch(`${API}/${encodeURIComponent(key)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      }).catch(() => {});
     }
   };
 

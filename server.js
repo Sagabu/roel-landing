@@ -6,13 +6,26 @@ import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
+import { config } from "dotenv";
+
+// Load environment variables
+config();
+
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 const XLSX = require("xlsx");
+const jwt = require("jsonwebtoken");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, "fuglehund.db");
+const DB_PATH = process.env.DB_PATH ? join(__dirname, process.env.DB_PATH) : join(__dirname, "fuglehund.db");
 const PORT = Number(process.env.PORT || 8889);
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-not-for-production";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+
+// Warn if using default secret
+if (!process.env.JWT_SECRET) {
+  console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt i .env - bruker usikker dev-secret!");
+}
 
 // --- Database setup ---
 const db = new Database(DB_PATH);
@@ -424,7 +437,205 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500);
 });
 
+// ============================================
+// JWT AUTENTISERING
+// ============================================
+
+// Generer JWT token
+function generateToken(bruker) {
+  const payload = {
+    telefon: bruker.telefon,
+    rolle: bruker.rolle,
+    navn: `${bruker.fornavn} ${bruker.etternavn}`
+  };
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+// Verifiser JWT token
+function verifyToken(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return null;
+  }
+}
+
+// Auth middleware - hent bruker fra token (valgfri auth)
+const optionalAuth = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const payload = verifyToken(token);
+    if (payload) {
+      c.set("bruker", payload);
+    }
+  }
+  await next();
+};
+
+// Auth middleware - krever gyldig token
+const requireAuth = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+  }
+
+  const token = authHeader.slice(7);
+  const payload = verifyToken(token);
+
+  if (!payload) {
+    return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+  }
+
+  c.set("bruker", payload);
+  await next();
+};
+
+// Hjelpefunksjon for å sjekke rolle (støtter komma-separerte roller)
+function hasRole(rolleStr, requiredRole) {
+  if (!rolleStr) return false;
+  const roller = rolleStr.split(',').map(r => r.trim());
+  return roller.includes(requiredRole);
+}
+
+function hasAnyRole(rolleStr, requiredRoles) {
+  if (!rolleStr) return false;
+  const roller = rolleStr.split(',').map(r => r.trim());
+  return requiredRoles.some(r => roller.includes(r));
+}
+
+// Auth middleware - krever admin-rolle
+const requireAdmin = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+  }
+
+  const token = authHeader.slice(7);
+  const payload = verifyToken(token);
+
+  if (!payload) {
+    return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+  }
+
+  if (!hasAnyRole(payload.rolle, ["admin", "klubbleder", "proveleder"])) {
+    return c.json({ error: "Krever admin-tilgang" }, 403);
+  }
+
+  c.set("bruker", payload);
+  await next();
+};
+
+// Auth middleware - krever dommer-rolle
+const requireDommer = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+  }
+
+  const token = authHeader.slice(7);
+  const payload = verifyToken(token);
+
+  if (!payload) {
+    return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+  }
+
+  if (!hasAnyRole(payload.rolle, ["dommer", "admin"])) {
+    return c.json({ error: "Krever dommer-tilgang" }, 403);
+  }
+
+  c.set("bruker", payload);
+  await next();
+};
+
+// ============================================
+// AUTH API ENDPOINTS
+// ============================================
+
+// Login - verifiser telefonnummer og returner JWT
+// I produksjon: Her skal SMS-verifisering skje
+app.post("/api/auth/login", async (c) => {
+  const body = await c.req.json();
+  const { telefon, kode } = body;
+
+  if (!telefon) {
+    return c.json({ error: "Telefonnummer påkrevd" }, 400);
+  }
+
+  // Sjekk om bruker finnes
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet" }, 404);
+  }
+
+  // TODO: I produksjon - verifiser SMS-kode her
+  // For nå: Godta login hvis bruker finnes
+  // I dev-mode aksepterer vi kode "1234" eller tom kode
+  const isDevMode = process.env.NODE_ENV !== "production";
+
+  if (!isDevMode && kode !== "VERIFIED_SMS_CODE") {
+    return c.json({ error: "Ugyldig verifiseringskode" }, 401);
+  }
+
+  const token = generateToken(bruker);
+
+  return c.json({
+    token,
+    bruker: {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      rolle: bruker.rolle
+    }
+  });
+});
+
+// Verifiser token og returner brukerinfo
+app.get("/api/auth/me", requireAuth, (c) => {
+  const payload = c.get("bruker");
+
+  // Hent full brukerinfo fra database
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(payload.telefon);
+
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet" }, 404);
+  }
+
+  return c.json({
+    telefon: bruker.telefon,
+    fornavn: bruker.fornavn,
+    etternavn: bruker.etternavn,
+    rolle: bruker.rolle,
+    epost: bruker.epost
+  });
+});
+
+// Logg ut (klientsiden fjerner token, men vi kan logge det)
+app.post("/api/auth/logout", requireAuth, (c) => {
+  const payload = c.get("bruker");
+  console.log(`Bruker logget ut: ${payload.telefon}`);
+  return c.json({ ok: true });
+});
+
+// Refresh token
+app.post("/api/auth/refresh", requireAuth, (c) => {
+  const payload = c.get("bruker");
+
+  // Hent oppdatert brukerinfo
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(payload.telefon);
+
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet" }, 404);
+  }
+
+  const newToken = generateToken(bruker);
+
+  return c.json({ token: newToken });
+});
+
 // --- localStorage bridge API ---
+// Storage-lesing er åpen (trengs for shim å hente initial data)
 app.get("/api/storage/:key", (c) => {
   const key = c.req.param("key");
   const row = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(key);
@@ -432,7 +643,8 @@ app.get("/api/storage/:key", (c) => {
   return c.json({ value: JSON.parse(row.value) });
 });
 
-app.put("/api/storage/:key", async (c) => {
+// Storage-skriving krever innlogging
+app.put("/api/storage/:key", requireAuth, async (c) => {
   const key = c.req.param("key");
   const body = await c.req.json();
   const value = JSON.stringify(body.value);
@@ -440,13 +652,15 @@ app.put("/api/storage/:key", async (c) => {
   return c.json({ ok: true });
 });
 
-app.delete("/api/storage/:key", (c) => {
+// Storage-sletting krever admin
+app.delete("/api/storage/:key", requireAdmin, (c) => {
   const key = c.req.param("key");
   db.prepare("DELETE FROM kv_store WHERE key = ?").run(key);
   return c.json({ ok: true });
 });
 
-app.get("/api/storage", (c) => {
+// Liste alle keys krever admin
+app.get("/api/storage", requireAdmin, (c) => {
   const rows = db.prepare("SELECT key, updated_at FROM kv_store ORDER BY key").all();
   return c.json({ keys: rows });
 });
@@ -457,8 +671,9 @@ app.get("/api/trial", (c) => {
   return c.json(row);
 });
 
-app.put("/api/trial", async (c) => {
+app.put("/api/trial", requireAdmin, async (c) => {
   const body = await c.req.json();
+  const bruker = c.get("bruker");
   const fields = ["name", "location", "start_date", "end_date", "organizing_club", "club_logo", "description", "contact_email", "contact_phone", "is_published"];
   const sets = [];
   const vals = [];
@@ -471,14 +686,14 @@ app.put("/api/trial", async (c) => {
   if (sets.length > 0) {
     sets.push("updated_at = datetime('now')");
     db.prepare(`UPDATE trial_config SET ${sets.join(", ")} WHERE id = 1`).run(...vals);
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("trial_update", JSON.stringify(body));
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("trial_update", JSON.stringify({ ...body, endret_av: bruker.telefon }));
   }
   const row = db.prepare("SELECT * FROM trial_config WHERE id = 1").get();
   return c.json(row);
 });
 
-// --- Admin log ---
-app.get("/api/admin/log", (c) => {
+// --- Admin log (krever admin) ---
+app.get("/api/admin/log", requireAdmin, (c) => {
   const limit = Number(c.req.query("limit") || 50);
   const rows = db.prepare("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?").all(limit);
   return c.json({ items: rows });
@@ -1046,9 +1261,13 @@ app.get("/api/kritikker/:id", (c) => {
   return c.json(kritikk);
 });
 
-// Opprett eller oppdater kritikk
-app.post("/api/kritikker", async (c) => {
+// Opprett kritikk (krever dommer)
+app.post("/api/kritikker", requireDommer, async (c) => {
   const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  // Bruk innlogget dommers telefon
+  const dommer_telefon = bruker.telefon;
 
   const result = db.prepare(`
     INSERT INTO kritikker (
@@ -1060,7 +1279,7 @@ app.post("/api/kritikker", async (c) => {
       adferd, premie, kritikk_tekst
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    body.hund_id, body.prove_id, body.dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
+    body.hund_id, body.prove_id, dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
     body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
     body.stand_m, body.stand_u, body.tomstand, body.makker_stand, body.sjanse, body.slipptid,
     body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
@@ -1068,13 +1287,29 @@ app.post("/api/kritikker", async (c) => {
     body.adferd, body.premie, body.kritikk_tekst
   );
 
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_opprettet",
+    JSON.stringify({ kritikk_id: result.lastInsertRowid, dommer: dommer_telefon, hund_id: body.hund_id })
+  );
+
   return c.json({ id: result.lastInsertRowid, ok: true });
 });
 
-// Oppdater kritikk
-app.put("/api/kritikker/:id", async (c) => {
+// Oppdater kritikk (krever dommer)
+app.put("/api/kritikker/:id", requireDommer, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  // Sjekk at dommeren eier denne kritikken (eller er admin)
+  const existing = db.prepare("SELECT dommer_telefon FROM kritikker WHERE id = ?").get(id);
+  if (!existing) {
+    return c.json({ error: "Kritikk ikke funnet" }, 404);
+  }
+
+  if (existing.dommer_telefon !== bruker.telefon && bruker.rolle !== "admin") {
+    return c.json({ error: "Du kan kun redigere dine egne kritikker" }, 403);
+  }
 
   const fields = [
     "presisjon", "reising", "godkjent_reising",
@@ -1096,14 +1331,19 @@ app.put("/api/kritikker/:id", async (c) => {
   if (sets.length > 0) {
     sets.push("updated_at = datetime('now')");
     db.prepare(`UPDATE kritikker SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "kritikk_oppdatert",
+      JSON.stringify({ kritikk_id: id, dommer: bruker.telefon })
+    );
   }
 
   const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(id);
   return c.json(kritikk);
 });
 
-// --- Backup ---
-app.get("/api/backup", (c) => {
+// --- Backup (krever admin) ---
+app.get("/api/backup", requireAdmin, (c) => {
   if (!existsSync(DB_PATH)) return c.text("No database", 404);
   const data = readFileSync(DB_PATH);
   c.header("Content-Type", "application/octet-stream");
@@ -1369,10 +1609,15 @@ app.post("/api/parse-participants", async (c) => {
   }
 });
 
-// --- Serve shim ---
+// --- Serve scripts ---
 app.get("/storage-shim.js", (c) => {
   c.header("Content-Type", "application/javascript");
   return c.body(readFileSync(join(__dirname, "storage-shim.js"), "utf-8"));
+});
+
+app.get("/auth.js", (c) => {
+  c.header("Content-Type", "application/javascript");
+  return c.body(readFileSync(join(__dirname, "auth.js"), "utf-8"));
 });
 
 // --- Admin panel ---
@@ -1381,15 +1626,16 @@ app.get("/admin-panel.html", (c) => {
   return c.body(readFileSync(join(__dirname, "admin-panel.html"), "utf-8"));
 });
 
-// --- Inject shim into HTML pages ---
+// --- Inject auth + shim into HTML pages ---
 function serveWithShim(filePath, c) {
   if (!existsSync(filePath)) return c.text("Not found", 404);
   let html = readFileSync(filePath, "utf-8");
-  const shimTag = `<script src="/storage-shim.js"></script>`;
+  // Auth må lastes først, så storage-shim kan bruke token
+  const scripts = `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>`;
   if (html.includes("<head>")) {
-    html = html.replace("<head>", `<head>\n${shimTag}`);
+    html = html.replace("<head>", `<head>\n${scripts}`);
   } else {
-    html = shimTag + "\n" + html;
+    html = scripts + "\n" + html;
   }
   c.header("Content-Type", "text/html; charset=utf-8");
   return c.body(html);

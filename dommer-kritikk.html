@@ -300,6 +300,7 @@
             // Get party from URL
             const urlParams = new URLSearchParams(window.location.search);
             state.party = urlParams.get('party') || sessionData.assignedParty || sessionData.selectedParty;
+            state.readonly = urlParams.get('readonly') === 'true';
 
             if (!state.party) {
                 console.error('No party found in URL or session');
@@ -308,10 +309,32 @@
             }
 
             state.partyConfig = getPartyConfig(state.party);
-            console.log('Party config:', state.partyConfig);
+            console.log('Party config:', state.partyConfig, 'readonly:', state.readonly);
 
             // Update header
             document.getElementById('headerPartyName').textContent = state.partyConfig.name;
+
+            // Update page title and info if readonly
+            if (state.readonly) {
+                document.querySelector('h1').textContent = 'Godkjente kritikker';
+                document.querySelector('.bg-blue-50').innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-green-800">Kritikkene er godkjent</h3>
+                            <p class="text-sm text-green-700 mt-1">
+                                Alle kritikkene for dette partiet er godkjent av NKK-representanten.
+                                Du kan se kritikkene, men de kan ikke lenger endres.
+                            </p>
+                        </div>
+                    </div>
+                `;
+                document.querySelector('.bg-blue-50').className = 'bg-green-50 border-2 border-green-200 rounded-2xl p-4 mb-6';
+            }
             document.getElementById('judgeName').textContent = state.judgeName;
             document.getElementById('backLink').href = 'dommer-hjem.html';
 
@@ -448,6 +471,12 @@
             const dog = state.dogs.find(d => d.id === dogId);
             if (!dog) return;
 
+            // If in readonly mode, show read-only view
+            if (state.readonly) {
+                showReadOnlyCritique(dog);
+                return;
+            }
+
             // If returned, show return modal first
             if (dog.critiqueStatus === 'returned') {
                 document.getElementById('returnComment').textContent = dog.nkkComment || 'Ingen kommentar';
@@ -458,11 +487,106 @@
 
             // If already approved, just show info
             if (dog.critiqueStatus === 'approved') {
-                alert('Denne kritikken er allerede godkjent av NKK-representant.');
+                showReadOnlyCritique(dog);
                 return;
             }
 
             showCritiqueModal(dog);
+        }
+
+        // Show read-only critique view
+        function showReadOnlyCritique(dog) {
+            state.currentDogId = dog.id;
+            pushModalState();
+
+            // Fill modal
+            document.getElementById('modalDogName').textContent = dog.name;
+            document.getElementById('modalDogNr').textContent = dog.nr;
+            document.getElementById('modalDogFullName').textContent = dog.name;
+            document.getElementById('modalDogDetails').textContent = `${dog.breed} • Fører: ${dog.handler} • Eier: ${dog.owner}`;
+
+            // Prize badge
+            const prizeBadge = document.getElementById('modalPrizeBadge');
+            if (dog.prize) {
+                prizeBadge.textContent = dog.prize;
+                prizeBadge.classList.remove('hidden');
+            } else {
+                prizeBadge.classList.add('hidden');
+            }
+
+            // Show scores as read-only
+            if (!dog.rounds || dog.rounds.length === 0) {
+                dog.rounds = [{ roundNum: 1, scores: {}, notes: '' }];
+            }
+
+            const slippCount = dog.rounds.length;
+            const sumField = (field) => dog.rounds.reduce((sum, r) => sum + (parseInt(r.scores[field]) || 0), 0);
+            const lastValue = (field) => {
+                for (let i = dog.rounds.length - 1; i >= 0; i--) {
+                    const val = dog.rounds[i].scores[field];
+                    if (val !== null && val !== undefined && val !== '') return val;
+                }
+                return '-';
+            };
+
+            document.getElementById('modalScores').innerHTML = `
+                <div class="bg-green-50 border border-green-200 rounded-xl p-3 mb-3">
+                    <div class="flex items-center gap-2 text-green-700">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        <span class="font-semibold">Godkjent av NKK</span>
+                    </div>
+                </div>
+                <!-- Egenskaper -->
+                <div class="grid grid-cols-6 gap-2 mb-3">
+                    ${['JAKTLYST', 'FART', 'SELVSTENDIGHET', 'SOKSBREDDE', 'REVIERING', 'SAMARBEID'].map(field => `
+                        <div class="text-center">
+                            <div class="w-10 h-10 mx-auto bg-sky-100 rounded-lg flex items-center justify-center">
+                                <span class="text-lg font-bold text-sky-700">${lastValue(field)}</span>
+                            </div>
+                            <p class="text-[8px] text-bark-500 mt-1">${field.substring(0, 2)}</p>
+                        </div>
+                    `).join('')}
+                </div>
+                <!-- Stand & Fuglebehandling -->
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="bg-bark-50 rounded-lg p-2">
+                        <p class="text-[10px] font-bold text-bark-500 uppercase">Stand</p>
+                        <p class="text-bark-700">M: ${sumField('STAND_M')} | U: ${sumField('STAND_U')} | TS: ${sumField('TOMSTAND')}</p>
+                    </div>
+                    <div class="bg-sky-50 rounded-lg p-2">
+                        <p class="text-[10px] font-bold text-sky-600 uppercase">Fuglebehandling</p>
+                        <p class="text-bark-700">Pres: ${lastValue('PRESISJON')} | Reis: ${lastValue('REISING')}</p>
+                    </div>
+                </div>
+            `;
+
+            // Show critique text (read-only)
+            document.getElementById('modalFieldNotes').parentElement.innerHTML = `
+                <h3 class="text-sm font-semibold text-bark-600 mb-2">Godkjent kritikk</h3>
+                <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-bark-700">
+                    ${dog.critique || 'Ingen kritikk'}
+                </div>
+            `;
+
+            // Hide input area and submit button, show only close button
+            const textarea = document.getElementById('critiqueText');
+            if (textarea) textarea.parentElement.parentElement.classList.add('hidden');
+
+            const actionDiv = document.querySelector('#critiqueModal .p-4.border-t');
+            if (actionDiv) {
+                actionDiv.innerHTML = `
+                    <button onclick="hideModal()" class="w-full bg-bark-500 hover:bg-bark-600 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        Lukk
+                    </button>
+                `;
+            }
+
+            document.getElementById('critiqueModal').classList.remove('hidden');
         }
 
         function showCritiqueModal(dog) {

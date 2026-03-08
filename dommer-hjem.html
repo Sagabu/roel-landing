@@ -257,22 +257,39 @@
             let statusClasses = isFinale ? 'bg-amber-200 text-amber-800' : (isVK ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700');
             let allDone = false;
 
+            let allApproved = false;
+            let approvedCount = 0;
+            let totalActiveDogs = 0;
+
             const saved = localStorage.getItem('judgeData_' + partyId);
             if (saved) {
                 try {
-                    const dogs = JSON.parse(saved);
-                    const done = dogs.filter(d => d.status === 'done').length;
-                    const total = dogs.length;
+                    const data = JSON.parse(saved);
+                    const dogs = Array.isArray(data) ? data : (data.dogs || []);
+                    const activeDogs = dogs.filter(d => !d.knocked);
+                    totalActiveDogs = activeDogs.length;
+                    const done = activeDogs.filter(d => d.status === 'done').length;
+                    approvedCount = activeDogs.filter(d => d.critiqueStatus === 'approved').length;
+
                     if (done > 0) {
-                        statusText = `${done}/${total} ferdig`;
-                        if (done === total) {
-                            statusClasses = 'bg-green-100 text-green-700';
+                        statusText = `${done}/${totalActiveDogs} ferdig`;
+                        if (done === totalActiveDogs) {
                             allDone = true;
+                            // Sjekk om alle kritikker er godkjent
+                            if (approvedCount === totalActiveDogs && totalActiveDogs > 0) {
+                                allApproved = true;
+                                statusText = 'Alle kritikker godkjent';
+                                statusClasses = 'bg-green-200 text-green-800';
+                            } else {
+                                statusClasses = 'bg-green-100 text-green-700';
+                            }
                         } else {
                             statusClasses = 'bg-blue-100 text-blue-700';
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.error('Error parsing saved data:', e);
+                }
             }
 
             // Determine colors based on party type
@@ -298,10 +315,22 @@
             let partyBadge = partyId.replace('ukak', '').replace('vk', 'K').replace('finale', '');
             if (isFinale) partyBadge = '★';
 
-            const buttonClass = allDone
-                ? 'bg-green-500 hover:bg-green-600'
-                : 'bg-sky-500 hover:bg-sky-600';
-            const buttonText = allDone ? 'Se/rediger bedømming' : 'Start bedømming';
+            let buttonClass, buttonText, buttonIcon;
+
+            if (allApproved) {
+                // Alle kritikker er godkjent - vis bare "Se kritikker" (ikke redigerbar)
+                buttonClass = 'bg-green-600 hover:bg-green-700';
+                buttonText = 'Se godkjente kritikker';
+                buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>';
+            } else if (allDone) {
+                buttonClass = 'bg-green-500 hover:bg-green-600';
+                buttonText = 'Se/rediger bedømming';
+                buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>';
+            } else {
+                buttonClass = 'bg-sky-500 hover:bg-sky-600';
+                buttonText = 'Start bedømming';
+                buttonIcon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>';
+            }
 
             return `
                 <div class="${bgColor} rounded-xl border-2 ${borderColor} p-5 shadow-sm party-card">
@@ -318,15 +347,39 @@
                         </div>
                     </div>
 
+                    ${allApproved ? `
+                    <!-- Godkjent-melding -->
+                    <div class="bg-green-100 border border-green-300 rounded-xl p-3 mb-4 flex items-center gap-3">
+                        <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-green-800 text-sm">Kritikkene er godkjent av NKK</p>
+                            <p class="text-green-600 text-xs">Bedømmingen kan ikke lenger endres</p>
+                        </div>
+                    </div>
+                    ` : `
                     <div class="flex items-center gap-3 mb-4">
                         <span class="text-xs ${statusClasses} px-3 py-1 rounded-full font-medium">${statusText}</span>
                         ${isVK ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
                     </div>
+                    `}
 
                     <div class="flex gap-2">
+                        ${allApproved ? `
+                        <button onclick="viewApprovedCritiques('${partyId}')" class="flex-1 ${buttonClass} text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            ${buttonText}
+                        </button>
+                        ` : `
                         <button onclick="goToAssessment('${partyId}', ${judgeRole || 'null'})" class="flex-1 ${buttonClass} text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                                ${buttonIcon}
                             </svg>
                             ${buttonText}
                         </button>
@@ -335,6 +388,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                             </svg>
                         </button>
+                        `}
                     </div>
                 </div>
             `;
@@ -436,6 +490,11 @@
 
             // Navigate to assessment page
             window.location.href = 'dommer-vk.html?party=' + partyId;
+        }
+
+        function viewApprovedCritiques(partyId) {
+            // Gå til kritikk-visning i lesemodus (alle godkjent)
+            window.location.href = 'dommer-kritikk.html?party=' + partyId + '&readonly=true';
         }
 
         async function resetParty(partyId) {

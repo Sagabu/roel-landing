@@ -382,12 +382,81 @@
             const urlParams = new URLSearchParams(window.location.search);
             const dogId = urlParams.get('id');
             const regnr = urlParams.get('regnr');
+            const partyId = urlParams.get('party');
 
             // Prøv å finne hunden
             let dog = null;
 
-            // 1. Sjekk om vi har regnr i URL
-            if (regnr) {
+            // 1. Sjekk om vi har party-parameter (fra søk i bedømmingsdata)
+            if (partyId && dogId) {
+                const saved = localStorage.getItem('judgeData_' + partyId);
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        const dogs = Array.isArray(data) ? data : (data.dogs || []);
+                        const foundDog = dogs.find(d => String(d.id) === String(dogId));
+                        if (foundDog) {
+                            const dogRegnr = foundDog.regNr || foundDog.regnr || foundDog.regNumber || '';
+                            dog = {
+                                id: foundDog.id,
+                                name: foundDog.name,
+                                regNumber: dogRegnr,
+                                breed: foundDog.breed || 'Ukjent rase',
+                                gender: foundDog.gender || 'unknown',
+                                owner: foundDog.owner || foundDog.handler || 'Ukjent',
+                                handler: foundDog.handler,
+                                critiques: []
+                            };
+
+                            // Hvis hunden har godkjent kritikk, legg den til
+                            if (foundDog.critiqueStatus === 'approved' && foundDog.critique) {
+                                // Aggreger scores fra alle runder
+                                let scores = {};
+                                if (foundDog.rounds && foundDog.rounds.length > 0) {
+                                    const lastRound = foundDog.rounds[foundDog.rounds.length - 1];
+                                    scores = lastRound.scores || {};
+                                    // Sum stand-felt
+                                    ['STAND_M', 'STAND_U', 'TOMSTAND', 'MAKKER_STAND', 'SJANSE', 'SLIPPTID'].forEach(field => {
+                                        scores[field] = foundDog.rounds.reduce((sum, r) => sum + (parseInt(r.scores?.[field]) || 0), 0);
+                                    });
+                                }
+
+                                dog.critiques.push({
+                                    id: `local_${partyId}_${foundDog.id}`,
+                                    trial: 'Vinterprøven 2026',
+                                    date: foundDog.approvedAt ? foundDog.approvedAt.split('T')[0] : new Date().toISOString().split('T')[0],
+                                    location: 'Lierne',
+                                    class: partyId.toUpperCase().includes('V') ? 'VK' : 'AK',
+                                    party: partyId,
+                                    judge: foundDog.critiqueSubmittedBy || 'Dommer',
+                                    prize: foundDog.prize || '',
+                                    cacit: foundDog.cacit || '',
+                                    scores: scores,
+                                    critique: foundDog.critique || '',
+                                    approvedAt: foundDog.approvedAt,
+                                    approvedBy: foundDog.approvedBy || 'NKK-rep',
+                                    isApproved: true
+                                });
+                            }
+
+                            // Hent også andre godkjente kritikker for denne hunden
+                            if (dogRegnr) {
+                                const otherCritiques = await getApprovedCritiquesForDog(dogRegnr);
+                                otherCritiques.forEach(c => {
+                                    if (!dog.critiques.some(existing => existing.id === c.id)) {
+                                        dog.critiques.push(c);
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Feil ved parsing av judgeData:', e);
+                    }
+                }
+            }
+
+            // 2. Sjekk om vi har regnr i URL
+            if (!dog && regnr) {
                 // Prøv API først
                 const apiDog = await fetchDogFromAPI(regnr);
                 if (apiDog) {
@@ -410,7 +479,7 @@
 
                 // Hent godkjente kritikker fra localStorage
                 if (dog) {
-                    const approvedCritiques = getApprovedCritiquesForDog(regnr);
+                    const approvedCritiques = await getApprovedCritiquesForDog(regnr);
                     // Kombiner med eksisterende kritikker (unngå duplikater)
                     const existingIds = new Set(dog.critiques.map(c => c.id));
                     approvedCritiques.forEach(c => {
@@ -423,8 +492,8 @@
                 }
             }
 
-            // 2. Fallback: Sjekk gammel id-parameter
-            if (!dog && dogId && dogDatabase[dogId]) {
+            // 3. Fallback: Sjekk gammel id-parameter (uten party)
+            if (!dog && dogId && !partyId && dogDatabase[dogId]) {
                 dog = dogDatabase[dogId];
             }
 

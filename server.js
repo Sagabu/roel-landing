@@ -131,6 +131,23 @@ db.exec(`
     PRIMARY KEY (telefon, klubb_id)
   );
 
+  -- Klubb-medlemsliste (importert fra eksisterende systemer)
+  CREATE TABLE IF NOT EXISTS klubb_medlemmer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    klubb_id TEXT NOT NULL REFERENCES klubber(id),
+    medlemsnummer TEXT,
+    fornavn TEXT NOT NULL,
+    etternavn TEXT NOT NULL,
+    telefon_normalized TEXT,  -- Kun 8 siffer, for matching
+    epost TEXT,
+    -- Matching status
+    matched_bruker_telefon TEXT REFERENCES brukere(telefon),
+    matched_at TEXT,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(klubb_id, telefon_normalized)
+  );
+
   -- Kritikker-tabell (persisterer dommerkritikker)
   CREATE TABLE IF NOT EXISTS kritikker (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -453,6 +470,19 @@ app.put("/api/brukere/:telefon", async (c) => {
   }
 
   const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  // Automatisk matching: Oppdater klubb_medlemmer hvis telefon matcher
+  const normalizedPhone = normalizePhone(telefon);
+  if (normalizedPhone) {
+    db.prepare(`
+      UPDATE klubb_medlemmer
+      SET matched_bruker_telefon = ?,
+          matched_at = datetime('now')
+      WHERE telefon_normalized = ?
+      AND matched_bruker_telefon IS NULL
+    `).run(telefon, normalizedPhone);
+  }
+
   return c.json(row);
 });
 
@@ -603,6 +633,130 @@ app.get("/api/klubber/:id", (c) => {
   `).get(id, String(currentYear))?.n || 0;
 
   return c.json({ ...row, admins, brukerCount, proveCount });
+});
+
+// ============================================
+// KLUBB MEDLEMMER API
+// ============================================
+
+// Hjelpefunksjon: Normaliser telefonnummer til 8 siffer
+function normalizePhone(phone) {
+  if (!phone) return null;
+  // Fjern alt som ikke er tall
+  const digits = String(phone).replace(/\D/g, '');
+  // Hvis det starter med 47 og er 10 siffer, fjern 47
+  if (digits.length === 10 && digits.startsWith('47')) {
+    return digits.slice(2);
+  }
+  // Hvis det er 8 siffer, returner som det er
+  if (digits.length === 8) {
+    return digits;
+  }
+  // Ellers ta de siste 8 sifrene hvis mulig
+  if (digits.length > 8) {
+    return digits.slice(-8);
+  }
+  return digits || null;
+}
+
+// Hent medlemsliste for klubb
+app.get("/api/klubber/:id/medlemmer", (c) => {
+  const klubbId = c.req.param("id");
+
+  const medlemmer = db.prepare(`
+    SELECT km.*,
+           b.fornavn as bruker_fornavn,
+           b.etternavn as bruker_etternavn,
+           b.telefon as bruker_telefon
+    FROM klubb_medlemmer km
+    LEFT JOIN brukere b ON km.matched_bruker_telefon = b.telefon
+    WHERE km.klubb_id = ?
+    ORDER BY km.etternavn, km.fornavn
+  `).all(klubbId);
+
+  const total = medlemmer.length;
+  const registrert = medlemmer.filter(m => m.matched_bruker_telefon).length;
+
+  return c.json({ medlemmer, total, registrert });
+});
+
+// Last opp medlemsliste (CSV/JSON)
+app.post("/api/klubber/:id/medlemmer/import", async (c) => {
+  const klubbId = c.req.param("id");
+  const body = await c.req.json();
+
+  // Forvent body.medlemmer = [{ fornavn, etternavn, telefon, epost, medlemsnummer }]
+  const { medlemmer } = body;
+  if (!Array.isArray(medlemmer)) {
+    return c.json({ error: "Forventet 'medlemmer' array" }, 400);
+  }
+
+  const insertStmt = db.prepare(`
+    INSERT OR REPLACE INTO klubb_medlemmer
+    (klubb_id, medlemsnummer, fornavn, etternavn, telefon_normalized, epost)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let imported = 0;
+  for (const m of medlemmer) {
+    const normalized = normalizePhone(m.telefon);
+    insertStmt.run(
+      klubbId,
+      m.medlemsnummer || null,
+      m.fornavn || '',
+      m.etternavn || '',
+      normalized,
+      m.epost || null
+    );
+    imported++;
+  }
+
+  // Kjør matching etter import
+  runMemberMatching(klubbId);
+
+  return c.json({ success: true, imported });
+});
+
+// Hjelpefunksjon: Kjør matching for en klubb
+function runMemberMatching(klubbId) {
+  // Match på normalisert telefon
+  db.prepare(`
+    UPDATE klubb_medlemmer
+    SET matched_bruker_telefon = (
+      SELECT b.telefon FROM brukere b
+      WHERE klubb_medlemmer.telefon_normalized IS NOT NULL
+      AND klubb_medlemmer.telefon_normalized != ''
+      AND (
+        -- Match mot brukerens telefon (normalisert)
+        REPLACE(REPLACE(REPLACE(REPLACE(b.telefon, ' ', ''), '+47', ''), '+', ''), '-', '')
+        LIKE '%' || klubb_medlemmer.telefon_normalized
+      )
+    ),
+    matched_at = datetime('now')
+    WHERE klubb_id = ?
+    AND matched_bruker_telefon IS NULL
+  `).run(klubbId);
+}
+
+// Manuell kjøring av matching
+app.post("/api/klubber/:id/medlemmer/match", (c) => {
+  const klubbId = c.req.param("id");
+  runMemberMatching(klubbId);
+
+  const result = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN matched_bruker_telefon IS NOT NULL THEN 1 ELSE 0 END) as matched
+    FROM klubb_medlemmer WHERE klubb_id = ?
+  `).get(klubbId);
+
+  return c.json({ success: true, ...result });
+});
+
+// Slett medlemsliste
+app.delete("/api/klubber/:id/medlemmer", (c) => {
+  const klubbId = c.req.param("id");
+  db.prepare("DELETE FROM klubb_medlemmer WHERE klubb_id = ?").run(klubbId);
+  return c.json({ success: true });
 });
 
 // ============================================

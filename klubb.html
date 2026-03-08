@@ -259,6 +259,78 @@
                 </div>
             </div>
 
+            <!-- Medlemsliste -->
+            <div class="bg-white rounded-2xl shadow-lg border border-bark-100 overflow-hidden mb-8">
+                <div class="px-6 py-4 bg-amber-50 border-b border-bark-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold font-serif text-amber-700">Medlemsliste</h2>
+                        <p class="text-sm text-bark-500">
+                            <span id="memberRegisteredCount">0</span> av <span id="memberTotalCount">0</span> medlemmer er registrert
+                        </p>
+                    </div>
+                    <div class="flex gap-2">
+                        <label class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl font-medium transition cursor-pointer flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            <span>Last opp CSV/Excel</span>
+                            <input type="file" id="memberFileInput" accept=".csv,.xlsx,.xls" class="hidden">
+                        </label>
+                        <button onclick="runMatching()" class="bg-white border border-amber-300 hover:bg-amber-50 text-amber-700 px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            <span class="hidden sm:inline">Kjør matching</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="px-6 py-3 bg-bark-50 border-b border-bark-100">
+                    <div class="flex items-center gap-3">
+                        <div class="flex-1 h-3 bg-bark-200 rounded-full overflow-hidden">
+                            <div id="memberProgressBar" class="h-full bg-green-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <span id="memberProgressText" class="text-sm font-medium text-bark-600 w-16 text-right">0%</span>
+                    </div>
+                </div>
+
+                <!-- Medlemsliste tabell -->
+                <div class="p-6">
+                    <div id="noMembersMessage" class="text-center py-8 text-bark-500">
+                        <svg class="w-16 h-16 mx-auto text-bark-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <p class="font-medium">Ingen medlemsliste lastet opp</p>
+                        <p class="text-sm mt-1">Last opp en CSV- eller Excel-fil med medlemsdata</p>
+                    </div>
+
+                    <div id="membersTableContainer" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-bark-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left font-semibold text-bark-700">Navn</th>
+                                        <th class="px-4 py-3 text-left font-semibold text-bark-700 hidden sm:table-cell">Telefon</th>
+                                        <th class="px-4 py-3 text-left font-semibold text-bark-700 hidden md:table-cell">E-post</th>
+                                        <th class="px-4 py-3 text-center font-semibold text-bark-700">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="membersTableBody" class="divide-y divide-bark-100">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Slett medlemsliste -->
+                <div id="deleteMembersSection" class="hidden px-6 pb-6">
+                    <button onclick="confirmDeleteMembers()" class="text-red-500 hover:text-red-600 text-sm font-medium">
+                        Slett hele medlemslisten
+                    </button>
+                </div>
+            </div>
+
             <!-- Club Settings -->
             <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
                 <h2 class="text-xl font-bold font-serif text-bark-800 mb-6">Klubbinnstillinger</h2>
@@ -343,6 +415,7 @@
                         if (klubbResp.ok) {
                             currentClub = await klubbResp.json();
                             renderClubData();
+                            loadMembers();
                         } else {
                             // Fallback - bruk det vi har
                             currentClub = {
@@ -421,6 +494,218 @@
                 reader.readAsDataURL(file);
             }
         });
+
+        // =============================
+        // MEDLEMSLISTE FUNKSJONALITET
+        // =============================
+
+        let medlemmer = [];
+
+        async function loadMembers() {
+            if (!currentClub) return;
+
+            try {
+                const resp = await fetch(`/api/klubber/${currentClub.id}/medlemmer`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    medlemmer = data.medlemmer || [];
+                    renderMembers(data);
+                }
+            } catch (e) {
+                console.error('Feil ved henting av medlemmer:', e);
+            }
+        }
+
+        function renderMembers(data) {
+            const { medlemmer, total, registrert } = data;
+
+            document.getElementById('memberTotalCount').textContent = total;
+            document.getElementById('memberRegisteredCount').textContent = registrert;
+
+            const pct = total > 0 ? Math.round((registrert / total) * 100) : 0;
+            document.getElementById('memberProgressBar').style.width = pct + '%';
+            document.getElementById('memberProgressText').textContent = pct + '%';
+
+            if (total === 0) {
+                document.getElementById('noMembersMessage').classList.remove('hidden');
+                document.getElementById('membersTableContainer').classList.add('hidden');
+                document.getElementById('deleteMembersSection').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('noMembersMessage').classList.add('hidden');
+            document.getElementById('membersTableContainer').classList.remove('hidden');
+            document.getElementById('deleteMembersSection').classList.remove('hidden');
+
+            const tbody = document.getElementById('membersTableBody');
+            tbody.innerHTML = medlemmer.map(m => `
+                <tr class="hover:bg-bark-50">
+                    <td class="px-4 py-3">
+                        <div class="font-medium text-bark-800">${m.fornavn} ${m.etternavn}</div>
+                        <div class="text-xs text-bark-400 sm:hidden">${m.telefon_normalized || '-'}</div>
+                    </td>
+                    <td class="px-4 py-3 text-bark-600 hidden sm:table-cell">${formatPhone(m.telefon_normalized)}</td>
+                    <td class="px-4 py-3 text-bark-600 hidden md:table-cell">${m.epost || '-'}</td>
+                    <td class="px-4 py-3 text-center">
+                        ${m.matched_bruker_telefon
+                            ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-xl text-xs font-medium">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Registrert
+                               </span>`
+                            : `<span class="inline-flex items-center gap-1 px-2 py-1 bg-bark-100 text-bark-500 rounded-xl text-xs font-medium">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Venter
+                               </span>`
+                        }
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatPhone(phone) {
+            if (!phone || phone.length !== 8) return phone || '-';
+            return phone.slice(0,3) + ' ' + phone.slice(3,5) + ' ' + phone.slice(5);
+        }
+
+        // Fil-opplasting
+        document.getElementById('memberFileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file || !currentClub) return;
+
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (ext === 'csv') {
+                const text = await file.text();
+                const parsed = parseCSV(text);
+                await uploadMembers(parsed);
+            } else if (ext === 'xlsx' || ext === 'xls') {
+                // For Excel trenger vi å sende filen til server
+                alert('Excel-filer støttes. Sender til server for parsing...');
+                const formData = new FormData();
+                formData.append('file', file);
+                // TODO: Implementer Excel-parsing på server
+                // For nå: vis melding om å bruke CSV
+                alert('Vennligst eksporter som CSV fra Excel og last opp på nytt.');
+            }
+
+            e.target.value = ''; // Reset input
+        });
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return [];
+
+            // Finn header
+            const headerLine = lines[0].toLowerCase();
+            const delimiter = headerLine.includes(';') ? ';' : ',';
+            const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase().replace(/"/g, ''));
+
+            // Map kolonner
+            const colMap = {
+                fornavn: headers.findIndex(h => h.includes('fornavn') || h === 'first' || h === 'firstname'),
+                etternavn: headers.findIndex(h => h.includes('etternavn') || h === 'last' || h === 'lastname' || h === 'navn'),
+                telefon: headers.findIndex(h => h.includes('telefon') || h.includes('mobil') || h === 'phone' || h === 'tlf'),
+                epost: headers.findIndex(h => h.includes('epost') || h.includes('e-post') || h === 'email' || h === 'mail'),
+                medlemsnummer: headers.findIndex(h => h.includes('medlems') || h.includes('member') || h === 'id' || h === 'nr')
+            };
+
+            // Parse rader
+            const medlemmer = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(delimiter).map(v => v.trim().replace(/"/g, ''));
+                if (values.length < 2) continue;
+
+                const m = {
+                    fornavn: colMap.fornavn >= 0 ? values[colMap.fornavn] : '',
+                    etternavn: colMap.etternavn >= 0 ? values[colMap.etternavn] : '',
+                    telefon: colMap.telefon >= 0 ? values[colMap.telefon] : '',
+                    epost: colMap.epost >= 0 ? values[colMap.epost] : '',
+                    medlemsnummer: colMap.medlemsnummer >= 0 ? values[colMap.medlemsnummer] : ''
+                };
+
+                // Hvis kun ett navn-felt, prøv å splitte
+                if (!m.fornavn && m.etternavn && m.etternavn.includes(' ')) {
+                    const parts = m.etternavn.split(' ');
+                    m.fornavn = parts[0];
+                    m.etternavn = parts.slice(1).join(' ');
+                }
+
+                if (m.fornavn || m.etternavn) {
+                    medlemmer.push(m);
+                }
+            }
+
+            return medlemmer;
+        }
+
+        async function uploadMembers(members) {
+            if (!currentClub || members.length === 0) {
+                alert('Ingen gyldige medlemmer funnet i filen.');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/klubber/${currentClub.id}/medlemmer/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ medlemmer: members })
+                });
+
+                if (resp.ok) {
+                    const result = await resp.json();
+                    alert(`${result.imported} medlemmer importert!`);
+                    loadMembers();
+                } else {
+                    alert('Feil ved import av medlemmer.');
+                }
+            } catch (e) {
+                console.error('Feil ved opplasting:', e);
+                alert('Feil ved opplasting av medlemmer.');
+            }
+        }
+
+        async function runMatching() {
+            if (!currentClub) return;
+
+            try {
+                const resp = await fetch(`/api/klubber/${currentClub.id}/medlemmer/match`, {
+                    method: 'POST'
+                });
+
+                if (resp.ok) {
+                    const result = await resp.json();
+                    alert(`Matching kjørt! ${result.matched} av ${result.total} medlemmer er nå koblet.`);
+                    loadMembers();
+                }
+            } catch (e) {
+                console.error('Feil ved matching:', e);
+            }
+        }
+
+        async function confirmDeleteMembers() {
+            if (!currentClub) return;
+
+            if (!confirm('Er du sikker på at du vil slette hele medlemslisten? Dette kan ikke angres.')) {
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/klubber/${currentClub.id}/medlemmer`, {
+                    method: 'DELETE'
+                });
+
+                if (resp.ok) {
+                    alert('Medlemslisten er slettet.');
+                    loadMembers();
+                }
+            } catch (e) {
+                console.error('Feil ved sletting:', e);
+            }
+        }
 
         // Initialize
         init();

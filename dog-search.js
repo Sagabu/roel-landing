@@ -2,66 +2,61 @@
 // Include this on all pages to add search functionality
 
 (function() {
-    // Sample dog database (in production, this would come from server)
-    // Uses official FKF prizes: CACIT, ResCacit, CK, Finale, Semifinale, ÅP for VK
-    // and 1-3. premie + ÅP for UK/AK
-    const allDogs = [
-        {
-            id: '1',
-            name: "Fjelljeger's Storm",
-            regNumber: 'NO45678/22',
-            breed: 'Engelsk Setter',
-            gender: 'male',
-            owner: 'Kari Nordmann',
-            results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'UK', prize: '1. premie', judge: 'Bjørn Haugen' },
-                { trial: 'Rørosprøven 2025', date: '2025-08-15', class: 'UK', prize: '2. premie', judge: 'Anne Kristiansen' }
-            ]
-        },
-        {
-            id: '2',
-            name: "Villmarkens Troll",
-            regNumber: 'NO34521/21',
-            breed: 'Gordon Setter',
-            gender: 'male',
-            owner: 'Per Hansen',
-            results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'VK', prize: 'CK', judge: 'Monja Aakert' }
-            ]
-        },
-        {
-            id: '3',
-            name: "Skogsprinsessen",
-            regNumber: 'NO56789/23',
-            breed: 'Irsk Setter',
-            gender: 'female',
-            owner: 'Lise Johansen',
-            results: []
-        },
-        {
-            id: '4',
-            name: "Nordlys av Fjellheim",
-            regNumber: 'NO12398/20',
-            breed: 'Pointer',
-            gender: 'male',
-            owner: 'Erik Svendsen',
-            results: [
-                { trial: 'NM Fuglehund 2024', date: '2024-09-10', class: 'VK', prize: 'CACIT', judge: 'Knut Moen' },
-                { trial: 'Rørosprøven 2024', date: '2024-08-20', class: 'VK', prize: 'CK', judge: 'Anne Kristiansen' }
-            ]
-        },
-        {
-            id: '5',
-            name: "Bella",
-            regNumber: 'NO78234/22',
-            breed: 'Breton',
-            gender: 'female',
-            owner: 'Marte Olsen',
-            results: [
-                { trial: 'Høgkjølprøven 2025', date: '2025-09-20', class: 'AK', prize: '1. premie', judge: 'Bjørn Haugen' }
-            ]
-        }
-    ];
+    // Load dogs from localStorage (judgeData) and combine with any static data
+    function loadAllDogs() {
+        const dogs = [];
+        const seenIds = new Set();
+
+        // Find all judgeData_* keys in localStorage
+        const judgeDataKeys = Object.keys(localStorage).filter(k => k.startsWith('judgeData_'));
+
+        judgeDataKeys.forEach(key => {
+            const partyId = key.replace('judgeData_', '');
+            try {
+                const data = JSON.parse(localStorage.getItem(key));
+                const partyDogs = Array.isArray(data) ? data : (data.dogs || []);
+
+                partyDogs.forEach(dog => {
+                    // Use regNr or regnr as unique ID
+                    const regNum = dog.regNr || dog.regnr || dog.regNumber || `temp_${dog.id}`;
+                    if (seenIds.has(regNum)) return;
+                    seenIds.add(regNum);
+
+                    // Build results from critique data
+                    const results = [];
+                    if (dog.critiqueStatus === 'approved' && dog.prize) {
+                        results.push({
+                            trial: 'Vinterprøven 2026',
+                            date: dog.critiqueSubmittedAt || new Date().toISOString(),
+                            class: partyId.toUpperCase().includes('V') ? 'VK' : 'AK',
+                            prize: dog.prize,
+                            judge: dog.critiqueSubmittedBy || 'Ukjent'
+                        });
+                    }
+
+                    dogs.push({
+                        id: dog.id || regNum,
+                        name: dog.name,
+                        regNumber: regNum,
+                        breed: dog.breed || 'Ukjent rase',
+                        gender: 'unknown',
+                        owner: dog.owner || dog.handler || 'Ukjent',
+                        handler: dog.handler,
+                        results: results,
+                        partyId: partyId,
+                        critiqueStatus: dog.critiqueStatus
+                    });
+                });
+            } catch (e) {
+                console.error('Error loading dogs from', key, e);
+            }
+        });
+
+        return dogs;
+    }
+
+    // Get all dogs (called each time search is performed to get fresh data)
+    let allDogs = [];
 
     // Create search modal HTML
     function createSearchModal() {
@@ -138,10 +133,15 @@
             return;
         }
 
+        // Reload dogs from localStorage each search (to get latest data)
+        allDogs = loadAllDogs();
+
         const q = query.toLowerCase();
         const results = allDogs.filter(dog =>
             dog.name.toLowerCase().includes(q) ||
-            dog.regNumber.toLowerCase().includes(q)
+            dog.regNumber.toLowerCase().includes(q) ||
+            (dog.owner && dog.owner.toLowerCase().includes(q)) ||
+            (dog.handler && dog.handler.toLowerCase().includes(q))
         );
 
         if (results.length === 0) {
@@ -153,27 +153,48 @@
             return;
         }
 
-        resultsContainer.innerHTML = results.map(dog => `
+        resultsContainer.innerHTML = results.map(dog => {
+            const genderText = dog.gender === 'male' ? 'Hannhund' : (dog.gender === 'female' ? 'Tispe' : '');
+            const breedGender = genderText ? `${dog.breed} • ${genderText}` : dog.breed;
+
+            // Status badge
+            let statusBadge = '';
+            if (dog.critiqueStatus === 'approved') {
+                statusBadge = '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Godkjent</span>';
+            } else if (dog.critiqueStatus === 'submitted') {
+                statusBadge = '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Venter godkjenning</span>';
+            }
+
+            return `
             <div class="p-4 hover:bg-bark-50 rounded-xl cursor-pointer transition border border-transparent hover:border-bark-200"
-                 onclick="viewDogProfile('${dog.id}')">
+                 onclick="viewDogProfile('${dog.id}', '${dog.partyId || ''}')">
                 <div class="flex items-start gap-4">
-                    <div class="w-14 h-14 bg-bark-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <svg class="w-7 h-7 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                        </svg>
+                    <div class="w-14 h-14 ${dog.critiqueStatus === 'approved' ? 'bg-green-100' : 'bg-bark-100'} rounded-xl flex items-center justify-center flex-shrink-0">
+                        ${dog.critiqueStatus === 'approved' ? `
+                            <svg class="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        ` : `
+                            <svg class="w-7 h-7 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                            </svg>
+                        `}
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-start justify-between gap-2">
                             <div>
                                 <h4 class="font-bold text-bark-800">${dog.name}</h4>
-                                <p class="text-sm text-bark-500">${dog.breed} • ${dog.gender === 'male' ? 'Hannhund' : 'Tispe'}</p>
+                                <p class="text-sm text-bark-500">${breedGender}</p>
                             </div>
-                            <span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full font-medium">${dog.regNumber}</span>
+                            <div class="flex flex-col items-end gap-1">
+                                <span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full font-medium">${dog.regNumber}</span>
+                                ${statusBadge}
+                            </div>
                         </div>
-                        <div class="mt-2 flex items-center gap-3 text-sm">
+                        <div class="mt-2 flex items-center gap-3 text-sm flex-wrap">
                             <span class="text-bark-500">Eier: ${dog.owner}</span>
-                            <span class="text-bark-300">•</span>
-                            <span class="text-bark-500">${dog.results.length} prøve${dog.results.length !== 1 ? 'r' : ''}</span>
+                            ${dog.handler && dog.handler !== dog.owner ? `<span class="text-bark-300">•</span><span class="text-bark-500">Fører: ${dog.handler}</span>` : ''}
+                            ${dog.results.length > 0 ? `<span class="text-bark-300">•</span><span class="text-bark-500">${dog.results.length} prøve${dog.results.length !== 1 ? 'r' : ''}</span>` : ''}
                         </div>
                         ${dog.results.length > 0 ? `
                             <div class="mt-2 flex flex-wrap gap-1">
@@ -191,7 +212,7 @@
                     </svg>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 
     // Open search modal
@@ -210,9 +231,14 @@
     };
 
     // View dog profile
-    window.viewDogProfile = function(dogId) {
+    window.viewDogProfile = function(dogId, partyId) {
         closeGlobalSearch();
-        window.location.href = `hund.html?id=${dogId}`;
+        if (partyId) {
+            // Dog from judge data - include party info
+            window.location.href = `hund.html?id=${dogId}&party=${partyId}`;
+        } else {
+            window.location.href = `hund.html?id=${dogId}`;
+        }
     };
 
     // Initialize when DOM is ready

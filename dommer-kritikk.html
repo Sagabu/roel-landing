@@ -467,6 +467,7 @@
 
         function showCritiqueModal(dog) {
             state.currentDogId = dog.id;
+            console.log('showCritiqueModal for dog:', dog);
 
             // Push history state so back button closes modal
             pushModalState();
@@ -484,6 +485,12 @@
                 prizeBadge.classList.remove('hidden');
             } else {
                 prizeBadge.classList.add('hidden');
+            }
+
+            // Ensure rounds exist
+            if (!dog.rounds || dog.rounds.length === 0) {
+                console.warn('No rounds found for dog, creating empty structure');
+                dog.rounds = [{ roundNum: 1, scores: {}, notes: '' }];
             }
 
             // Aggregate scores from all rounds
@@ -671,18 +678,34 @@
 
         // Submit critique
         async function submitCritique() {
+            console.log('submitCritique called, currentDogId:', state.currentDogId);
             const dog = state.dogs.find(d => d.id === state.currentDogId);
-            if (!dog) return;
+            console.log('Found dog:', dog);
+            if (!dog) {
+                alert('Kunne ikke finne hunden. Prøv å lukke og åpne kritikken på nytt.');
+                return;
+            }
 
             const critiqueText = document.getElementById('critiqueText').value.trim();
+            console.log('Critique text:', critiqueText ? critiqueText.substring(0, 50) + '...' : '(empty)');
 
             if (!critiqueText) {
                 alert('Du må skrive en kritikk før du kan sende den til godkjenning.');
                 return;
             }
 
+            // Ensure rounds exist
+            if (!dog.rounds || dog.rounds.length === 0) {
+                console.error('No rounds found for dog:', dog);
+                // Create a minimal rounds structure if missing
+                dog.rounds = [{ roundNum: 1, scores: {} }];
+            }
+
             // Save edited scores from the modal inputs
             const latestRound = dog.rounds[dog.rounds.length - 1];
+            if (!latestRound.scores) {
+                latestRound.scores = {};
+            }
 
             // Helper to get input value
             const getVal = (id) => {
@@ -765,6 +788,7 @@
                 // Continue anyway - localStorage backup is in place
             }
 
+            console.log('Critique saved successfully');
             hideModal();
             renderDogList();
             updateProgress();
@@ -774,6 +798,13 @@
                 `Kritikken for ${dog.name} er sendt til NKK-representant for godkjenning.`;
             document.getElementById('successModal').classList.remove('hidden');
         }
+
+        // Add error handling wrapper
+        window.onerror = function(msg, url, line, col, error) {
+            console.error('Error:', msg, 'at', url, line, col, error);
+            alert('Det oppstod en feil: ' + msg);
+            return false;
+        };
 
         function hideSuccess() {
             document.getElementById('successModal').classList.add('hidden');

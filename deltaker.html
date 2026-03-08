@@ -653,47 +653,126 @@
         });
 
         // First-time registration form (name, email, phone)
-        document.getElementById('loginForm').addEventListener('submit', (e) => {
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const name = document.getElementById('loginName').value;
             const email = document.getElementById('loginEmail').value;
-            const phone = document.getElementById('loginPhone').value;
+            const phone = document.getElementById('loginPhone').value.replace(/\D/g, '');
             const smsConsent = document.getElementById('loginSmsConsent').checked;
 
             if (name && email && phone && smsConsent) {
-                currentUser = { name, email, phone };
+                // Split navn til fornavn/etternavn
+                const nameParts = name.trim().split(' ');
+                const fornavn = nameParts[0];
+                const etternavn = nameParts.slice(1).join(' ') || '';
 
-                // Show dog registration section
-                loginSection.classList.add('hidden');
-                dogRegistrationSection.classList.remove('hidden');
+                try {
+                    // Registrer/oppdater bruker i backend
+                    const resp = await fetch(`/api/brukere/${phone}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            fornavn,
+                            etternavn,
+                            epost: email,
+                            rolle: 'deltaker'
+                        })
+                    });
 
-                userInfo.textContent = name;
-                userInfo.classList.remove('hidden');
-                logoutBtn.classList.remove('hidden');
-                document.getElementById('profileBtn').classList.remove('hidden');
+                    if (!resp.ok) throw new Error('Kunne ikke registrere bruker');
+
+                    // Logg inn og få JWT token
+                    const loginResp = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telefon: phone })
+                    });
+
+                    if (loginResp.ok) {
+                        const loginData = await loginResp.json();
+                        // Lagre JWT token
+                        localStorage.setItem('fuglehund_token', loginData.token);
+                        localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
+                    }
+
+                    currentUser = { name, email, phone };
+
+                    // Lagre også userProfile for kompatibilitet
+                    localStorage.setItem('userProfile', JSON.stringify(currentUser));
+
+                    // Show dog registration section
+                    loginSection.classList.add('hidden');
+                    dogRegistrationSection.classList.remove('hidden');
+
+                    userInfo.textContent = name;
+                    userInfo.classList.remove('hidden');
+                    logoutBtn.classList.remove('hidden');
+                    document.getElementById('profileBtn').classList.remove('hidden');
+
+                } catch (err) {
+                    console.error('Registrering feilet:', err);
+                    alert('Kunne ikke registrere. Prøv igjen.');
+                }
             }
         });
 
         // Quick login form (returning users)
-        document.getElementById('quickLoginForm').addEventListener('submit', (e) => {
+        document.getElementById('quickLoginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const phone = document.getElementById('quickPhone').value;
+            const phone = document.getElementById('quickPhone').value.replace(/\D/g, '');
+
             if (phone) {
-                currentUser = { name: 'Chris Niebel', email: 'chris.niebel@example.com', phone };
+                try {
+                    // Logg inn via JWT API
+                    const loginResp = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telefon: phone })
+                    });
 
-                // Demo: returning user goes directly to dashboard
-                quickLoginSection.classList.add('hidden');
-                dashboardSection.classList.remove('hidden');
-                userInfo.textContent = currentUser.name;
-                userInfo.classList.remove('hidden');
-                logoutBtn.classList.remove('hidden');
-                document.getElementById('profileBtn').classList.remove('hidden');
+                    if (!loginResp.ok) {
+                        const err = await loginResp.json();
+                        if (loginResp.status === 404) {
+                            alert('Ingen bruker funnet med dette telefonnummeret. Registrer deg først.');
+                            quickLoginSection.classList.add('hidden');
+                            loginSection.classList.remove('hidden');
+                            return;
+                        }
+                        throw new Error(err.error || 'Innlogging feilet');
+                    }
 
-                // Set demo data
-                document.getElementById('dashName').textContent = currentUser.name;
-                document.getElementById('dashPhone').textContent = phone;
-                document.getElementById('dashDog').textContent = "Fjelljeger's Storm";
-                document.getElementById('dashClass').textContent = 'UK - Unghundklasse';
+                    const loginData = await loginResp.json();
+
+                    // Lagre JWT token
+                    localStorage.setItem('fuglehund_token', loginData.token);
+                    localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
+
+                    const bruker = loginData.bruker;
+                    currentUser = {
+                        name: `${bruker.fornavn} ${bruker.etternavn}`,
+                        email: bruker.epost || '',
+                        phone: bruker.telefon
+                    };
+
+                    // Lagre også userProfile for kompatibilitet
+                    localStorage.setItem('userProfile', JSON.stringify(currentUser));
+
+                    // Redirect til dashboard
+                    quickLoginSection.classList.add('hidden');
+                    dashboardSection.classList.remove('hidden');
+                    userInfo.textContent = currentUser.name;
+                    userInfo.classList.remove('hidden');
+                    logoutBtn.classList.remove('hidden');
+                    document.getElementById('profileBtn').classList.remove('hidden');
+
+                    // Set brukerdata
+                    document.getElementById('dashName').textContent = currentUser.name;
+                    document.getElementById('dashPhone').textContent = phone;
+
+                } catch (err) {
+                    console.error('Login feilet:', err);
+                    alert('Kunne ikke logge inn. Prøv igjen.');
+                }
             }
         });
 
@@ -805,8 +884,15 @@
             });
         }
 
-        // Logout
+        // Logout - fjerner JWT tokens og localStorage
         logoutBtn.addEventListener('click', () => {
+            // Fjern JWT tokens
+            localStorage.removeItem('fuglehund_token');
+            localStorage.removeItem('fuglehund_user');
+            // Fjern legacy localStorage
+            localStorage.removeItem('userProfile');
+            localStorage.removeItem('judgeSession');
+
             dashboardSection.classList.add('hidden');
             dogRegistrationSection.classList.add('hidden');
             quickLoginSection.classList.add('hidden');

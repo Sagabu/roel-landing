@@ -9,14 +9,41 @@
     // Determine current page and user state
     const currentPage = window.location.pathname.split('/').pop() || 'index.html';
 
-    // Check login states
+    // Check login states - sjekker JWT først, deretter legacy localStorage
     function getUserState() {
+        const jwtToken = localStorage.getItem('fuglehund_token');
+        const jwtUser = localStorage.getItem('fuglehund_user');
         const userProfile = localStorage.getItem('userProfile');
         const judgeSession = localStorage.getItem('judgeSession');
 
         let user = null;
         let role = null;
 
+        // Sjekk JWT-token først (nytt system)
+        if (jwtToken && jwtUser) {
+            try {
+                // Verifiser at token ikke er utløpt
+                const payload = JSON.parse(atob(jwtToken.split('.')[1]));
+                if (payload.exp * 1000 > Date.now()) {
+                    const userData = JSON.parse(jwtUser);
+                    user = { name: `${userData.fornavn} ${userData.etternavn}`, phone: userData.telefon };
+                    // Bestem rolle fra komma-separert liste
+                    const roller = (userData.rolle || '').split(',').map(r => r.trim());
+                    if (roller.includes('admin')) {
+                        role = 'admin';
+                    } else if (roller.includes('klubbleder') || roller.includes('proveleder')) {
+                        role = 'admin';
+                    } else if (roller.includes('dommer')) {
+                        role = 'dommer';
+                    } else {
+                        role = 'deltaker';
+                    }
+                    return { user, role };
+                }
+            } catch (e) {}
+        }
+
+        // Fallback til legacy system
         if (judgeSession) {
             try {
                 const session = JSON.parse(judgeSession);
@@ -98,10 +125,15 @@
         <path d="M12 2C9.5 2 7 3.5 6 6c-2 0-4 1.5-4 4 0 2 1.5 3.5 3 4-.5 1-1 2.5-1 4 0 3 2.5 4 5 4 1 0 2-.5 3-1 1 .5 2 1 3 1 2.5 0 5-1 5-4 0-1.5-.5-3-1-4 1.5-.5 3-2 3-4 0-2.5-2-4-4-4-1-2.5-3.5-4-6-4zm0 2c2 0 3.5 1 4 3h1c1.5 0 2.5 1 2.5 2.5 0 1-1 2-2 2.5l-.5.5.5 1c.5 1 1 2 1 3 0 1.5-1.5 2.5-3.5 2.5-.5 0-1.5-.5-2-1l-1-.5-1 .5c-.5.5-1.5 1-2 1-2 0-3.5-1-3.5-2.5 0-1 .5-2 1-3l.5-1-.5-.5c-1-.5-2-1.5-2-2.5C4.5 8 5.5 7 7 7h1c.5-2 2-3 4-3z"/>
     </svg>`;
 
-    // Logout function
+    // Logout function - fjerner både legacy og JWT-tokens
     window.sharedLogout = function() {
+        // Legacy localStorage keys
         localStorage.removeItem('userProfile');
         localStorage.removeItem('judgeSession');
+        // JWT tokens
+        localStorage.removeItem('fuglehund_token');
+        localStorage.removeItem('fuglehund_user');
+        // Redirect til forsiden
         window.location.href = 'index.html';
     };
 

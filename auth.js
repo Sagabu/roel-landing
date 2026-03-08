@@ -199,10 +199,57 @@ const FuglehundAuth = (function() {
     }
   }
 
+  // Sider som krever innlogging og hvilken rolle
+  const PROTECTED_PAGES = {
+    'profil.html': null,           // Krever innlogging, alle roller
+    'mine-hunder.html': null,
+    'jaktprover.html': null,
+    'fullmakter.html': null,
+    'min-side.html': null,
+    'dommer-hjem.html': 'dommer',  // Krever dommer-rolle
+    'dommer-vk.html': 'dommer',
+    'dommer-kritikk.html': 'dommer',
+    'admin.html': 'admin',         // Krever admin-rolle
+    'admin-panel.html': 'admin',
+    'klubb.html': 'admin',
+    'opprett-prove.html': 'admin',
+    'opprett-klubb.html': 'admin',
+    'nkk-godkjenning.html': 'admin'
+  };
+
+  // Automatisk auth-guard basert på side
+  function checkPageAccess() {
+    const page = window.location.pathname.split('/').pop() || 'index.html';
+    const requiredRole = PROTECTED_PAGES[page];
+
+    // Siden krever ikke beskyttelse
+    if (requiredRole === undefined) return true;
+
+    // Sjekk om innlogget
+    if (!isLoggedIn()) {
+      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/deltaker.html?returnTo=${returnTo}`;
+      return false;
+    }
+
+    // Sjekk rolle hvis spesifisert
+    if (requiredRole && !hasRole(requiredRole)) {
+      alert('Du har ikke tilgang til denne siden.');
+      window.location.href = '/index.html';
+      return false;
+    }
+
+    return true;
+  }
+
   // Auto-oppdater UI når DOM er klar
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', updateUI);
+    document.addEventListener('DOMContentLoaded', () => {
+      checkPageAccess();
+      updateUI();
+    });
   } else {
+    checkPageAccess();
     updateUI();
   }
 
@@ -221,6 +268,7 @@ const FuglehundAuth = (function() {
     authFetch,
     verifyAndRefresh,
     requireLogin,
+    checkPageAccess,
     updateUI
   };
 })();

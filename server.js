@@ -317,62 +317,64 @@ function seedData() {
   `);
 
   // Kritikk for Bleiebøtte (hund_id 8) - Irsk Setter - 5 kritikker totalt
-  // Realistisk progresjon: UK (2 stk) → AK (3 stk)
-  // NB: 1. premie krever minimum 60 min slipptid!
+  // Født: 2021-11-30 → Fyller 2 år: 2023-11-30
+  // UK = under 2 år, AK = etter fylte 2 år
+  // 1. premie krever minimum 60 min slipptid (men 60+ min garanterer ikke 1. premie)
+  // 1. AK gir billett til VK
 
-  // Bleiebøtte - kritikk 1: Vårprøven Rennebu 2024 (første prøve, UK)
+  // Bleiebøtte - kritikk 1: Vårprøven Snåsa 2023 (UK - hun er 1,5 år)
   insertKritikk.run(
-    8, null, '99999994', '2024-04-28', 'UK', 'UK Parti 2', 'Rennebu',
-    3, 4, 1,  // presisjon, reising, godkjent_reising
-    1, 1, 1, 0, 2, 38,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
-    5, 4, 4, 4, 4, 4,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
+    8, null, '99999994', '2023-05-14', 'UK', 'UK Parti 2', 'Snåsa',
+    2, 4, 1,  // presisjon, reising, godkjent_reising
+    1, 0, 1, 0, 2, 55,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
+    4, 4, 3, 4, 4, 4,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
     0, 0, null, 0,  // sek_spontan, sek_forbi, apport, rapport_spontan
-    '', '3. UK',  // adferd, premie (kort slipp, 3. premie)
-    'God irsk setter som viser fin jaktlyst og arbeidsvilje. Noe forsiktig i starten, men kom godt i gang. Søket er effektivt med god reviering. En tomstand registrert, men ellers fint fuglearbeid med sikker stand. Reiser kontrollert på kommando.'
+    '', '3. UK',  // adferd, premie (tomstand og kun 1 stand, uerfaren)
+    'Ung og lovende irsk setter på sin første prøve. Viser fin jaktlyst, men noe uerfaren i terrenget. En tomstand registrert. Søket er litt smalt, men hunden har gode grunnegenskaper. Reiser kontrollert. Med mer erfaring vil dette bli en fin hund.'
   );
 
-  // Bleiebøtte - kritikk 2: Høstprøven Oppdal 2024 (UK, oppnår 1. premie)
+  // Bleiebøtte - kritikk 2: Høstprøven Oppdal 2023 (UK - hun er 1 år 10 mnd)
   insertKritikk.run(
-    8, 'vinterproven2026', '99999997', '2024-09-08', 'UK', 'UK Parti 1', 'Oppdal',
+    8, null, '99999997', '2023-09-16', 'UK', 'UK Parti 1', 'Oppdal',
     3, 5, 1,  // presisjon, reising, godkjent_reising
-    2, 1, 0, 1, 3, 65,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid (65 min for 1. premie!)
+    2, 1, 0, 1, 3, 65,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
     5, 5, 4, 4, 4, 4,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
     1, 0, null, 0,  // sek_spontan, sek_forbi, apport, rapport_spontan
-    '', '1. UK',  // adferd, premie (lang nok slipptid for 1. premie)
+    '', '1. UK',  // adferd, premie (god slipptid, godt fuglearbeid, ingen tomstand)
     'Flott irsk setter med masse energi og arbeidsvilje. Viser meget god jaktlyst og fart i terrenget. Søket er systematisk og effektivt. Ved fuglkontakt viser hunden fast og sikker stand med god marking. Reiser villig på kommando. En lovende unghund med stort potensial.'
   );
 
-  // Bleiebøtte - kritikk 3: Sommerprøven Tynset 2024 (nå i AK etter 1. UK)
+  // Bleiebøtte - kritikk 3: Vårprøven Tynset 2024 (AK - hun er 2 år 4 mnd)
   insertKritikk.run(
-    8, null, '99999997', '2024-06-22', 'AK', 'AK Parti 3', 'Tynset',
+    8, null, '99999997', '2024-04-20', 'AK', 'AK Parti 3', 'Tynset',
     3, 5, 1,  // presisjon, reising, godkjent_reising
-    2, 2, 0, 1, 3, 45,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
+    2, 1, 0, 1, 3, 62,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
     5, 5, 4, 5, 4, 4,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
     1, 0, null, 0,  // sek_spontan, sek_forbi, apport, rapport_spontan
-    '', '2. AK',  // adferd, premie (kort slipp, 2. premie)
-    'Fin irsk setter med god jaktlyst og fart. Viser bred søksbredde og dekker terrenget godt. Solid fuglearbeid med fire registrerte stander uten tomstand. Reiser villig. Noe ung i samarbeidet, men lovende utvikling.'
+    '', '2. AK',  // adferd, premie (god slipptid men kun "noe upresis", mangler litt for 1. AK)
+    'Fin irsk setter med god jaktlyst og fart. Viser bred søksbredde og dekker terrenget godt. Solid fuglearbeid med tre stander uten tomstand. Reiser villig. Noe upresis i markeringen, men lovende utvikling. Trenger mer erfaring for toppresultater.'
   );
 
-  // Bleiebøtte - kritikk 4: NM Kvalsik 2024 (AK)
+  // Bleiebøtte - kritikk 4: Høstprøven Lierne 2024 (AK)
   insertKritikk.run(
-    8, null, '99999994', '2024-09-28', 'AK', 'AK NM Kval', 'Lierne',
+    8, null, '99999994', '2024-09-28', 'AK', 'AK Parti 1', 'Lierne',
     4, 6, 1,  // presisjon, reising, godkjent_reising
-    2, 2, 0, 2, 4, 68,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid (68 min for 1. premie!)
+    3, 2, 0, 2, 4, 70,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
     6, 5, 5, 5, 5, 5,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
     2, 0, 1, 1,  // sek_spontan, sek_forbi, apport, rapport_spontan
-    '', '1. AK',  // adferd, premie (lang nok slipptid for 1. premie)
-    'Fremragende irsk setter med topp jaktlyst og arbeidskapasitet. Imponerende søksbredde og reviering i krevende NM-terreng. Presis i fuglearbeidet med fire stander uten tomstand. Reiser djerv og elegant. Apporterte spontant. En av dagens beste slipp.'
+    '', '1. AK',  // adferd, premie (presis, godt fuglearbeid, god slipptid → KVALIFISERT TIL VK!)
+    'Fremragende irsk setter med topp jaktlyst og arbeidskapasitet. Imponerende søksbredde og reviering. Presis i fuglearbeidet med fem stander uten tomstand. Reiser djerv og elegant. Apporterte spontant. En av dagens beste slipp. Kvalifisert til VK!'
   );
 
-  // Bleiebøtte - kritikk 5: Høstprøven Berkåk 2024 (AK)
+  // Bleiebøtte - kritikk 5: Høstprøven Berkåk 2024 (AK - kan fortsatt gå AK selv med 1.AK)
   insertKritikk.run(
-    8, null, '99999999', '2024-10-12', 'AK', 'AK Parti 1', 'Berkåk',
-    4, 5, 1,  // presisjon, reising, godkjent_reising
-    3, 1, 0, 1, 4, 62,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid (62 min for 1. premie!)
+    8, null, '99999999', '2024-10-12', 'AK', 'AK Parti 2', 'Berkåk',
+    3, 5, 1,  // presisjon, reising, godkjent_reising
+    2, 1, 1, 1, 3, 65,  // stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid
     5, 5, 5, 4, 4, 5,  // jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid
-    2, 0, 1, 1,  // sek_spontan, sek_forbi, apport, rapport_spontan
-    '', '1. AK',  // adferd, premie (lang nok slipptid for 1. premie)
-    'Utmerket irsk setter med imponerende arbeidskapasitet. Dekker terrenget effektivt med god fart og presisjon. Hele tre stander med makker viser god sosial kompetanse. Presis i fuglearbeidet og reiser villig. Apporterte spontant. En meget fin AK-hund.'
+    1, 0, 1, 0,  // sek_spontan, sek_forbi, apport, rapport_spontan
+    '', '2. AK',  // adferd, premie (tomstand trekker ned, ellers bra)
+    'Solid irsk setter med god arbeidskapasitet. Dekker terrenget effektivt med god fart. En tomstand trekker ned, men ellers fint fuglearbeid. Presis i stand og reiser villig. Apporterte på kommando. En god hund som har vist VK-potensial.'
   );
 
   // Kritikk for Breton XXL (hund_id 1)

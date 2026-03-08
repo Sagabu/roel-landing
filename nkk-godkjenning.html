@@ -173,121 +173,41 @@
     </div>
 
     <script>
-        // Party configurations
-        const PARTIES = {
-            ukak1: { name: 'UK/AK Parti 1' },
-            ukak2: { name: 'UK/AK Parti 2' },
-            ukak3: { name: 'UK/AK Parti 3' },
-            ukak4: { name: 'UK/AK Parti 4' },
-            vk1: { name: 'VK Kval Parti 1' },
-            vk2: { name: 'VK Kval Parti 2' },
-            vkfinale: { name: 'VK Finale' }
-        };
+        // Dynamic party name resolver
+        function getPartyName(partyId) {
+            const id = partyId.toUpperCase();
+
+            // VK-partier
+            if (id.startsWith('V') || id.includes('VK')) {
+                const isFinale = id.includes('FINALE') || id.includes('FIN');
+                return isFinale ? 'VK Finale' : `VK Parti ${partyId}`;
+            }
+
+            // UK/AK-partier (A1, A2, B1, osv.)
+            if (/^[A-Z]\d+$/.test(id)) {
+                return `UK/AK Parti ${partyId}`;
+            }
+
+            // Fallback for gamle format
+            const legacyNames = {
+                ukak1: 'UK/AK Parti 1',
+                ukak2: 'UK/AK Parti 2',
+                ukak3: 'UK/AK Parti 3',
+                ukak4: 'UK/AK Parti 4',
+                vk1: 'VK Kval Parti 1',
+                vk2: 'VK Kval Parti 2',
+                vkfinale: 'VK Finale'
+            };
+
+            return legacyNames[partyId.toLowerCase()] || `Parti ${partyId}`;
+        }
 
         let allCritiques = [];
         let currentReview = null;
         let currentFilter = 'all';
         let nkkRepInfo = null;
 
-        // Initialize with test data
-        function initTestData() {
-            // Always update test data to ensure regNr is present
-            const existing = localStorage.getItem('judgeData_ukak1');
-            if (existing) {
-                // Check if existing data has regNr, if not, force refresh
-                try {
-                    const data = JSON.parse(existing);
-                    if (data[0]?.regNr) return; // Already has regNr, skip
-                } catch (e) {}
-            }
-
-            // Create test critiques for Marte to review
-            const testData = [
-                {
-                    id: 1,
-                    nr: 12,
-                    regNr: 'NO45678/22',
-                    name: 'Fjelljegerens Odin',
-                    breed: 'Engelsk Setter',
-                    handler: 'Erik Solberg',
-                    owner: 'Erik Solberg',
-                    critiqueStatus: 'submitted',
-                    critiqueSubmittedBy: 'Kari Nordmann',
-                    critiqueSubmittedAt: new Date().toISOString(),
-                    prize: '1. premie',
-                    critique: 'En fremragende hund med eksepsjonelt god fart og stil. Viste bred og systematisk reviering gjennom hele slippet. Markerte bestemt på to fugler med fast og sikker stand. Reiset kontrollert på ordre. Samarbeidet svært godt med fører og viste god lydighet. En meget lovende unghund med alle kvaliteter for videre utvikling.',
-                    rounds: [{
-                        roundNum: 1,
-                        completed: true,
-                        notes: 'Flott åpning, tok terrenget fint. God fart fra start.',
-                        scores: {
-                            JAKTLYST: 5, FART: 5, SELVSTENDIGHET: 4, SOKSBREDDE: 5, REVIERING: 5, SAMARBEID: 5,
-                            PRESISJON: 4, REISING: 'R', GODKJENT_REISING: true,
-                            STAND_M: 2, STAND_U: 0, TOMSTAND: 0, SLIPPTID: 15
-                        }
-                    }]
-                },
-                {
-                    id: 2,
-                    nr: 8,
-                    regNr: 'NO32156/21',
-                    name: 'Skogsprinsessen',
-                    breed: 'Gordon Setter',
-                    handler: 'Lise Andersen',
-                    owner: 'Lise Andersen',
-                    critiqueStatus: 'submitted',
-                    critiqueSubmittedBy: 'Kari Nordmann',
-                    critiqueSubmittedAt: new Date(Date.now() - 3600000).toISOString(),
-                    prize: '2. premie',
-                    critique: 'Meget pen og harmonisk hund med god fart tilpasset terrenget. Viste selvstendig og effektiv reviering. Fikk en fin markering på fugl med sikker stand. Kunne vært noe mer bestemt i reisingen. God kontakt med fører gjennom hele slippet. Solid innsats som fortjener 2. premie.',
-                    rounds: [{
-                        roundNum: 1,
-                        completed: true,
-                        notes: 'Litt forsiktig start, men tok seg opp.',
-                        scores: {
-                            JAKTLYST: 4, FART: 4, SELVSTENDIGHET: 4, SOKSBREDDE: 4, REVIERING: 4, SAMARBEID: 5,
-                            PRESISJON: 3, REISING: 'R', GODKJENT_REISING: true,
-                            STAND_M: 1, STAND_U: 0, TOMSTAND: 1, SLIPPTID: 15
-                        }
-                    }]
-                },
-                {
-                    id: 3,
-                    nr: 15,
-                    regNr: 'NO18934/20',
-                    name: 'Fjellkongen Rex',
-                    breed: 'Irsk Setter',
-                    handler: 'Jon Haugen',
-                    owner: 'Jon Haugen',
-                    critiqueStatus: 'approved',
-                    critiqueSubmittedBy: 'Chris Niebel',
-                    critiqueSubmittedAt: new Date(Date.now() - 86400000).toISOString(),
-                    approvedAt: new Date(Date.now() - 43200000).toISOString(),
-                    approvedBy: 'Marte Haugen',
-                    prize: '1. premie',
-                    critique: 'Enestående innsats fra start til slutt. Hunden viste fantastisk fart og driv kombinert med systematisk og grundig reviering av terrenget. Tre solide stands på fugl, alle med perfekt presisjon og kontrollert reising. Samarbeidet med fører var eksemplarisk. En virkelig imponerende prestasjon som fortjener høyeste premie.',
-                    rounds: [{
-                        roundNum: 1,
-                        completed: true,
-                        notes: 'Strålende åpning. Tok alle vindkanter.',
-                        scores: {
-                            JAKTLYST: 6, FART: 5, SELVSTENDIGHET: 5, SOKSBREDDE: 5, REVIERING: 5, SAMARBEID: 5,
-                            PRESISJON: 5, REISING: 'R', GODKJENT_REISING: true,
-                            STAND_M: 3, STAND_U: 0, TOMSTAND: 0, SLIPPTID: 15
-                        }
-                    }]
-                }
-            ];
-
-            localStorage.setItem('judgeData_ukak1', JSON.stringify(testData));
-
-            // Also set up Marte as NKK-rep if not already
-            const teamData = {
-                proveleder: { name: 'Hans Olsen', phone: '99887766', email: 'hans@test.no' },
-                nkkrep: { name: 'Marte Haugen', phone: '90000001', email: 'marte@nkk.no' }
-            };
-            localStorage.setItem('trialTeam', JSON.stringify(teamData));
-        }
+        // No test data initialization - use real data only
 
         // Load NKK rep info
         async function loadNkkRepInfo() {
@@ -328,26 +248,41 @@
         function loadAllCritiques() {
             allCritiques = [];
 
-            Object.keys(PARTIES).forEach(partyId => {
-                const saved = localStorage.getItem('judgeData_' + partyId);
+            // Find all judgeData_* keys in localStorage (dynamic party discovery)
+            const allKeys = Object.keys(localStorage).filter(k => k.startsWith('judgeData_'));
+            console.log('Found judgeData keys:', allKeys);
+
+            allKeys.forEach(key => {
+                const partyId = key.replace('judgeData_', '');
+                const saved = localStorage.getItem(key);
                 if (saved) {
-                    const dogs = JSON.parse(saved);
-                    dogs.forEach(dog => {
-                        if (dog.critiqueStatus && dog.critiqueStatus !== 'pending') {
-                            allCritiques.push({
-                                ...dog,
-                                partyId,
-                                partyName: PARTIES[partyId].name
-                            });
-                        }
-                    });
+                    try {
+                        const data = JSON.parse(saved);
+                        // Handle both formats: array directly or object with .dogs property
+                        const dogs = Array.isArray(data) ? data : (data.dogs || []);
+                        console.log('Party', partyId, 'has', dogs.length, 'dogs');
+
+                        dogs.forEach(dog => {
+                            if (dog.critiqueStatus && dog.critiqueStatus !== 'pending') {
+                                allCritiques.push({
+                                    ...dog,
+                                    partyId,
+                                    partyName: getPartyName(partyId)
+                                });
+                            }
+                        });
+                    } catch (e) {
+                        console.error('Error parsing', key, e);
+                    }
                 }
             });
+
+            console.log('Total critiques found:', allCritiques.length, allCritiques);
 
             const filter = document.getElementById('partyFilter');
             const usedParties = [...new Set(allCritiques.map(c => c.partyId))];
             filter.innerHTML = '<option value="all">Alle partier</option>' +
-                usedParties.map(p => `<option value="${p}">${PARTIES[p].name}</option>`).join('');
+                usedParties.map(p => `<option value="${p}">${getPartyName(p)}</option>`).join('');
         }
 
         function filterByParty(partyId) {
@@ -450,18 +385,30 @@
 
         function openReview(partyId, dogId) {
             const saved = localStorage.getItem('judgeData_' + partyId);
-            if (!saved) return;
+            if (!saved) {
+                console.error('No data found for party:', partyId);
+                return;
+            }
 
-            const dogs = JSON.parse(saved);
-            const dog = dogs.find(d => d.id === dogId);
-            if (!dog) return;
+            try {
+                const data = JSON.parse(saved);
+                // Handle both formats: array directly or object with .dogs property
+                const dogs = Array.isArray(data) ? data : (data.dogs || []);
+                const dog = dogs.find(d => d.id === dogId);
+                if (!dog) {
+                    console.error('Dog not found:', dogId, 'in party:', partyId);
+                    return;
+                }
 
-            currentReview = { partyId, dogId, dog, dogs };
-            document.getElementById('reviewDogName').textContent = `${dog.name} • ${PARTIES[partyId].name}`;
-            generateCritiquePreview(dog, partyId);
-            renderActionButtons(dog.critiqueStatus);
+                currentReview = { partyId, dogId, dog, dogs };
+                document.getElementById('reviewDogName').textContent = `${dog.name} • ${getPartyName(partyId)}`;
+                generateCritiquePreview(dog, partyId);
+                renderActionButtons(dog.critiqueStatus);
 
-            document.getElementById('reviewModal').classList.remove('hidden');
+                document.getElementById('reviewModal').classList.remove('hidden');
+            } catch (e) {
+                console.error('Error opening review:', e);
+            }
         }
 
         function hideReview() {
@@ -470,8 +417,13 @@
         }
 
         function generateCritiquePreview(dog, partyId) {
+            // Ensure rounds exist
+            if (!dog.rounds || dog.rounds.length === 0) {
+                dog.rounds = [{ roundNum: 1, scores: {}, notes: '' }];
+            }
+
             const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
+            const s = latestRound.scores || {};
 
             const allNotes = dog.rounds
                 .filter(r => r.notes && r.notes.trim())
@@ -492,7 +444,7 @@
                         <div class="flex items-center justify-between">
                             <div>
                                 <h1 class="text-2xl font-rockwell font-bold">Kritikkskjema</h1>
-                                <p class="text-forest-200 text-sm mt-1">${PARTIES[partyId].name} • Vinterprøven 2026</p>
+                                <p class="text-forest-200 text-sm mt-1">${getPartyName(partyId)} • Vinterprøven 2026</p>
                             </div>
                             <div class="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
                                 <svg class="w-10 h-10 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -927,7 +879,6 @@
         }
 
         // Initialize
-        initTestData();
         loadNkkRepInfo();
         render();
     </script>

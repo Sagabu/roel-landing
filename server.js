@@ -321,7 +321,7 @@ function seedData() {
 
   // Seed dommer-tildelinger for Vinterprøven
   const insertDommer = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
-  insertDommer.run('vinterproven2026', '99999999', 'ukak1', null);
+  insertDommer.run('vinterproven2026', '99999999', 'demo1', null);  // Chris Niebel - demo-parti med 3 hunder
   insertDommer.run('vinterproven2026', '99999997', 'vkfinale', 1);
   insertDommer.run('vinterproven2026', '99999994', 'ukak2', null);
 

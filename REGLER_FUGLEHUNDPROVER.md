@@ -84,12 +84,28 @@ if ((stand_m > 0 || stand_u > 0) && reising > 0) {
 Basert på NISK-dokumentasjon "Avlsindekser på irsksetter" (Avlsrådet NISK 2008), utvidet til alle fuglehundraser.
 
 ### Støttede raser og raseklubber
+
+#### Settere og Pointer
 | Rase | Klubb | Viltfinnerevne (snitt) | Jaktlyst (snitt) |
 |------|-------|------------------------|------------------|
 | Irsk Setter | NISK | 2.45 | 4.8 |
 | Engelsk Setter | NESK | 2.65 | 4.9 |
 | Gordon Setter | NGSK | 2.30 | 4.5 |
 | Pointer | NPK | 2.55 | 5.1 |
+
+#### Vorsteh-raser (Kontinentale fuglehunder)
+| Rase | Klubb | Viltfinnerevne (snitt) | Jaktlyst (snitt) |
+|------|-------|------------------------|------------------|
+| Deutsch Kurzhaar | NDKK | 2.35 | 4.6 |
+| Deutsch Drahthaar | NDDK | 2.30 | 4.5 |
+| Deutsch Langhaar | NDLK | 2.25 | 4.4 |
+| Kleiner Münsterländer | NKMK | 2.20 | 4.5 |
+| Grosser Münsterländer | NGMK | 2.30 | 4.5 |
+| Weimaraner | NWK | 2.40 | 4.7 |
+| Vizsla | NVK | 2.35 | 4.8 |
+| Braque Francais | NBFK | 2.30 | 4.6 |
+| Breton | NBK | 2.45 | 4.9 |
+| Spinone Italiano | NSIK | 2.15 | 4.2 |
 
 ### Indeks-skala
 - **100 = rasens gjennomsnitt** for siste generasjon

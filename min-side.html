@@ -210,6 +210,23 @@
                 </div>
             </div>
 
+            <!-- Roller-seksjon (vises kun for dommere, admins etc.) -->
+            <div id="rolesSection" class="hidden mb-6">
+                <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+                    <div class="bg-gradient-to-r from-sky-600 to-sky-700 text-white p-4">
+                        <h3 class="font-bold font-serif text-lg flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                            </svg>
+                            Dine roller
+                        </h3>
+                    </div>
+                    <div id="rolesContainer" class="p-4 space-y-3">
+                        <!-- Roller legges til dynamisk -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Pending Tasks Alert (shown if tasks exist) -->
             <div id="pendingTasksSection" class="hidden mb-6">
                 <div class="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-400 rounded-2xl p-5">
@@ -649,11 +666,113 @@
             const totalTrials = currentUser.trials?.length || 0;
             document.getElementById('trialCount').textContent = totalTrials > 0 ? `${totalTrials} prøve${totalTrials > 1 ? 'r' : ''}` : 'Ingen';
 
+            // Render roles section (dommer, admin etc.)
+            await renderRolesSection();
+
             // Render trials
             renderTrials();
 
             // Check pending tasks
             await checkPendingTasks();
+        }
+
+        // Render roller-seksjonen for dommere, admins etc.
+        async function renderRolesSection() {
+            const rolesSection = document.getElementById('rolesSection');
+            const rolesContainer = document.getElementById('rolesContainer');
+            const roles = [];
+
+            // Sjekk om bruker er dommer - hent fra API
+            try {
+                const resp = await fetch(`/api/brukere/${currentUser.phone}/dommer-info`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.isDommer && data.tildelinger?.length > 0) {
+                        const tildeling = data.tildelinger[0];
+
+                        // Sett opp judgeSession for dommer-hjem.html
+                        const judgeSession = {
+                            name: currentUser.name,
+                            phone: currentUser.phone,
+                            assignedParty: tildeling.parti,
+                            judgeRole: tildeling.dommerRolle
+                        };
+                        localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
+
+                        roles.push({
+                            type: 'dommer',
+                            label: 'Dommer',
+                            description: `${tildeling.proveNavn} - Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
+                            icon: 'clipboard',
+                            bgColor: 'bg-sky-500',
+                            link: 'dommer-hjem.html'
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente dommer-info:', e);
+            }
+
+            // Sjekk om bruker er prøveleder
+            const provelederTrial = currentUser.trials?.find(t => t.roles?.some(r => r.type === 'proveleder'));
+            if (provelederTrial) {
+                roles.push({
+                    type: 'proveleder',
+                    label: 'Prøveleder',
+                    description: provelederTrial.name,
+                    icon: 'crown',
+                    bgColor: 'bg-amber-500',
+                    link: 'admin.html'
+                });
+            }
+
+            // Sjekk om bruker er NKK-representant
+            const nkkTrial = currentUser.trials?.find(t => t.roles?.some(r => r.type === 'nkkrep'));
+            if (nkkTrial) {
+                roles.push({
+                    type: 'nkkrep',
+                    label: 'NKK-representant',
+                    description: nkkTrial.name,
+                    icon: 'badge',
+                    bgColor: 'bg-blue-600',
+                    link: 'nkk-godkjenning.html'
+                });
+            }
+
+            // Vis roller-seksjonen hvis det finnes roller
+            if (roles.length > 0) {
+                rolesSection.classList.remove('hidden');
+                rolesContainer.innerHTML = roles.map(role => `
+                    <a href="${role.link}" class="flex items-center justify-between p-4 ${role.bgColor} hover:opacity-90 rounded-xl transition text-white">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                                ${getRoleIconWhite(role.icon)}
+                            </div>
+                            <div>
+                                <span class="font-bold text-lg">${role.label}</span>
+                                <p class="text-white/80 text-sm">${role.description}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium">Åpne</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </div>
+                    </a>
+                `).join('');
+            } else {
+                rolesSection.classList.add('hidden');
+            }
+        }
+
+        function getRoleIconWhite(icon) {
+            const icons = {
+                clipboard: '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>',
+                crown: '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l3.5 6L12 5l3.5 4L19 3v15a2 2 0 01-2 2H7a2 2 0 01-2-2V3z"/></svg>',
+                badge: '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>'
+            };
+            return icons[icon] || icons.clipboard;
         }
 
         function renderTrials() {

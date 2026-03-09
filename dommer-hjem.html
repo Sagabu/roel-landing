@@ -149,25 +149,6 @@
     </main>
 
     <script>
-        // Check if logged in
-        const session = localStorage.getItem('judgeSession');
-        if (!session) {
-            window.location.href = 'dommer.html';
-        }
-
-        // Parse session data
-        const judgeData = JSON.parse(session || '{}');
-
-        // If session is from old format (missing assignedParty field), force re-login
-        if (!judgeData.hasOwnProperty('assignedParty')) {
-            localStorage.removeItem('judgeSession');
-            window.location.href = 'dommer.html';
-        }
-
-        // Display judge name in header and welcome
-        document.getElementById('judgeName').textContent = judgeData.name || 'Dommer';
-        document.getElementById('judgeNameWelcome').textContent = judgeData.name || 'Dommer';
-
         // Party configurations
         const PARTIES = {
             demo1: { name: 'Demo-parti (Chris Niebel)', type: 'ukak', judges: 1, dogs: 3, day: 'Demo' },
@@ -180,9 +161,55 @@
             vkfinale: { name: 'VK Finale', type: 'vkfinale', judges: 2, dogs: 12, day: 'Dag 2 (søndag)' }
         };
 
-        // Get assigned party from session
-        const assignedPartyId = judgeData.assignedParty;
-        const judgeRole = judgeData.judgeRole;
+        let assignedPartyId = null;
+        let judgeRole = null;
+        let judgeData = {};
+
+        // Initialize page
+        async function initPage() {
+            // Check if logged in
+            const session = localStorage.getItem('judgeSession');
+            if (!session) {
+                window.location.href = 'dommer.html';
+                return;
+            }
+
+            // Parse session data
+            judgeData = JSON.parse(session || '{}');
+
+            // Display judge name
+            document.getElementById('judgeName').textContent = judgeData.name || 'Dommer';
+            document.getElementById('judgeNameWelcome').textContent = judgeData.name || 'Dommer';
+
+            // Get assigned party from session
+            assignedPartyId = judgeData.assignedParty;
+            judgeRole = judgeData.judgeRole;
+
+            // If no party in session, try to fetch from API
+            if (!assignedPartyId && judgeData.phone) {
+                try {
+                    const resp = await fetch(`/api/brukere/${judgeData.phone}/dommer-info`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.isDommer && data.tildelinger?.length > 0) {
+                            const tildeling = data.tildelinger[0];
+                            assignedPartyId = tildeling.parti;
+                            judgeRole = tildeling.dommerRolle;
+
+                            // Update session with party info
+                            judgeData.assignedParty = assignedPartyId;
+                            judgeData.judgeRole = judgeRole;
+                            localStorage.setItem('judgeSession', JSON.stringify(judgeData));
+                        }
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke hente dommer-info:', e);
+                }
+            }
+
+            // Render the page
+            renderAssignedParty();
+        }
 
         // Render assigned party card
         function renderAssignedParty() {
@@ -273,8 +300,10 @@
             `;
         }
 
-        renderAssignedParty();
-        checkPendingCritiques();
+        // Initialize page on load
+        initPage().then(() => {
+            checkPendingCritiques();
+        });
 
         // Check if there are pending critiques (all dogs done but critiques not sent)
         function checkPendingCritiques() {

@@ -94,11 +94,11 @@ Basert på NISK-dokumentasjon "Avlsindekser på irsksetter" (Avlsrådet NISK 200
 | Pointer | NPK | 2.55 | 5.1 |
 
 #### Vorsteh-raser (Kontinentale fuglehunder)
-| Rase | Klubb | Viltfinnerevne (snitt) | Jaktlyst (snitt) |
-|------|-------|------------------------|------------------|
-| Deutsch Kurzhaar | NDKK | 2.35 | 4.6 |
-| Deutsch Drahthaar | NDDK | 2.30 | 4.5 |
-| Deutsch Langhaar | NDLK | 2.25 | 4.4 |
+| Rase | Klubb/Forkortelse | Viltfinnerevne (snitt) | Jaktlyst (snitt) |
+|------|-------------------|------------------------|------------------|
+| Korthår Vorsteh | KV | 2.35 | 4.6 |
+| Strihår Vorsteh | SV | 2.30 | 4.5 |
+| Langhår Vorsteh | LV | 2.25 | 4.4 |
 | Kleiner Münsterländer | NKMK | 2.20 | 4.5 |
 | Grosser Münsterländer | NGMK | 2.30 | 4.5 |
 | Weimaraner | NWK | 2.40 | 4.7 |
@@ -106,6 +106,8 @@ Basert på NISK-dokumentasjon "Avlsindekser på irsksetter" (Avlsrådet NISK 200
 | Braque Francais | NBFK | 2.30 | 4.6 |
 | Breton | NBK | 2.45 | 4.9 |
 | Spinone Italiano | NSIK | 2.15 | 4.2 |
+
+**Aliaser:** Deutsch Kurzhaar = Korthår Vorsteh, Deutsch Drahthaar = Strihår Vorsteh, Deutsch Langhaar = Langhår Vorsteh
 
 ### Indeks-skala
 - **100 = rasens gjennomsnitt** for siste generasjon

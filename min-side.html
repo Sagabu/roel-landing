@@ -976,11 +976,11 @@
             // Check for judge pending critiques
             const hasJudgeRole = currentUser.trials.some(t => t.roles?.some(r => r.type === 'dommer'));
             if (hasJudgeRole) {
-                const count = getPendingJudgeCritiques();
-                if (count > 0) {
+                const pendingParties = getPendingParties();
+                for (const party of pendingParties) {
                     pendingTasks.push({
-                        label: `${count} kritikk${count > 1 ? 'er' : ''} må fullføres`,
-                        link: 'dommer-kritikk.html'
+                        label: `${party.count} kritikk${party.count > 1 ? 'er' : ''} må fullføres (${party.partyId.toUpperCase()})`,
+                        link: `dommer-kritikk.html?party=${party.partyId}`
                     });
                 }
             }
@@ -1018,11 +1018,60 @@
         }
 
         function getPendingJudgeCritiques() {
-            try {
-                const pending = localStorage.getItem('pendingCritiques');
-                if (pending) return JSON.parse(pending).length;
-            } catch (e) {}
-            return 0;
+            // Sjekk judgeData_<party> for hunder som er bedømt men ikke har sendt inn kritikk
+            let pendingCount = 0;
+
+            // Finn alle judgeData_ nøkler
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('judgeData_')) {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(key));
+                        if (Array.isArray(data)) {
+                            // Tell hunder som er "done" (bedømt) men ikke har godkjent kritikk
+                            // critiqueStatus: pending | submitted | approved
+                            const dogsNeedingCritique = data.filter(dog =>
+                                dog.status === 'done' &&
+                                !dog.knocked &&
+                                dog.critiqueStatus !== 'approved' &&
+                                dog.critiqueStatus !== 'submitted'
+                            );
+                            pendingCount += dogsNeedingCritique.length;
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            return pendingCount;
+        }
+
+        function getPendingParties() {
+            // Returner liste over partier med ventende kritikker
+            const parties = [];
+
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('judgeData_')) {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(key));
+                        if (Array.isArray(data)) {
+                            // Tell hunder som er "done" (bedømt) men ikke har sendt inn kritikk
+                            const dogsNeedingCritique = data.filter(dog =>
+                                dog.status === 'done' &&
+                                !dog.knocked &&
+                                dog.critiqueStatus !== 'approved' &&
+                                dog.critiqueStatus !== 'submitted'
+                            );
+                            if (dogsNeedingCritique.length > 0) {
+                                const partyId = key.replace('judgeData_', '');
+                                parties.push({ partyId, count: dogsNeedingCritique.length });
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            return parties;
         }
 
         function logout() {

@@ -61,10 +61,14 @@ const FuglehundAuth = (function() {
     const user = getUser();
     if (user) {
       const roller = (user.rolle || '').split(',').map(r => r.trim());
-      if (rolle === 'admin') return roller.includes('admin');
+      if (rolle === 'admin') {
+        // Admin-rolle gis til admin, proveleder og klubbleder
+        return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
+      }
       if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
       if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
       if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
+      if (rolle === 'proveleder') return roller.includes('proveleder') || roller.includes('admin');
       return true;
     }
 
@@ -85,15 +89,26 @@ const FuglehundAuth = (function() {
       // Hvis rolle er null (bare krever innlogging), godta det
       if (rolle === null) return true;
 
-      // Sjekk om bruker har nkkrep-rolle fra API-data
-      if (rolle === 'nkkrep') {
-        try {
-          const session = JSON.parse(userSession);
+      try {
+        const session = JSON.parse(userSession);
+
+        // Sjekk om bruker har nkkrep-rolle fra API-data
+        if (rolle === 'nkkrep') {
           if (session.trials?.some(t => t.roles?.some(r => r.type === 'nkkrep'))) {
             return true;
           }
-        } catch {}
-      }
+        }
+
+        // Sjekk om bruker har proveleder-rolle fra API-data
+        if (rolle === 'admin' || rolle === 'proveleder') {
+          if (session.trials?.some(t => t.roles?.some(r => r.type === 'proveleder'))) {
+            return true;
+          }
+          if (session.isTrialAdmin) {
+            return true;
+          }
+        }
+      } catch {}
     }
 
     return false;

@@ -79,9 +79,17 @@ if ((stand_m > 0 || stand_u > 0) && reising > 0) {
 
 ---
 
-## Avlsindekser (NISK-modell)
+## Avlsindekser (Raseklubb-modell)
 
-Referanse: "Avlsindekser på irsksetter", Avlsrådet NISK 2008
+Basert på NISK-dokumentasjon "Avlsindekser på irsksetter" (Avlsrådet NISK 2008), utvidet til alle fuglehundraser.
+
+### Støttede raser og raseklubber
+| Rase | Klubb | Viltfinnerevne (snitt) | Jaktlyst (snitt) |
+|------|-------|------------------------|------------------|
+| Irsk Setter | NISK | 2.45 | 4.8 |
+| Engelsk Setter | NESK | 2.65 | 4.9 |
+| Gordon Setter | NGSK | 2.30 | 4.5 |
+| Pointer | NPK | 2.55 | 5.1 |
 
 ### Indeks-skala
 - **100 = rasens gjennomsnitt** for siste generasjon

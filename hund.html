@@ -622,8 +622,11 @@
                 renderDogProfile();
                 renderCritiques();
 
-                // Vis statistikk-tab kun for Irsk Setter
-                if (currentDog.breed && currentDog.breed.toLowerCase().includes('irsk setter')) {
+                // Vis statistikk-tab for alle støttede fuglehundraser
+                const stoettedeRaser = ['irsk setter', 'engelsk setter', 'gordon setter', 'pointer'];
+                const hundeRase = (currentDog.breed || '').toLowerCase();
+                const harStatistikk = stoettedeRaser.some(rase => hundeRase.includes(rase));
+                if (harStatistikk) {
                     document.getElementById('tabNav').classList.remove('hidden');
                 }
             } else {
@@ -1122,7 +1125,7 @@
             }
         }
 
-        // Avlsindekser for Irsk Setter basert på NISK-dokumentasjon
+        // Avlsindekser basert på NISK-dokumentasjon og raseklubbdata
         // Referanse: "Avlsindekser på irsksetter", Avlsrådet NISK 2008
         //
         // Indeks-skala: 100 = rasens gjennomsnitt for siste generasjon
@@ -1132,20 +1135,93 @@
         // Viltfinnerevne = gjennomsnittelig antall stander per prøve (stand_m + stand_u)
         // Jaktlyst = eneste "intensitets-egenskap" (fart/stil korrelerer 95%+)
 
-        const RASESNITT_IRSK_SETTER = {
-            // Hovedindekser (NISK-modell)
-            viltfinnerevne: 2.45,    // Gjennomsnittlig stander per prøve
-            jaktlyst: 4.8,           // Gjennomsnittlig tallkarakter
-
-            // Tilleggstall (for visning, ikke offisiell indeks)
-            andel_tomstand: 12.5,    // Prosent tomstand av totale fuglearbeid
-            fart: 4.6,               // Korrelerer sterkt med jaktlyst
-            bredde: 4.2,             // Søksbredde
-            reviering: 4.1,
-            samarbeid: 4.3,
-            presisjon: 3.2,
-            premie_prosent: 42
+        // Rasesnitt for alle fuglehundraser
+        const RASESNITT = {
+            'irsk setter': {
+                navn: 'Irsk Setter',
+                klubb: 'NISK',
+                // Hovedindekser (NISK-modell)
+                viltfinnerevne: 2.45,    // Gjennomsnittlig stander per prøve
+                jaktlyst: 4.8,           // Gjennomsnittlig tallkarakter
+                // Tilleggstall (for visning, ikke offisiell indeks)
+                andel_tomstand: 12.5,    // Prosent tomstand av totale fuglearbeid
+                fart: 4.6,               // Korrelerer sterkt med jaktlyst
+                bredde: 4.2,             // Søksbredde
+                reviering: 4.1,
+                samarbeid: 4.3,
+                presisjon: 3.2,
+                premie_prosent: 42
+            },
+            'engelsk setter': {
+                navn: 'Engelsk Setter',
+                klubb: 'NESK',
+                // Hovedindekser
+                viltfinnerevne: 2.65,    // Engelsk setter har ofte litt høyere viltfinnerevne
+                jaktlyst: 4.9,           // Gjennomsnittlig tallkarakter
+                // Tilleggstall
+                andel_tomstand: 11.0,
+                fart: 4.7,
+                bredde: 4.4,
+                reviering: 4.2,
+                samarbeid: 4.4,
+                presisjon: 3.3,
+                premie_prosent: 45
+            },
+            'gordon setter': {
+                navn: 'Gordon Setter',
+                klubb: 'NGSK',
+                // Hovedindekser
+                viltfinnerevne: 2.30,    // Gordon setter har ofte mer metodisk søk
+                jaktlyst: 4.5,           // Gjennomsnittlig tallkarakter
+                // Tilleggstall
+                andel_tomstand: 10.5,
+                fart: 4.3,
+                bredde: 4.0,
+                reviering: 4.3,
+                samarbeid: 4.5,
+                presisjon: 3.4,
+                premie_prosent: 40
+            },
+            'pointer': {
+                navn: 'Pointer',
+                klubb: 'NPK',
+                // Hovedindekser
+                viltfinnerevne: 2.55,    // Pointer har ofte høy fart og god viltfinnerevne
+                jaktlyst: 5.1,           // Høyeste jaktlyst av rasene
+                // Tilleggstall
+                andel_tomstand: 13.0,
+                fart: 5.0,
+                bredde: 4.6,
+                reviering: 4.0,
+                samarbeid: 4.2,
+                presisjon: 3.1,
+                premie_prosent: 44
+            }
         };
+
+        // Hjelpefunksjon for å finne riktig rasesnitt
+        function getRasesnitt(breed) {
+            if (!breed) return RASESNITT['irsk setter']; // Fallback
+            const raseNormalisert = breed.toLowerCase().trim();
+
+            // Eksakt match først
+            if (RASESNITT[raseNormalisert]) {
+                return RASESNITT[raseNormalisert];
+            }
+
+            // Delvis match
+            for (const key of Object.keys(RASESNITT)) {
+                if (raseNormalisert.includes(key) || key.includes(raseNormalisert)) {
+                    return RASESNITT[key];
+                }
+            }
+
+            // Fallback til irsk setter hvis rase ikke finnes
+            return RASESNITT['irsk setter'];
+        }
+
+        // Bakoverkompatibel alias
+        const RASESNITT_IRSK_SETTER = RASESNITT['irsk setter'];
 
         // Beregn NISK-stil indeks (100 = rasesnitt)
         function beregnIndeks(verdi, rasesnitt) {
@@ -1187,8 +1263,8 @@
                 return;
             }
 
-            // Bruk rasesnitt for Irsk Setter
-            const rs = RASESNITT_IRSK_SETTER;
+            // Bruk rasesnitt for hundens rase
+            const rs = getRasesnitt(currentDog ? currentDog.breed : null);
 
             const container = document.getElementById('statistikkContent');
             container.innerHTML = `
@@ -1223,24 +1299,26 @@
                     </div>
                 </div>
 
-                <!-- NISK Avlsindekser (100 = rasesnitt) -->
+                <!-- Avlsindekser (100 = rasesnitt) -->
                 ${(() => {
-                    // NISK krever minimum 5 starter for pålitelig indeks
+                    // Minimum 5 starter for pålitelig indeks
                     const harNokStarter = stats.starter >= 5;
                     const sikkerhet = stats.starter >= 10 ? 'Høy' : (stats.starter >= 5 ? 'Middels' : 'Lav');
                     const sikkerhetFarge = stats.starter >= 10 ? 'green' : (stats.starter >= 5 ? 'amber' : 'red');
+                    const klubbNavn = rs.klubb || 'FKF';
+                    const raseNavn = rs.navn || 'Ukjent rase';
 
                     return `
                 <div class="bg-white rounded-xl border border-bark-100 p-5 mb-4">
                     <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-xs font-bold text-bark-600 uppercase">Avlsindekser</h3>
-                        <span class="text-[10px] text-bark-400 bg-bark-50 px-2 py-1 rounded">NISK-modell • 100 = rasesnitt</span>
+                        <h3 class="text-xs font-bold text-bark-600 uppercase">Avlsindekser – ${raseNavn}</h3>
+                        <span class="text-[10px] text-bark-400 bg-bark-50 px-2 py-1 rounded">${klubbNavn}-modell • 100 = rasesnitt</span>
                     </div>
 
                     ${!harNokStarter ? `
                     <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
                         <p class="text-xs text-amber-700">
-                            <strong>⚠ Foreløpig indeks:</strong> NISK krever minimum 5 prøvestarter for pålitelig avlsindeks.
+                            <strong>⚠ Foreløpig indeks:</strong> ${klubbNavn} krever minimum 5 prøvestarter for pålitelig avlsindeks.
                             Denne hunden har ${stats.starter} starter. Indeksene er usikre og basert hovedsakelig på slektningers prestasjoner.
                         </p>
                     </div>

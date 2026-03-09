@@ -99,14 +99,45 @@ const FuglehundAuth = (function() {
           }
         }
 
-        // Sjekk om bruker har proveleder-rolle fra API-data
+        // Sjekk om bruker har proveleder/klubbleder-rolle fra API-data (gir admin-tilgang)
         if (rolle === 'admin' || rolle === 'proveleder') {
-          if (session.trials?.some(t => t.roles?.some(r => r.type === 'proveleder'))) {
+          if (session.trials?.some(t => t.roles?.some(r =>
+            r.type === 'proveleder' || r.type === 'klubbleder'
+          ))) {
             return true;
           }
           if (session.isTrialAdmin) {
             return true;
           }
+        }
+
+        // Sjekk klubbleder separat
+        if (rolle === 'klubbleder') {
+          if (session.trials?.some(t => t.roles?.some(r => r.type === 'klubbleder'))) {
+            return true;
+          }
+        }
+      } catch {}
+    }
+
+    // Fallback: sjekk userProfile for roller (legacy)
+    const userProfile = localStorage.getItem('userProfile');
+    if (userProfile) {
+      try {
+        const profile = JSON.parse(userProfile);
+        if (rolle === null && profile.phone) return true;
+
+        // Sjekk rolle-felt direkte (fra eldre innlogginger)
+        if (profile.role) {
+          const roller = profile.role.split(',').map(r => r.trim());
+          if (rolle === 'admin') {
+            if (roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder')) {
+              return true;
+            }
+          }
+          if (rolle === 'proveleder' && roller.includes('proveleder')) return true;
+          if (rolle === 'klubbleder' && roller.includes('klubbleder')) return true;
+          if (rolle === 'nkkrep' && roller.includes('nkkrep')) return true;
         }
       } catch {}
     }

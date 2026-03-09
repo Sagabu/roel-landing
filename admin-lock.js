@@ -133,6 +133,20 @@
       } catch {}
     }
 
+    // Sjekk userProfile for roller (legacy/fallback)
+    const userProfile = localStorage.getItem('userProfile');
+    if (userProfile) {
+      try {
+        const profile = JSON.parse(userProfile);
+        if (profile.role) {
+          const roller = profile.role.split(',').map(r => r.trim());
+          if (roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder')) {
+            return true;
+          }
+        }
+      } catch {}
+    }
+
     return false;
   }
 

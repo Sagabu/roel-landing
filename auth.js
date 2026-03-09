@@ -22,27 +22,70 @@ const FuglehundAuth = (function() {
 
   // Sjekk om bruker er innlogget
   function isLoggedIn() {
+    // Sjekk JWT token først
     const token = getToken();
-    if (!token) return false;
-
-    // Sjekk om token er utløpt (enkel klientside-sjekk)
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const exp = payload.exp * 1000;
-      return Date.now() < exp;
-    } catch {
-      return false;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const exp = payload.exp * 1000;
+        if (Date.now() < exp) return true;
+      } catch {
+        // Ugyldig token
+      }
     }
+
+    // Fallback: sjekk userSession (fra min-side.html)
+    const userSession = localStorage.getItem('userSession');
+    if (userSession) {
+      try {
+        const session = JSON.parse(userSession);
+        if (session.phone) return true;
+      } catch {}
+    }
+
+    // Fallback: sjekk judgeSession
+    const judgeSession = localStorage.getItem('judgeSession');
+    if (judgeSession) {
+      try {
+        const session = JSON.parse(judgeSession);
+        if (session.phone) return true;
+      } catch {}
+    }
+
+    return false;
   }
 
   // Sjekk rolle
   function hasRole(rolle) {
+    // Sjekk JWT bruker først
     const user = getUser();
-    if (!user) return false;
-    if (rolle === 'admin') return user.rolle === 'admin';
-    if (rolle === 'dommer') return user.rolle === 'dommer' || user.rolle === 'admin';
-    if (rolle === 'klubbleder') return user.rolle === 'klubbleder' || user.rolle === 'admin';
-    return true;
+    if (user) {
+      const roller = (user.rolle || '').split(',').map(r => r.trim());
+      if (rolle === 'admin') return roller.includes('admin');
+      if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
+      if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
+      return true;
+    }
+
+    // Fallback: sjekk judgeSession for dommer-rolle
+    if (rolle === 'dommer') {
+      const judgeSession = localStorage.getItem('judgeSession');
+      if (judgeSession) {
+        try {
+          const session = JSON.parse(judgeSession);
+          if (session.isJudge || session.assignedParty) return true;
+        } catch {}
+      }
+    }
+
+    // Fallback: sjekk userSession - brukeren er innlogget men har ingen spesifikk rolle
+    const userSession = localStorage.getItem('userSession');
+    if (userSession) {
+      // Hvis rolle er null (bare krever innlogging), godta det
+      if (rolle === null) return true;
+    }
+
+    return false;
   }
 
   // Login - send telefon og kode, få tilbake token

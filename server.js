@@ -1899,8 +1899,8 @@ app.get("/.vibe-images/:filename", (c) => {
 // Static files
 app.use("/*", serveStatic({ root: __dirname }));
 
-serve({ fetch: app.fetch, port: PORT }, () => {
-  console.log(`🐕 Fuglehundprøve running on http://localhost:${PORT}`);
+serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
+  console.log(`🐕 Fuglehundprøve running on http://0.0.0.0:${PORT}`);
   console.log(`   Admin: http://localhost:${PORT}/admin-panel.html`);
   console.log(`   Backup: http://localhost:${PORT}/api/backup`);
 });

@@ -175,6 +175,7 @@
     <script>
         // Party configurations
         const PARTIES = {
+            demo1: { name: 'Demo-parti (Chris Niebel)' },
             ukak1: { name: 'UK/AK Parti 1' },
             ukak2: { name: 'UK/AK Parti 2' },
             ukak3: { name: 'UK/AK Parti 3' },
@@ -333,11 +334,18 @@
                 if (saved) {
                     const dogs = JSON.parse(saved);
                     dogs.forEach(dog => {
-                        if (dog.critiqueStatus && dog.critiqueStatus !== 'pending') {
+                        // Inkluder hunder som er ferdig bedømt (status === 'done')
+                        // og som enten har critiqueStatus satt, eller er klare for godkjenning
+                        const isDone = dog.status === 'done' && !dog.knocked;
+                        const hasSubmittedCritique = dog.critiqueStatus && dog.critiqueStatus !== 'pending';
+
+                        if (isDone || hasSubmittedCritique) {
                             allCritiques.push({
                                 ...dog,
                                 partyId,
-                                partyName: PARTIES[partyId].name
+                                partyName: PARTIES[partyId].name,
+                                // Sett default critiqueStatus for ferdig bedømte hunder uten status
+                                critiqueStatus: dog.critiqueStatus || (isDone ? 'submitted' : 'pending')
                             });
                         }
                     });

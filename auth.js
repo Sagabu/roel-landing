@@ -64,6 +64,7 @@ const FuglehundAuth = (function() {
       if (rolle === 'admin') return roller.includes('admin');
       if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
       if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
+      if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
       return true;
     }
 
@@ -78,11 +79,21 @@ const FuglehundAuth = (function() {
       }
     }
 
-    // Fallback: sjekk userSession - brukeren er innlogget men har ingen spesifikk rolle
+    // Fallback: sjekk userSession for roller
     const userSession = localStorage.getItem('userSession');
     if (userSession) {
       // Hvis rolle er null (bare krever innlogging), godta det
       if (rolle === null) return true;
+
+      // Sjekk om bruker har nkkrep-rolle fra API-data
+      if (rolle === 'nkkrep') {
+        try {
+          const session = JSON.parse(userSession);
+          if (session.trials?.some(t => t.roles?.some(r => r.type === 'nkkrep'))) {
+            return true;
+          }
+        } catch {}
+      }
     }
 
     return false;
@@ -257,7 +268,7 @@ const FuglehundAuth = (function() {
     'klubb.html': 'admin',
     'opprett-prove.html': 'admin',
     'opprett-klubb.html': 'admin',
-    'nkk-godkjenning.html': 'admin'
+    'nkk-godkjenning.html': 'nkkrep'
   };
 
   // Automatisk auth-guard basert på side

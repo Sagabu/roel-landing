@@ -167,8 +167,40 @@
 
         // Initialize page
         async function initPage() {
-            // Check if logged in
-            const session = localStorage.getItem('judgeSession');
+            // Check if logged in - sjekk både judgeSession og userSession
+            let session = localStorage.getItem('judgeSession');
+            const userSession = localStorage.getItem('userSession');
+
+            // Hvis judgeSession mangler men userSession finnes, prøv å hente dommer-info
+            if (!session && userSession) {
+                try {
+                    const user = JSON.parse(userSession);
+                    const phone = user.phone?.replace(/\D/g, '');
+                    if (phone) {
+                        const resp = await fetch(`/api/brukere/${phone}/dommer-info`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.isDommer && data.tildelinger?.length > 0) {
+                                const tildeling = data.tildelinger[0];
+                                // Opprett judgeSession fra API-data
+                                const newSession = {
+                                    name: user.name || tildeling.navn,
+                                    phone: phone,
+                                    isJudge: true,
+                                    assignedParty: tildeling.parti,
+                                    judgeRole: tildeling.dommerRolle,
+                                    loggedInAt: new Date().toISOString()
+                                };
+                                localStorage.setItem('judgeSession', JSON.stringify(newSession));
+                                session = JSON.stringify(newSession);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke gjenopprette judgeSession:', e);
+                }
+            }
+
             if (!session) {
                 window.location.href = 'dommer.html';
                 return;

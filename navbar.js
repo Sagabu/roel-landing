@@ -200,10 +200,10 @@
                                     Logg ut
                                 </button>
                             ` : `
-                                <a href="deltaker.html"
+                                <a href="min-side.html"
                                    class="bg-earth-500 hover:bg-earth-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
                                     ${getIcon('user')}
-                                    <span class="hidden sm:inline">Logg inn</span>
+                                    <span class="hidden sm:inline">Min side</span>
                                 </a>
                             `}
 

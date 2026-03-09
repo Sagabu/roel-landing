@@ -101,6 +101,41 @@
     });
   }
 
+  // Sjekk om bruker har admin-tilgang via innlogging
+  function hasAdminAccess() {
+    // Sjekk userSession for proveleder/klubbleder/admin rolle
+    const userSession = localStorage.getItem('userSession');
+    if (userSession) {
+      try {
+        const session = JSON.parse(userSession);
+        // Sjekk om bruker har proveleder-rolle på en prøve
+        if (session.trials?.some(t => t.roles?.some(r =>
+          r.type === 'proveleder' || r.type === 'klubbleder' || r.type === 'admin'
+        ))) {
+          return true;
+        }
+        // Sjekk isTrialAdmin flagg
+        if (session.isTrialAdmin) {
+          return true;
+        }
+      } catch {}
+    }
+
+    // Sjekk JWT token bruker
+    const jwtUser = localStorage.getItem('fuglehund_user');
+    if (jwtUser) {
+      try {
+        const user = JSON.parse(jwtUser);
+        const roller = (user.rolle || '').split(',').map(r => r.trim());
+        if (roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder')) {
+          return true;
+        }
+      } catch {}
+    }
+
+    return false;
+  }
+
   // Hovedlogikk
   async function init() {
     // Sjekk om admin-lock er aktivert
@@ -113,8 +148,13 @@
         return;
       }
 
-      // Sjekk om allerede ulast
+      // Sjekk om allerede ulåst via PIN
       if (isUnlocked()) {
+        return;
+      }
+
+      // Sjekk om bruker har admin-tilgang via innlogging (proveleder, klubbleder, admin)
+      if (hasAdminAccess()) {
         return;
       }
 

@@ -141,6 +141,27 @@
                     </div>
                 </div>
 
+                <!-- Premie Selection -->
+                <div>
+                    <h3 class="text-sm font-semibold text-bark-600 mb-2">Tildelt premie</h3>
+                    <select id="premieSelect" class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none text-sm bg-white">
+                        <option value="">-- Ingen premie --</option>
+                        <option value="1.UK">1. UK (Unghundklasse)</option>
+                        <option value="2.UK">2. UK</option>
+                        <option value="3.UK">3. UK</option>
+                        <option value="1.AK">1. AK (Åpen klasse)</option>
+                        <option value="2.AK">2. AK</option>
+                        <option value="3.AK">3. AK</option>
+                        <option value="1.VK">1. VK (Vinnerklasse)</option>
+                        <option value="2.VK">2. VK</option>
+                        <option value="3.VK">3. VK</option>
+                    </select>
+                    <div id="premieValidation" class="hidden mt-2 p-3 rounded-xl text-sm">
+                        <!-- Validation messages rendered here -->
+                    </div>
+                    <p class="text-xs text-bark-400 mt-1">Premiekrav: 1.premie krever min. 60 min slipptid + godkjent reis. 2./3. premie krever stand.</p>
+                </div>
+
                 <!-- Critique Text Input -->
                 <div>
                     <div class="flex items-center justify-between mb-2">
@@ -525,8 +546,100 @@
             // Existing critique
             document.getElementById('critiqueText').value = dog.critique || '';
 
+            // Existing premie
+            document.getElementById('premieSelect').value = dog.prize || '';
+            validatePremie(); // Run validation on load
+
             document.getElementById('critiqueModal').classList.remove('hidden');
         }
+
+        // Validate premie requirements
+        function validatePremie() {
+            const premie = document.getElementById('premieSelect').value;
+            const validationDiv = document.getElementById('premieValidation');
+
+            if (!premie) {
+                validationDiv.classList.add('hidden');
+                return { valid: true };
+            }
+
+            // Get current scores from the modal inputs
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                if (!el) return 0;
+                const v = el.value.trim();
+                return v === '' ? 0 : parseInt(v);
+            };
+            const getChecked = (id) => {
+                const el = document.getElementById(id);
+                return el ? el.checked : false;
+            };
+
+            const slipptid = getVal('edit_SLIPPTID');
+            const godkjentReis = getChecked('edit_GODKJENT_REISING');
+            const standM = getVal('edit_STAND_M');
+            const standU = getVal('edit_STAND_U');
+            const hasStand = standM > 0 || standU > 0;
+
+            let errors = [];
+            let warnings = [];
+
+            // Check if it's a 1. premie
+            const is1Premie = premie.startsWith('1.');
+
+            if (is1Premie) {
+                // 1. premie requirements: 60+ min slipptid AND godkjent reis
+                if (slipptid < 60) {
+                    errors.push(`Mangler slipptid: ${slipptid} min (krever min. 60 min for 1. premie)`);
+                }
+                if (!godkjentReis) {
+                    errors.push('Mangler godkjent reis (kreves for 1. premie)');
+                }
+            } else {
+                // 2. or 3. premie requirements: must have stand
+                if (!hasStand) {
+                    errors.push('Mangler stand (kreves for 2./3. premie)');
+                }
+            }
+
+            // Show validation result
+            if (errors.length > 0) {
+                validationDiv.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl">
+                        <p class="font-medium mb-1">⚠️ Premiekrav ikke oppfylt:</p>
+                        <ul class="list-disc list-inside text-xs">
+                            ${errors.map(e => `<li>${e}</li>`).join('')}
+                        </ul>
+                        <p class="text-xs mt-2 italic">Du kan fortsatt sende kritikken, men premien vil bli markert som under vurdering.</p>
+                    </div>
+                `;
+                validationDiv.classList.remove('hidden');
+                return { valid: false, errors };
+            } else {
+                validationDiv.innerHTML = `
+                    <div class="bg-green-50 border border-green-200 text-green-700 p-3 rounded-xl">
+                        <p class="font-medium">✓ Premiekrav oppfylt</p>
+                    </div>
+                `;
+                validationDiv.classList.remove('hidden');
+                return { valid: true };
+            }
+        }
+
+        // Add event listeners for premie validation
+        document.getElementById('premieSelect').addEventListener('change', validatePremie);
+
+        // Also validate when relevant score fields change
+        document.addEventListener('input', function(e) {
+            if (['edit_SLIPPTID', 'edit_GODKJENT_REISING', 'edit_STAND_M', 'edit_STAND_U'].includes(e.target.id)) {
+                validatePremie();
+            }
+        });
+        document.addEventListener('change', function(e) {
+            if (e.target.id === 'edit_GODKJENT_REISING') {
+                validatePremie();
+            }
+        });
 
         function hideModal() {
             document.getElementById('critiqueModal').classList.add('hidden');
@@ -577,6 +690,20 @@
             latestRound.scores.SOKSBREDDE = getVal('edit_SOKSBREDDE');
             latestRound.scores.REVIERING = getVal('edit_REVIERING');
             latestRound.scores.SAMARBEID = getVal('edit_SAMARBEID');
+
+            // Save premie
+            const premie = document.getElementById('premieSelect').value;
+            dog.prize = premie || null;
+
+            // Validate premie requirements
+            if (premie) {
+                const validation = validatePremie();
+                dog.premieValidated = validation.valid;
+                dog.premieValidationErrors = validation.errors || [];
+            } else {
+                dog.premieValidated = null;
+                dog.premieValidationErrors = [];
+            }
 
             // Save critique
             dog.critique = critiqueText;

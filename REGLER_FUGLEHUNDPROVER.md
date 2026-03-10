@@ -20,26 +20,48 @@ Dette dokumentet inneholder offisielle regler som MÅ følges i all kode og seed
 
 ---
 
-## Krav for 1. premie
+## Premiekrav
 
-### Slipptid
-- **Minimum 60 minutter** slipptid kreves for 1. premie (UK, AK, VK)
-- 60+ minutter garanterer IKKE 1. premie – andre kriterier må også oppfylles
-- 2. og 3. premie kan ha 60+ minutter hvis andre kriterier ikke oppfylles
+### Oversikt over premiekrav
 
-### 1. AK spesifikke krav (gir VK-kvalifisering)
-Hunden må være **"ren"**:
-- ✓ Fuglearbeid med godkjent reis
+| Premie | Slipptid | Fuglearbeid | Godkjent reis | Stand |
+|--------|----------|-------------|---------------|-------|
+| 1. premie (UK/AK/VK) | Min. 60 min | Ja | Ja | Ja |
+| 2. premie | Ikke krav | Ikke krav | Ikke krav | Ja |
+| 3. premie | Ikke krav | Ikke krav | Ikke krav | Ja |
+
+### 1. premie krav (UK/AK/VK)
+For å få tildelt 1. premie MÅ hunden ha:
+- ✓ **Minimum 60 minutter slipptid** fordelt på slippene
+- ✓ **Fuglearbeid med godkjent reis** (godkjent_reising = true)
+
+**Viktig:** 60+ minutter garanterer IKKE 1. premie – kriteriene er minimumskrav, ikke automatisk kvalifisering.
+
+### 2. og 3. premie krav
+For å få tildelt 2. eller 3. premie MÅ hunden ha:
+- ✓ **Stand** (stand_m > 0 eller stand_u > 0)
+
+Slipptid er ikke et krav for 2./3. premie.
+
+### Validering i kritikkskjemaet
+Systemet validerer automatisk premiekravene når dommer velger premie:
+- Ved valgt 1. premie: Sjekker slipptid ≥ 60 min OG godkjent_reising = true
+- Ved valgt 2./3. premie: Sjekker stand_m > 0 ELLER stand_u > 0
+- Advarsel vises hvis krav ikke er oppfylt, men dommer kan fortsatt sende kritikken
+
+---
+
+## Tilleggskrav for 1. AK (VK-kvalifisering)
+
+For at 1. AK skal kvalifisere til VK må hunden i tillegg til premiekravene være **"ren"**:
 - ✓ **Ingen makkerstand** (makker_stand = 0)
 - ✓ **Ingen sjanse på fugl** (sjanse = 0)
 - ✓ Ingen tomstand (tomstand = 0)
-- ✓ Slipptid ≥ 60 minutter
 
-### 1. UK krav
-- ✓ Fuglearbeid med godkjent reis
+### 1. UK tilleggskrav
+For 1. UK gjelder de samme tilleggskravene:
 - ✓ Ingen makkerstand
 - ✓ Ingen sjanse
-- ✓ Slipptid ≥ 60 minutter
 
 ---
 
@@ -334,4 +356,4 @@ NB: Skogsfuglprøver er ekskludert fra klassevalget (NISK-regel).
 
 ---
 
-*Sist oppdatert: 2026-03-08*
+*Sist oppdatert: 2026-03-10*

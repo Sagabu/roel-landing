@@ -28,6 +28,7 @@
     <style>
         .tab-active { border-bottom: 3px solid #0ea5e9; color: #0ea5e9; }
     </style>
+    <script src="klasse-validator.js"></script>
 </head>
 <body class="bg-cream font-sans min-h-screen">
 
@@ -172,9 +173,17 @@
                     </select>
                 </div>
 
+                <!-- Birth Date -->
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Fødselsdato *</label>
+                    <input type="date" id="dogBirthDate" required
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none">
+                    <p id="klasseInfo" class="text-xs text-bark-500 mt-1 hidden"></p>
+                </div>
+
                 <!-- Gender -->
                 <div>
-                    <label class="block text-sm font-medium text-bark-700 mb-2">Kjonn</label>
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Kjønn</label>
                     <div class="flex gap-4">
                         <label class="flex items-center gap-2 cursor-pointer">
                             <input type="radio" name="dogGender" value="male" class="w-4 h-4 text-sky-500">
@@ -185,6 +194,22 @@
                             <span class="text-bark-700">Tispe</span>
                         </label>
                     </div>
+                </div>
+
+                <!-- Prøvehistorikk -->
+                <div class="bg-bark-50 rounded-xl p-4">
+                    <label class="block text-sm font-medium text-bark-700 mb-3">Prøvehistorikk</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="harStartetAK" class="w-5 h-5 text-sky-600 border-bark-300 rounded focus:ring-sky-500">
+                            <span class="text-bark-700 text-sm">Hunden har startet i AK tidligere</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="har1AK" class="w-5 h-5 text-sky-600 border-bark-300 rounded focus:ring-sky-500">
+                            <span class="text-bark-700 text-sm">Hunden har oppnådd 1. AK</span>
+                        </label>
+                    </div>
+                    <p id="klasseAnbefaling" class="text-sm mt-3 p-3 rounded-lg hidden"></p>
                 </div>
 
                 <!-- Buttons -->
@@ -691,6 +716,7 @@
             document.getElementById('dogId').value = '';
             document.getElementById('dogImage').classList.add('hidden');
             document.getElementById('dogImagePlaceholder').classList.remove('hidden');
+            document.getElementById('klasseAnbefaling').classList.add('hidden');
             currentDogPhoto = null;
             document.getElementById('dogModal').classList.remove('hidden');
         }
@@ -719,6 +745,14 @@
                 document.getElementById('dogImagePlaceholder').classList.remove('hidden');
                 currentDogPhoto = null;
             }
+
+            // Sett fødselsdato og prøvehistorikk
+            document.getElementById('dogBirthDate').value = dog.birthDate || '';
+            document.getElementById('harStartetAK').checked = dog.harStartetAK || false;
+            document.getElementById('har1AK').checked = dog.har1AK || false;
+
+            // Oppdater klasseanbefaling
+            updateKlasseAnbefaling();
 
             document.getElementById('dogModal').classList.remove('hidden');
         }
@@ -755,6 +789,9 @@
                 breed: document.getElementById('dogBreed').value,
                 regNumber: regNumber,
                 gender: genderInput ? genderInput.value : null,
+                birthDate: document.getElementById('dogBirthDate').value,
+                harStartetAK: document.getElementById('harStartetAK').checked,
+                har1AK: document.getElementById('har1AK').checked,
                 photo: currentDogPhoto,
                 results: []
             };
@@ -822,9 +859,61 @@
             }
         }
 
+        // Klassevalidering ved fødselsdato-endring
+        document.getElementById('dogBirthDate').addEventListener('change', updateKlasseAnbefaling);
+        document.getElementById('harStartetAK').addEventListener('change', updateKlasseAnbefaling);
+        document.getElementById('har1AK').addEventListener('change', updateKlasseAnbefaling);
+
+        function updateKlasseAnbefaling() {
+            const fodselsdato = document.getElementById('dogBirthDate').value;
+            const harStartetAK = document.getElementById('harStartetAK').checked;
+            const har1AK = document.getElementById('har1AK').checked;
+            const anbefalingEl = document.getElementById('klasseAnbefaling');
+
+            if (!fodselsdato) {
+                anbefalingEl.classList.add('hidden');
+                return;
+            }
+
+            // Bruk KlasseValidator
+            if (typeof KlasseValidator !== 'undefined') {
+                const nesteProve = new Date();
+                nesteProve.setMonth(nesteProve.getMonth() + 1); // Anta neste prøve om 1 mnd
+
+                const resultat = KlasseValidator.bestemKlasse(fodselsdato, nesteProve, {
+                    harStartetAK: harStartetAK,
+                    har1AK: har1AK
+                });
+
+                anbefalingEl.classList.remove('hidden');
+
+                if (resultat.klasse === 'FOR_UNG') {
+                    anbefalingEl.className = 'text-sm mt-3 p-3 rounded-lg bg-red-50 text-red-700';
+                    anbefalingEl.innerHTML = `<strong>⚠️ ${resultat.forklaring}</strong>`;
+                } else {
+                    let bgClass = 'bg-sky-50 text-sky-700';
+                    let klasseNavn = resultat.klasse;
+
+                    if (resultat.kanVelgeVK) {
+                        bgClass = 'bg-purple-50 text-purple-700';
+                        klasseNavn = 'AK eller VK';
+                    }
+
+                    anbefalingEl.className = `text-sm mt-3 p-3 rounded-lg ${bgClass}`;
+                    let html = `<strong>Anbefalt klasse: ${klasseNavn}</strong><br><span class="text-xs">${resultat.forklaring}</span>`;
+
+                    if (resultat.warnings.length > 0) {
+                        html += `<br><span class="text-amber-600 text-xs mt-1 block">⚠️ ${resultat.warnings.join(' ')}</span>`;
+                    }
+
+                    anbefalingEl.innerHTML = html;
+                }
+            }
+        }
+
         // Initialize
         init();
     </script>
-<script src="dog-search.js"></script>
+    <script src="dog-search.js"></script>
 </body>
 </html>

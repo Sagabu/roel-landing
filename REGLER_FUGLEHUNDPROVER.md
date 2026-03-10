@@ -24,29 +24,44 @@ Dette dokumentet inneholder offisielle regler som MÅ følges i all kode og seed
 
 ### Oversikt over premiekrav
 
-| Premie | Slipptid | Fuglearbeid | Godkjent reis | Stand |
-|--------|----------|-------------|---------------|-------|
-| 1. premie (UK/AK/VK) | Min. 60 min | Ja | Ja | Ja |
-| 2. premie | Ikke krav | Ikke krav | Ikke krav | Ja |
-| 3. premie | Ikke krav | Ikke krav | Ikke krav | Ja |
+| Klasse | Mulige premier |
+|--------|----------------|
+| **UK** | 1., 2., 3. UK |
+| **AK** | 1., 2., 3. AK |
+| **VK** | 1., 2., 3., 4., 5., 6. VK |
+
+### Krav per premietype
+
+| Premie | Slipptid | Stand | Godkjent reis |
+|--------|----------|-------|---------------|
+| 1. premie (UK/AK/VK) | Min. 60 min | Ja | Ja |
+| 2.-3. premie (UK/AK) | Ikke krav | Ja | Ikke krav |
+| 2.-6. premie (VK) | Ikke krav | Ja | Ikke krav |
 
 ### 1. premie krav (UK/AK/VK)
 For å få tildelt 1. premie MÅ hunden ha:
 - ✓ **Minimum 60 minutter slipptid** fordelt på slippene
-- ✓ **Fuglearbeid med godkjent reis** (godkjent_reising = true)
+- ✓ **Stand** (stand_m > 0 eller stand_u > 0)
+- ✓ **Godkjent reis** (godkjent_reising = true)
 
-**Viktig:** 60+ minutter garanterer IKKE 1. premie – kriteriene er minimumskrav, ikke automatisk kvalifisering.
+**Viktig:** Disse kriteriene er minimumskrav, ikke automatisk kvalifisering.
 
-### 2. og 3. premie krav
+### 2. og 3. premie krav (UK/AK)
 For å få tildelt 2. eller 3. premie MÅ hunden ha:
 - ✓ **Stand** (stand_m > 0 eller stand_u > 0)
 
 Slipptid er ikke et krav for 2./3. premie.
 
+### 2.-6. premie krav (VK)
+For å få tildelt premie i VK MÅ hunden ha:
+- ✓ **Stand** (stand_m > 0 eller stand_u > 0)
+
+Slipptid er ikke et krav for 2.-6. premie.
+
 ### Validering i kritikkskjemaet
 Systemet validerer automatisk premiekravene når dommer velger premie:
-- Ved valgt 1. premie: Sjekker slipptid ≥ 60 min OG godkjent_reising = true
-- Ved valgt 2./3. premie: Sjekker stand_m > 0 ELLER stand_u > 0
+- Ved valgt 1. premie: Sjekker slipptid ≥ 60 min OG stand OG godkjent_reising = true
+- Ved valgt 2.-6. premie: Sjekker stand_m > 0 ELLER stand_u > 0
 - Advarsel vises hvis krav ikke er oppfylt, men dommer kan fortsatt sende kritikken
 
 ---

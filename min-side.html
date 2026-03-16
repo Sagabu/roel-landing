@@ -305,27 +305,64 @@
         let trialData = null;
 
         // Check for existing session on page load
+        // Støtter flere session-typer: userSession, judgeSession, userProfile
         document.addEventListener('DOMContentLoaded', async () => {
             await loadTrialData();
 
-            const savedSession = localStorage.getItem('userSession');
+            // Prøv å finne en gyldig sesjon fra ulike kilder
+            let savedSession = localStorage.getItem('userSession');
+            let sessionPhone = null;
+
             if (savedSession) {
                 try {
-                    const saved = JSON.parse(savedSession);
-                    // Re-hent brukerinfo fra API for å sikre at alle egenskaper er oppdatert
-                    const userInfo = await getUserByPhoneAsync(saved.phone?.replace(/\D/g, ''));
+                    const parsed = JSON.parse(savedSession);
+                    sessionPhone = parsed.phone?.replace(/\D/g, '');
+                } catch (e) {}
+            }
+
+            // Fallback til judgeSession hvis userSession mangler
+            if (!sessionPhone) {
+                const judgeSession = localStorage.getItem('judgeSession');
+                if (judgeSession) {
+                    try {
+                        const parsed = JSON.parse(judgeSession);
+                        sessionPhone = parsed.phone?.replace(/\D/g, '');
+                    } catch (e) {}
+                }
+            }
+
+            // Fallback til userProfile hvis begge mangler
+            if (!sessionPhone) {
+                const userProfile = localStorage.getItem('userProfile');
+                if (userProfile) {
+                    try {
+                        const parsed = JSON.parse(userProfile);
+                        sessionPhone = parsed.phone?.replace(/\D/g, '');
+                    } catch (e) {}
+                }
+            }
+
+            // Hvis vi fant et telefonnummer, hent brukerinfo og vis dashboard
+            if (sessionPhone) {
+                try {
+                    const userInfo = await getUserByPhoneAsync(sessionPhone);
                     currentUser = {
-                        ...saved,
-                        name: userInfo.name || saved.name,
+                        phone: sessionPhone,
+                        name: userInfo.name || 'Bruker',
                         trials: userInfo.trials,
                         isTrialAdmin: userInfo.isTrialAdmin || false,
                         clubName: userInfo.clubName || null,
-                        clubRole: userInfo.clubRole || null
+                        clubRole: userInfo.clubRole || null,
+                        loggedInAt: new Date().toISOString()
                     };
+
+                    // Oppdater/opprett userSession for konsistens
+                    localStorage.setItem('userSession', JSON.stringify(currentUser));
+
                     showDashboard();
                 } catch (e) {
                     console.error('Session restore error:', e);
-                    localStorage.removeItem('userSession');
+                    // Ikke fjern sessions, la brukeren logge inn på nytt
                 }
             }
         });

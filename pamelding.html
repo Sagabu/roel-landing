@@ -116,6 +116,30 @@
                     <p id="klasseError" class="hidden text-red-600 text-sm mt-2"></p>
                 </div>
 
+                <!-- Velg dag(er) - vises for UK/AK -->
+                <div id="dagValgSection" class="hidden">
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Velg dag(er) *</label>
+                    <div id="dagValgContainer" class="space-y-2">
+                        <!-- Dager legges til dynamisk -->
+                    </div>
+                    <p class="text-xs text-bark-500 mt-2">Du kan velge én eller flere dager</p>
+                </div>
+
+                <!-- VK-dag info - vises for VK -->
+                <div id="vkDagInfo" class="hidden bg-sky-50 border border-sky-200 rounded-xl p-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-sky-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-medium text-sky-800">VK går på:</p>
+                            <p id="vkDagTekst" class="text-sky-700"></p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Dokumentasjon -->
                 <div id="dokumentasjonSection" class="space-y-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                     <h3 class="font-semibold text-amber-800 flex items-center gap-2">
@@ -504,13 +528,106 @@
 
         // Lytt på klassevalg
         document.querySelectorAll('input[name="klasse"]').forEach(r => {
-            r.addEventListener('change', updateSubmitButton);
+            r.addEventListener('change', function() {
+                oppdaterDagValg();
+                updateSubmitButton();
+            });
         });
+
+        function oppdaterDagValg() {
+            const valgtKlasse = document.querySelector('input[name="klasse"]:checked')?.value;
+            const dagValgSection = document.getElementById('dagValgSection');
+            const vkDagInfo = document.getElementById('vkDagInfo');
+            const dagValgContainer = document.getElementById('dagValgContainer');
+
+            if (!prove) return;
+
+            // Beregn prøvedager
+            const startDate = new Date(prove.start_dato);
+            const endDate = prove.slutt_dato ? new Date(prove.slutt_dato) : startDate;
+            const antallDager = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+            if (valgtKlasse === 'VK') {
+                // VK har fast dag satt av arrangør
+                dagValgSection.classList.add('hidden');
+                vkDagInfo.classList.remove('hidden');
+
+                // VK går typisk siste dag, men kan konfigureres
+                const vkDag = proveConfig?.vk_dag || antallDager; // Default siste dag
+                const vkDato = new Date(startDate);
+                vkDato.setDate(vkDato.getDate() + vkDag - 1);
+
+                document.getElementById('vkDagTekst').textContent =
+                    `Dag ${vkDag} - ${vkDato.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}`;
+
+            } else if (valgtKlasse === 'UK' || valgtKlasse === 'AK') {
+                // UK/AK kan velge dager
+                vkDagInfo.classList.add('hidden');
+
+                if (antallDager > 1) {
+                    dagValgSection.classList.remove('hidden');
+
+                    // Generer checkboxer for hver dag
+                    let html = '';
+                    for (let i = 1; i <= antallDager; i++) {
+                        const dagDato = new Date(startDate);
+                        dagDato.setDate(dagDato.getDate() + i - 1);
+
+                        // Sjekk om denne dagen er reservert for VK
+                        const erVkDag = proveConfig?.vk_dag === i;
+
+                        html += `
+                            <label class="flex items-center gap-3 p-3 bg-bark-50 hover:bg-bark-100 rounded-xl cursor-pointer transition ${erVkDag ? 'opacity-50' : ''}">
+                                <input type="checkbox" name="dager" value="${i}" class="w-5 h-5 text-sky-600 border-bark-300 rounded focus:ring-sky-500" ${erVkDag ? 'disabled' : ''}>
+                                <div class="flex-1">
+                                    <span class="font-medium text-bark-800">Dag ${i}</span>
+                                    <span class="text-sm text-bark-600 ml-2">${dagDato.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+                                </div>
+                                ${erVkDag ? '<span class="text-xs text-bark-500">(Reservert for VK)</span>' : ''}
+                            </label>
+                        `;
+                    }
+                    dagValgContainer.innerHTML = html;
+
+                    // Legg til lytter på checkboxer
+                    dagValgContainer.querySelectorAll('input[name="dager"]').forEach(cb => {
+                        cb.addEventListener('change', updateSubmitButton);
+                    });
+                } else {
+                    dagValgSection.classList.add('hidden');
+                }
+            } else {
+                dagValgSection.classList.add('hidden');
+                vkDagInfo.classList.add('hidden');
+            }
+        }
 
         function updateSubmitButton() {
             const hundValgt = document.getElementById('hundSelect').value;
             const klasseValgt = document.querySelector('input[name="klasse"]:checked');
-            document.getElementById('submitBtn').disabled = !hundValgt || !klasseValgt;
+
+            if (!hundValgt || !klasseValgt) {
+                document.getElementById('submitBtn').disabled = true;
+                return;
+            }
+
+            // Sjekk dagvalg for UK/AK hvis flere dager
+            const valgtKlasse = klasseValgt.value;
+            if (valgtKlasse === 'UK' || valgtKlasse === 'AK') {
+                const startDate = new Date(prove?.start_dato);
+                const endDate = prove?.slutt_dato ? new Date(prove.slutt_dato) : startDate;
+                const antallDager = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+                if (antallDager > 1) {
+                    const valgteDager = document.querySelectorAll('input[name="dager"]:checked');
+                    if (valgteDager.length === 0) {
+                        document.getElementById('submitBtn').disabled = true;
+                        return;
+                    }
+                }
+            }
+
+            document.getElementById('submitBtn').disabled = false;
         }
 
         // Skjemainnsending
@@ -525,9 +642,29 @@
                 return;
             }
 
+            // Samle valgte dager
+            let valgteDager = [];
+            if (klasse === 'VK') {
+                // VK har fast dag
+                const startDate = new Date(prove.start_dato);
+                const endDate = prove.slutt_dato ? new Date(prove.slutt_dato) : startDate;
+                const antallDager = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                valgteDager = [proveConfig?.vk_dag || antallDager];
+            } else {
+                // UK/AK: sjekk om det er flere dager
+                const dagCheckboxer = document.querySelectorAll('input[name="dager"]:checked');
+                if (dagCheckboxer.length > 0) {
+                    valgteDager = Array.from(dagCheckboxer).map(cb => parseInt(cb.value));
+                } else {
+                    // Enkeltdags-prøve
+                    valgteDager = [1];
+                }
+            }
+
             const data = {
                 hund_id: parseInt(hundId),
                 klasse: klasse,
+                dager: valgteDager,
                 sauebevis: document.getElementById('sauebevis').checked,
                 vaksinasjon_ok: document.getElementById('vaksinasjon').checked,
                 rabies_ok: document.getElementById('rabies')?.checked || false,

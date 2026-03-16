@@ -238,6 +238,7 @@ db.exec(`
     maks_deltakere_uk INTEGER DEFAULT 40,
     maks_deltakere_ak INTEGER DEFAULT 40,
     maks_deltakere_vk INTEGER DEFAULT 20,
+    vk_dag INTEGER DEFAULT NULL,
     pris_hogfjell INTEGER DEFAULT 1350,
     pris_lavland INTEGER DEFAULT 1050,
     pris_skog INTEGER DEFAULT 900,
@@ -1282,6 +1283,14 @@ app.post("/api/prover/:id/pameldinger", requireAuth, async (c) => {
   }
 
   // Opprett påmelding
+  // Håndter dager - kan være enkelt tall eller array
+  let dagerJson = null;
+  if (body.dager) {
+    dagerJson = JSON.stringify(Array.isArray(body.dager) ? body.dager : [body.dager]);
+  } else if (body.dag) {
+    dagerJson = JSON.stringify([body.dag]);
+  }
+
   const forerTelefon = body.forer_telefon || bruker.telefon;
   const result = db.prepare(`
     INSERT INTO pameldinger (
@@ -1289,7 +1298,7 @@ app.post("/api/prover/:id/pameldinger", requireAuth, async (c) => {
       sauebevis, vaksinasjon_ok, rabies_ok, notat, pameldt_av_telefon
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    proveId, body.hund_id, forerTelefon, body.klasse, body.dag || null,
+    proveId, body.hund_id, forerTelefon, body.klasse, dagerJson,
     status, ventelistePlass,
     body.sauebevis ? 1 : 0, body.vaksinasjon_ok ? 1 : 0, body.rabies_ok ? 1 : 0,
     body.notat || '', bruker.telefon
@@ -1431,6 +1440,7 @@ app.get("/api/prover/:id/config", (c) => {
       maks_deltakere_uk: 40,
       maks_deltakere_ak: 40,
       maks_deltakere_vk: 20,
+      vk_dag: null,
       pris_hogfjell: 1350,
       pris_lavland: 1050,
       pris_skog: 900,

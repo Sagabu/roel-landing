@@ -89,12 +89,20 @@ const KlasseValidator = {
         if (historikk.harStartetAK) {
             // Kan ikke gå tilbake til UK
             result.klasse = 'AK';
-            result.forklaring = `Hunden har tidligere startet i AK og kan ikke gå tilbake til UK.`;
+
+            // For hunder over 2 år trenger vi ikke forklare at de ikke kan gå tilbake til UK
+            // da de uansett er for gamle for UK
+            if (alder.totalMonths >= 24) {
+                result.forklaring = `Hunden er ${this.formaterAlder(alder)} og hører til i AK (Åpen klasse).`;
+            } else {
+                // Hund under 2 år som har startet i AK - viktig å forklare
+                result.forklaring = `Hunden har tidligere startet i AK og kan ikke gå tilbake til UK.`;
+            }
 
             // Sjekk om hunden har 1. AK
             if (historikk.har1AK) {
                 result.kanVelgeVK = true;
-                result.forklaring += ' Hunden har oppnådd 1. AK og kan velge VK.';
+                result.forklaring += ' Hunden har oppnådd 1. AK og kan stille i VK.';
             }
 
             return result;
@@ -126,7 +134,7 @@ const KlasseValidator = {
             // Sjekk om hunden har 1. AK
             if (historikk.har1AK) {
                 result.kanVelgeVK = true;
-                result.forklaring += ' Hunden har oppnådd 1. AK og kan velge VK.';
+                result.forklaring += ' Hunden har oppnådd 1. AK og kan stille i VK.';
             }
         }
 

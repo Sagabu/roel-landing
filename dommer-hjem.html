@@ -25,6 +25,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
     <style>
         .party-card { transition: all 0.2s; }
         .party-card:hover { transform: translateY(-2px); }
@@ -167,48 +168,21 @@
 
         // Initialize page
         async function initPage() {
-            // Check if logged in - sjekk både judgeSession og userSession
-            let session = localStorage.getItem('judgeSession');
-            const userSession = localStorage.getItem('userSession');
-
-            // Hvis judgeSession mangler men userSession finnes, prøv å hente dommer-info
-            if (!session && userSession) {
-                try {
-                    const user = JSON.parse(userSession);
-                    const phone = user.phone?.replace(/\D/g, '');
-                    if (phone) {
-                        const resp = await fetch(`/api/brukere/${phone}/dommer-info`);
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            if (data.isDommer && data.tildelinger?.length > 0) {
-                                const tildeling = data.tildelinger[0];
-                                // Opprett judgeSession fra API-data
-                                const newSession = {
-                                    name: user.name || tildeling.navn,
-                                    phone: phone,
-                                    isJudge: true,
-                                    assignedParty: tildeling.parti,
-                                    judgeRole: tildeling.dommerRolle,
-                                    loggedInAt: new Date().toISOString()
-                                };
-                                localStorage.setItem('judgeSession', JSON.stringify(newSession));
-                                // Sett også userSession for at min-side.html skal fungere
-                                localStorage.setItem('userSession', JSON.stringify({
-                                    name: newSession.name,
-                                    phone: phone,
-                                    loggedInAt: newSession.loggedInAt
-                                }));
-                                session = JSON.stringify(newSession);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.error('Kunne ikke gjenopprette judgeSession:', e);
-                }
+            // Bruk felles auth-modul for å synkronisere sessions
+            if (!FuglehundAuth.isLoggedIn()) {
+                window.location.href = 'dommer.html';
+                return;
             }
 
+            // Synkroniser alle sessions (oppdaterer userSession, judgeSession, userProfile)
+            await FuglehundAuth.syncSessions();
+
+            // Hent judgeSession etter synkronisering
+            let session = localStorage.getItem('judgeSession');
+
             if (!session) {
-                window.location.href = 'dommer.html';
+                // Bruker er innlogget men ikke dommer
+                window.location.href = 'min-side.html';
                 return;
             }
 

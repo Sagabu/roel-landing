@@ -25,6 +25,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
     <style>
         .code-input {
             width: 3rem;
@@ -305,46 +306,19 @@
         let trialData = null;
 
         // Check for existing session on page load
-        // Støtter flere session-typer: userSession, judgeSession, userProfile
+        // Bruker FuglehundAuth for konsistent sesjonshåndtering
         document.addEventListener('DOMContentLoaded', async () => {
             await loadTrialData();
 
-            // Prøv å finne en gyldig sesjon fra ulike kilder
-            let savedSession = localStorage.getItem('userSession');
-            let sessionPhone = null;
+            // Bruk FuglehundAuth for å hente telefonnummer fra alle session-kilder
+            const sessionPhone = FuglehundAuth.getSessionPhone();
 
-            if (savedSession) {
-                try {
-                    const parsed = JSON.parse(savedSession);
-                    sessionPhone = parsed.phone?.replace(/\D/g, '');
-                } catch (e) {}
-            }
-
-            // Fallback til judgeSession hvis userSession mangler
-            if (!sessionPhone) {
-                const judgeSession = localStorage.getItem('judgeSession');
-                if (judgeSession) {
-                    try {
-                        const parsed = JSON.parse(judgeSession);
-                        sessionPhone = parsed.phone?.replace(/\D/g, '');
-                    } catch (e) {}
-                }
-            }
-
-            // Fallback til userProfile hvis begge mangler
-            if (!sessionPhone) {
-                const userProfile = localStorage.getItem('userProfile');
-                if (userProfile) {
-                    try {
-                        const parsed = JSON.parse(userProfile);
-                        sessionPhone = parsed.phone?.replace(/\D/g, '');
-                    } catch (e) {}
-                }
-            }
-
-            // Hvis vi fant et telefonnummer, hent brukerinfo og vis dashboard
+            // Hvis vi fant et telefonnummer, synkroniser sessions og vis dashboard
             if (sessionPhone) {
                 try {
+                    // Synkroniser alle sessions (dette oppdaterer userSession, judgeSession, userProfile)
+                    await FuglehundAuth.syncSessions();
+
                     const userInfo = await getUserByPhoneAsync(sessionPhone);
                     currentUser = {
                         phone: sessionPhone,
@@ -1151,9 +1125,8 @@
         }
 
         function logout() {
-            localStorage.removeItem('userSession');
-            localStorage.removeItem('userProfile');
-            localStorage.removeItem('judgeSession');
+            // Bruk FuglehundAuth for å logge ut og fjerne alle sessions
+            FuglehundAuth.logout();
             currentUser = null;
             document.getElementById('dashboardSection').classList.add('hidden');
             document.getElementById('tabNavigation').classList.add('hidden');

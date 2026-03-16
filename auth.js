@@ -20,6 +20,25 @@ const FuglehundAuth = (function() {
     return data ? JSON.parse(data) : null;
   }
 
+  // Hent telefonnummer fra alle mulige session-kilder
+  function getSessionPhone() {
+    const sources = ['userSession', 'judgeSession', 'userProfile', USER_KEY];
+
+    for (const key of sources) {
+      const data = localStorage.getItem(key);
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          const phone = parsed.phone || parsed.telefon;
+          if (phone) {
+            return phone.replace(/\D/g, '');
+          }
+        } catch {}
+      }
+    }
+    return null;
+  }
+
   // Sjekk om bruker er innlogget
   function isLoggedIn() {
     // Sjekk JWT token først
@@ -34,25 +53,8 @@ const FuglehundAuth = (function() {
       }
     }
 
-    // Fallback: sjekk userSession (fra min-side.html)
-    const userSession = localStorage.getItem('userSession');
-    if (userSession) {
-      try {
-        const session = JSON.parse(userSession);
-        if (session.phone) return true;
-      } catch {}
-    }
-
-    // Fallback: sjekk judgeSession
-    const judgeSession = localStorage.getItem('judgeSession');
-    if (judgeSession) {
-      try {
-        const session = JSON.parse(judgeSession);
-        if (session.phone) return true;
-      } catch {}
-    }
-
-    return false;
+    // Fallback: sjekk alle session-typer
+    return !!getSessionPhone();
   }
 
   // Sjekk rolle
@@ -145,6 +147,82 @@ const FuglehundAuth = (function() {
     return false;
   }
 
+  // Synkroniser alle session-typer for konsistens
+  async function syncSessions() {
+    const phone = getSessionPhone();
+    if (!phone) return null;
+
+    try {
+      // Hent brukerdata fra API
+      const resp = await fetch(`/api/brukere/${phone}`);
+      if (!resp.ok) return null;
+
+      const userData = await resp.json();
+      const name = `${userData.fornavn || ''} ${userData.etternavn || ''}`.trim() || 'Bruker';
+      const loggedInAt = new Date().toISOString();
+
+      // Hent dommer-info
+      let isDommer = false;
+      let dommerInfo = null;
+      try {
+        const dommerResp = await fetch(`/api/brukere/${phone}/dommer-info`);
+        if (dommerResp.ok) {
+          const data = await dommerResp.json();
+          if (data.isDommer && data.tildelinger?.length > 0) {
+            isDommer = true;
+            dommerInfo = data.tildelinger[0];
+          }
+        }
+      } catch {}
+
+      // Oppdater userSession
+      const userSession = {
+        phone,
+        name,
+        loggedInAt,
+        isTrialAdmin: !!userData.klubbAdmin,
+        clubName: userData.klubbAdmin?.klubb_navn || null,
+        clubRole: userData.klubbAdmin?.klubb_rolle || null
+      };
+      localStorage.setItem('userSession', JSON.stringify(userSession));
+
+      // Oppdater userProfile for bakoverkompatibilitet
+      localStorage.setItem('userProfile', JSON.stringify({
+        phone,
+        name,
+        email: userData.epost || '',
+        role: userData.rolle || '',
+        loggedInAt
+      }));
+
+      // Oppdater judgeSession hvis bruker er dommer
+      if (isDommer && dommerInfo) {
+        localStorage.setItem('judgeSession', JSON.stringify({
+          name,
+          phone,
+          isJudge: true,
+          assignedParty: dommerInfo.parti,
+          judgeRole: dommerInfo.dommerRolle,
+          loggedInAt
+        }));
+      }
+
+      // Oppdater fuglehund_user
+      localStorage.setItem(USER_KEY, JSON.stringify({
+        telefon: phone,
+        fornavn: userData.fornavn,
+        etternavn: userData.etternavn,
+        navn: name,
+        rolle: userData.rolle
+      }));
+
+      return { phone, name, userData, isDommer, dommerInfo };
+    } catch (e) {
+      console.error('syncSessions error:', e);
+      return null;
+    }
+  }
+
   // Login - send telefon og kode, få tilbake token
   async function login(telefon, kode = '') {
     const response = await fetch('/api/auth/login', {
@@ -182,9 +260,9 @@ const FuglehundAuth = (function() {
       }
     }
 
-    // Fjern lokale data
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    // Fjern ALLE session-typer
+    const sessionKeys = ['userSession', 'judgeSession', 'userProfile', TOKEN_KEY, USER_KEY];
+    sessionKeys.forEach(key => localStorage.removeItem(key));
   }
 
   // Hent Authorization header for API-kall
@@ -360,10 +438,12 @@ const FuglehundAuth = (function() {
   return {
     getToken,
     getUser,
+    getSessionPhone,
     isLoggedIn,
     hasRole,
     login,
     logout,
+    syncSessions,
     getAuthHeader,
     authFetch,
     verifyAndRefresh,

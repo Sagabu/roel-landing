@@ -58,28 +58,59 @@
             <!-- LOGIN SECTION (shown first by default) -->
             <section id="loginSection" class="bg-white rounded-2xl shadow-lg p-8 border border-bark-200">
                 <h1 class="text-3xl font-bold mb-2 font-serif text-bark-900">Logg inn</h1>
-                <p class="text-bark-600 mb-8">Bruk telefonnummeret ditt for å logge inn</p>
+                <p class="text-bark-600 mb-8">Vi sender deg en engangskode på SMS</p>
 
-                <form id="quickLoginForm" class="space-y-6">
-                    <div>
-                        <label for="quickPhone" class="block text-sm font-medium text-bark-700 mb-2">Mobilnummer</label>
-                        <div class="flex">
-                            <span class="inline-flex items-center px-4 py-3 rounded-l-xl border-2 border-r-0 border-bark-200 bg-bark-50 text-bark-600 font-medium">
-                                +47
-                            </span>
-                            <input type="tel" id="quickPhone" name="phone" placeholder="12345678" required
-                                maxlength="8" pattern="[0-9]{8}" inputmode="numeric"
-                                class="w-full px-4 py-3 rounded-r-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none transition">
+                <!-- Step 1: Phone number -->
+                <div id="loginStep1">
+                    <form id="quickLoginForm" class="space-y-6">
+                        <div>
+                            <label for="quickPhone" class="block text-sm font-medium text-bark-700 mb-2">Mobilnummer</label>
+                            <div class="flex">
+                                <span class="inline-flex items-center px-4 py-3 rounded-l-xl border-2 border-r-0 border-bark-200 bg-bark-50 text-bark-600 font-medium">
+                                    +47
+                                </span>
+                                <input type="tel" id="quickPhone" name="phone" placeholder="12345678" required
+                                    maxlength="8" pattern="[0-9]{8}" inputmode="numeric"
+                                    class="w-full px-4 py-3 rounded-r-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none transition">
+                            </div>
+                            <p class="text-xs text-bark-500 mt-1">8 siffer uten mellomrom</p>
                         </div>
-                        <p class="text-xs text-bark-500 mt-1">8 siffer uten mellomrom</p>
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white py-3 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                            Send meg kode
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Step 2: SMS code -->
+                <div id="loginStep2" class="hidden">
+                    <div class="text-center mb-6">
+                        <p class="text-bark-600">Vi har sendt en kode til</p>
+                        <p class="font-semibold text-bark-800" id="displayPhone">+47 XXX XX XXX</p>
                     </div>
-                    <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white py-3 rounded-xl font-medium transition flex items-center justify-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
-                        </svg>
-                        Logg inn
-                    </button>
-                </form>
+
+                    <form id="codeForm" class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-3 text-center">Engangskode (4 siffer)</label>
+                            <div class="flex justify-center gap-3">
+                                <input type="text" maxlength="1" inputmode="numeric" class="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none" id="code1">
+                                <input type="text" maxlength="1" inputmode="numeric" class="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none" id="code2">
+                                <input type="text" maxlength="1" inputmode="numeric" class="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none" id="code3">
+                                <input type="text" maxlength="1" inputmode="numeric" class="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none" id="code4">
+                            </div>
+                            <p id="codeError" class="text-red-600 text-sm text-center mt-2 hidden">Feil kode. Prøv igjen.</p>
+                            <p class="text-xs text-bark-500 mt-3 text-center">I dev-modus: bruk koden <strong>1234</strong></p>
+                        </div>
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white py-3 rounded-xl font-medium transition">
+                            Bekreft og logg inn
+                        </button>
+                        <button type="button" id="backToPhone" class="w-full text-bark-500 hover:text-bark-700 text-sm font-medium">
+                            Tilbake - endre nummer
+                        </button>
+                    </form>
+                </div>
 
                 <div class="mt-8 pt-6 border-t border-bark-200">
                     <p class="text-bark-600 text-sm text-center">
@@ -267,7 +298,10 @@
             loginSection.classList.remove('hidden');
         });
 
-        // Quick login form
+        // Store phone number for step 2
+        let currentPhone = '';
+
+        // Step 1: Send code form
         document.getElementById('quickLoginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const phone = document.getElementById('quickPhone').value.replace(/\D/g, '');
@@ -277,24 +311,87 @@
                 return;
             }
 
+            // Sjekk om bruker finnes først
             try {
-                // Logg inn via JWT API
+                const checkResp = await fetch(`/api/brukere/${phone}`);
+                if (!checkResp.ok) {
+                    alert('Ingen bruker funnet med dette telefonnummeret. Opprett en konto først.');
+                    loginSection.classList.add('hidden');
+                    registerSection.classList.remove('hidden');
+                    document.getElementById('regPhone').value = phone;
+                    return;
+                }
+            } catch (err) {
+                // Fortsett uansett
+            }
+
+            currentPhone = phone;
+            document.getElementById('displayPhone').textContent = '+47 ' + phone.replace(/(\d{3})(\d{2})(\d{3})/, '$1 $2 $3');
+            document.getElementById('loginStep1').classList.add('hidden');
+            document.getElementById('loginStep2').classList.remove('hidden');
+            document.getElementById('code1').focus();
+        });
+
+        // Back to phone input
+        document.getElementById('backToPhone').addEventListener('click', () => {
+            document.getElementById('loginStep2').classList.add('hidden');
+            document.getElementById('loginStep1').classList.remove('hidden');
+            clearCodeInputs();
+        });
+
+        // Code input auto-focus
+        ['code1', 'code2', 'code3', 'code4'].forEach((id, index) => {
+            const input = document.getElementById(id);
+            input.addEventListener('input', (e) => {
+                e.target.value = e.target.value.replace(/\D/g, '');
+                if (e.target.value.length === 1 && index < 3) {
+                    document.getElementById('code' + (index + 2)).focus();
+                }
+                // Auto-submit when all 4 digits entered
+                if (getEnteredCode().length === 4) {
+                    document.getElementById('codeForm').dispatchEvent(new Event('submit'));
+                }
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && e.target.value === '' && index > 0) {
+                    document.getElementById('code' + index).focus();
+                }
+            });
+        });
+
+        function getEnteredCode() {
+            return ['code1', 'code2', 'code3', 'code4'].map(id => document.getElementById(id).value).join('');
+        }
+
+        function clearCodeInputs() {
+            ['code1', 'code2', 'code3', 'code4'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('codeError').classList.add('hidden');
+        }
+
+        // Step 2: Verify code form
+        document.getElementById('codeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const code = getEnteredCode();
+
+            if (code.length !== 4) {
+                return;
+            }
+
+            try {
+                // Logg inn via JWT API med kode
                 const loginResp = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ telefon: phone })
+                    body: JSON.stringify({ telefon: currentPhone, kode: code })
                 });
 
                 if (!loginResp.ok) {
                     const err = await loginResp.json();
-                    if (loginResp.status === 404) {
-                        alert('Ingen bruker funnet med dette telefonnummeret. Opprett en konto først.');
-                        loginSection.classList.add('hidden');
-                        registerSection.classList.remove('hidden');
-                        document.getElementById('regPhone').value = phone;
-                        return;
-                    }
-                    throw new Error(err.error || 'Innlogging feilet');
+                    document.getElementById('codeError').textContent = err.error || 'Feil kode. Prøv igjen.';
+                    document.getElementById('codeError').classList.remove('hidden');
+                    clearCodeInputs();
+                    document.getElementById('code1').focus();
+                    return;
                 }
 
                 const loginData = await loginResp.json();
@@ -303,16 +400,22 @@
                 localStorage.setItem('fuglehund_token', loginData.token);
                 localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
 
+                // Synkroniser sessions
+                if (typeof FuglehundAuth !== 'undefined') {
+                    await FuglehundAuth.syncSessions();
+                }
+
                 // Redirect to profile or returnTo URL
                 if (returnTo) {
                     window.location.href = decodeURIComponent(returnTo);
                 } else {
-                    window.location.href = 'profil.html';
+                    window.location.href = 'min-side.html';
                 }
 
             } catch (err) {
                 console.error('Login feilet:', err);
-                alert('Kunne ikke logge inn. Prøv igjen.');
+                document.getElementById('codeError').textContent = 'Kunne ikke logge inn. Prøv igjen.';
+                document.getElementById('codeError').classList.remove('hidden');
             }
         });
 

@@ -205,6 +205,52 @@ db.exec(`
   );
 
   INSERT OR IGNORE INTO trial_config (id) VALUES (1);
+
+  -- Påmeldinger-tabell
+  CREATE TABLE IF NOT EXISTS pameldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    hund_id INTEGER NOT NULL REFERENCES hunder(id),
+    forer_telefon TEXT NOT NULL REFERENCES brukere(telefon),
+    klasse TEXT NOT NULL CHECK(klasse IN ('UK', 'AK', 'VK')),
+    dag INTEGER DEFAULT NULL,
+    status TEXT DEFAULT 'pameldt' CHECK(status IN ('pameldt', 'venteliste', 'bekreftet', 'avmeldt', 'ikke_mott')),
+    venteliste_plass INTEGER DEFAULT NULL,
+    betalt INTEGER DEFAULT 0,
+    betalt_belop INTEGER DEFAULT 0,
+    betalings_dato TEXT DEFAULT NULL,
+    sauebevis INTEGER DEFAULT 0,
+    vaksinasjon_ok INTEGER DEFAULT 0,
+    rabies_ok INTEGER DEFAULT 0,
+    parti TEXT DEFAULT NULL,
+    startnummer INTEGER DEFAULT NULL,
+    makker_hund_id INTEGER DEFAULT NULL,
+    notat TEXT DEFAULT '',
+    pameldt_av_telefon TEXT REFERENCES brukere(telefon),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, hund_id)
+  );
+
+  -- Prøve-konfigurasjon (utvidet)
+  CREATE TABLE IF NOT EXISTS prove_config (
+    prove_id TEXT PRIMARY KEY REFERENCES prover(id),
+    maks_deltakere_uk INTEGER DEFAULT 40,
+    maks_deltakere_ak INTEGER DEFAULT 40,
+    maks_deltakere_vk INTEGER DEFAULT 20,
+    pris_hogfjell INTEGER DEFAULT 1350,
+    pris_lavland INTEGER DEFAULT 1050,
+    pris_skog INTEGER DEFAULT 900,
+    pris_apport INTEGER DEFAULT 400,
+    frist_pamelding TEXT DEFAULT NULL,
+    frist_avmelding TEXT DEFAULT NULL,
+    refusjon_prosent INTEGER DEFAULT 75,
+    krever_sauebevis INTEGER DEFAULT 0,
+    krever_vaksinasjon INTEGER DEFAULT 0,
+    krever_rabies INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Seed initial data if tables are empty ---
@@ -1025,6 +1071,524 @@ app.get("/api/prover/:id", (c) => {
     partier: JSON.parse(row.partier || '{}'),
     dommere
   });
+});
+
+// ============================================
+// PÅMELDINGER API
+// ============================================
+
+// Hjelpefunksjon: Beregn alder på prøvedato
+function beregnAlderPaProveDato(fodselsdato, provedato) {
+  const fodt = new Date(fodselsdato);
+  const prove = new Date(provedato);
+  const diffMs = prove - fodt;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const years = Math.floor(diffDays / 365);
+  const months = Math.floor((diffDays % 365) / 30);
+  return { years, months, totalMonths: years * 12 + months };
+}
+
+// Hjelpefunksjon: Valider klassevelg
+function validerKlasse(fodselsdato, provedato, klasse, har1AK = false) {
+  const alder = beregnAlderPaProveDato(fodselsdato, provedato);
+  const errors = [];
+  const warnings = [];
+
+  // Minimum 9 måneder for alle prøver
+  if (alder.totalMonths < 9) {
+    errors.push(`Hunden er for ung (${alder.totalMonths} mnd). Minimum alder er 9 måneder.`);
+    return { valid: false, errors, warnings, alder };
+  }
+
+  if (klasse === 'UK') {
+    // UK: 9 mnd til 2 år
+    if (alder.totalMonths >= 24) {
+      errors.push(`Hunden er for gammel for UK (${alder.years} år ${alder.months} mnd). UK er for hunder under 2 år.`);
+    }
+  } else if (klasse === 'AK') {
+    // AK: Fra fylte 2 år
+    if (alder.totalMonths < 24) {
+      errors.push(`Hunden er for ung for AK (${alder.totalMonths} mnd). AK krever at hunden er fylt 2 år.`);
+    }
+  } else if (klasse === 'VK') {
+    // VK: Må ha 1. AK
+    if (alder.totalMonths < 24) {
+      errors.push(`Hunden er for ung for VK (${alder.totalMonths} mnd).`);
+    }
+    if (!har1AK) {
+      errors.push('VK krever at hunden har oppnådd 1. AK.');
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings, alder };
+}
+
+// Hjelpefunksjon: Sjekk venteliste og opprykk
+function oppdaterVenteliste(proveId, klasse) {
+  const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+  if (!config) return;
+
+  const maksField = klasse === 'UK' ? 'maks_deltakere_uk' : klasse === 'AK' ? 'maks_deltakere_ak' : 'maks_deltakere_vk';
+  const maks = config[maksField] || 40;
+
+  // Tell bekreftede/påmeldte
+  const antallPameldt = db.prepare(`
+    SELECT COUNT(*) as n FROM pameldinger
+    WHERE prove_id = ? AND klasse = ? AND status IN ('pameldt', 'bekreftet')
+  `).get(proveId, klasse).n;
+
+  if (antallPameldt < maks) {
+    // Rykk opp fra venteliste
+    const ledigePlasser = maks - antallPameldt;
+    const venteliste = db.prepare(`
+      SELECT id, forer_telefon FROM pameldinger
+      WHERE prove_id = ? AND klasse = ? AND status = 'venteliste'
+      ORDER BY venteliste_plass ASC
+      LIMIT ?
+    `).all(proveId, klasse, ledigePlasser);
+
+    for (const p of venteliste) {
+      db.prepare(`
+        UPDATE pameldinger SET status = 'pameldt', venteliste_plass = NULL, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(p.id);
+
+      // TODO: Send SMS-varsling om opprykk
+      console.log(`📱 Opprykk fra venteliste: ${p.forer_telefon} rykket opp til ${klasse}`);
+    }
+  }
+}
+
+// Hent alle påmeldinger for en prøve
+app.get("/api/prover/:id/pameldinger", (c) => {
+  const proveId = c.req.param("id");
+  const klasse = c.req.query("klasse");
+  const status = c.req.query("status");
+
+  let query = `
+    SELECT p.*, h.navn as hund_navn, h.regnr, h.rase, h.fodt as hund_fodt,
+           b.fornavn || ' ' || b.etternavn as forer_navn, b.telefon as forer_telefon,
+           e.fornavn || ' ' || e.etternavn as eier_navn
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    JOIN brukere b ON p.forer_telefon = b.telefon
+    LEFT JOIN brukere e ON h.eier_telefon = e.telefon
+    WHERE p.prove_id = ?
+  `;
+  const params = [proveId];
+
+  if (klasse) {
+    query += " AND p.klasse = ?";
+    params.push(klasse);
+  }
+  if (status) {
+    query += " AND p.status = ?";
+    params.push(status);
+  }
+
+  query += " ORDER BY p.klasse, p.status, p.created_at";
+
+  const pameldinger = db.prepare(query).all(...params);
+
+  // Hent konfigurasjon
+  const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+
+  // Tell per klasse
+  const antall = {
+    UK: { pameldt: 0, venteliste: 0, maks: config?.maks_deltakere_uk || 40 },
+    AK: { pameldt: 0, venteliste: 0, maks: config?.maks_deltakere_ak || 40 },
+    VK: { pameldt: 0, venteliste: 0, maks: config?.maks_deltakere_vk || 20 }
+  };
+
+  for (const p of pameldinger) {
+    if (p.status === 'venteliste') {
+      antall[p.klasse].venteliste++;
+    } else if (p.status !== 'avmeldt') {
+      antall[p.klasse].pameldt++;
+    }
+  }
+
+  return c.json({ pameldinger, antall, config });
+});
+
+// Meld på til prøve
+app.post("/api/prover/:id/pameldinger", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  // Valider påkrevde felt
+  if (!body.hund_id || !body.klasse) {
+    return c.json({ error: "Mangler påkrevde felt (hund_id, klasse)" }, 400);
+  }
+
+  // Hent prøve og konfigurasjon
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Hent hund
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(body.hund_id);
+  if (!hund) {
+    return c.json({ error: "Hund ikke funnet" }, 404);
+  }
+
+  // Sjekk om allerede påmeldt
+  const existing = db.prepare("SELECT * FROM pameldinger WHERE prove_id = ? AND hund_id = ?").get(proveId, body.hund_id);
+  if (existing && existing.status !== 'avmeldt') {
+    return c.json({ error: "Hunden er allerede påmeldt denne prøven" }, 400);
+  }
+
+  // Valider klasse basert på alder
+  const har1AK = db.prepare(`
+    SELECT COUNT(*) as n FROM resultater
+    WHERE hund_id = ? AND premie LIKE '1. AK%'
+  `).get(body.hund_id).n > 0;
+
+  const validering = validerKlasse(hund.fodt, prove.start_dato, body.klasse, har1AK);
+  if (!validering.valid) {
+    return c.json({ error: validering.errors.join(' '), validering }, 400);
+  }
+
+  // Hent konfigurasjon
+  let config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+  if (!config) {
+    // Opprett default konfigurasjon
+    db.prepare("INSERT INTO prove_config (prove_id) VALUES (?)").run(proveId);
+    config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+  }
+
+  // Sjekk kapasitet
+  const maksField = body.klasse === 'UK' ? 'maks_deltakere_uk' : body.klasse === 'AK' ? 'maks_deltakere_ak' : 'maks_deltakere_vk';
+  const maks = config[maksField] || 40;
+
+  const antallPameldt = db.prepare(`
+    SELECT COUNT(*) as n FROM pameldinger
+    WHERE prove_id = ? AND klasse = ? AND status IN ('pameldt', 'bekreftet')
+  `).get(proveId, body.klasse).n;
+
+  let status = 'pameldt';
+  let ventelistePlass = null;
+
+  if (antallPameldt >= maks) {
+    // Sett på venteliste
+    status = 'venteliste';
+    const sisteVenteliste = db.prepare(`
+      SELECT MAX(venteliste_plass) as plass FROM pameldinger
+      WHERE prove_id = ? AND klasse = ? AND status = 'venteliste'
+    `).get(proveId, body.klasse);
+    ventelistePlass = (sisteVenteliste?.plass || 0) + 1;
+  }
+
+  // Opprett påmelding
+  const forerTelefon = body.forer_telefon || bruker.telefon;
+  const result = db.prepare(`
+    INSERT INTO pameldinger (
+      prove_id, hund_id, forer_telefon, klasse, dag, status, venteliste_plass,
+      sauebevis, vaksinasjon_ok, rabies_ok, notat, pameldt_av_telefon
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    proveId, body.hund_id, forerTelefon, body.klasse, body.dag || null,
+    status, ventelistePlass,
+    body.sauebevis ? 1 : 0, body.vaksinasjon_ok ? 1 : 0, body.rabies_ok ? 1 : 0,
+    body.notat || '', bruker.telefon
+  );
+
+  // Logg
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "pamelding_opprettet",
+    JSON.stringify({ pamelding_id: result.lastInsertRowid, prove_id: proveId, hund_id: body.hund_id, klasse: body.klasse, status })
+  );
+
+  return c.json({
+    id: result.lastInsertRowid,
+    status,
+    venteliste_plass: ventelistePlass,
+    validering,
+    message: status === 'venteliste' ?
+      `Påmeldt på venteliste (plass ${ventelistePlass}). Du får SMS når plass blir ledig.` :
+      'Påmelding registrert!'
+  }, 201);
+});
+
+// Avmeld fra prøve
+app.delete("/api/prover/:proveId/pameldinger/:id", requireAuth, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const pamelding = db.prepare("SELECT * FROM pameldinger WHERE id = ? AND prove_id = ?").get(id, proveId);
+  if (!pamelding) {
+    return c.json({ error: "Påmelding ikke funnet" }, 404);
+  }
+
+  // Sjekk tilgang (eier, fører, eller admin)
+  const hund = db.prepare("SELECT eier_telefon FROM hunder WHERE id = ?").get(pamelding.hund_id);
+  const erEier = hund && hund.eier_telefon === bruker.telefon;
+  const erForer = pamelding.forer_telefon === bruker.telefon;
+  const erAdmin = hasAnyRole(bruker.rolle, ["admin", "klubbleder", "proveleder"]);
+
+  if (!erEier && !erForer && !erAdmin) {
+    return c.json({ error: "Ingen tilgang til å avmelde" }, 403);
+  }
+
+  // Beregn eventuell refusjon
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+  let refusjon = { belop: 0, prosent: 0 };
+
+  if (pamelding.betalt && pamelding.betalt_belop > 0) {
+    // Sjekk om det er mer enn 12 timer til prøvestart
+    const proveStart = new Date(prove.start_dato);
+    const naa = new Date();
+    const timerTilStart = (proveStart - naa) / (1000 * 60 * 60);
+
+    if (pamelding.status === 'venteliste') {
+      // 100% refusjon for venteliste som ikke fikk plass
+      refusjon = { belop: pamelding.betalt_belop, prosent: 100 };
+    } else if (timerTilStart > 12) {
+      // 75% refusjon ved avmelding mer enn 12 timer før
+      const prosent = config?.refusjon_prosent || 75;
+      refusjon = { belop: Math.round(pamelding.betalt_belop * prosent / 100), prosent };
+    }
+  }
+
+  // Oppdater status
+  db.prepare(`
+    UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(id);
+
+  // Oppdater venteliste
+  oppdaterVenteliste(proveId, pamelding.klasse);
+
+  // Logg
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "pamelding_avmeldt",
+    JSON.stringify({ pamelding_id: id, avmeldt_av: bruker.telefon, refusjon })
+  );
+
+  return c.json({
+    ok: true,
+    refusjon,
+    message: refusjon.belop > 0 ?
+      `Avmeldt. Refusjon: ${refusjon.belop} kr (${refusjon.prosent}%)` :
+      'Avmeldt fra prøven.'
+  });
+});
+
+// Oppdater påmelding (admin)
+app.put("/api/prover/:proveId/pameldinger/:id", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const pamelding = db.prepare("SELECT * FROM pameldinger WHERE id = ? AND prove_id = ?").get(id, proveId);
+  if (!pamelding) {
+    return c.json({ error: "Påmelding ikke funnet" }, 404);
+  }
+
+  const fields = [
+    "status", "venteliste_plass", "betalt", "betalt_belop", "betalings_dato",
+    "sauebevis", "vaksinasjon_ok", "rabies_ok", "parti", "startnummer",
+    "makker_hund_id", "notat"
+  ];
+
+  const sets = [];
+  const vals = [];
+  for (const f of fields) {
+    if (f in body) {
+      sets.push(`${f} = ?`);
+      vals.push(body[f]);
+    }
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    db.prepare(`UPDATE pameldinger SET ${sets.join(", ")} WHERE id = ?`).run(...vals, id);
+  }
+
+  // Hvis status endret, oppdater venteliste
+  if (body.status && body.status !== pamelding.status) {
+    oppdaterVenteliste(proveId, pamelding.klasse);
+  }
+
+  const oppdatert = db.prepare("SELECT * FROM pameldinger WHERE id = ?").get(id);
+  return c.json(oppdatert);
+});
+
+// Hent prøve-konfigurasjon
+app.get("/api/prover/:id/config", (c) => {
+  const proveId = c.req.param("id");
+  let config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+
+  if (!config) {
+    // Returner default
+    config = {
+      prove_id: proveId,
+      maks_deltakere_uk: 40,
+      maks_deltakere_ak: 40,
+      maks_deltakere_vk: 20,
+      pris_hogfjell: 1350,
+      pris_lavland: 1050,
+      pris_skog: 900,
+      pris_apport: 400,
+      refusjon_prosent: 75
+    };
+  }
+
+  return c.json(config);
+});
+
+// Oppdater prøve-konfigurasjon (admin)
+app.put("/api/prover/:id/config", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+
+  // Opprett hvis ikke eksisterer
+  db.prepare("INSERT OR IGNORE INTO prove_config (prove_id) VALUES (?)").run(proveId);
+
+  const fields = [
+    "maks_deltakere_uk", "maks_deltakere_ak", "maks_deltakere_vk",
+    "pris_hogfjell", "pris_lavland", "pris_skog", "pris_apport",
+    "frist_pamelding", "frist_avmelding", "refusjon_prosent",
+    "krever_sauebevis", "krever_vaksinasjon", "krever_rabies"
+  ];
+
+  const sets = [];
+  const vals = [];
+  for (const f of fields) {
+    if (f in body) {
+      sets.push(`${f} = ?`);
+      vals.push(body[f]);
+    }
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    db.prepare(`UPDATE prove_config SET ${sets.join(", ")} WHERE prove_id = ?`).run(...vals, proveId);
+  }
+
+  const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+  return c.json(config);
+});
+
+// ============================================
+// TREKNING API
+// ============================================
+
+// Utfør trekning for en prøve
+app.post("/api/prover/:id/trekning", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  const klasse = body.klasse || 'AK'; // UK, AK, eller VK
+  const antallPartier = body.antall_partier || 4;
+  const hundePerParti = body.hunde_per_parti || 6;
+
+  // Hent alle bekreftede/påmeldte i klassen
+  const pameldinger = db.prepare(`
+    SELECT p.id, p.hund_id, h.navn as hund_navn, h.regnr
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    WHERE p.prove_id = ? AND p.klasse = ? AND p.status IN ('pameldt', 'bekreftet')
+    ORDER BY RANDOM()
+  `).all(proveId, klasse);
+
+  if (pameldinger.length === 0) {
+    return c.json({ error: "Ingen påmeldte i denne klassen" }, 400);
+  }
+
+  // Fordel på partier
+  const partier = [];
+  for (let i = 0; i < antallPartier; i++) {
+    partier.push({ parti: `${klasse}${i + 1}`, hunder: [] });
+  }
+
+  let partiIndex = 0;
+  for (const p of pameldinger) {
+    partier[partiIndex].hunder.push(p);
+
+    // Gi startnummer
+    const startnummer = partier[partiIndex].hunder.length;
+    db.prepare(`
+      UPDATE pameldinger SET parti = ?, startnummer = ?, status = 'bekreftet', updated_at = datetime('now')
+      WHERE id = ?
+    `).run(partier[partiIndex].parti, startnummer, p.id);
+
+    partiIndex = (partiIndex + 1) % antallPartier;
+  }
+
+  // Tildel makkerpar innad i hvert parti
+  for (const parti of partier) {
+    const hunder = parti.hunder;
+    for (let i = 0; i < hunder.length; i += 2) {
+      if (i + 1 < hunder.length) {
+        // Par opp hund i og i+1
+        db.prepare("UPDATE pameldinger SET makker_hund_id = ? WHERE id = ?").run(hunder[i + 1].hund_id, hunder[i].id);
+        db.prepare("UPDATE pameldinger SET makker_hund_id = ? WHERE id = ?").run(hunder[i].hund_id, hunder[i + 1].id);
+      }
+    }
+  }
+
+  // Logg
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "trekning_utfort",
+    JSON.stringify({ prove_id: proveId, klasse, antall_partier: antallPartier, antall_hunder: pameldinger.length, utfort_av: bruker.telefon })
+  );
+
+  return c.json({
+    ok: true,
+    klasse,
+    antall_hunder: pameldinger.length,
+    partier: partier.map(p => ({
+      parti: p.parti,
+      antall: p.hunder.length,
+      hunder: p.hunder.map((h, idx) => ({
+        startnummer: idx + 1,
+        hund_navn: h.hund_navn,
+        regnr: h.regnr
+      }))
+    }))
+  });
+});
+
+// Hent trekning/partilister
+app.get("/api/prover/:id/partier", (c) => {
+  const proveId = c.req.param("id");
+
+  const pameldinger = db.prepare(`
+    SELECT p.*, h.navn as hund_navn, h.regnr, h.rase,
+           b.fornavn || ' ' || b.etternavn as forer_navn,
+           e.fornavn || ' ' || e.etternavn as eier_navn,
+           mh.navn as makker_navn, mh.regnr as makker_regnr
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    JOIN brukere b ON p.forer_telefon = b.telefon
+    LEFT JOIN brukere e ON h.eier_telefon = e.telefon
+    LEFT JOIN hunder mh ON p.makker_hund_id = mh.id
+    WHERE p.prove_id = ? AND p.parti IS NOT NULL
+    ORDER BY p.parti, p.startnummer
+  `).all(proveId);
+
+  // Grupper etter parti
+  const partier = {};
+  for (const p of pameldinger) {
+    if (!partier[p.parti]) {
+      partier[p.parti] = [];
+    }
+    partier[p.parti].push(p);
+  }
+
+  return c.json({ partier });
 });
 
 // Hent prøver for en bruker (der brukeren har en rolle)

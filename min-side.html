@@ -419,15 +419,32 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Verifiserer...';
 
-            // Hent brukerdata fra API
-            const userInfo = await getUserByPhoneAsync(phoneNumber);
+            try {
+                // Verifiser kode mot backend API
+                const loginResp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: phoneNumber, kode: code })
+                });
 
-            document.getElementById('loadingOverlay').classList.add('hidden');
+                const loginData = await loginResp.json();
 
-            if (code.length === 4) {
+                if (!loginResp.ok) {
+                    throw new Error(loginData.error || 'Innlogging feilet');
+                }
+
+                // Lagre JWT-token
+                localStorage.setItem('fuglehund_token', loginData.token);
+                localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
+
+                // Hent utvidet brukerdata
+                const userInfo = await getUserByPhoneAsync(phoneNumber);
+
+                document.getElementById('loadingOverlay').classList.add('hidden');
+
                 currentUser = {
                     phone: phoneNumber,
-                    name: userInfo.name || 'Bruker',
+                    name: userInfo.name || `${loginData.bruker.fornavn} ${loginData.bruker.etternavn}`,
                     trials: userInfo.trials,
                     isTrialAdmin: userInfo.isTrialAdmin || false,
                     clubName: userInfo.clubName || null,
@@ -442,30 +459,19 @@
                     name: currentUser.name,
                     phone: phoneNumber,
                     email: cachedUserData?.epost || '',
-                    role: cachedUserData?.rolle || '',  // Lagre roller for auth-sjekk
+                    role: cachedUserData?.rolle || '',
                     loggedInAt: currentUser.loggedInAt
                 };
                 localStorage.setItem('userProfile', JSON.stringify(userProfile));
 
-                // Set judgeSession if user has judge role
-                const judgeRoleInfo = currentUser.trials?.find(t => t.roles?.some(r => r.type === 'dommer'));
-                if (judgeRoleInfo) {
-                    const judgeInfo = getJudgeByPhone(phoneNumber);
-                    if (judgeInfo) {
-                        const judgeSession = {
-                            name: currentUser.name,
-                            phone: phoneNumber,
-                            isJudge: true,
-                            assignedParty: judgeInfo.assignedParty,
-                            judgeRole: judgeInfo.judgeRole,
-                            loggedInAt: new Date().toISOString()
-                        };
-                        localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
-                    }
-                }
+                // Synkroniser alle sessions via FuglehundAuth
+                await FuglehundAuth.syncSessions();
 
                 showDashboard();
-            } else {
+
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('codeError').textContent = err.message || 'Feil kode. Prøv igjen.';
                 document.getElementById('codeError').classList.remove('hidden');
                 clearCodeInputs();
                 document.getElementById('code1').focus();

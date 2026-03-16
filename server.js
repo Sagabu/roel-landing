@@ -624,13 +624,25 @@ app.post("/api/auth/login", async (c) => {
     return c.json({ error: "Bruker ikke funnet" }, 404);
   }
 
-  // TODO: I produksjon - verifiser SMS-kode her
-  // For nå: Godta login hvis bruker finnes
-  // I dev-mode aksepterer vi kode "1234" eller tom kode
+  // Verifiser SMS-kode
+  // I dev-mode: Koden "1234" fungerer alltid
+  // I produksjon: Her skal ekte SMS-verifisering implementeres
   const isDevMode = process.env.NODE_ENV !== "production";
+  const validDevCode = "1234";
 
-  if (!isDevMode && kode !== "VERIFIED_SMS_CODE") {
-    return c.json({ error: "Ugyldig verifiseringskode" }, 401);
+  if (!kode) {
+    return c.json({ error: "Verifiseringskode påkrevd" }, 400);
+  }
+
+  if (isDevMode) {
+    // I dev-mode: godta "1234" som gyldig kode
+    if (kode !== validDevCode) {
+      return c.json({ error: "Feil kode. Bruk 1234 i dev-modus." }, 401);
+    }
+  } else {
+    // I produksjon: Her skal SMS-verifisering implementeres
+    // For nå: Avvis alle innlogginger i production uten ekte SMS-system
+    return c.json({ error: "SMS-verifisering ikke konfigurert" }, 501);
   }
 
   const token = generateToken(bruker);

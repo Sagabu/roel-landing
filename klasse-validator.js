@@ -90,14 +90,8 @@ const KlasseValidator = {
             // Kan ikke gå tilbake til UK
             result.klasse = 'AK';
 
-            // For hunder over 2 år trenger vi ikke forklare at de ikke kan gå tilbake til UK
-            // da de uansett er for gamle for UK
-            if (alder.totalMonths >= 24) {
-                result.forklaring = `Hunden er ${this.formaterAlder(alder)} og hører til i AK (Åpen klasse).`;
-            } else {
-                // Hund under 2 år som har startet i AK - viktig å forklare
-                result.forklaring = `Hunden har tidligere startet i AK og kan ikke gå tilbake til UK.`;
-            }
+            // Hunder over 2 år hører til i AK
+            result.forklaring = `Hunden er ${this.formaterAlder(alder)} og hører til i AK (Åpen klasse).`;
 
             // Sjekk om hunden har 1. AK
             if (historikk.har1AK) {
@@ -112,7 +106,7 @@ const KlasseValidator = {
         if (alder.totalMonths < 24) {
             // Under 2 år = UK
             result.klasse = 'UK';
-            result.forklaring = `Hunden er ${this.formaterAlder(alder)} og hører til i UK (Unghundklasse).`;
+            result.forklaring = `Hunden er under 2 år og må meldes på i UK.`;
 
             // Sjekk om hunden fyller 2 år under prøven
             const dag2 = new Date(provedato);

@@ -24,6 +24,11 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
+// --- Sveve SMS config ---
+const SVEVE_USER = process.env.SVEVE_USER || "";
+const SVEVE_PASS = process.env.SVEVE_PASS || "";
+const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
+
 // Warn if using default secret
 if (!process.env.JWT_SECRET) {
   console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt i .env - bruker usikker dev-secret!");
@@ -69,6 +74,15 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- OTP codes for SMS login
+  CREATE TABLE IF NOT EXISTS otp_codes (
+    telefon TEXT NOT NULL,
+    code TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0
+  );
+
   -- Brukere-tabell
   CREATE TABLE IF NOT EXISTS brukere (
     telefon TEXT PRIMARY KEY,
@@ -81,6 +95,7 @@ db.exec(`
     rolle TEXT DEFAULT 'deltaker',
     medlem_siden TEXT DEFAULT (strftime('%Y', 'now')),
     profilbilde TEXT DEFAULT NULL,
+    samtykke_gitt TEXT DEFAULT NULL,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -155,6 +170,21 @@ db.exec(`
     PRIMARY KEY (telefon, klubb_id)
   );
 
+  -- Klubb-medlemmer (importert medlemsliste for matching)
+  CREATE TABLE IF NOT EXISTS klubb_medlemmer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    klubb_id TEXT NOT NULL REFERENCES klubber(id),
+    medlemsnummer TEXT,
+    fornavn TEXT NOT NULL,
+    etternavn TEXT NOT NULL,
+    telefon_normalized TEXT,
+    epost TEXT,
+    matched_bruker_telefon TEXT REFERENCES brukere(telefon),
+    matched_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(klubb_id, telefon_normalized)
+  );
+
   -- Kritikker-tabell (fullstendige FKF kritikkskjemaer)
   CREATE TABLE IF NOT EXISTS kritikker (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,6 +229,14 @@ db.exec(`
 
     -- Fritekst kritikk
     kritikk_tekst TEXT DEFAULT '',
+
+    -- Arbeidsflyt (dommer → NKK-rep → godkjent)
+    status TEXT DEFAULT 'draft',
+    submitted_at TEXT DEFAULT NULL,
+    submitted_by TEXT DEFAULT NULL,
+    approved_at TEXT DEFAULT NULL,
+    approved_by TEXT DEFAULT NULL,
+    nkk_comment TEXT DEFAULT NULL,
 
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -253,6 +291,20 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now'))
   );
 `);
+
+// --- Migrations for existing databases ---
+const migrations = [
+  "ALTER TABLE brukere ADD COLUMN samtykke_gitt TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN status TEXT DEFAULT 'draft'",
+  "ALTER TABLE kritikker ADD COLUMN submitted_at TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN submitted_by TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN approved_at TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN approved_by TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN nkk_comment TEXT DEFAULT NULL",
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (e) { /* column already exists */ }
+}
 
 // --- Seed initial data if tables are empty ---
 function seedData() {
@@ -604,6 +656,87 @@ const requireDommer = async (c, next) => {
 };
 
 // ============================================
+// SMS / OTP HELPERS
+// ============================================
+
+function generateOTP() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+const otpAttempts = new Map();
+function checkOTPRate(telefon) {
+  const now = Date.now();
+  const attempts = otpAttempts.get(telefon) || [];
+  const recent = attempts.filter(t => now - t < 10 * 60 * 1000);
+  if (recent.length >= 5) return false;
+  recent.push(now);
+  otpAttempts.set(telefon, recent);
+  return true;
+}
+
+async function sendSMS(telefon, message) {
+  if (!sveveConfigured) {
+    console.log(`📱 [DEV MODE] SMS til ${telefon}: ${message}`);
+    return { success: true, devMode: true };
+  }
+
+  const url = new URL("https://sveve.no/SMS/SendSMS");
+  url.searchParams.set("user", SVEVE_USER);
+  url.searchParams.set("passwd", SVEVE_PASS);
+  url.searchParams.set("to", telefon);
+  url.searchParams.set("msg", message);
+  url.searchParams.set("from", "Fuglehund");
+
+  try {
+    const resp = await fetch(url.toString());
+    const text = await resp.text();
+    if (text.includes("<response>") && !text.includes("feil") && !text.includes("error")) {
+      console.log(`📱 SMS sendt til ${telefon}`);
+      return { success: true };
+    } else {
+      console.error("Sveve SMS error:", text);
+      return { success: false, error: text };
+    }
+  } catch (err) {
+    console.error("Sveve SMS fetch error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+function cleanExpired() {
+  db.prepare("DELETE FROM otp_codes WHERE expires_at < datetime('now')").run();
+}
+
+// ============================================
+// PHONE / MEMBER HELPERS
+// ============================================
+
+function normalizePhone(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('47')) return digits.slice(2);
+  if (digits.length === 8) return digits;
+  if (digits.length > 8) return digits.slice(-8);
+  return digits || null;
+}
+
+function runMemberMatching(klubbId) {
+  db.prepare(`
+    UPDATE klubb_medlemmer
+    SET matched_bruker_telefon = (
+      SELECT b.telefon FROM brukere b
+      WHERE klubb_medlemmer.telefon_normalized IS NOT NULL
+      AND klubb_medlemmer.telefon_normalized != ''
+      AND REPLACE(REPLACE(REPLACE(REPLACE(b.telefon, ' ', ''), '+47', ''), '+', ''), '-', '')
+        LIKE '%' || klubb_medlemmer.telefon_normalized
+    ),
+    matched_at = datetime('now')
+    WHERE klubb_id = ?
+    AND matched_bruker_telefon IS NULL
+  `).run(klubbId);
+}
+
+// ============================================
 // AUTH API ENDPOINTS
 // ============================================
 
@@ -699,6 +832,98 @@ app.post("/api/auth/refresh", requireAuth, (c) => {
   const newToken = generateToken(bruker);
 
   return c.json({ token: newToken });
+});
+
+// Send OTP kode via SMS
+app.post("/api/auth/send-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer (8 siffer)" }, 400);
+  }
+
+  const dommerCheck = db.prepare("SELECT dommer_telefon FROM dommer_tildelinger WHERE dommer_telefon = ? LIMIT 1").get(telefon);
+  const userCheck = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+
+  if (!dommerCheck && !userCheck) {
+    return c.json({ error: "Telefonnummeret er ikke registrert" }, 404);
+  }
+
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  const smsResult = await sendSMS(telefon, `Din innloggingskode for Fuglehundprøve: ${code}`);
+
+  if (!smsResult.success) {
+    return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+  }
+
+  return c.json({ ok: true, message: "Kode sendt på SMS", devMode: smsResult.devMode || false });
+});
+
+// Verifiser OTP kode og returner JWT
+app.post("/api/auth/verify-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const code = (body.code || "").trim();
+
+  if (!telefon || !code) {
+    return c.json({ error: "Telefon og kode er påkrevd" }, 400);
+  }
+
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  if (bruker) {
+    const token = generateToken(bruker);
+    return c.json({
+      token,
+      bruker: {
+        telefon: bruker.telefon,
+        fornavn: bruker.fornavn,
+        etternavn: bruker.etternavn,
+        rolle: bruker.rolle
+      }
+    });
+  }
+
+  // Dommer uten brukerprofil — returner begrenset info
+  const dommerInfo = db.prepare(`
+    SELECT dt.parti, dt.dommer_rolle, p.navn as prove_navn
+    FROM dommer_tildelinger dt
+    JOIN prover p ON dt.prove_id = p.id
+    WHERE dt.dommer_telefon = ?
+  `).all(telefon);
+
+  return c.json({
+    telefon,
+    isDommerOnly: true,
+    dommerInfo
+  });
+});
+
+// Registrer samtykke (GDPR)
+app.post("/api/auth/consent", requireAuth, (c) => {
+  const payload = c.get("bruker");
+  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(payload.telefon);
+  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
 });
 
 // ============================================
@@ -945,6 +1170,60 @@ app.get("/api/brukere/:telefon/dommer-info", (c) => {
   });
 });
 
+// GDPR: Eksporter alle brukerdata (Art. 15/20)
+app.get("/api/brukere/:telefon/export", requireAuth, (c) => {
+  const payload = c.get("bruker");
+  const telefon = c.req.param("telefon");
+  if (payload.telefon !== telefon && !hasAnyRole(payload.rolle, ["admin"])) {
+    return c.json({ error: "Ingen tilgang" }, 403);
+  }
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  const hunder = db.prepare("SELECT * FROM hunder WHERE eier_telefon = ?").all(telefon);
+  const hundIds = hunder.map(h => h.id);
+  const resultater = hundIds.length > 0
+    ? db.prepare(`SELECT * FROM resultater WHERE hund_id IN (${hundIds.map(() => '?').join(',')})`).all(...hundIds)
+    : [];
+  const klubbRoller = db.prepare("SELECT * FROM klubb_admins WHERE telefon = ?").all(telefon);
+  const dommerTildelinger = db.prepare("SELECT * FROM dommer_tildelinger WHERE dommer_telefon = ?").all(telefon);
+
+  return c.json({
+    eksportert: new Date().toISOString(),
+    beskrivelse: "Alle personopplysninger lagret om deg i Fuglehundprøve-systemet",
+    bruker, hunder, resultater, klubb_roller: klubbRoller, dommer_tildelinger: dommerTildelinger
+  });
+});
+
+// GDPR: Slett alle brukerdata (Art. 17)
+app.delete("/api/brukere/:telefon", requireAuth, (c) => {
+  const payload = c.get("bruker");
+  const telefon = c.req.param("telefon");
+  if (payload.telefon !== telefon && !hasAnyRole(payload.rolle, ["admin"])) {
+    return c.json({ error: "Ingen tilgang" }, 403);
+  }
+
+  const bruker = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  const hundIds = db.prepare("SELECT id FROM hunder WHERE eier_telefon = ?").all(telefon).map(h => h.id);
+  if (hundIds.length > 0) {
+    db.prepare(`DELETE FROM resultater WHERE hund_id IN (${hundIds.map(() => '?').join(',')})`).run(...hundIds);
+    db.prepare(`DELETE FROM kritikker WHERE hund_id IN (${hundIds.map(() => '?').join(',')})`).run(...hundIds);
+  }
+  db.prepare("DELETE FROM hunder WHERE eier_telefon = ?").run(telefon);
+  db.prepare("DELETE FROM dommer_tildelinger WHERE dommer_telefon = ?").run(telefon);
+  db.prepare("DELETE FROM klubb_admins WHERE telefon = ?").run(telefon);
+  db.prepare("DELETE FROM otp_codes WHERE telefon = ?").run(telefon);
+  db.prepare("DELETE FROM brukere WHERE telefon = ?").run(telefon);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_slettet", `Bruker ${telefon} slettet sine data (GDPR Art. 17)`
+  );
+  return c.json({ ok: true, message: "Alle dine data er slettet" });
+});
+
 // ============================================
 // HUNDER API
 // ============================================
@@ -1033,6 +1312,169 @@ app.get("/api/klubber/:id", (c) => {
   `).all(id);
 
   return c.json({ ...row, admins });
+});
+
+// ============================================
+// KLUBB MEDLEMMER API
+// ============================================
+
+// Hent medlemmer for en klubb
+app.get("/api/klubber/:id/medlemmer", (c) => {
+  const klubbId = c.req.param("id");
+  const medlemmer = db.prepare(`
+    SELECT km.*, b.fornavn as bruker_fornavn, b.etternavn as bruker_etternavn, b.telefon as bruker_telefon
+    FROM klubb_medlemmer km
+    LEFT JOIN brukere b ON km.matched_bruker_telefon = b.telefon
+    WHERE km.klubb_id = ?
+    ORDER BY km.etternavn, km.fornavn
+  `).all(klubbId);
+  const total = medlemmer.length;
+  const registrert = medlemmer.filter(m => m.matched_bruker_telefon).length;
+  return c.json({ medlemmer, total, registrert });
+});
+
+// Importer medlemsliste
+app.post("/api/klubber/:id/medlemmer/import", requireAdmin, async (c) => {
+  const klubbId = c.req.param("id");
+  const body = await c.req.json();
+  const { medlemmer } = body;
+  if (!Array.isArray(medlemmer)) {
+    return c.json({ error: "Forventet 'medlemmer' array" }, 400);
+  }
+
+  const insertStmt = db.prepare(`
+    INSERT OR REPLACE INTO klubb_medlemmer (klubb_id, medlemsnummer, fornavn, etternavn, telefon_normalized, epost)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let imported = 0;
+  for (const m of medlemmer) {
+    insertStmt.run(klubbId, m.medlemsnummer || null, m.fornavn || '', m.etternavn || '', normalizePhone(m.telefon), m.epost || null);
+    imported++;
+  }
+
+  runMemberMatching(klubbId);
+  return c.json({ success: true, imported });
+});
+
+// Kjør matching manuelt
+app.post("/api/klubber/:id/medlemmer/match", requireAdmin, (c) => {
+  const klubbId = c.req.param("id");
+  runMemberMatching(klubbId);
+  const result = db.prepare(`
+    SELECT COUNT(*) as total, SUM(CASE WHEN matched_bruker_telefon IS NOT NULL THEN 1 ELSE 0 END) as matched
+    FROM klubb_medlemmer WHERE klubb_id = ?
+  `).get(klubbId);
+  return c.json({ success: true, ...result });
+});
+
+// Slett medlemsliste
+app.delete("/api/klubber/:id/medlemmer", requireAdmin, (c) => {
+  const klubbId = c.req.param("id");
+  db.prepare("DELETE FROM klubb_medlemmer WHERE klubb_id = ?").run(klubbId);
+  return c.json({ success: true });
+});
+
+// ============================================
+// DOMMER-TILDELINGER API
+// ============================================
+
+// Hent alle dommere
+app.get("/api/dommere", (c) => {
+  const dommere = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost
+    FROM brukere WHERE rolle LIKE '%dommer%'
+    ORDER BY etternavn, fornavn
+  `).all();
+  return c.json(dommere);
+});
+
+// Hent dommer-tildelinger for en prøve
+app.get("/api/prover/:id/dommer-tildelinger", (c) => {
+  const proveId = c.req.param("id");
+  const tildelinger = db.prepare(`
+    SELECT dt.id, dt.parti, dt.dommer_rolle, dt.dommer_telefon,
+           b.fornavn, b.etternavn, b.telefon
+    FROM dommer_tildelinger dt
+    JOIN brukere b ON dt.dommer_telefon = b.telefon
+    WHERE dt.prove_id = ?
+    ORDER BY dt.parti, dt.dommer_rolle
+  `).all(proveId);
+  return c.json(tildelinger);
+});
+
+// Tildel dommer til parti
+app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { parti, dommer_telefon, dommer_rolle } = body;
+
+  if (!parti || !dommer_telefon) {
+    return c.json({ error: "Parti og dommer_telefon er påkrevd" }, 400);
+  }
+
+  const prove = db.prepare("SELECT id FROM prover WHERE id = ?").get(proveId);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+  const eksisterende = db.prepare("SELECT COUNT(*) as antall FROM dommer_tildelinger WHERE prove_id = ? AND parti = ? AND dommer_telefon != ?").get(proveId, parti, dommer_telefon);
+
+  if (partiType === 'VK' && eksisterende.antall >= 2) {
+    return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
+  }
+  if (partiType === 'UKAK' && eksisterende.antall >= 2) {
+    return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+  }
+
+  try {
+    db.prepare(`
+      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)
+      ON CONFLICT(prove_id, dommer_telefon) DO UPDATE SET parti = excluded.parti, dommer_rolle = excluded.dommer_rolle
+    `).run(proveId, dommer_telefon, parti, dommer_rolle || null);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_tildelt", `Dommer ${dommer_telefon} tildelt ${parti} på prøve ${proveId}`
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Fjern dommer-tildeling
+app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const tildelingId = c.req.param("tildelingId");
+  const result = db.prepare("DELETE FROM dommer_tildelinger WHERE id = ? AND prove_id = ?").run(tildelingId, proveId);
+  if (result.changes === 0) return c.json({ error: "Tildeling ikke funnet" }, 404);
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_fjernet", `Tildeling ${tildelingId} fjernet fra prøve ${proveId}`);
+  return c.json({ success: true });
+});
+
+// Bulk-oppdater dommere for et parti
+app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const parti = c.req.param("parti");
+  const body = await c.req.json();
+  const { dommere } = body;
+
+  if (!Array.isArray(dommere)) return c.json({ error: "dommere må være en array" }, 400);
+
+  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+  if (partiType === 'VK' && dommere.length !== 2) return c.json({ error: "VK-partier må ha nøyaktig 2 dommere" }, 400);
+  if (partiType === 'UKAK' && (dommere.length < 1 || dommere.length > 2)) return c.json({ error: "UK/AK-partier må ha 1-2 dommere" }, 400);
+
+  try {
+    db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ? AND parti = ?").run(proveId, parti);
+    const insert = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
+    for (const d of dommere) {
+      insert.run(proveId, d.telefon, parti, d.rolle || null);
+    }
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_parti_oppdatert", `${parti}: ${dommere.map(d => d.telefon).join(', ')}`);
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
 });
 
 // ============================================
@@ -2143,6 +2585,92 @@ app.put("/api/kritikker/:id", requireDommer, async (c) => {
   return c.json(kritikk);
 });
 
+// Hent kritikker for en prøve
+app.get("/api/prover/:proveId/kritikker", (c) => {
+  const proveId = c.req.param("proveId");
+  const rows = db.prepare(`
+    SELECT k.*, h.navn as hund_navn, h.regnr, h.rase,
+           b.fornavn || ' ' || b.etternavn as dommer_navn
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.prove_id = ?
+    ORDER BY k.parti, k.dato
+  `).all(proveId);
+  return c.json(rows);
+});
+
+// Hent innsendte kritikker for NKK-rep godkjenning
+app.get("/api/kritikker/pending", (c) => {
+  const rows = db.prepare(`
+    SELECT k.*, h.navn as hund_navn, h.regnr, h.rase,
+           b.fornavn || ' ' || b.etternavn as dommer_navn,
+           p.navn as prove_navn, p.sted as prove_sted
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    LEFT JOIN prover p ON k.prove_id = p.id
+    WHERE k.status = 'submitted'
+    ORDER BY k.submitted_at DESC
+  `).all();
+  return c.json(rows);
+});
+
+// Send kritikk til NKK-rep
+app.put("/api/kritikker/:id/submit", requireDommer, async (c) => {
+  const id = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const result = db.prepare(`
+    UPDATE kritikker SET status = 'submitted', submitted_at = datetime('now'), submitted_by = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(`${bruker.navn || bruker.telefon}`, id);
+
+  if (result.changes === 0) return c.json({ error: "Kritikk ikke funnet" }, 404);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_submitted", `Kritikk ${id} sendt til NKK-rep av ${bruker.telefon}`
+  );
+  return c.json({ success: true });
+});
+
+// NKK-rep godkjenner kritikk
+app.put("/api/kritikker/:id/godkjenn", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const result = db.prepare(`
+    UPDATE kritikker SET status = 'approved', approved_at = datetime('now'), approved_by = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(`${bruker.navn || bruker.telefon}`, id);
+
+  if (result.changes === 0) return c.json({ error: "Kritikk ikke funnet" }, 404);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_godkjent", `Kritikk ${id} godkjent av ${bruker.telefon}`
+  );
+  return c.json({ success: true });
+});
+
+// NKK-rep returnerer kritikk til dommer
+app.put("/api/kritikker/:id/returner", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const result = db.prepare(`
+    UPDATE kritikker SET status = 'returned', nkk_comment = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(body.nkk_comment || '', id);
+
+  if (result.changes === 0) return c.json({ error: "Kritikk ikke funnet" }, 404);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "kritikk_returnert", `Kritikk ${id} returnert av ${bruker.telefon}: ${body.nkk_comment || ''}`
+  );
+  return c.json({ success: true });
+});
+
 // --- Backup (krever admin) ---
 app.get("/api/backup", requireAdmin, (c) => {
   if (!existsSync(DB_PATH)) return c.text("No database", 404);
@@ -2485,8 +3013,12 @@ app.get("/.vibe-images/:filename", (c) => {
 // Static files
 app.use("/*", serveStatic({ root: __dirname }));
 
+// Rydd opp utløpte OTP-koder hver time
+setInterval(cleanExpired, 60 * 60 * 1000);
+
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(`🐕 Fuglehundprøve running on http://0.0.0.0:${PORT}`);
   console.log(`   Admin: http://localhost:${PORT}/admin-panel.html`);
   console.log(`   Backup: http://localhost:${PORT}/api/backup`);
+  console.log(`   SMS: ${sveveConfigured ? "Sveve configured" : "Dev mode (codes logged to console)"}`);
 });

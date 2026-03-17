@@ -1832,6 +1832,9 @@
         }
 
         async function handleFile(file) {
+            console.log('=== handleFile startet ===');
+            console.log('Fil:', file.name, 'Størrelse:', file.size, 'Type:', file.type);
+
             // Show loading
             dropZone.classList.add('hidden');
             uploadLoading.classList.remove('hidden');
@@ -1839,11 +1842,16 @@
 
             try {
                 const fileName = file.name.toLowerCase();
+                console.log('Filnavn (lowercase):', fileName);
 
                 // Read file as text
                 const text = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
+                    reader.onload = () => {
+                        console.log('Fil lest OK, lengde:', reader.result.length);
+                        console.log('Første 500 tegn:', reader.result.substring(0, 500));
+                        resolve(reader.result);
+                    };
                     reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
                     reader.readAsText(file);
                 });
@@ -2055,7 +2063,8 @@
             } catch (err) {
                 uploadLoading.classList.add('hidden');
                 dropZone.classList.remove('hidden');
-                alert('Kunne ikke lese filen: ' + err.message);
+                console.error('Filopplasting feilet:', err);
+                alert('Kunne ikke lese filen: ' + err.message + '\n\nSjekk konsollen for detaljer.');
             }
         }
 

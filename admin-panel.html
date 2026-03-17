@@ -227,6 +227,70 @@
             </div>
         </div>
 
+        <!-- FKF Godkjente Dommere -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-serif font-bold text-bark-800">FKF Godkjente Dommere</h2>
+                    <p class="text-sm text-bark-500">Import av offisiell dommerliste fra Fuglehundklubbenes Forbund</p>
+                </div>
+                <span id="fkfDommerCount" class="px-3 py-1 bg-bark-100 text-bark-600 rounded-full text-sm font-medium">0 dommere</span>
+            </div>
+
+            <!-- Import fra CSV -->
+            <div class="border border-bark-200 rounded-xl p-4 mb-4">
+                <h3 class="font-medium text-bark-700 mb-3">Importer dommerliste (CSV)</h3>
+                <p class="text-sm text-bark-500 mb-3">
+                    CSV-format: <code class="bg-bark-100 px-1 rounded">Etternavn;Fornavn;Adresse;Postnummer;Sted;Telefon1;Telefon2</code><br>
+                    Telefonnummer kan ha mellomrom - de normaliseres automatisk.
+                </p>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-bark-600 mb-1">Lim inn CSV-data</label>
+                        <textarea id="fkfCsvInput" rows="6" placeholder="Etternavn;Fornavn;Adresse;Postnummer;Sted;Telefon1;Telefon2
+Nordmann;Ola;Jaktveien 1;7800;Namsos;99 88 77 66;
+Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
+                            class="w-full px-3 py-2 border border-bark-200 rounded-xl focus:border-sky-500 focus:outline-none font-mono text-sm"></textarea>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2 text-sm text-bark-600">
+                            <input type="checkbox" id="fkfReplaceAll" class="rounded border-bark-300 text-sky-600 focus:ring-sky-500">
+                            Erstatt alle eksisterende dommere
+                        </label>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button onclick="previewFkfImport()" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-2 rounded-xl text-sm font-medium transition">
+                            Forhåndsvis
+                        </button>
+                        <button onclick="importFkfDommere()" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                            Importer dommere
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview area -->
+                <div id="fkfPreview" class="hidden mt-4 border-t border-bark-200 pt-4">
+                    <h4 class="font-medium text-bark-700 mb-2">Forhåndsvisning</h4>
+                    <div id="fkfPreviewContent" class="max-h-48 overflow-y-auto text-sm"></div>
+                </div>
+            </div>
+
+            <!-- Eksisterende dommere -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-medium text-bark-700">Registrerte dommere</h3>
+                    <input type="text" id="fkfSearch" placeholder="Søk etter navn eller telefon..."
+                        class="px-3 py-1.5 border border-bark-200 rounded-lg text-sm focus:border-sky-500 focus:outline-none w-64">
+                </div>
+                <div id="fkfDommerList" class="max-h-96 overflow-y-auto border border-bark-200 rounded-xl">
+                    <p class="p-4 text-bark-400">Laster...</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Data Explorer -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
             <h2 class="text-lg font-serif font-bold text-bark-800 mb-4">Data (localStorage - SQLite)</h2>
@@ -475,9 +539,190 @@
         }
     }, true);
 
+    // ============================================
+    // FKF GODKJENTE DOMMERE
+    // ============================================
+
+    function parseFkfCsv(csvText) {
+        const lines = csvText.trim().split('\n');
+        const dommere = [];
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+
+            // Split by semicolon or tab
+            const parts = line.split(/[;\t]/).map(p => p.trim());
+            if (parts.length < 2) continue;
+
+            // Skip header row if present
+            if (parts[0].toLowerCase() === 'etternavn' || parts[0].toLowerCase() === 'navn') continue;
+
+            const dommer = {
+                etternavn: parts[0] || '',
+                fornavn: parts[1] || '',
+                adresse: parts[2] || '',
+                postnummer: parts[3] || '',
+                sted: parts[4] || '',
+                telefon1: parts[5] || '',
+                telefon2: parts[6] || ''
+            };
+
+            // Validate - must have at least a name
+            if (dommer.etternavn || dommer.fornavn) {
+                dommere.push(dommer);
+            }
+        }
+
+        return dommere;
+    }
+
+    function previewFkfImport() {
+        const csvText = document.getElementById('fkfCsvInput').value;
+        const dommere = parseFkfCsv(csvText);
+        const preview = document.getElementById('fkfPreview');
+        const content = document.getElementById('fkfPreviewContent');
+
+        if (dommere.length === 0) {
+            content.innerHTML = '<p class="text-amber-600">Ingen gyldige dommere funnet. Sjekk CSV-formatet.</p>';
+        } else {
+            content.innerHTML = `
+                <p class="text-bark-600 mb-2">Fant <strong>${dommere.length}</strong> dommere:</p>
+                <table class="w-full text-xs">
+                    <thead class="bg-bark-50">
+                        <tr>
+                            <th class="px-2 py-1 text-left">Navn</th>
+                            <th class="px-2 py-1 text-left">Adresse</th>
+                            <th class="px-2 py-1 text-left">Sted</th>
+                            <th class="px-2 py-1 text-left">Telefon</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${dommere.slice(0, 10).map(d => `
+                            <tr class="border-t border-bark-100">
+                                <td class="px-2 py-1">${d.fornavn} ${d.etternavn}</td>
+                                <td class="px-2 py-1">${d.adresse}</td>
+                                <td class="px-2 py-1">${d.postnummer} ${d.sted}</td>
+                                <td class="px-2 py-1">${d.telefon1}${d.telefon2 ? ' / ' + d.telefon2 : ''}</td>
+                            </tr>
+                        `).join('')}
+                        ${dommere.length > 10 ? `<tr><td colspan="4" class="px-2 py-1 text-bark-400">... og ${dommere.length - 10} til</td></tr>` : ''}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        preview.classList.remove('hidden');
+    }
+
+    async function importFkfDommere() {
+        const csvText = document.getElementById('fkfCsvInput').value;
+        const dommere = parseFkfCsv(csvText);
+        const erstattAlle = document.getElementById('fkfReplaceAll').checked;
+
+        if (dommere.length === 0) {
+            alert('Ingen gyldige dommere funnet i CSV-dataene.');
+            return;
+        }
+
+        if (erstattAlle && !confirm(`Dette vil slette alle eksisterende dommere og erstatte med ${dommere.length} nye. Fortsette?`)) {
+            return;
+        }
+
+        try {
+            const resp = await fetch('/api/fkf-dommere/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dommere, erstatt_alle: erstattAlle })
+            });
+
+            const result = await resp.json();
+
+            if (resp.ok) {
+                alert(`Importert ${result.importert} dommere${result.feilet > 0 ? ` (${result.feilet} feilet)` : ''}`);
+                document.getElementById('fkfCsvInput').value = '';
+                document.getElementById('fkfPreview').classList.add('hidden');
+                loadFkfDommere();
+                loadLog();
+            } else {
+                alert('Feil ved import: ' + (result.error || 'Ukjent feil'));
+            }
+        } catch (err) {
+            alert('Feil ved import: ' + err.message);
+        }
+    }
+
+    async function loadFkfDommere() {
+        try {
+            const resp = await fetch('/api/fkf-dommere');
+            const dommere = await resp.json();
+
+            document.getElementById('fkfDommerCount').textContent = `${dommere.length} dommere`;
+
+            const container = document.getElementById('fkfDommerList');
+            if (dommere.length === 0) {
+                container.innerHTML = '<p class="p-4 text-bark-400">Ingen dommere registrert ennå.</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table class="w-full text-sm">
+                    <thead class="bg-bark-50 sticky top-0">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Navn</th>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Sted</th>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Telefon</th>
+                            <th class="px-3 py-2 text-right font-medium text-bark-600"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="fkfDommerBody">
+                        ${dommere.map(d => `
+                            <tr class="border-t border-bark-100 hover:bg-bark-50 fkf-row" data-search="${(d.fornavn + ' ' + d.etternavn + ' ' + d.telefon1 + ' ' + d.telefon2).toLowerCase()}">
+                                <td class="px-3 py-2">${d.fornavn} ${d.etternavn}</td>
+                                <td class="px-3 py-2 text-bark-500">${d.postnummer} ${d.sted}</td>
+                                <td class="px-3 py-2 text-bark-500">${d.telefon1}${d.telefon2 ? '<br>' + d.telefon2 : ''}</td>
+                                <td class="px-3 py-2 text-right">
+                                    <button onclick="deleteFkfDommer(${d.id}, '${d.fornavn} ${d.etternavn}')" class="text-red-500 hover:text-red-700 text-xs">Slett</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } catch (err) {
+            document.getElementById('fkfDommerList').innerHTML = '<p class="p-4 text-red-500">Feil ved lasting: ' + err.message + '</p>';
+        }
+    }
+
+    async function deleteFkfDommer(id, navn) {
+        if (!confirm(`Slette ${navn} fra dommerlisten?`)) return;
+
+        try {
+            const resp = await fetch(`/api/fkf-dommere/${id}`, { method: 'DELETE' });
+            if (resp.ok) {
+                loadFkfDommere();
+                loadLog();
+            } else {
+                const result = await resp.json();
+                alert('Feil: ' + (result.error || 'Kunne ikke slette'));
+            }
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    // Search filter
+    document.getElementById('fkfSearch').addEventListener('input', (e) => {
+        const search = e.target.value.toLowerCase();
+        document.querySelectorAll('.fkf-row').forEach(row => {
+            const match = row.dataset.search.includes(search);
+            row.style.display = match ? '' : 'none';
+        });
+    });
+
     loadStats();
     loadTrial();
     loadTeam();
+    loadFkfDommere();
     loadData();
     loadLog();
     </script>

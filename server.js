@@ -290,6 +290,24 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- FKF godkjente dommere (offisiell liste fra Fuglehundklubbenes Forbund)
+  CREATE TABLE IF NOT EXISTS fkf_godkjente_dommere (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fornavn TEXT NOT NULL,
+    etternavn TEXT NOT NULL,
+    adresse TEXT DEFAULT '',
+    postnummer TEXT DEFAULT '',
+    sted TEXT DEFAULT '',
+    telefon1 TEXT DEFAULT '',
+    telefon2 TEXT DEFAULT '',
+    telefon1_normalized TEXT DEFAULT '',
+    telefon2_normalized TEXT DEFAULT '',
+    aktiv INTEGER DEFAULT 1,
+    imported_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_fkf_dommere_telefon1 ON fkf_godkjente_dommere(telefon1_normalized);
+  CREATE INDEX IF NOT EXISTS idx_fkf_dommere_telefon2 ON fkf_godkjente_dommere(telefon2_normalized);
 `);
 
 // --- Migrations for existing databases ---
@@ -1094,7 +1112,27 @@ app.put("/api/brukere/:telefon", async (c) => {
   const telefon = c.req.param("telefon");
   const body = await c.req.json();
 
-  const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+  // Sjekk om bruker prøver å få dommer-rollen
+  const existing = db.prepare("SELECT telefon, rolle FROM brukere WHERE telefon = ?").get(telefon);
+  const nyRolle = body.rolle || (existing ? existing.rolle : 'deltaker');
+  const hadDommerRolle = existing && existing.rolle && existing.rolle.includes('dommer');
+  const vilHaDommerRolle = nyRolle.includes('dommer');
+
+  // Hvis bruker vil ha dommer-rolle og ikke allerede har det, sjekk FKF-listen
+  if (vilHaDommerRolle && !hadDommerRolle) {
+    const normalized = normalizePhone(telefon);
+    const fkfGodkjent = db.prepare(`
+      SELECT id FROM fkf_godkjente_dommere
+      WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+    `).get(normalized, normalized);
+
+    if (!fkfGodkjent) {
+      return c.json({
+        error: "Ikke godkjent dommer",
+        detail: "Du må være registrert som godkjent dommer hos FKF for å få dommer-tilgang. Kontakt din klubb hvis du mener dette er feil."
+      }, 403);
+    }
+  }
 
   if (existing) {
     // Oppdater
@@ -1124,7 +1162,7 @@ app.put("/api/brukere/:telefon", async (c) => {
       body.adresse || '',
       body.postnummer || '',
       body.sted || '',
-      body.rolle || 'deltaker'
+      nyRolle
     );
   }
 
@@ -1475,6 +1513,176 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
+});
+
+// ============================================
+// FKF GODKJENTE DOMMERE API
+// ============================================
+
+// Hent alle FKF-godkjente dommere
+app.get("/api/fkf-dommere", (c) => {
+  const dommere = db.prepare(`
+    SELECT id, fornavn, etternavn, adresse, postnummer, sted,
+           telefon1, telefon2, aktiv, imported_at
+    FROM fkf_godkjente_dommere
+    WHERE aktiv = 1
+    ORDER BY etternavn, fornavn
+  `).all();
+  return c.json(dommere);
+});
+
+// Sjekk om et telefonnummer er FKF-godkjent dommer
+app.get("/api/fkf-dommere/sjekk/:telefon", (c) => {
+  const telefon = c.req.param("telefon");
+  const normalized = normalizePhone(telefon);
+
+  if (!normalized) {
+    return c.json({ godkjent: false, error: "Ugyldig telefonnummer" });
+  }
+
+  const dommer = db.prepare(`
+    SELECT id, fornavn, etternavn, adresse, postnummer, sted
+    FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+  `).get(normalized, normalized);
+
+  if (dommer) {
+    return c.json({ godkjent: true, dommer });
+  }
+  return c.json({ godkjent: false });
+});
+
+// Import FKF dommerliste (Excel/CSV) - kun admin
+app.post("/api/fkf-dommere/import", requireAdmin, async (c) => {
+  const body = await c.req.json();
+  const { dommere, erstatt_alle } = body;
+
+  if (!Array.isArray(dommere) || dommere.length === 0) {
+    return c.json({ error: "Ingen dommere å importere" }, 400);
+  }
+
+  try {
+    if (erstatt_alle) {
+      db.prepare("DELETE FROM fkf_godkjente_dommere").run();
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO fkf_godkjente_dommere
+        (fornavn, etternavn, adresse, postnummer, sted, telefon1, telefon2, telefon1_normalized, telefon2_normalized)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let importert = 0;
+    let feilet = 0;
+
+    for (const d of dommere) {
+      try {
+        const t1 = normalizePhone(d.telefon1);
+        const t2 = normalizePhone(d.telefon2);
+        insert.run(
+          d.fornavn || '',
+          d.etternavn || '',
+          d.adresse || '',
+          d.postnummer || '',
+          d.sted || '',
+          d.telefon1 || '',
+          d.telefon2 || '',
+          t1 || '',
+          t2 || ''
+        );
+        importert++;
+      } catch (e) {
+        feilet++;
+      }
+    }
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "fkf_dommere_import", `Importert ${importert} dommere (${feilet} feilet)${erstatt_alle ? ' - erstattet alle' : ''}`
+    );
+
+    return c.json({ success: true, importert, feilet });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Legg til enkelt FKF-dommer manuelt
+app.post("/api/fkf-dommere", requireAdmin, async (c) => {
+  const body = await c.req.json();
+  const { fornavn, etternavn, adresse, postnummer, sted, telefon1, telefon2 } = body;
+
+  if (!etternavn) {
+    return c.json({ error: "Etternavn er påkrevd" }, 400);
+  }
+
+  try {
+    const t1 = normalizePhone(telefon1);
+    const t2 = normalizePhone(telefon2);
+
+    const result = db.prepare(`
+      INSERT INTO fkf_godkjente_dommere
+        (fornavn, etternavn, adresse, postnummer, sted, telefon1, telefon2, telefon1_normalized, telefon2_normalized)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(fornavn || '', etternavn, adresse || '', postnummer || '', sted || '', telefon1 || '', telefon2 || '', t1 || '', t2 || '');
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "fkf_dommer_lagt_til", `${fornavn} ${etternavn} (ID: ${result.lastInsertRowid})`
+    );
+
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Oppdater FKF-dommer
+app.put("/api/fkf-dommere/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const dommer = db.prepare("SELECT * FROM fkf_godkjente_dommere WHERE id = ?").get(id);
+  if (!dommer) return c.json({ error: "Dommer ikke funnet" }, 404);
+
+  const t1 = body.telefon1 !== undefined ? normalizePhone(body.telefon1) : dommer.telefon1_normalized;
+  const t2 = body.telefon2 !== undefined ? normalizePhone(body.telefon2) : dommer.telefon2_normalized;
+
+  db.prepare(`
+    UPDATE fkf_godkjente_dommere SET
+      fornavn = COALESCE(?, fornavn),
+      etternavn = COALESCE(?, etternavn),
+      adresse = COALESCE(?, adresse),
+      postnummer = COALESCE(?, postnummer),
+      sted = COALESCE(?, sted),
+      telefon1 = COALESCE(?, telefon1),
+      telefon2 = COALESCE(?, telefon2),
+      telefon1_normalized = ?,
+      telefon2_normalized = ?,
+      aktiv = COALESCE(?, aktiv)
+    WHERE id = ?
+  `).run(
+    body.fornavn, body.etternavn, body.adresse, body.postnummer, body.sted,
+    body.telefon1, body.telefon2, t1 || '', t2 || '', body.aktiv, id
+  );
+
+  return c.json({ success: true });
+});
+
+// Slett FKF-dommer (eller deaktiver)
+app.delete("/api/fkf-dommere/:id", requireAdmin, (c) => {
+  const id = c.req.param("id");
+  const deaktiver = c.req.query("deaktiver") === "true";
+
+  if (deaktiver) {
+    const result = db.prepare("UPDATE fkf_godkjente_dommere SET aktiv = 0 WHERE id = ?").run(id);
+    if (result.changes === 0) return c.json({ error: "Dommer ikke funnet" }, 404);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("fkf_dommer_deaktivert", `ID: ${id}`);
+  } else {
+    const result = db.prepare("DELETE FROM fkf_godkjente_dommere WHERE id = ?").run(id);
+    if (result.changes === 0) return c.json({ error: "Dommer ikke funnet" }, 404);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("fkf_dommer_slettet", `ID: ${id}`);
+  }
+
+  return c.json({ success: true });
 });
 
 // ============================================

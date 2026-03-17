@@ -13,7 +13,8 @@
   const TOKEN_KEY = 'fuglehund_token';
   const SYNCED_KEYS = [
     'userProfile', 'userDogs', 'userTrials', 'userMandates',
-    'judgeSession', 'clubLogo'
+    'judgeSession', 'clubLogo',
+    'trialParticipants', 'trialParties', 'praktiskInfo', 'currentTrialId'
   ];
   // judgeData_* keys are dynamic (per party)
   function isSyncedKey(key) {

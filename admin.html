@@ -369,6 +369,12 @@
                         <p class="text-xs text-bark-500 mt-3">Støtter CSV og tekstfiler (.csv, .txt)</p>
                     </div>
 
+                    <!-- Debug panel -->
+                    <div id="debugPanel" class="hidden mt-4 p-4 bg-yellow-50 border border-yellow-300 rounded-xl text-sm font-mono text-yellow-900 max-h-64 overflow-auto">
+                        <strong>Debug:</strong>
+                        <pre id="debugOutput" class="whitespace-pre-wrap mt-2"></pre>
+                    </div>
+
                     <!-- Loading indicator -->
                     <div id="uploadLoading" class="hidden mt-6">
                         <div class="flex items-center justify-center gap-3 p-6 bg-blue-50 rounded-xl border border-blue-200">
@@ -1831,9 +1837,21 @@
             return result;
         }
 
+        // Debug helper - viser på siden
+        function debug(msg) {
+            const panel = document.getElementById('debugPanel');
+            const output = document.getElementById('debugOutput');
+            panel.classList.remove('hidden');
+            output.textContent += msg + '\n';
+            console.log(msg);
+        }
+
         async function handleFile(file) {
-            console.log('=== handleFile startet ===');
-            console.log('Fil:', file.name, 'Størrelse:', file.size, 'Type:', file.type);
+            // Reset debug
+            document.getElementById('debugOutput').textContent = '';
+
+            debug('=== handleFile startet ===');
+            debug('Fil: ' + file.name + ', Størrelse: ' + file.size + ' bytes');
 
             // Show loading
             dropZone.classList.add('hidden');
@@ -1842,14 +1860,14 @@
 
             try {
                 const fileName = file.name.toLowerCase();
-                console.log('Filnavn (lowercase):', fileName);
+                debug('Filnavn (lowercase): ' + fileName);
 
                 // Read file as text
                 const text = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = () => {
-                        console.log('Fil lest OK, lengde:', reader.result.length);
-                        console.log('Første 500 tegn:', reader.result.substring(0, 500));
+                        debug('Fil lest OK, lengde: ' + reader.result.length + ' tegn');
+                        debug('Første 200 tegn: ' + reader.result.substring(0, 200));
                         resolve(reader.result);
                     };
                     reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
@@ -1914,14 +1932,14 @@
                     else if (firstLine.includes(';')) separator = ';';
                     else separator = ',';
 
-                    console.log('Detected separator:', separator);
+                    debug('Separator: "' + (separator === '\t' ? 'TAB' : separator) + '"');
 
                     // Parse entire CSV
                     const allRows = parseCSVWithQuotes(text, separator);
-                    console.log('Total rows parsed:', allRows.length);
+                    debug('Antall rader parset: ' + allRows.length);
 
                     const headerParts = allRows[0] || [];
-                    console.log('Header columns:', headerParts);
+                    debug('Header-kolonner: ' + JSON.stringify(headerParts));
 
                     // Find column indices dynamically
                     let colIndex = {
@@ -1937,7 +1955,7 @@
                     for (let i = 0; i < headerParts.length; i++) {
                         // Strip markdown bold and clean header
                         const col = headerParts[i].replace(/\*\*/g, '').toLowerCase().trim();
-                        console.log('Header col', i, ':', headerParts[i], '->', col);
+                        // debug('Kolonne ' + i + ': "' + col + '"');
                         if (col.includes('regnr') || col.includes('reg.nr') || col.includes('registrering')) colIndex.regnr = i;
                         if (col.includes('hundenavn') || col === 'navn' || col === 'hund') colIndex.navn = i;
                         if (col.includes('rase')) colIndex.rase = i;
@@ -1947,7 +1965,7 @@
                         if (col.includes('epost') || col.includes('e-post') || col.includes('mail')) colIndex.epost = i;
                     }
 
-                    console.log('Column indices:', colIndex);
+                    debug('Kolonne-indekser: ' + JSON.stringify(colIndex));
 
                     // Skip header row, process data rows
                     const dataRows = allRows.slice(1);
@@ -1987,19 +2005,16 @@
                         });
                     }
 
-                    console.log('Skipped rows:', skippedRows);
+                    debug('Hoppet over rader: ' + skippedRows);
 
-                    console.log('Total parsed (before dedup):', participants.length);
+                    debug('Deltakere funnet (før deduplisering): ' + participants.length);
 
                     // Log all unique klasseRaw values to debug
                     const uniqueKlasser = [...new Set(participants.map(p => p.klasseRaw))];
-                    console.log('Unique class values found:', uniqueKlasser);
-
-                    console.log('By class (before dedup):', {
-                        UK: participants.filter(p => p.klasse === 'UK').length,
-                        AK: participants.filter(p => p.klasse === 'AK').length,
-                        VK: participants.filter(p => p.klasse === 'VK').length
-                    });
+                    debug('Unike klasse-verdier: ' + JSON.stringify(uniqueKlasser));
+                    debug('Per klasse: UK=' + participants.filter(p => p.klasse === 'UK').length +
+                          ', AK=' + participants.filter(p => p.klasse === 'AK').length +
+                          ', VK=' + participants.filter(p => p.klasse === 'VK').length);
                 } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
                     alert('Excel-filer (.xlsx) støttes ikke i nettleseren. Vennligst lagre filen som CSV først:\n\n1. Åpne filen i Excel\n2. Fil → Lagre som\n3. Velg "CSV (kommaseparert)" som format\n4. Last opp CSV-filen her');
                     dropZone.classList.remove('hidden');
@@ -2024,10 +2039,7 @@
                     return true;
                 });
 
-                console.log('After removing duplicates:', participants.length);
-                console.log('Final counts - UK:', participants.filter(p => p.klasse === 'UK').length,
-                            'AK:', participants.filter(p => p.klasse === 'AK').length,
-                            'VK:', participants.filter(p => p.klasse === 'VK').length);
+                debug('Etter deduplisering: ' + participants.length + ' deltakere');
 
                 if (participants.length === 0) {
                     alert('Ingen deltakere funnet i filen. Sjekk at filen har riktig format:\nRegnr, Navn, Rase, Eier, Fører, Klasse, Epost');
@@ -2063,8 +2075,9 @@
             } catch (err) {
                 uploadLoading.classList.add('hidden');
                 dropZone.classList.remove('hidden');
-                console.error('Filopplasting feilet:', err);
-                alert('Kunne ikke lese filen: ' + err.message + '\n\nSjekk konsollen for detaljer.');
+                debug('FEIL: ' + err.message);
+                debug('Stack: ' + err.stack);
+                alert('Kunne ikke lese filen: ' + err.message);
             }
         }
 

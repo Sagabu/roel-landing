@@ -2102,24 +2102,37 @@
             const akDogs = currentParticipants.filter(p => p.klasse === 'AK');
             const vkDogs = currentParticipants.filter(p => p.klasse === 'VK');
 
-            const totalUkAk = ukDogs.length + akDogs.length;
+            // Get prøveleder's party configuration
+            const dag1Partier = parseInt(document.getElementById('ukakPartierDag1').value) || 0;
+            const dag2Partier = parseInt(document.getElementById('ukakPartierDag2').value) || 0;
+            const totalUkAkPartier = dag1Partier + dag2Partier;
 
-            // Calculate party distribution with even distribution
             const maxPerPartyUKAK = 14;  // UK/AK: maks 14 hunder per parti
             const maxPerPartyVK = 20;    // VK: maks 20 hunder per parti
-            const ukakPartyCount = Math.ceil(totalUkAk / maxPerPartyUKAK);
-            const vkPartyCount = Math.ceil(vkDogs.length / maxPerPartyVK);
 
-            // Helper function for even distribution, preferring even numbers per party
+            // Calculate capacity based on prøveleder's choices
+            const dag1Kapasitet = dag1Partier * maxPerPartyUKAK;
+            const dag2Kapasitet = dag2Partier * maxPerPartyUKAK;
+            const totalUkAkKapasitet = dag1Kapasitet + dag2Kapasitet;
+
+            // Combine UK and AK dogs for distribution
+            // Sort by class preference: UK first (dag-specific), then AK
+            const ukDag1 = ukDogs.filter(p => p.dag === 1 || p.klasseRaw === 'UK1');
+            const ukDag2 = ukDogs.filter(p => p.dag === 2 || p.klasseRaw === 'UK2');
+            const ukUspesifisert = ukDogs.filter(p => !p.dag && !['UK1', 'UK2'].includes(p.klasseRaw));
+
+            const akDag1 = akDogs.filter(p => p.dag === 1 || p.klasseRaw === 'AK1');
+            const akDag2 = akDogs.filter(p => p.dag === 2 || p.klasseRaw === 'AK2');
+            const akUspesifisert = akDogs.filter(p => !p.dag && !['AK1', 'AK2'].includes(p.klasseRaw));
+
+            // Helper function for even distribution
             function getEvenDistribution(total, numParties) {
+                if (numParties === 0) return [];
                 const distribution = [];
                 let remaining = total;
-
                 for (let i = 0; i < numParties; i++) {
                     const partiesLeft = numParties - i;
                     let size = Math.round(remaining / partiesLeft);
-
-                    // Prefer even numbers if possible
                     if (size % 2 !== 0 && remaining > size) {
                         const sizeUp = size + 1;
                         const sizeDown = size - 1;
@@ -2129,66 +2142,109 @@
                             size = sizeDown;
                         }
                     }
-
                     distribution.push(size);
                     remaining -= size;
                 }
-
                 return distribution;
             }
 
-            // Get trial dates from config or use defaults
+            // Get trial dates
             const trialStartDate = localStorage.getItem('trialStartDate') || '2026-03-06';
             const startDate = new Date(trialStartDate);
 
-            // Distribute UK dogs evenly across UK/AK parties (30-40% UK per party)
-            // UK dogs go first on each party
-            const ukakDistribution = getEvenDistribution(totalUkAk, ukakPartyCount);
-            const ukDistribution = getEvenDistribution(ukDogs.length, ukakPartyCount);
-
-            // Build UK/AK parties with UK dogs first, then AK dogs
             const parties = [];
-            let ukOffset = 0;
-            let akOffset = 0;
+            const venteliste = { dag1: [], dag2: [] };
 
-            for (let i = 0; i < ukakPartyCount; i++) {
-                const totalForParty = ukakDistribution[i];
-                const ukForParty = ukDistribution[i];
-                const akForParty = totalForParty - ukForParty;
-
-                // UK dogs first, then AK dogs
-                const partyDogs = [
-                    ...ukDogs.slice(ukOffset, ukOffset + ukForParty),
-                    ...akDogs.slice(akOffset, akOffset + akForParty)
-                ];
-
-                // Assign day based on party index (odd parties day 1, even parties day 2, etc.)
-                const dayNum = (i % 2) + 1;
-                const partyDate = new Date(startDate);
-                partyDate.setDate(partyDate.getDate() + dayNum - 1);
-
-                parties.push({
-                    name: `UK/AK Parti ${i + 1}`,
-                    type: 'ukak',
-                    day: dayNum,
-                    date: partyDate.toISOString().split('T')[0],
-                    dogs: partyDogs,
-                    ukCount: ukForParty,
-                    akCount: akForParty
+            // Build dag 1 parties
+            let dag1Hunder = [...ukDag1, ...akDag1];
+            // Add unspecified dogs to fill capacity
+            const dag1Plass = dag1Kapasitet - dag1Hunder.length;
+            if (dag1Plass > 0) {
+                const tilDag1 = [...ukUspesifisert, ...akUspesifisert].slice(0, dag1Plass);
+                dag1Hunder = [...dag1Hunder, ...tilDag1];
+                // Remove used dogs from unspecified pools
+                tilDag1.forEach(d => {
+                    const ukIdx = ukUspesifisert.findIndex(u => u.regnr === d.regnr);
+                    if (ukIdx >= 0) ukUspesifisert.splice(ukIdx, 1);
+                    const akIdx = akUspesifisert.findIndex(a => a.regnr === d.regnr);
+                    if (akIdx >= 0) akUspesifisert.splice(akIdx, 1);
                 });
-
-                ukOffset += ukForParty;
-                akOffset += akForParty;
             }
 
-            // Build VK parties
+            // If more dogs than capacity for dag 1, put excess on waitlist
+            if (dag1Hunder.length > dag1Kapasitet) {
+                venteliste.dag1 = dag1Hunder.slice(dag1Kapasitet);
+                dag1Hunder = dag1Hunder.slice(0, dag1Kapasitet);
+            }
+
+            // Distribute dag 1 dogs across dag 1 parties
+            if (dag1Partier > 0 && dag1Hunder.length > 0) {
+                const dag1Distribution = getEvenDistribution(dag1Hunder.length, dag1Partier);
+                let offset = 0;
+                for (let i = 0; i < dag1Partier; i++) {
+                    const count = dag1Distribution[i] || 0;
+                    const partyDogs = dag1Hunder.slice(offset, offset + count);
+                    const partyDate = new Date(startDate);
+
+                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
+                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
+
+                    parties.push({
+                        name: `UK/AK Parti ${parties.filter(p => p.type === 'ukak').length + 1}`,
+                        type: 'ukak',
+                        day: 1,
+                        date: partyDate.toISOString().split('T')[0],
+                        dogs: partyDogs,
+                        ukCount: ukCount,
+                        akCount: akCount
+                    });
+                    offset += count;
+                }
+            }
+
+            // Build dag 2 parties
+            let dag2Hunder = [...ukDag2, ...akDag2, ...ukUspesifisert, ...akUspesifisert];
+
+            // If more dogs than capacity for dag 2, put excess on waitlist
+            if (dag2Hunder.length > dag2Kapasitet) {
+                venteliste.dag2 = dag2Hunder.slice(dag2Kapasitet);
+                dag2Hunder = dag2Hunder.slice(0, dag2Kapasitet);
+            }
+
+            // Distribute dag 2 dogs across dag 2 parties
+            if (dag2Partier > 0 && dag2Hunder.length > 0) {
+                const dag2Distribution = getEvenDistribution(dag2Hunder.length, dag2Partier);
+                let offset = 0;
+                for (let i = 0; i < dag2Partier; i++) {
+                    const count = dag2Distribution[i] || 0;
+                    const partyDogs = dag2Hunder.slice(offset, offset + count);
+                    const partyDate = new Date(startDate);
+                    partyDate.setDate(partyDate.getDate() + 1);
+
+                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
+                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
+
+                    parties.push({
+                        name: `UK/AK Parti ${parties.filter(p => p.type === 'ukak').length + 1}`,
+                        type: 'ukak',
+                        day: 2,
+                        date: partyDate.toISOString().split('T')[0],
+                        dogs: partyDogs,
+                        ukCount: ukCount,
+                        akCount: akCount
+                    });
+                    offset += count;
+                }
+            }
+
+            // Build VK parties (auto-calculate based on number of VK dogs)
+            const vkPartyCount = Math.ceil(vkDogs.length / maxPerPartyVK);
             const vkDistribution = getEvenDistribution(vkDogs.length, vkPartyCount);
             let vkOffset = 0;
 
             for (let i = 0; i < vkPartyCount; i++) {
                 const count = vkDistribution[i];
-                // VK runs on a specific day (usually day 1 or configured)
-                const vkDay = 1;
+                const vkDay = 1; // VK usually on day 1, could be configurable
                 const partyDate = new Date(startDate);
                 partyDate.setDate(partyDate.getDate() + vkDay - 1);
 
@@ -2201,6 +2257,9 @@
                 });
                 vkOffset += count;
             }
+
+            // Store waitlist
+            localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
 
             // Save parties to localStorage
             localStorage.setItem('trialParties', JSON.stringify(parties));
@@ -2315,23 +2374,78 @@
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;
 
             parties.filter(p => p.type === 'ukak').forEach(party => {
-                const ukPct = Math.round((party.ukCount / party.dogs.length) * 100);
-                message += `• ${party.name}: ${party.dogs.length} hunder (UK: ${party.ukCount} [${ukPct}%], AK: ${party.akCount})\n`;
+                const ukPct = party.dogs.length > 0 ? Math.round((party.ukCount / party.dogs.length) * 100) : 0;
+                message += `• ${party.name} (Dag ${party.day}): ${party.dogs.length} hunder (UK: ${party.ukCount} [${ukPct}%], AK: ${party.akCount})\n`;
             });
 
             parties.filter(p => p.type === 'vk').forEach(party => {
                 message += `• ${party.name}: ${party.dogs.length} hunder\n`;
             });
 
-            message += '\nUK-hunder er plassert først på hvert parti.\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
+            // Add waitlist info
+            const totalVenteliste = venteliste.dag1.length + venteliste.dag2.length;
+            if (totalVenteliste > 0) {
+                message += `\n⚠️ VENTELISTE:\n`;
+                if (venteliste.dag1.length > 0) {
+                    message += `• Dag 1: ${venteliste.dag1.length} hunder på venteliste\n`;
+                }
+                if (venteliste.dag2.length > 0) {
+                    message += `• Dag 2: ${venteliste.dag2.length} hunder på venteliste\n`;
+                }
+                message += `\nØk antall partier eller flytt hunder til andre dager for å få plass til alle.`;
+            } else {
+                message += '\nAlle hunder er plassert i partier.';
+            }
             alert(message);
 
             // Render lagrede dommer-tildelinger
             setTimeout(renderAllPartyDommere, 100);
 
+            // Render venteliste
+            renderVenteliste(venteliste);
+
             // Scroll to party lists section
             document.getElementById('partilister').scrollIntoView({ behavior: 'smooth' });
         });
+
+        // Funksjon for å rendere venteliste
+        function renderVenteliste(venteliste) {
+            const totalVenteliste = venteliste.dag1.length + venteliste.dag2.length;
+            const ventelisteSection = document.getElementById('venteliste');
+            const waitlistTableBody = document.getElementById('waitlistTableBody');
+            const waitlistCount = document.getElementById('waitlistCount');
+
+            if (totalVenteliste === 0) {
+                ventelisteSection.classList.add('hidden');
+                return;
+            }
+
+            ventelisteSection.classList.remove('hidden');
+            waitlistCount.textContent = totalVenteliste + ' hunder på venteliste';
+
+            // Combine waitlists with day info
+            const allWaitlist = [
+                ...venteliste.dag1.map((d, i) => ({ ...d, dag: 1, plass: i + 1 })),
+                ...venteliste.dag2.map((d, i) => ({ ...d, dag: 2, plass: venteliste.dag1.length + i + 1 }))
+            ];
+
+            waitlistTableBody.innerHTML = allWaitlist.map(dog => {
+                return '<tr class="border-b border-bark-100 hover:bg-bark-50">' +
+                    '<td class="py-3 px-4 text-sm font-medium text-bark-700">' + dog.plass + '</td>' +
+                    '<td class="py-3 px-4 text-sm text-bark-700">' + (dog.forer || dog.eier || '') + '</td>' +
+                    '<td class="py-3 px-4 text-sm text-bark-500">-</td>' +
+                    '<td class="py-3 px-4 text-sm font-medium text-bark-800">' + (dog.hundenavn || '') + '</td>' +
+                    '<td class="py-3 px-4 text-sm text-bark-600">' + (dog.regnr || '') + '</td>' +
+                    '<td class="py-3 px-4 text-sm">' +
+                        '<span class="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">Dag ' + dog.dag + ' - ' + (dog.klasseRaw || dog.klasse) + '</span>' +
+                    '</td>' +
+                    '<td class="py-3 px-4 text-sm text-bark-500">-</td>' +
+                    '<td class="py-3 px-4">' +
+                        '<button class="text-sky-600 hover:text-sky-800 text-sm font-medium">Flytt til parti</button>' +
+                    '</td>' +
+                '</tr>';
+            }).join('');
+        }
 
         // Send SMS button scroll
         document.getElementById('sendSmsBtn').addEventListener('click', () => {

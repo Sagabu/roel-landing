@@ -1601,6 +1601,131 @@
         const uploadPreview = document.getElementById('uploadPreview');
         const uploadLoading = document.getElementById('uploadLoading');
         let currentParticipants = [];
+        let fkfDommere = []; // FKF-godkjente dommere
+        let partyDommere = {}; // Tildelte dommere per parti: { partiNavn: [{ telefon, navn }] }
+
+        // Last inn FKF-godkjente dommere
+        async function loadFkfDommere() {
+            try {
+                const resp = await fetch('/api/fkf-dommere');
+                fkfDommere = await resp.json();
+                console.log('Lastet', fkfDommere.length, 'FKF-godkjente dommere');
+            } catch (err) {
+                console.error('Kunne ikke laste FKF-dommere:', err);
+            }
+        }
+        loadFkfDommere();
+
+        // Søk i FKF-dommere
+        function searchFkfDommere(query) {
+            if (!query || query.length < 2) return [];
+            const q = query.toLowerCase();
+            return fkfDommere.filter(d =>
+                (d.fornavn + ' ' + d.etternavn).toLowerCase().includes(q) ||
+                d.etternavn.toLowerCase().includes(q) ||
+                (d.telefon1 && d.telefon1.includes(query)) ||
+                (d.telefon2 && d.telefon2.includes(query))
+            ).slice(0, 10);
+        }
+
+        // Legg til dommer for parti
+        function addDommerToParty(partiNavn, dommer) {
+            if (!partyDommere[partiNavn]) partyDommere[partiNavn] = [];
+            // Sjekk om allerede lagt til
+            if (partyDommere[partiNavn].some(d => d.telefon === dommer.telefon1_normalized)) return;
+            partyDommere[partiNavn].push({
+                telefon: dommer.telefon1_normalized || dommer.telefon1,
+                navn: dommer.fornavn + ' ' + dommer.etternavn,
+                sted: dommer.sted
+            });
+            renderPartyDommere(partiNavn);
+            savePartyDommere();
+        }
+
+        // Fjern dommer fra parti
+        function removeDommerFromParty(partiNavn, telefon) {
+            if (!partyDommere[partiNavn]) return;
+            partyDommere[partiNavn] = partyDommere[partiNavn].filter(d => d.telefon !== telefon);
+            renderPartyDommere(partiNavn);
+            savePartyDommere();
+        }
+
+        // Render dommere for et parti
+        function renderPartyDommere(partiNavn) {
+            const container = document.getElementById('dommere-' + partiNavn.replace(/\s+/g, '-'));
+            if (!container) return;
+            const dommere = partyDommere[partiNavn] || [];
+            container.innerHTML = dommere.map(d => `
+                <span class="inline-flex items-center gap-1 px-2 py-1 bg-sky-100 text-sky-800 rounded-lg text-sm">
+                    <span>${d.navn}</span>
+                    <button onclick="removeDommerFromParty('${partiNavn}', '${d.telefon}')" class="text-sky-600 hover:text-red-600 ml-1">&times;</button>
+                </span>
+            `).join('');
+        }
+
+        // Lagre dommer-tildelinger
+        function savePartyDommere() {
+            localStorage.setItem('partyDommere', JSON.stringify(partyDommere));
+        }
+
+        // Last dommer-tildelinger
+        function loadPartyDommere() {
+            const saved = localStorage.getItem('partyDommere');
+            if (saved) {
+                partyDommere = JSON.parse(saved);
+            }
+        }
+        loadPartyDommere();
+
+        // Vis søkeresultater for dommere
+        function showDommerResults(partiNavn, partiId, query) {
+            const container = document.getElementById('dommer-results-' + partiId);
+            if (!container) return;
+
+            if (!query || query.length < 2) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            const results = searchFkfDommere(query);
+            if (results.length === 0) {
+                container.innerHTML = '<div class="px-3 py-2 text-sm text-bark-500">Ingen treff</div>';
+            } else {
+                container.innerHTML = results.map(d => `
+                    <button type="button"
+                        onclick="selectDommer('${partiNavn}', ${JSON.stringify(d).replace(/"/g, '&quot;')})"
+                        class="w-full text-left px-3 py-2 hover:bg-sky-50 border-b border-bark-100 last:border-0">
+                        <div class="text-sm font-medium text-bark-800">${d.fornavn} ${d.etternavn}</div>
+                        <div class="text-xs text-bark-500">${d.sted} • ${d.telefon1 || ''}</div>
+                    </button>
+                `).join('');
+            }
+            container.classList.remove('hidden');
+        }
+
+        // Velg dommer fra søkeresultat
+        function selectDommer(partiNavn, dommer) {
+            addDommerToParty(partiNavn, dommer);
+            const partiId = partiNavn.replace(/\s+/g, '-');
+            const input = document.getElementById('dommer-sok-' + partiId);
+            const results = document.getElementById('dommer-results-' + partiId);
+            if (input) input.value = '';
+            if (results) results.classList.add('hidden');
+        }
+
+        // Skjul søkeresultater når man klikker utenfor
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('[id^="dommer-sok-"]') && !e.target.closest('[id^="dommer-results-"]')) {
+                document.querySelectorAll('[id^="dommer-results-"]').forEach(el => el.classList.add('hidden'));
+            }
+        });
+
+        // Render lagrede dommere etter at partilister er vist
+        function renderAllPartyDommere() {
+            Object.keys(partyDommere).forEach(partiNavn => {
+                renderPartyDommere(partiNavn);
+            });
+        }
 
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -2090,7 +2215,9 @@
                             </div>
                             <h3 class="text-xl font-bold font-serif text-bark-900">Dag ${dayIndex + 1} - ${formattedDate}</h3>
                         </div>
-                        ${dayParties.map(party => `
+                        ${dayParties.map(party => {
+                            const partiId = party.name.replace(/\s+/g, '-');
+                            return `
                             <div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden mb-4">
                                 <div class="px-6 py-4 bg-${party.type === 'vk' ? 'earth' : 'forest'}-50 border-b border-bark-100">
                                     <div class="flex items-center justify-between flex-wrap gap-2">
@@ -2099,6 +2226,26 @@
                                             <span class="px-3 py-1 bg-${party.type === 'vk' ? 'earth' : 'forest'}-100 text-${party.type === 'vk' ? 'earth' : 'forest'}-700 rounded-full text-sm font-medium">${party.dogs.length} hunder</span>
                                             ${party.ukCount ? `<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">UK: ${party.ukCount}</span>` : ''}
                                             ${party.akCount ? `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">AK: ${party.akCount}</span>` : ''}
+                                        </div>
+                                    </div>
+                                    <!-- Dommer-tildeling -->
+                                    <div class="mt-3 pt-3 border-t border-${party.type === 'vk' ? 'earth' : 'forest'}-200">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <span class="text-sm font-medium text-bark-600">Dommer(e):</span>
+                                            <div id="dommere-${partiId}" class="flex flex-wrap gap-1">
+                                                <!-- Tildelte dommere vises her -->
+                                            </div>
+                                            <div class="relative">
+                                                <input type="text"
+                                                    id="dommer-sok-${partiId}"
+                                                    placeholder="Søk dommer..."
+                                                    class="px-3 py-1 text-sm border border-bark-200 rounded-lg focus:border-sky-500 focus:outline-none w-48"
+                                                    oninput="showDommerResults('${party.name}', '${partiId}', this.value)"
+                                                    onfocus="showDommerResults('${party.name}', '${partiId}', this.value)"
+                                                >
+                                                <div id="dommer-results-${partiId}" class="hidden absolute z-50 mt-1 w-72 bg-white border border-bark-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2148,6 +2295,9 @@
 
             message += '\nUK-hunder er plassert først på hvert parti.\nDeltakerne er lagret og klar for sending av bekreftelse-SMS.';
             alert(message);
+
+            // Render lagrede dommer-tildelinger
+            setTimeout(renderAllPartyDommere, 100);
 
             // Scroll to party lists section
             document.getElementById('partilister').scrollIntoView({ behavior: 'smooth' });

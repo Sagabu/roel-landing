@@ -351,12 +351,8 @@
     </div>
 
     <script>
-        // Hent innlogget brukers telefonnummer - prøv flere kilder
-        const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
-        const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-        const userPhone = userSession.phone || userProfile.phone || localStorage.getItem('userPhone') || '';
-
-        console.log('Debug - userPhone:', userPhone, 'userSession:', userSession, 'userProfile:', userProfile);
+        // Telefonnummer hentes dynamisk i loadDogs()
+        let userPhone = '';
 
         // Hunder lastes asynkront fra API
         let dogs = [];
@@ -366,6 +362,7 @@
 
         // Funksjon for å lagre hunder for denne brukeren
         function saveUserDogs() {
+            if (!userPhone) return;
             // Lagre også til localStorage for offline-bruk
             const allDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
             allDogs[userPhone] = dogs;
@@ -374,10 +371,36 @@
 
         // Hent hunder fra API
         async function loadDogs() {
+            // Hent telefonnummer fra FuglehundAuth
+            // Prøv FuglehundAuth først, deretter direkte localStorage
+            userPhone = FuglehundAuth.getSessionPhone() || '';
+
+            // Fallback: sjekk localStorage direkte
+            if (!userPhone) {
+                const userSession = localStorage.getItem('userSession');
+                const userProfile = localStorage.getItem('userProfile');
+                const directPhone = localStorage.getItem('userPhone');
+
+                if (userSession) {
+                    try { userPhone = JSON.parse(userSession).phone || ''; } catch {}
+                }
+                if (!userPhone && userProfile) {
+                    try { userPhone = JSON.parse(userProfile).phone || ''; } catch {}
+                }
+                if (!userPhone && directPhone) {
+                    userPhone = directPhone;
+                }
+            }
+
+            console.log('Debug - userPhone:', userPhone);
+
             if (!userPhone) {
                 console.warn('Ingen bruker innlogget - userPhone er tom');
                 // Vis melding til bruker
                 const container = document.getElementById('dogsList');
+                const emptyState = document.getElementById('emptyState');
+                if (emptyState) emptyState.classList.add('hidden');
+                container.classList.remove('hidden');
                 container.innerHTML = `
                     <div class="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
                         <p class="text-amber-800 font-medium">Du må logge inn for å se hundene dine</p>
@@ -1205,8 +1228,12 @@
             }
         }
 
-        // Initialize
-        init();
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     </script>
     <script src="dog-search.js"></script>
 </body>

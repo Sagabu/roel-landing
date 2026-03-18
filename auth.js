@@ -575,22 +575,33 @@ window.handleApiError = function(error, customMessage) {
       const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
       if (userData.telefon !== SUPERADMIN_PHONE) return;
 
-      // Finn header eller nav for å legge til knappen
-      const header = document.querySelector('header');
-      if (!header) return;
-
       // Sjekk om knappen allerede finnes
       if (document.getElementById('superadmin-btn')) return;
 
-      // Finn hvor logg ut-knappen er
+      // Finn header
+      const header = document.querySelector('header');
+      if (!header) return;
+
+      // Lag admin-knappen
+      const adminBtn = document.createElement('a');
+      adminBtn.id = 'superadmin-btn';
+      adminBtn.href = '/admin-panel.html';
+      adminBtn.className = 'bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
+      adminBtn.textContent = 'Admin';
+
+      // Prøv å finne logg ut-knappen først
       const logoutBtn = header.querySelector('button[onclick*="logout"]');
       if (logoutBtn && logoutBtn.parentElement) {
-        const adminBtn = document.createElement('a');
-        adminBtn.id = 'superadmin-btn';
-        adminBtn.href = '/admin-panel.html';
-        adminBtn.className = 'bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
-        adminBtn.textContent = 'Admin';
         logoutBtn.parentElement.insertBefore(adminBtn, logoutBtn);
+        return;
+      }
+
+      // Fallback: legg til i første div med flex i header
+      const flexContainer = header.querySelector('.flex.items-center.gap-3') ||
+                            header.querySelector('.flex.items-center') ||
+                            header.querySelector('div > div:last-child');
+      if (flexContainer) {
+        flexContainer.appendChild(adminBtn);
       }
     } catch (e) {}
   }

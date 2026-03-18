@@ -1737,6 +1737,62 @@
         // GLOBALE RENDER-FUNKSJONER FOR PARTILISTER
         // ========================================
 
+        // Oppdater statistikk-kortene øverst basert på lagrede data
+        function updateStatsFromStorage() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{}');
+            const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+
+            // Tell opp totalt antall hunder i partier
+            let totalInParties = 0;
+            let ukCount = 0;
+            let akCount = 0;
+            let vkCount = 0;
+
+            parties.forEach(party => {
+                totalInParties += party.dogs.length;
+                party.dogs.forEach(dog => {
+                    if (dog.klasse === 'UK') ukCount++;
+                    else if (dog.klasse === 'AK') akCount++;
+                    else if (dog.klasse === 'VK') vkCount++;
+                });
+            });
+
+            // Tell opp venteliste
+            const dag1Uk = venteliste.dag1?.uk?.length || 0;
+            const dag1Ak = venteliste.dag1?.ak?.length || 0;
+            const dag2Uk = venteliste.dag2?.uk?.length || 0;
+            const dag2Ak = venteliste.dag2?.ak?.length || 0;
+            const vkVenteliste = venteliste.vk?.length || 0;
+            const totalVenteliste = dag1Uk + dag1Ak + dag2Uk + dag2Ak + vkVenteliste;
+
+            // Totalt = i partier + på venteliste
+            const total = totalInParties + totalVenteliste;
+
+            // Oppdater DOM
+            if (total > 0) {
+                document.getElementById('statTotal').textContent = total;
+                document.getElementById('statTotalSub').textContent =
+                    'UK: ' + ukCount + ' | AK: ' + akCount + ' | VK: ' + vkCount;
+
+                // Foreløpig: alle i partier regnes som "venter svar" (ikke bekreftet ennå)
+                document.getElementById('statPending').textContent = totalInParties;
+                document.getElementById('statConfirmed').textContent = '0';
+                document.getElementById('statConfirmedSub').textContent = '–';
+
+                // Venteliste
+                document.getElementById('statWaitlist').textContent = totalVenteliste;
+                const waitlistSubEl = document.getElementById('statWaitlistSub');
+                if (waitlistSubEl) {
+                    if (totalVenteliste > 0) {
+                        waitlistSubEl.textContent = 'Klar for opprykk';
+                    } else {
+                        waitlistSubEl.textContent = 'Ingen på venteliste';
+                    }
+                }
+            }
+        }
+
         // Helper to format date in Norwegian
         function formatDateNorwegian(dateStr) {
             const date = new Date(dateStr);
@@ -1922,6 +1978,9 @@
                     )) {
                         renderVenteliste(savedVenteliste);
                     }
+
+                    // Oppdater statistikk-kortene
+                    updateStatsFromStorage();
                 }
             } catch (e) {
                 console.error('Kunne ikke laste lagrede partier:', e);
@@ -2074,6 +2133,9 @@
             // Re-render
             renderAllParties(parties);
             renderVenteliste(venteliste);
+
+            // Oppdater statistikk
+            updateStatsFromStorage();
         }
 
         // Last lagrede partier ved oppstart
@@ -2683,6 +2745,9 @@
 
             // Render partier med de globale funksjonene (inkluderer flytt-knapper)
             renderAllParties(parties);
+
+            // Oppdater statistikk-kortene øverst
+            updateStatsFromStorage();
 
             // Build message with UK distribution info
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;

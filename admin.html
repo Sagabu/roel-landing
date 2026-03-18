@@ -2194,17 +2194,31 @@
                 dag1Hunder = dag1Hunder.slice(0, dag1Kapasitet);
             }
 
-            // Distribute dag 1 dogs across dag 1 parties
+            // Distribute dag 1 dogs across dag 1 parties - MED BLANDING AV UK OG AK
             if (dag1Partier > 0 && dag1Hunder.length > 0) {
-                const dag1Distribution = getEvenDistribution(dag1Hunder.length, dag1Partier);
-                let offset = 0;
-                for (let i = 0; i < dag1Partier; i++) {
-                    const count = dag1Distribution[i] || 0;
-                    const partyDogs = dag1Hunder.slice(offset, offset + count);
-                    const partyDate = new Date(startDate);
+                // Separer UK og AK for jevn fordeling per parti
+                const dag1UkListe = dag1Hunder.filter(d => d.klasse === 'UK');
+                const dag1AkListe = dag1Hunder.filter(d => d.klasse === 'AK');
 
-                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
-                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
+                const ukPerParti = getEvenDistribution(dag1UkListe.length, dag1Partier);
+                const akPerParti = getEvenDistribution(dag1AkListe.length, dag1Partier);
+
+                let ukOffset = 0;
+                let akOffset = 0;
+
+                for (let i = 0; i < dag1Partier; i++) {
+                    const ukCount = ukPerParti[i] || 0;
+                    const akCount = akPerParti[i] || 0;
+
+                    // Bland UK og AK i partiet
+                    const partyDogs = [
+                        ...dag1UkListe.slice(ukOffset, ukOffset + ukCount),
+                        ...dag1AkListe.slice(akOffset, akOffset + akCount)
+                    ];
+                    ukOffset += ukCount;
+                    akOffset += akCount;
+
+                    const partyDate = new Date(startDate);
 
                     parties.push({
                         name: `UK/AK Parti ${parties.filter(p => p.type === 'ukak').length + 1}`,
@@ -2215,7 +2229,6 @@
                         ukCount: ukCount,
                         akCount: akCount
                     });
-                    offset += count;
                 }
             }
 
@@ -2236,18 +2249,32 @@
                 dag2Hunder = dag2Hunder.slice(0, dag2Kapasitet);
             }
 
-            // Distribute dag 2 dogs across dag 2 parties
+            // Distribute dag 2 dogs across dag 2 parties - MED BLANDING AV UK OG AK
             if (dag2Partier > 0 && dag2Hunder.length > 0) {
-                const dag2Distribution = getEvenDistribution(dag2Hunder.length, dag2Partier);
-                let offset = 0;
+                // Separer UK og AK for jevn fordeling per parti
+                const dag2UkListe = dag2Hunder.filter(d => d.klasse === 'UK');
+                const dag2AkListe = dag2Hunder.filter(d => d.klasse === 'AK');
+
+                const ukPerParti2 = getEvenDistribution(dag2UkListe.length, dag2Partier);
+                const akPerParti2 = getEvenDistribution(dag2AkListe.length, dag2Partier);
+
+                let ukOffset2 = 0;
+                let akOffset2 = 0;
+
                 for (let i = 0; i < dag2Partier; i++) {
-                    const count = dag2Distribution[i] || 0;
-                    const partyDogs = dag2Hunder.slice(offset, offset + count);
+                    const ukCount = ukPerParti2[i] || 0;
+                    const akCount = akPerParti2[i] || 0;
+
+                    // Bland UK og AK i partiet
+                    const partyDogs = [
+                        ...dag2UkListe.slice(ukOffset2, ukOffset2 + ukCount),
+                        ...dag2AkListe.slice(akOffset2, akOffset2 + akCount)
+                    ];
+                    ukOffset2 += ukCount;
+                    akOffset2 += akCount;
+
                     const partyDate = new Date(startDate);
                     partyDate.setDate(partyDate.getDate() + 1);
-
-                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
-                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
 
                     parties.push({
                         name: `UK/AK Parti ${parties.filter(p => p.type === 'ukak').length + 1}`,
@@ -2258,7 +2285,6 @@
                         ukCount: ukCount,
                         akCount: akCount
                     });
-                    offset += count;
                 }
             }
 

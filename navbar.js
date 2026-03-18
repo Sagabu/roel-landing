@@ -65,8 +65,11 @@
         return { user, role };
     }
 
+    // Superadmin telefonnummer (har tilgang til admin-panel uansett rolle)
+    const SUPERADMIN_PHONE = '90852833';
+
     // Define navigation items by role
-    function getNavItems(role, currentPage) {
+    function getNavItems(role, currentPage, userPhone) {
         const items = {
             public: [
                 { href: 'index.html', label: 'Hjem', icon: 'home' },
@@ -97,7 +100,14 @@
             ]
         };
 
-        return items[role] || items.public;
+        let navItems = items[role] || items.public;
+
+        // Legg til admin-panel for superadmin uansett rolle
+        if (userPhone === SUPERADMIN_PHONE && role !== 'admin') {
+            navItems = [...navItems, { href: 'admin-panel.html', label: 'Admin', icon: 'database' }];
+        }
+
+        return navItems;
     }
 
     // SVG icons
@@ -155,7 +165,8 @@
     // Render navbar
     function renderNavbar() {
         const { user, role } = getUserState();
-        const navItems = getNavItems(role || 'public', currentPage);
+        const userPhone = user?.phone || '';
+        const navItems = getNavItems(role || 'public', currentPage, userPhone);
 
         // Check if navbar already exists (don't double-render)
         if (document.getElementById('shared-navbar')) return;

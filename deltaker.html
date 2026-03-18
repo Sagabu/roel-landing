@@ -25,6 +25,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
 </head>
 <body class="bg-cream min-h-screen font-sans">
 
@@ -400,7 +401,25 @@
                 localStorage.setItem('fuglehund_token', loginData.token);
                 localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
 
-                // Synkroniser sessions
+                // Sett userSession og userPhone for konsistens med andre innloggingsmetoder
+                const userSession = {
+                    phone: currentPhone,
+                    name: `${loginData.bruker.fornavn || ''} ${loginData.bruker.etternavn || ''}`.trim() || 'Bruker',
+                    loggedInAt: new Date().toISOString()
+                };
+                localStorage.setItem('userSession', JSON.stringify(userSession));
+                localStorage.setItem('userPhone', currentPhone);
+
+                // Sett userProfile for bakoverkompatibilitet
+                localStorage.setItem('userProfile', JSON.stringify({
+                    phone: currentPhone,
+                    name: userSession.name,
+                    email: loginData.bruker.epost || '',
+                    role: loginData.bruker.rolle || '',
+                    loggedInAt: userSession.loggedInAt
+                }));
+
+                // Synkroniser sessions (oppdaterer med mer data fra API)
                 if (typeof FuglehundAuth !== 'undefined') {
                     await FuglehundAuth.syncSessions();
                 }
@@ -465,6 +484,22 @@
                         // Lagre JWT token
                         localStorage.setItem('fuglehund_token', loginData.token);
                         localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
+
+                        // Sett userSession og userPhone for konsistens
+                        const userSession = {
+                            phone: phone,
+                            name: name,
+                            loggedInAt: new Date().toISOString()
+                        };
+                        localStorage.setItem('userSession', JSON.stringify(userSession));
+                        localStorage.setItem('userPhone', phone);
+                        localStorage.setItem('userProfile', JSON.stringify({
+                            phone: phone,
+                            name: name,
+                            email: email,
+                            role: 'deltaker',
+                            loggedInAt: userSession.loggedInAt
+                        }));
                     }
 
                     // Show success section

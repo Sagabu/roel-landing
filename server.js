@@ -831,8 +831,11 @@ app.post("/api/auth/login", async (c) => {
     return c.json({ error: "Verifiseringskode påkrevd" }, 400);
   }
 
-  if (isDevMode) {
-    // I dev-mode: godta "1234" som gyldig kode
+  // Bypass for testing: telefon 90852833 med kode 1234
+  const isTestBypass = telefon === "90852833" && kode === "1234";
+
+  if (isDevMode || isTestBypass) {
+    // I dev-mode eller test-bypass: godta "1234" som gyldig kode
     if (kode !== validDevCode) {
       return c.json({ error: "Feil kode" }, 401);
     }

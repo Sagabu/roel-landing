@@ -1559,7 +1559,7 @@
             updateDayScheduleSummary();
         }
 
-        // Update the day schedule summary
+        // Update the day schedule summary (kun kapasitet - venteliste vises etter fordeling)
         function updateDayScheduleSummary() {
             const dag1Partier = parseInt(document.getElementById('ukakPartierDag1').value) || 0;
             const dag2Partier = parseInt(document.getElementById('ukakPartierDag2').value) || 0;
@@ -1572,52 +1572,15 @@
             // Beregn kapasitet
             const dag1Kapasitet = dag1Partier * maxPerParty;
             const dag2Kapasitet = dag2Partier * maxPerParty;
-            const totalKapasitet = dag1Kapasitet + dag2Kapasitet;
 
-            // Hent lagrede deltakere for å vise venteliste-estimat
-            let ukAkTotal = 0;
-            let ukDag1 = 0, akDag1 = 0, ukDag2 = 0, akDag2 = 0;
-            try {
-                const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
-                const ukDogs = participants.filter(p => p.klasse === 'UK');
-                const akDogs = participants.filter(p => p.klasse === 'AK');
-                ukAkTotal = ukDogs.length + akDogs.length;
-
-                // Tell per dag
-                ukDag1 = ukDogs.filter(p => p.dag === 1 || p.klasseRaw === 'UK1').length;
-                ukDag2 = ukDogs.filter(p => p.dag === 2 || p.klasseRaw === 'UK2').length;
-                akDag1 = akDogs.filter(p => p.dag === 1 || p.klasseRaw === 'AK1').length;
-                akDag2 = akDogs.filter(p => p.dag === 2 || p.klasseRaw === 'AK2').length;
-            } catch (e) {}
-
-            // Dag 1
+            // Dag 1 - vis kun kapasitet
             if (dag1Partier > 0) {
-                const dag1Hunder = ukDag1 + akDag1;
-                let dag1Info = `${dag1Partier} UK/AK-parti${dag1Partier > 1 ? 'er' : ''} (maks ${dag1Kapasitet} hunder)`;
-                if (dag1Hunder > 0) {
-                    const dag1Venteliste = Math.max(0, dag1Hunder - dag1Kapasitet);
-                    if (dag1Venteliste > 0) {
-                        dag1Info += ` <span class="text-amber-600 font-medium">⚠️ ${dag1Venteliste} på venteliste</span>`;
-                    } else {
-                        dag1Info += ` <span class="text-green-600">(${dag1Hunder} påmeldt)</span>`;
-                    }
-                }
-                summaryHtml += `<div><strong>Dag 1:</strong> ${dag1Info}</div>`;
+                summaryHtml += `<div><strong>Dag 1:</strong> ${dag1Partier} UK/AK-parti${dag1Partier > 1 ? 'er' : ''} (maks ${dag1Kapasitet} hunder)</div>`;
             }
 
-            // Dag 2
+            // Dag 2 - vis kun kapasitet
             if (dag2Partier > 0) {
-                const dag2Hunder = ukDag2 + akDag2;
-                let dag2Info = `${dag2Partier} UK/AK-parti${dag2Partier > 1 ? 'er' : ''} (maks ${dag2Kapasitet} hunder)`;
-                if (dag2Hunder > 0) {
-                    const dag2Venteliste = Math.max(0, dag2Hunder - dag2Kapasitet);
-                    if (dag2Venteliste > 0) {
-                        dag2Info += ` <span class="text-amber-600 font-medium">⚠️ ${dag2Venteliste} på venteliste</span>`;
-                    } else {
-                        dag2Info += ` <span class="text-green-600">(${dag2Hunder} påmeldt)</span>`;
-                    }
-                }
-                summaryHtml += `<div><strong>Dag 2:</strong> ${dag2Info}</div>`;
+                summaryHtml += `<div><strong>Dag 2:</strong> ${dag2Partier} UK/AK-parti${dag2Partier > 1 ? 'er' : ''} (maks ${dag2Kapasitet} hunder)</div>`;
             }
 
             // VK
@@ -1629,14 +1592,6 @@
                 const finaleDag = parseInt(kvalDag) + 1;
                 summaryHtml += `<div><strong>Dag ${kvalDag}:</strong> VK Kval (2 partier)</div>`;
                 summaryHtml += `<div><strong>Dag ${finaleDag}:</strong> VK Finale</div>`;
-            }
-
-            // Total kapasitet
-            if (totalKapasitet > 0 && ukAkTotal > 0) {
-                const totalVenteliste = Math.max(0, ukAkTotal - totalKapasitet);
-                if (totalVenteliste > 0) {
-                    summaryHtml += `<div class="mt-2 pt-2 border-t border-bark-200 text-amber-700"><strong>Totalt:</strong> ${ukAkTotal} UK/AK påmeldt, ${totalKapasitet} plasser = <span class="font-bold">${totalVenteliste} på venteliste</span></div>`;
-                }
             }
 
             if (!summaryHtml) {
@@ -2146,9 +2101,6 @@
 
             // Save participants to localStorage
             localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
-
-            // Oppdater oppsummering med ny deltaker-info
-            updateDayScheduleSummary();
 
             // Separate dogs by class
             const ukDogs = currentParticipants.filter(p => p.klasse === 'UK');

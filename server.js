@@ -834,7 +834,7 @@ app.post("/api/auth/login", async (c) => {
   if (isDevMode) {
     // I dev-mode: godta "1234" som gyldig kode
     if (kode !== validDevCode) {
-      return c.json({ error: "Feil kode. Bruk 1234 i dev-modus." }, 401);
+      return c.json({ error: "Feil kode" }, 401);
     }
   } else {
     // I produksjon: Her skal SMS-verifisering implementeres

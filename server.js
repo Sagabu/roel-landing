@@ -943,7 +943,10 @@ app.post("/api/auth/verify-code", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  const otp = db.prepare(
+  // Bypass for testing: telefon 90852833 med kode 1234
+  const isTestBypass = telefon === "90852833" && code === "1234";
+
+  const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
   ).get(telefon, code);
 
@@ -951,7 +954,10 @@ app.post("/api/auth/verify-code", async (c) => {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
   }
 
-  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+  // Ikke oppdater OTP-tabell for test-bypass
+  if (otp.rowid !== -1) {
+    db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+  }
 
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
 

@@ -321,6 +321,30 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(prove_id, parti, dommer_telefon)
   );
+
+  -- Vipps-forespørsler (prøveleder sender betalingsforespørsler til deltakere)
+  CREATE TABLE IF NOT EXISTS vipps_foresporsler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    opprettet_av TEXT NOT NULL REFERENCES brukere(telefon),
+    beskrivelse TEXT NOT NULL,
+    belop INTEGER NOT NULL,
+    vipps_nummer TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Vipps-mottakere (hvem som har mottatt forespørsel og betalingsstatus)
+  CREATE TABLE IF NOT EXISTS vipps_mottakere (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    foresporsel_id INTEGER NOT NULL REFERENCES vipps_foresporsler(id) ON DELETE CASCADE,
+    deltaker_telefon TEXT NOT NULL,
+    deltaker_navn TEXT NOT NULL,
+    status TEXT DEFAULT 'venter' CHECK(status IN ('venter', 'betalt', 'kansellert')),
+    betalt_dato TEXT DEFAULT NULL,
+    notert_av TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(foresporsel_id, deltaker_telefon)
+  );
 `);
 
 // --- Migrations for existing databases ---
@@ -336,6 +360,8 @@ const migrations = [
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_dato TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_godkjent INTEGER DEFAULT 0",
+  // Vipps-integrasjon for klubber
+  "ALTER TABLE klubber ADD COLUMN vipps_nummer TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -1369,6 +1395,31 @@ app.get("/api/klubber/:id", (c) => {
   return c.json({ ...row, admins });
 });
 
+// Oppdater klubb (inkl. Vipps-nummer)
+app.put("/api/klubber/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const existing = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
+  if (!existing) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  const updates = [];
+  const params = [];
+
+  if (body.navn !== undefined) { updates.push("navn = ?"); params.push(body.navn); }
+  if (body.region !== undefined) { updates.push("region = ?"); params.push(body.region); }
+  if (body.orgnummer !== undefined) { updates.push("orgnummer = ?"); params.push(body.orgnummer); }
+  if (body.vipps_nummer !== undefined) { updates.push("vipps_nummer = ?"); params.push(body.vipps_nummer); }
+
+  if (updates.length === 0) return c.json({ error: "Ingen felt å oppdatere" }, 400);
+
+  params.push(id);
+  db.prepare(`UPDATE klubber SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+
+  const updated = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
+  return c.json(updated);
+});
+
 // ============================================
 // KLUBB MEDLEMMER API
 // ============================================
@@ -1427,6 +1478,138 @@ app.post("/api/klubber/:id/medlemmer/match", requireAdmin, (c) => {
 app.delete("/api/klubber/:id/medlemmer", requireAdmin, (c) => {
   const klubbId = c.req.param("id");
   db.prepare("DELETE FROM klubb_medlemmer WHERE klubb_id = ?").run(klubbId);
+  return c.json({ success: true });
+});
+
+// ============================================
+// VIPPS-FORESPØRSLER API
+// ============================================
+
+// Opprett ny Vipps-forespørsel
+app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { opprettet_av, beskrivelse, belop, vipps_nummer, mottakere } = body;
+
+  if (!opprettet_av || !beskrivelse || !belop || !vipps_nummer || !mottakere?.length) {
+    return c.json({ error: "Mangler påkrevde felt" }, 400);
+  }
+
+  // Opprett forespørsel
+  const result = db.prepare(`
+    INSERT INTO vipps_foresporsler (prove_id, opprettet_av, beskrivelse, belop, vipps_nummer)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(proveId, opprettet_av, beskrivelse, belop, vipps_nummer);
+
+  const foresporselId = result.lastInsertRowid;
+
+  // Legg til mottakere
+  const insertMottaker = db.prepare(`
+    INSERT INTO vipps_mottakere (foresporsel_id, deltaker_telefon, deltaker_navn)
+    VALUES (?, ?, ?)
+  `);
+
+  for (const m of mottakere) {
+    insertMottaker.run(foresporselId, m.telefon, m.navn);
+  }
+
+  // Generer Vipps-lenker for hver mottaker
+  const vippsLenker = mottakere.map(m => ({
+    telefon: m.telefon,
+    navn: m.navn,
+    lenke: `https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`
+  }));
+
+  return c.json({
+    id: foresporselId,
+    vipps_lenker: vippsLenker,
+    melding: `Vennligst betal ${belop} kr for ${beskrivelse}: https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`
+  });
+});
+
+// Hent alle Vipps-forespørsler for en prøve
+app.get("/api/prover/:id/vipps-foresporsler", (c) => {
+  const proveId = c.req.param("id");
+
+  const foresporsler = db.prepare(`
+    SELECT vf.*, b.fornavn || ' ' || b.etternavn as opprettet_av_navn
+    FROM vipps_foresporsler vf
+    LEFT JOIN brukere b ON vf.opprettet_av = b.telefon
+    WHERE vf.prove_id = ?
+    ORDER BY vf.created_at DESC
+  `).all(proveId);
+
+  // Hent mottakere for hver forespørsel
+  const getMottakere = db.prepare(`
+    SELECT * FROM vipps_mottakere WHERE foresporsel_id = ?
+  `);
+
+  const result = foresporsler.map(f => ({
+    ...f,
+    mottakere: getMottakere.all(f.id)
+  }));
+
+  return c.json(result);
+});
+
+// Hent én Vipps-forespørsel med mottakere
+app.get("/api/vipps-foresporsler/:id", (c) => {
+  const id = c.req.param("id");
+
+  const foresporsel = db.prepare(`
+    SELECT vf.*, b.fornavn || ' ' || b.etternavn as opprettet_av_navn
+    FROM vipps_foresporsler vf
+    LEFT JOIN brukere b ON vf.opprettet_av = b.telefon
+    WHERE vf.id = ?
+  `).get(id);
+
+  if (!foresporsel) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  const mottakere = db.prepare(`
+    SELECT * FROM vipps_mottakere WHERE foresporsel_id = ?
+  `).all(id);
+
+  return c.json({ ...foresporsel, mottakere });
+});
+
+// Oppdater betalingsstatus for en mottaker
+app.put("/api/vipps-foresporsler/:id/mottakere/:telefon", async (c) => {
+  const foresporselId = c.req.param("id");
+  const telefon = c.req.param("telefon");
+  const body = await c.req.json();
+  const { status, notert_av } = body;
+
+  if (!['venter', 'betalt', 'kansellert'].includes(status)) {
+    return c.json({ error: "Ugyldig status" }, 400);
+  }
+
+  const existing = db.prepare(`
+    SELECT * FROM vipps_mottakere WHERE foresporsel_id = ? AND deltaker_telefon = ?
+  `).get(foresporselId, telefon);
+
+  if (!existing) return c.json({ error: "Mottaker ikke funnet" }, 404);
+
+  if (status === 'betalt') {
+    db.prepare(`
+      UPDATE vipps_mottakere
+      SET status = ?, betalt_dato = datetime('now'), notert_av = ?
+      WHERE foresporsel_id = ? AND deltaker_telefon = ?
+    `).run(status, notert_av || null, foresporselId, telefon);
+  } else {
+    db.prepare(`
+      UPDATE vipps_mottakere
+      SET status = ?, betalt_dato = NULL, notert_av = ?
+      WHERE foresporsel_id = ? AND deltaker_telefon = ?
+    `).run(status, notert_av || null, foresporselId, telefon);
+  }
+
+  return c.json({ success: true });
+});
+
+// Slett en Vipps-forespørsel
+app.delete("/api/vipps-foresporsler/:id", (c) => {
+  const id = c.req.param("id");
+  db.prepare("DELETE FROM vipps_foresporsler WHERE id = ?").run(id);
   return c.json({ success: true });
 });
 

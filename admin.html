@@ -1737,6 +1737,271 @@
             });
         }
 
+        // ========================================
+        // GLOBALE RENDER-FUNKSJONER FOR PARTILISTER
+        // ========================================
+
+        // Helper to format date in Norwegian
+        function formatDateNorwegian(dateStr) {
+            const date = new Date(dateStr);
+            const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
+            const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+            return days[date.getDay()] + ' ' + date.getDate() + '. ' + months[date.getMonth()] + ' ' + date.getFullYear();
+        }
+
+        // Render en enkelt hunderrad med flytt-knapp
+        function renderDogRowGlobal(dog, i, partyName) {
+            var klasseClass = 'bg-amber-100 text-amber-700';
+            if (dog.klasse === 'UK') klasseClass = 'bg-blue-100 text-blue-700';
+            else if (dog.klasse === 'AK') klasseClass = 'bg-green-100 text-green-700';
+
+            return '<tr class="hover:bg-bark-50" data-regnr="' + (dog.regnr || '') + '">' +
+                '<td class="px-4 py-3 text-sm font-medium text-bark-700">' + (i + 1) + '</td>' +
+                '<td class="px-4 py-3 text-sm text-bark-700">' + (dog.forer || '') + '</td>' +
+                '<td class="px-4 py-3 text-sm font-medium text-bark-800">' + (dog.hundenavn || '') + '</td>' +
+                '<td class="px-4 py-3 text-sm text-bark-600">' + (dog.rase || '') + '</td>' +
+                '<td class="px-4 py-3 text-sm"><span class="px-2 py-1 rounded text-xs font-medium ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></td>' +
+                '<td class="px-4 py-3 text-sm">' +
+                    '<button onclick="openMoveDialog(\'' + (dog.regnr || '').replace(/'/g, "\\'") + '\', \'' + partyName.replace(/'/g, "\\'") + '\')" ' +
+                        'class="text-sky-600 hover:text-sky-800 text-xs font-medium">Flytt</button>' +
+                '</td>' +
+            '</tr>';
+        }
+
+        // Render et parti med flytt-funksjonalitet
+        function renderPartyGlobal(party) {
+            var partiId = party.name.replace(/\s+/g, '-');
+            var colorBase = party.type === 'vk' ? 'earth' : 'forest';
+            var ukBadge = party.ukCount ? '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">UK: ' + party.ukCount + '</span>' : '';
+            var akBadge = party.akCount ? '<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">AK: ' + party.akCount + '</span>' : '';
+            var dogRows = party.dogs.map(function(dog, i) { return renderDogRowGlobal(dog, i, party.name); }).join('');
+
+            return '<div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden mb-4" data-party-name="' + party.name + '">' +
+                '<div class="px-6 py-4 bg-' + colorBase + '-50 border-b border-bark-100">' +
+                    '<div class="flex items-center justify-between flex-wrap gap-2">' +
+                        '<h4 class="text-lg font-bold font-serif text-' + colorBase + '-800">' + party.name + '</h4>' +
+                        '<div class="flex items-center gap-2">' +
+                            '<span class="px-3 py-1 bg-' + colorBase + '-100 text-' + colorBase + '-700 rounded-full text-sm font-medium">' + party.dogs.length + ' hunder</span>' +
+                            ukBadge + akBadge +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="mt-3 pt-3 border-t border-' + colorBase + '-200">' +
+                        '<div class="flex items-center gap-2 flex-wrap">' +
+                            '<span class="text-sm font-medium text-bark-600">Dommer(e):</span>' +
+                            '<div id="dommere-' + partiId + '" class="flex flex-wrap gap-1"></div>' +
+                            '<div class="relative">' +
+                                '<input type="text" id="dommer-sok-' + partiId + '" placeholder="Søk dommer..." ' +
+                                    'class="px-3 py-1 text-sm border border-bark-200 rounded-lg focus:border-sky-500 focus:outline-none w-48" ' +
+                                    'data-parti-navn="' + party.name + '" data-parti-id="' + partiId + '" ' +
+                                    'oninput="showDommerResults(this.dataset.partiNavn, this.dataset.partiId, this.value)" ' +
+                                    'onfocus="showDommerResults(this.dataset.partiNavn, this.dataset.partiId, this.value)">' +
+                                '<div id="dommer-results-' + partiId + '" class="hidden absolute z-50 mt-1 w-72 bg-white border border-bark-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"></div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="overflow-x-auto">' +
+                    '<table class="w-full">' +
+                        '<thead class="bg-bark-50"><tr>' +
+                            '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Nr</th>' +
+                            '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Fører</th>' +
+                            '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Hund</th>' +
+                            '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Rase</th>' +
+                            '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Klasse</th>' +
+                            '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Handling</th>' +
+                        '</tr></thead>' +
+                        '<tbody class="divide-y divide-earth-100">' + dogRows + '</tbody>' +
+                    '</table>' +
+                '</div>' +
+            '</div>';
+        }
+
+        // Render en dag
+        function renderDayGlobal(dateStr, dayIndex, dayParties) {
+            var formattedDate = formatDateNorwegian(dateStr);
+            var partiesHtml = dayParties.map(function(party) { return renderPartyGlobal(party); }).join('');
+
+            return '<div class="mb-8">' +
+                '<div class="flex items-center gap-3 mb-4">' +
+                    '<div class="w-10 h-10 bg-sky-500 text-white rounded-full flex items-center justify-center font-bold">' + (dayIndex + 1) + '</div>' +
+                    '<h3 class="text-xl font-bold font-serif text-bark-900">Dag ' + (dayIndex + 1) + ' - ' + formattedDate + '</h3>' +
+                '</div>' +
+                partiesHtml +
+            '</div>';
+        }
+
+        // Render alle partier fra data
+        function renderAllParties(parties) {
+            if (!parties || parties.length === 0) return;
+
+            // Vis parti-seksjonen
+            document.getElementById('partyListsEmptyState').classList.add('hidden');
+            document.getElementById('partyListsContent').classList.remove('hidden');
+
+            // Grupper partier etter dato
+            const partiesByDay = {};
+            parties.forEach(party => {
+                const key = party.date;
+                if (!partiesByDay[key]) partiesByDay[key] = [];
+                partiesByDay[key].push(party);
+            });
+
+            // Render
+            const container = document.getElementById('partyListsContainer');
+            const sortedDates = Object.keys(partiesByDay).sort();
+            container.innerHTML = sortedDates.map(function(dateStr, dayIndex) {
+                return renderDayGlobal(dateStr, dayIndex, partiesByDay[dateStr]);
+            }).join('');
+
+            // Render dommere
+            setTimeout(renderAllPartyDommere, 100);
+        }
+
+        // Last lagrede partier ved sideoppstart
+        function loadSavedParties() {
+            try {
+                const savedParties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+                const savedVenteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{}');
+
+                if (savedParties.length > 0) {
+                    renderAllParties(savedParties);
+
+                    // Vis venteliste hvis den finnes
+                    if (savedVenteliste && (
+                        (savedVenteliste.dag1?.uk?.length > 0) ||
+                        (savedVenteliste.dag1?.ak?.length > 0) ||
+                        (savedVenteliste.dag2?.uk?.length > 0) ||
+                        (savedVenteliste.dag2?.ak?.length > 0) ||
+                        (savedVenteliste.vk?.length > 0)
+                    )) {
+                        renderVenteliste(savedVenteliste);
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke laste lagrede partier:', e);
+            }
+        }
+
+        // ========================================
+        // FLYTT HUND MELLOM PARTIER
+        // ========================================
+
+        let moveDialogDog = null;
+        let moveDialogFromParty = null;
+
+        function openMoveDialog(regnr, fromPartyName) {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+
+            // Finn hunden
+            let dog = null;
+            for (const party of parties) {
+                dog = party.dogs.find(d => d.regnr === regnr);
+                if (dog) break;
+            }
+
+            if (!dog) {
+                alert('Kunne ikke finne hunden');
+                return;
+            }
+
+            moveDialogDog = dog;
+            moveDialogFromParty = fromPartyName;
+
+            // Bygg liste over mulige destinasjoner
+            const options = parties
+                .filter(p => p.name !== fromPartyName)
+                .map(p => '<option value="' + p.name + '">' + p.name + ' (' + p.dogs.length + '/14 hunder)</option>')
+                .join('');
+
+            const ventelisteOption = '<option value="__venteliste__">Venteliste</option>';
+
+            const dialogHtml = '<div id="moveDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
+                '<div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">' +
+                    '<h3 class="text-lg font-bold text-bark-900 mb-4">Flytt hund</h3>' +
+                    '<p class="text-sm text-bark-600 mb-4">Flytt <strong>' + (dog.hundenavn || '') + '</strong> (' + (dog.klasse || '') + ') fra ' + fromPartyName + ' til:</p>' +
+                    '<select id="moveDestination" class="w-full px-4 py-2 rounded-xl border border-bark-200 mb-4">' +
+                        options + ventelisteOption +
+                    '</select>' +
+                    '<div class="flex gap-3 justify-end">' +
+                        '<button onclick="closeMoveDialog()" class="px-4 py-2 text-bark-600 hover:bg-bark-100 rounded-xl">Avbryt</button>' +
+                        '<button onclick="confirmMove()" class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl">Flytt</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        function closeMoveDialog() {
+            const dialog = document.getElementById('moveDialog');
+            if (dialog) dialog.remove();
+            moveDialogDog = null;
+            moveDialogFromParty = null;
+        }
+
+        function confirmMove() {
+            const destination = document.getElementById('moveDestination').value;
+            if (!destination || !moveDialogDog || !moveDialogFromParty) return;
+
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{"dag1":{"uk":[],"ak":[]},"dag2":{"uk":[],"ak":[]},"vk":[]}');
+
+            // Fjern fra opprinnelig parti
+            const fromParty = parties.find(p => p.name === moveDialogFromParty);
+            if (fromParty) {
+                const idx = fromParty.dogs.findIndex(d => d.regnr === moveDialogDog.regnr);
+                if (idx >= 0) {
+                    fromParty.dogs.splice(idx, 1);
+                    // Oppdater tellere
+                    if (moveDialogDog.klasse === 'UK') fromParty.ukCount = (fromParty.ukCount || 1) - 1;
+                    else if (moveDialogDog.klasse === 'AK') fromParty.akCount = (fromParty.akCount || 1) - 1;
+                }
+            }
+
+            if (destination === '__venteliste__') {
+                // Legg til venteliste basert på klasse
+                const dag = fromParty?.day || 1;
+                const klasse = moveDialogDog.klasse?.toLowerCase() || 'ak';
+                if (klasse === 'vk') {
+                    venteliste.vk = venteliste.vk || [];
+                    venteliste.vk.push(moveDialogDog);
+                } else if (dag === 1) {
+                    venteliste.dag1[klasse] = venteliste.dag1[klasse] || [];
+                    venteliste.dag1[klasse].push(moveDialogDog);
+                } else {
+                    venteliste.dag2[klasse] = venteliste.dag2[klasse] || [];
+                    venteliste.dag2[klasse].push(moveDialogDog);
+                }
+            } else {
+                // Flytt til annet parti
+                const toParty = parties.find(p => p.name === destination);
+                if (toParty) {
+                    if (toParty.dogs.length >= 14 && toParty.type !== 'vk') {
+                        alert('Partiet har allerede 14 hunder (maks)');
+                        closeMoveDialog();
+                        return;
+                    }
+                    toParty.dogs.push(moveDialogDog);
+                    // Oppdater tellere
+                    if (moveDialogDog.klasse === 'UK') toParty.ukCount = (toParty.ukCount || 0) + 1;
+                    else if (moveDialogDog.klasse === 'AK') toParty.akCount = (toParty.akCount || 0) + 1;
+                }
+            }
+
+            // Lagre
+            localStorage.setItem('trialParties', JSON.stringify(parties));
+            localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+
+            closeMoveDialog();
+
+            // Re-render
+            renderAllParties(parties);
+            renderVenteliste(venteliste);
+        }
+
+        // Last lagrede partier ved oppstart
+        loadSavedParties();
+
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('border-sky-400', 'bg-sky-50');
@@ -2334,111 +2599,8 @@
             // Save parties to localStorage
             localStorage.setItem('trialParties', JSON.stringify(parties));
 
-            // Update UI - show party lists section
-            document.getElementById('partyListsEmptyState').classList.add('hidden');
-            document.getElementById('partyListsContent').classList.remove('hidden');
-
-            // Helper to format date in Norwegian
-            function formatDateNorwegian(dateStr) {
-                const date = new Date(dateStr);
-                const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
-                const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
-                return `${days[date.getDay()]} ${date.getDate()}. ${months[date.getMonth()]} ${date.getFullYear()}`;
-            }
-
-            // Group parties by day
-            const partiesByDay = {};
-            parties.forEach(party => {
-                const key = party.date;
-                if (!partiesByDay[key]) {
-                    partiesByDay[key] = [];
-                }
-                partiesByDay[key].push(party);
-            });
-
-            // Helper function to render a single dog row
-            function renderDogRow(dog, i) {
-                var klasseClass = 'bg-amber-100 text-amber-700';
-                if (dog.klasse === 'UK') klasseClass = 'bg-blue-100 text-blue-700';
-                else if (dog.klasse === 'AK') klasseClass = 'bg-green-100 text-green-700';
-
-                return '<tr class="hover:bg-bark-50">' +
-                    '<td class="px-4 py-3 text-sm font-medium text-bark-700">' + (i + 1) + '</td>' +
-                    '<td class="px-4 py-3 text-sm text-bark-700">' + (dog.forer || '') + '</td>' +
-                    '<td class="px-4 py-3 text-sm font-medium text-bark-800">' + (dog.hundenavn || '') + '</td>' +
-                    '<td class="px-4 py-3 text-sm text-bark-600">' + (dog.rase || '') + '</td>' +
-                    '<td class="px-4 py-3 text-sm"><span class="px-2 py-1 rounded text-xs font-medium ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></td>' +
-                    '</tr>';
-            }
-
-            // Helper function to render a single party
-            function renderParty(party) {
-                var partiId = party.name.replace(/\s+/g, '-');
-                var colorBase = party.type === 'vk' ? 'earth' : 'forest';
-                var ukBadge = party.ukCount ? '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">UK: ' + party.ukCount + '</span>' : '';
-                var akBadge = party.akCount ? '<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">AK: ' + party.akCount + '</span>' : '';
-                var dogRows = party.dogs.map(function(dog, i) { return renderDogRow(dog, i); }).join('');
-
-                return '<div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden mb-4">' +
-                    '<div class="px-6 py-4 bg-' + colorBase + '-50 border-b border-bark-100">' +
-                        '<div class="flex items-center justify-between flex-wrap gap-2">' +
-                            '<h4 class="text-lg font-bold font-serif text-' + colorBase + '-800">' + party.name + '</h4>' +
-                            '<div class="flex items-center gap-2">' +
-                                '<span class="px-3 py-1 bg-' + colorBase + '-100 text-' + colorBase + '-700 rounded-full text-sm font-medium">' + party.dogs.length + ' hunder</span>' +
-                                ukBadge + akBadge +
-                            '</div>' +
-                        '</div>' +
-                        '<div class="mt-3 pt-3 border-t border-' + colorBase + '-200">' +
-                            '<div class="flex items-center gap-2 flex-wrap">' +
-                                '<span class="text-sm font-medium text-bark-600">Dommer(e):</span>' +
-                                '<div id="dommere-' + partiId + '" class="flex flex-wrap gap-1"></div>' +
-                                '<div class="relative">' +
-                                    '<input type="text" id="dommer-sok-' + partiId + '" placeholder="Søk dommer..." ' +
-                                        'class="px-3 py-1 text-sm border border-bark-200 rounded-lg focus:border-sky-500 focus:outline-none w-48" ' +
-                                        'data-parti-navn="' + party.name + '" data-parti-id="' + partiId + '" ' +
-                                        'oninput="showDommerResults(this.dataset.partiNavn, this.dataset.partiId, this.value)" ' +
-                                        'onfocus="showDommerResults(this.dataset.partiNavn, this.dataset.partiId, this.value)">' +
-                                    '<div id="dommer-results-' + partiId + '" class="hidden absolute z-50 mt-1 w-72 bg-white border border-bark-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"></div>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>' +
-                    '<div class="overflow-x-auto">' +
-                        '<table class="w-full">' +
-                            '<thead class="bg-bark-50"><tr>' +
-                                '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Nr</th>' +
-                                '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Fører</th>' +
-                                '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Hund</th>' +
-                                '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Rase</th>' +
-                                '<th class="px-4 py-3 text-left text-xs font-semibold text-bark-600 uppercase tracking-wider">Klasse</th>' +
-                            '</tr></thead>' +
-                            '<tbody class="divide-y divide-earth-100">' + dogRows + '</tbody>' +
-                        '</table>' +
-                    '</div>' +
-                '</div>';
-            }
-
-            // Helper function to render a day
-            function renderDay(dateStr, dayIndex, dayParties) {
-                var formattedDate = formatDateNorwegian(dateStr);
-                var partiesHtml = dayParties.map(function(party) { return renderParty(party); }).join('');
-
-                return '<div class="mb-8">' +
-                    '<div class="flex items-center gap-3 mb-4">' +
-                        '<div class="w-10 h-10 bg-sky-500 text-white rounded-full flex items-center justify-center font-bold">' + (dayIndex + 1) + '</div>' +
-                        '<h3 class="text-xl font-bold font-serif text-bark-900">Dag ' + (dayIndex + 1) + ' - ' + formattedDate + '</h3>' +
-                    '</div>' +
-                    partiesHtml +
-                '</div>';
-            }
-
-            // Render party lists grouped by day
-            const container = document.getElementById('partyListsContainer');
-            const sortedDates = Object.keys(partiesByDay).sort();
-
-            container.innerHTML = sortedDates.map(function(dateStr, dayIndex) {
-                return renderDay(dateStr, dayIndex, partiesByDay[dateStr]);
-            }).join('');
+            // Render partier med de globale funksjonene (inkluderer flytt-knapper)
+            renderAllParties(parties);
 
             // Build message with UK distribution info
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;

@@ -1748,6 +1748,7 @@
             let ukCount = 0;
             let akCount = 0;
             let vkCount = 0;
+            let confirmedCount = 0;
 
             parties.forEach(party => {
                 totalInParties += party.dogs.length;
@@ -1755,8 +1756,11 @@
                     if (dog.klasse === 'UK') ukCount++;
                     else if (dog.klasse === 'AK') akCount++;
                     else if (dog.klasse === 'VK') vkCount++;
+                    if (dog.confirmed) confirmedCount++;
                 });
             });
+
+            const pendingCount = totalInParties - confirmedCount;
 
             // Tell opp venteliste
             const dag1Uk = venteliste.dag1?.uk?.length || 0;
@@ -1775,10 +1779,16 @@
                 document.getElementById('statTotalSub').textContent =
                     'UK: ' + ukCount + ' | AK: ' + akCount + ' | VK: ' + vkCount;
 
-                // Foreløpig: alle i partier regnes som "venter svar" (ikke bekreftet ennå)
-                document.getElementById('statPending').textContent = totalInParties;
-                document.getElementById('statConfirmed').textContent = '0';
-                document.getElementById('statConfirmedSub').textContent = '–';
+                // Bekreftede og ventende
+                document.getElementById('statConfirmed').textContent = confirmedCount;
+                if (confirmedCount > 0) {
+                    const pct = Math.round((confirmedCount / totalInParties) * 100);
+                    document.getElementById('statConfirmedSub').textContent = pct + '% bekreftet';
+                } else {
+                    document.getElementById('statConfirmedSub').textContent = '–';
+                }
+
+                document.getElementById('statPending').textContent = pendingCount;
 
                 // Venteliste
                 document.getElementById('statWaitlist').textContent = totalVenteliste;
@@ -1791,7 +1801,176 @@
                     }
                 }
             }
+
+            // Oppdater bekreftelses-seksjonen også
+            updateConfirmationSection();
         }
+
+        // ========================================
+        // BEKREFTELSES-STATUS
+        // ========================================
+
+        let currentConfirmationFilter = 'all';
+
+        function updateConfirmationSection() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+
+            if (parties.length === 0) {
+                document.getElementById('confirmationEmptyState').classList.remove('hidden');
+                document.getElementById('confirmationContent').classList.add('hidden');
+                return;
+            }
+
+            // Vis innholdet, skjul tom-tilstand
+            document.getElementById('confirmationEmptyState').classList.add('hidden');
+            document.getElementById('confirmationContent').classList.remove('hidden');
+
+            // Bygg liste over alle hunder med bekreftelse-status
+            const allDogs = [];
+            parties.forEach(party => {
+                party.dogs.forEach(dog => {
+                    allDogs.push({
+                        ...dog,
+                        partyName: party.displayName || party.name,
+                        partyType: party.type,
+                        // Status: pending, confirmed, urgent (under 24 timer)
+                        // For nå setter vi alle til 'pending' siden vi ikke har bekreftelsessystem ennå
+                        status: dog.confirmed ? 'confirmed' : 'pending'
+                    });
+                });
+            });
+
+            // Tell opp per status
+            const confirmed = allDogs.filter(d => d.status === 'confirmed').length;
+            const pending = allDogs.filter(d => d.status === 'pending').length;
+            const urgent = 0; // Beregnes basert på prøvedato
+
+            // Oppdater filter-tellere
+            document.getElementById('filterAllCount').textContent = allDogs.length;
+            document.getElementById('filterConfirmedCount').textContent = confirmed;
+            document.getElementById('filterPendingCount').textContent = pending;
+            document.getElementById('filterUrgentCount').textContent = urgent;
+
+            // Render tabellen
+            renderConfirmationTable(allDogs, currentConfirmationFilter);
+
+            // Oppdater paginering
+            document.getElementById('confirmationPagination').textContent =
+                'Viser ' + allDogs.length + ' deltakere';
+        }
+
+        function renderConfirmationTable(dogs, filter) {
+            const tbody = document.getElementById('confirmationTableBody');
+
+            // Filtrer basert på valgt filter
+            let filteredDogs = dogs;
+            if (filter === 'confirmed') {
+                filteredDogs = dogs.filter(d => d.status === 'confirmed');
+            } else if (filter === 'pending') {
+                filteredDogs = dogs.filter(d => d.status === 'pending');
+            } else if (filter === 'urgent') {
+                filteredDogs = dogs.filter(d => d.status === 'urgent');
+            }
+
+            if (filteredDogs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-bark-500">Ingen hunder i denne kategorien</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredDogs.map(dog => {
+                // Status-badge
+                let statusBadge = '';
+                if (dog.status === 'confirmed') {
+                    statusBadge = '<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">' +
+                        '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>' +
+                        'Bekreftet</span>';
+                } else if (dog.status === 'urgent') {
+                    statusBadge = '<span class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">' +
+                        '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' +
+                        'Haster!</span>';
+                } else {
+                    statusBadge = '<span class="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">' +
+                        '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>' +
+                        'Venter</span>';
+                }
+
+                // Klasse-badge
+                let klasseBadge = 'bg-amber-100 text-amber-700';
+                if (dog.klasse === 'UK') klasseBadge = 'bg-blue-100 text-blue-700';
+                else if (dog.klasse === 'AK') klasseBadge = 'bg-green-100 text-green-700';
+
+                // Handling-knapper
+                const actions = dog.status === 'confirmed'
+                    ? '<button onclick="toggleConfirmation(\'' + (dog.regnr || '').replace(/'/g, "\\'") + '\', false)" class="text-xs text-red-600 hover:text-red-800">Fjern bekreftelse</button>'
+                    : '<button onclick="toggleConfirmation(\'' + (dog.regnr || '').replace(/'/g, "\\'") + '\', true)" class="text-xs text-green-600 hover:text-green-800 font-medium">Merk bekreftet</button>' +
+                      '<button onclick="sendReminder(\'' + (dog.regnr || '').replace(/'/g, "\\'") + '\')" class="text-xs text-sky-600 hover:text-sky-800 ml-2">Send påminnelse</button>';
+
+                return '<tr class="border-b border-bark-100 hover:bg-bark-50">' +
+                    '<td class="px-4 py-3 text-sm text-bark-700">' + (dog.forer || '-') + '</td>' +
+                    '<td class="px-4 py-3 text-sm font-medium text-bark-800">' + (dog.hundenavn || '-') + '</td>' +
+                    '<td class="px-4 py-3"><span class="px-2 py-1 rounded text-xs font-medium ' + klasseBadge + '">' + (dog.klasse || '-') + '</span></td>' +
+                    '<td class="px-4 py-3 text-sm text-bark-600">' + (dog.partyName || '-') + '</td>' +
+                    '<td class="px-4 py-3">' + statusBadge + '</td>' +
+                    '<td class="px-4 py-3 text-sm text-bark-500">–</td>' +
+                    '<td class="px-4 py-3">' + actions + '</td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        // Sett filter og oppdater tabell
+        function setConfirmationFilter(filter) {
+            currentConfirmationFilter = filter;
+
+            // Oppdater knappestiler
+            const buttons = {
+                'all': document.getElementById('filterAll'),
+                'confirmed': document.getElementById('filterConfirmed'),
+                'pending': document.getElementById('filterPending'),
+                'urgent': document.getElementById('filterUrgent')
+            };
+
+            Object.keys(buttons).forEach(key => {
+                if (key === filter) {
+                    buttons[key].className = 'bg-yellow-100 text-yellow-800 px-3 py-1 rounded-xl text-sm font-medium border border-yellow-300';
+                } else if (key === 'urgent') {
+                    buttons[key].className = 'bg-white text-red-600 px-3 py-1 rounded-xl text-sm border border-red-200';
+                } else {
+                    buttons[key].className = 'bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100';
+                }
+            });
+
+            // Oppdater bekreftelses-seksjonen
+            updateConfirmationSection();
+        }
+
+        // Toggle bekreftelse for en hund
+        function toggleConfirmation(regnr, confirmed) {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+
+            for (const party of parties) {
+                const dog = party.dogs.find(d => d.regnr === regnr);
+                if (dog) {
+                    dog.confirmed = confirmed;
+                    break;
+                }
+            }
+
+            localStorage.setItem('trialParties', JSON.stringify(parties));
+            updateStatsFromStorage();
+        }
+
+        // Send påminnelse (placeholder)
+        function sendReminder(regnr) {
+            alert('SMS-påminnelse sendt! (Demo - ingen ekte SMS sendt)');
+        }
+
+        // Sett opp filter-knapper ved sidelasting
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('filterAll')?.addEventListener('click', () => setConfirmationFilter('all'));
+            document.getElementById('filterConfirmed')?.addEventListener('click', () => setConfirmationFilter('confirmed'));
+            document.getElementById('filterPending')?.addEventListener('click', () => setConfirmationFilter('pending'));
+            document.getElementById('filterUrgent')?.addEventListener('click', () => setConfirmationFilter('urgent'));
+        });
 
         // Helper to format date in Norwegian
         function formatDateNorwegian(dateStr) {

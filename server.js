@@ -595,7 +595,10 @@ function seedData() {
   console.log("✅ Initial data seeded successfully");
 }
 
-seedData();
+// Kun seed i development-mode
+if (process.env.NODE_ENV !== 'production') {
+  seedData();
+}
 
 const app = new Hono();
 

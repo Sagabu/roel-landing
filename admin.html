@@ -404,16 +404,46 @@
                                 </svg>
                             </button>
                         </div>
-                        <div class="mt-4 flex gap-3">
+                        <div class="mt-4 flex flex-wrap gap-3">
                             <button id="processUpload" class="bg-sky-500 hover:bg-sky-600 text-white px-6 py-2 rounded-xl font-medium transition flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                 </svg>
                                 Fordel på partier
                             </button>
-                            <button class="bg-white border border-earth-300 hover:bg-earth-50 text-bark-700 px-6 py-2 rounded-xl font-medium transition">
-                                Forhåndsvis data
+                            <button id="mergeUpload" class="bg-forest-500 hover:bg-forest-600 text-white px-6 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Legg til nye (behold eksisterende)
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Handlingsknapper for eksisterende data -->
+                    <div id="existingDataActions" class="hidden mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                        <div class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            <div class="flex-1">
+                                <p class="font-medium text-amber-800">Det finnes allerede data i systemet</p>
+                                <p class="text-sm text-amber-700 mt-1" id="existingDataInfo">0 hunder fordelt på 0 partier</p>
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    <button onclick="openAddDogDialog()" class="bg-forest-500 hover:bg-forest-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                        </svg>
+                                        Legg til hund manuelt
+                                    </button>
+                                    <button onclick="confirmClearAllData()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                        Slett alle data og start på nytt
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -1964,12 +1994,237 @@
             alert('SMS-påminnelse sendt! (Demo - ingen ekte SMS sendt)');
         }
 
+        // ========================================
+        // SLETT ALLE DATA / MANUELL REGISTRERING
+        // ========================================
+
+        // Sjekk om det finnes eksisterende data og vis handlingsknapper
+        function checkExistingData() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const existingDataEl = document.getElementById('existingDataActions');
+            const existingDataInfo = document.getElementById('existingDataInfo');
+
+            if (parties.length > 0) {
+                let totalDogs = 0;
+                parties.forEach(p => totalDogs += p.dogs.length);
+
+                existingDataEl.classList.remove('hidden');
+                existingDataInfo.textContent = totalDogs + ' hunder fordelt på ' + parties.length + ' partier';
+            } else {
+                existingDataEl.classList.add('hidden');
+            }
+        }
+
+        // Bekreft og slett alle data
+        function confirmClearAllData() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            let totalDogs = 0;
+            parties.forEach(p => totalDogs += p.dogs.length);
+
+            const confirmed = confirm(
+                '⚠️ ADVARSEL: Dette vil slette ALL data!\n\n' +
+                '• ' + totalDogs + ' hunder\n' +
+                '• ' + parties.length + ' partier\n' +
+                '• Alle dommertildelinger\n' +
+                '• Alle bekreftelser\n' +
+                '• Venteliste\n\n' +
+                'Dette kan IKKE angres. Er du sikker?'
+            );
+
+            if (confirmed) {
+                clearAllData();
+            }
+        }
+
+        // Slett alle data
+        function clearAllData() {
+            // Fjern alle relevante localStorage-nøkler
+            localStorage.removeItem('trialParties');
+            localStorage.removeItem('trialVenteliste');
+            localStorage.removeItem('trialParticipants');
+            localStorage.removeItem('partyDommere');
+
+            // Nullstill statistikk
+            document.getElementById('statTotal').textContent = '0';
+            document.getElementById('statTotalSub').textContent = 'Last opp deltakerliste';
+            document.getElementById('statConfirmed').textContent = '0';
+            document.getElementById('statConfirmedSub').textContent = '–';
+            document.getElementById('statPending').textContent = '0';
+            document.getElementById('statWaitlist').textContent = '0';
+
+            // Skjul partilister
+            document.getElementById('partyListsEmptyState').classList.remove('hidden');
+            document.getElementById('partyListsContent').classList.add('hidden');
+            document.getElementById('partyListsContainer').innerHTML = '';
+
+            // Skjul venteliste
+            document.getElementById('venteliste')?.classList.add('hidden');
+
+            // Skjul bekreftelser
+            document.getElementById('confirmationEmptyState').classList.remove('hidden');
+            document.getElementById('confirmationContent').classList.add('hidden');
+
+            // Skjul handlingsknapper for eksisterende data
+            document.getElementById('existingDataActions').classList.add('hidden');
+
+            // Nullstill dommer-data i minnet
+            if (typeof partyDommere !== 'undefined') {
+                Object.keys(partyDommere).forEach(key => delete partyDommere[key]);
+            }
+
+            alert('✅ Alle data er slettet. Du kan nå laste opp en ny deltakerliste.');
+        }
+
+        // Åpne dialog for å legge til hund manuelt
+        function openAddDogDialog() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+
+            // Bygg parti-valg
+            const partyOptions = parties.map(p =>
+                '<option value="' + p.name + '">' + (p.displayName || p.name) + ' (' + p.dogs.length + ' hunder)</option>'
+            ).join('');
+
+            const dialogHtml = '<div id="addDogDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
+                '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">' +
+                    '<h3 class="text-lg font-bold text-bark-900 mb-4">Legg til hund manuelt</h3>' +
+
+                    '<div class="space-y-4">' +
+                        '<div>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Registreringsnummer *</label>' +
+                            '<input type="text" id="addDogRegnr" placeholder="F.eks. NO12345/24" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none">' +
+                        '</div>' +
+                        '<div>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Hundens navn *</label>' +
+                            '<input type="text" id="addDogName" placeholder="F.eks. Bella" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none">' +
+                        '</div>' +
+                        '<div>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Rase</label>' +
+                            '<input type="text" id="addDogRase" placeholder="F.eks. Engelsk Setter" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none">' +
+                        '</div>' +
+                        '<div>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Fører *</label>' +
+                            '<input type="text" id="addDogForer" placeholder="F.eks. Ola Nordmann" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none">' +
+                        '</div>' +
+                        '<div>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Klasse *</label>' +
+                            '<select id="addDogKlasse" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none">' +
+                                '<option value="UK">UK - Unghundklasse</option>' +
+                                '<option value="AK">AK - Åpen klasse</option>' +
+                                '<option value="VK">VK - Vinnerklasse</option>' +
+                            '</select>' +
+                        '</div>' +
+                        '<div>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Plasser i parti *</label>' +
+                            '<select id="addDogParty" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none">' +
+                                partyOptions +
+                                '<option value="__venteliste__">Venteliste</option>' +
+                            '</select>' +
+                        '</div>' +
+                    '</div>' +
+
+                    '<div class="mt-6 flex gap-3 justify-end">' +
+                        '<button onclick="closeAddDogDialog()" class="px-4 py-2 text-bark-600 hover:bg-bark-100 rounded-xl">Avbryt</button>' +
+                        '<button onclick="confirmAddDog()" class="px-4 py-2 bg-forest-500 hover:bg-forest-600 text-white rounded-xl">Legg til</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        function closeAddDogDialog() {
+            const dialog = document.getElementById('addDogDialog');
+            if (dialog) dialog.remove();
+        }
+
+        function confirmAddDog() {
+            const regnr = document.getElementById('addDogRegnr').value.trim();
+            const hundenavn = document.getElementById('addDogName').value.trim();
+            const rase = document.getElementById('addDogRase').value.trim();
+            const forer = document.getElementById('addDogForer').value.trim();
+            const klasse = document.getElementById('addDogKlasse').value;
+            const partyName = document.getElementById('addDogParty').value;
+
+            // Valider påkrevde felt
+            if (!regnr || !hundenavn || !forer) {
+                alert('Vennligst fyll ut alle påkrevde felt (*)');
+                return;
+            }
+
+            // Sjekk at hunden ikke allerede finnes
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            for (const party of parties) {
+                if (party.dogs.find(d => d.regnr === regnr)) {
+                    alert('En hund med dette registreringsnummeret finnes allerede!');
+                    return;
+                }
+            }
+
+            const newDog = {
+                regnr: regnr,
+                hundenavn: hundenavn,
+                rase: rase,
+                forer: forer,
+                klasse: klasse,
+                klasseRaw: klasse
+            };
+
+            if (partyName === '__venteliste__') {
+                // Legg til venteliste
+                const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{"dag1":{"uk":[],"ak":[]},"dag2":{"uk":[],"ak":[]},"vk":[]}');
+                if (klasse === 'VK') {
+                    venteliste.vk = venteliste.vk || [];
+                    venteliste.vk.push(newDog);
+                } else {
+                    const kl = klasse.toLowerCase();
+                    venteliste.dag1[kl] = venteliste.dag1[kl] || [];
+                    venteliste.dag1[kl].push(newDog);
+                }
+                localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+                renderVenteliste(venteliste);
+            } else {
+                // Legg til parti
+                const party = parties.find(p => p.name === partyName);
+                if (party) {
+                    // Sjekk klassekompatibilitet
+                    if (party.type === 'vk' && klasse !== 'VK') {
+                        alert('Kun VK-hunder kan legges til VK-partier');
+                        return;
+                    }
+                    if (party.type === 'ukak' && klasse === 'VK') {
+                        alert('VK-hunder kan ikke legges til UK/AK-partier');
+                        return;
+                    }
+                    // Sjekk kapasitet
+                    if (party.type !== 'vk' && party.dogs.length >= 14) {
+                        alert('Partiet er fullt (maks 14 hunder). Fjern en hund først eller velg et annet parti.');
+                        return;
+                    }
+
+                    party.dogs.push(newDog);
+                    if (klasse === 'UK') party.ukCount = (party.ukCount || 0) + 1;
+                    else if (klasse === 'AK') party.akCount = (party.akCount || 0) + 1;
+
+                    localStorage.setItem('trialParties', JSON.stringify(parties));
+                    renderAllParties(parties);
+                }
+            }
+
+            closeAddDogDialog();
+            updateStatsFromStorage();
+            checkExistingData();
+            alert('✅ ' + hundenavn + ' er lagt til!');
+        }
+
         // Sett opp filter-knapper ved sidelasting
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('filterAll')?.addEventListener('click', () => setConfirmationFilter('all'));
             document.getElementById('filterConfirmed')?.addEventListener('click', () => setConfirmationFilter('confirmed'));
             document.getElementById('filterPending')?.addEventListener('click', () => setConfirmationFilter('pending'));
             document.getElementById('filterUrgent')?.addEventListener('click', () => setConfirmationFilter('urgent'));
+
+            // Sjekk om det finnes eksisterende data
+            checkExistingData();
         });
 
         // Helper to format date in Norwegian
@@ -2673,6 +2928,82 @@
             dropZone.classList.remove('hidden');
             uploadPreview.classList.add('hidden');
             fileInput.value = '';
+            currentParticipants = [];
+        });
+
+        // Legg til nye hunder (behold eksisterende)
+        document.getElementById('mergeUpload')?.addEventListener('click', () => {
+            if (currentParticipants.length === 0) {
+                alert('Ingen deltakere i filen.');
+                return;
+            }
+
+            const existingParties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+
+            if (existingParties.length === 0) {
+                alert('Ingen eksisterende data. Bruk "Fordel på partier" i stedet.');
+                return;
+            }
+
+            // Finn alle eksisterende regnr
+            const existingRegnr = new Set();
+            existingParties.forEach(party => {
+                party.dogs.forEach(dog => {
+                    if (dog.regnr) existingRegnr.add(dog.regnr);
+                });
+            });
+
+            // Filtrer ut hunder som allerede finnes
+            const newDogs = currentParticipants.filter(p => !existingRegnr.has(p.regnr));
+            const duplicates = currentParticipants.length - newDogs.length;
+
+            if (newDogs.length === 0) {
+                alert('Alle ' + currentParticipants.length + ' hunder i filen finnes allerede i systemet.');
+                return;
+            }
+
+            // Bekreft med bruker
+            const confirmMsg = 'Fant ' + newDogs.length + ' nye hunder i filen.\n' +
+                (duplicates > 0 ? duplicates + ' hunder finnes allerede og vil bli ignorert.\n\n' : '\n') +
+                'Nye hunder:\n' +
+                newDogs.slice(0, 10).map(d => '• ' + d.hundenavn + ' (' + d.klasse + ')').join('\n') +
+                (newDogs.length > 10 ? '\n... og ' + (newDogs.length - 10) + ' til' : '') +
+                '\n\nVil du legge til disse på ventelisten?';
+
+            if (!confirm(confirmMsg)) return;
+
+            // Legg nye hunder på venteliste
+            const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{"dag1":{"uk":[],"ak":[]},"dag2":{"uk":[],"ak":[]},"vk":[]}');
+
+            newDogs.forEach(dog => {
+                if (dog.klasse === 'VK') {
+                    venteliste.vk = venteliste.vk || [];
+                    venteliste.vk.push(dog);
+                } else {
+                    const kl = dog.klasse?.toLowerCase() || 'ak';
+                    venteliste.dag1[kl] = venteliste.dag1[kl] || [];
+                    venteliste.dag1[kl].push(dog);
+                }
+            });
+
+            localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+
+            // Oppdater participants-listen
+            const allParticipants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            newDogs.forEach(d => allParticipants.push(d));
+            localStorage.setItem('trialParticipants', JSON.stringify(allParticipants));
+
+            // Oppdater UI
+            renderVenteliste(venteliste);
+            updateStatsFromStorage();
+            checkExistingData();
+
+            alert('✅ ' + newDogs.length + ' nye hunder er lagt til på ventelisten!\n\nDu kan nå flytte dem til partier manuelt.');
+
+            // Nullstill opplasting
+            document.getElementById('dropZone').classList.remove('hidden');
+            document.getElementById('uploadPreview').classList.add('hidden');
+            document.getElementById('fileInput').value = '';
             currentParticipants = [];
         });
 

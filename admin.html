@@ -29,6 +29,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="auth.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         @media print {
             .no-print { display: none !important; }
@@ -104,6 +106,12 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                     </svg>
                     Innstillinger
+                </a>
+                <a href="#eksport-kritikker" class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-bark-50 text-bark-700 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Eksporter kritikker
                 </a>
                 <a href="#praktisk-info" class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-bark-50 text-bark-700 transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -606,6 +614,105 @@
                                 </span>
                             </label>
                         </div>
+                    </div>
+                </section>
+
+                <!-- Eksporter kritikker -->
+                <section id="eksport-kritikker" class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-xl font-bold font-serif text-bark-900">Eksporter kritikker</h2>
+                            <p class="text-bark-500 text-sm mt-1">Hent ut alle kritikker fra prøven for rapportering til FKF/NKK</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                        <div class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <div>
+                                <p class="text-amber-800 font-medium">Eksportformat</p>
+                                <p class="text-amber-700 text-sm mt-1">
+                                    Kritikkene eksporteres som Excel-fil (.xlsx) som enkelt kan åpnes, redigeres og sendes videre.
+                                    For 400 kritikker blir filen ca. 200-500 KB - helt uproblematisk å sende via e-post.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Eksporter per dag -->
+                        <div class="bg-bark-50 rounded-xl p-5">
+                            <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                Eksporter fra enkelt dag
+                            </h3>
+                            <p class="text-bark-600 text-sm mb-4">Velg en dag for å eksportere alle kritikker fra den dagen</p>
+                            <div class="space-y-3">
+                                <select id="kritikkDagSelect" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-sky-500 focus:outline-none bg-white">
+                                    <option value="">Velg dag...</option>
+                                </select>
+                                <button onclick="exportKritikkerByDay()" id="exportDayBtn" disabled class="w-full bg-sky-500 hover:bg-sky-600 disabled:bg-bark-300 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Last ned kritikker for valgt dag
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Eksporter alle -->
+                        <div class="bg-forest-50 rounded-xl p-5">
+                            <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                </svg>
+                                Eksporter alle kritikker
+                            </h3>
+                            <p class="text-bark-600 text-sm mb-4">Last ned samtlige kritikker fra hele prøven i én fil</p>
+                            <div class="space-y-3">
+                                <div id="kritikkStats" class="bg-white rounded-lg p-3 text-sm">
+                                    <div class="flex justify-between text-bark-600">
+                                        <span>Totalt antall kritikker:</span>
+                                        <span id="totalKritikker" class="font-semibold text-bark-800">0</span>
+                                    </div>
+                                    <div class="flex justify-between text-bark-600 mt-1">
+                                        <span>Godkjente:</span>
+                                        <span id="godkjenteKritikker" class="font-semibold text-green-600">0</span>
+                                    </div>
+                                    <div class="flex justify-between text-bark-600 mt-1">
+                                        <span>Venter godkjenning:</span>
+                                        <span id="ventendeKritikker" class="font-semibold text-amber-600">0</span>
+                                    </div>
+                                </div>
+                                <button onclick="exportAlleKritikker()" class="w-full bg-forest-600 hover:bg-forest-700 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Last ned alle kritikker
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Eksporter til raseklubber -->
+                    <div class="mt-6 pt-6 border-t border-bark-100">
+                        <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-earth-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                            Eksporter sortert per rase (til raseklubber)
+                        </h3>
+                        <p class="text-bark-600 text-sm mb-4">Genererer separate filer per rase for enkel oversendelse til raseklubbene</p>
+                        <button onclick="exportKritikkerPerRase()" class="bg-earth-500 hover:bg-earth-600 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            Last ned kritikker per rase (ZIP)
+                        </button>
                     </div>
                 </section>
 
@@ -3810,6 +3917,332 @@
             // Save the PDF
             const fileName = `${trialName.replace(/\s+/g, '_')}_Partilister.pdf`;
             doc.save(fileName);
+        }
+
+        // ===== KRITIKK EKSPORT FUNKSJONER =====
+
+        // Initialisering av kritikk-eksport
+        document.addEventListener('DOMContentLoaded', function() {
+            loadKritikkStats();
+            populateDagSelect();
+        });
+
+        // Last inn kritikk-statistikk
+        async function loadKritikkStats() {
+            try {
+                // Hent kritikker fra judgeData i localStorage (fra dommer-grensesnittet)
+                const kritikker = getAllKritikkerFromStorage();
+
+                const total = kritikker.length;
+                const godkjente = kritikker.filter(k => k.critiqueStatus === 'approved').length;
+                const ventende = kritikker.filter(k => k.critiqueStatus === 'submitted').length;
+
+                document.getElementById('totalKritikker').textContent = total;
+                document.getElementById('godkjenteKritikker').textContent = godkjente;
+                document.getElementById('ventendeKritikker').textContent = ventende;
+            } catch (e) {
+                console.error('Feil ved lasting av kritikk-statistikk:', e);
+            }
+        }
+
+        // Hent alle kritikker fra localStorage (judgeData_*)
+        function getAllKritikkerFromStorage() {
+            const kritikker = [];
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+
+            for (const party of parties) {
+                const judgeDataKey = 'judgeData_' + party.name.toLowerCase().replace(/\s+/g, '');
+                const judgeData = localStorage.getItem(judgeDataKey);
+
+                // Prøv også andre nøkkelformater
+                const altKey = 'judgeData_' + (party.name || '').replace(/[\s\/]+/g, '_').toLowerCase();
+                const data = judgeData ? JSON.parse(judgeData) : (localStorage.getItem(altKey) ? JSON.parse(localStorage.getItem(altKey)) : []);
+
+                if (Array.isArray(data)) {
+                    for (const dog of data) {
+                        if (dog.critique || dog.critiqueStatus) {
+                            kritikker.push({
+                                ...dog,
+                                partyName: party.displayName || party.name,
+                                partyType: party.type,
+                                dag: party.dag
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Sjekk også demo-parti og andre kjente nøkler
+            const knownKeys = ['judgeData_demo1', 'judgeData_ukak1', 'judgeData_ukak2', 'judgeData_vk1', 'judgeData_vk2'];
+            for (const key of knownKeys) {
+                const data = localStorage.getItem(key);
+                if (data) {
+                    try {
+                        const dogs = JSON.parse(data);
+                        if (Array.isArray(dogs)) {
+                            for (const dog of dogs) {
+                                // Unngå duplikater
+                                if ((dog.critique || dog.critiqueStatus) && !kritikker.find(k => k.id === dog.id && k.name === dog.name)) {
+                                    kritikker.push({
+                                        ...dog,
+                                        partyName: key.replace('judgeData_', ''),
+                                        dag: key.includes('vk') ? 'VK' : 'Dag 1/2'
+                                    });
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            return kritikker;
+        }
+
+        // Populer dag-dropdown
+        function populateDagSelect() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const select = document.getElementById('kritikkDagSelect');
+            const dager = new Set();
+
+            // Finn unike dager
+            parties.forEach(p => {
+                if (p.dag) dager.add(p.dag);
+            });
+
+            // Legg til standard dager hvis ingen finnes
+            if (dager.size === 0) {
+                dager.add('Dag 1');
+                dager.add('Dag 2');
+                dager.add('VK-dag');
+            }
+
+            select.innerHTML = '<option value="">Velg dag...</option>';
+            Array.from(dager).sort().forEach(dag => {
+                select.innerHTML += `<option value="${dag}">${dag}</option>`;
+            });
+
+            // Legg til alle partier som alternativ
+            parties.forEach(p => {
+                select.innerHTML += `<option value="party:${p.name}">${p.displayName || p.name}</option>`;
+            });
+
+            // Aktiver/deaktiver knapp
+            select.addEventListener('change', function() {
+                document.getElementById('exportDayBtn').disabled = !this.value;
+            });
+        }
+
+        // Eksporter kritikker for valgt dag
+        async function exportKritikkerByDay() {
+            const select = document.getElementById('kritikkDagSelect');
+            const value = select.value;
+
+            if (!value) {
+                alert('Velg en dag eller et parti først');
+                return;
+            }
+
+            let kritikker = getAllKritikkerFromStorage();
+
+            if (value.startsWith('party:')) {
+                const partyName = value.replace('party:', '');
+                kritikker = kritikker.filter(k => k.partyName === partyName || k.partyName.includes(partyName));
+            } else {
+                kritikker = kritikker.filter(k => k.dag === value || (k.partyName && k.partyName.includes(value)));
+            }
+
+            if (kritikker.length === 0) {
+                alert('Ingen kritikker funnet for valgt periode');
+                return;
+            }
+
+            const fileName = `Kritikker_${value.replace(/[:\s\/]+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+            downloadKritikkerAsExcel(kritikker, fileName);
+        }
+
+        // Eksporter alle kritikker
+        async function exportAlleKritikker() {
+            const kritikker = getAllKritikkerFromStorage();
+
+            if (kritikker.length === 0) {
+                alert('Ingen kritikker funnet. Kritikkene opprettes av dommerne i dommerportalen.');
+                return;
+            }
+
+            const trialName = document.getElementById('trialName')?.value || 'Prove';
+            const fileName = `Kritikker_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+            downloadKritikkerAsExcel(kritikker, fileName);
+        }
+
+        // Konverter kritikker til Excel og last ned
+        function downloadKritikkerAsExcel(kritikker, fileName) {
+            // Forbered data for Excel
+            const rows = kritikker.map((k, idx) => {
+                const scores = k.rounds && k.rounds.length > 0 ? k.rounds[k.rounds.length - 1].scores : {};
+
+                return {
+                    'Nr': k.nr || idx + 1,
+                    'Hundenavn': k.name || k.hundenavn || '',
+                    'Rase': k.breed || k.rase || '',
+                    'Reg.nr': k.regnr || '',
+                    'Fører': k.handler || k.forer || '',
+                    'Eier': k.owner || k.eier || '',
+                    'Klasse': k.klasse || '',
+                    'Parti': k.partyName || '',
+                    'Premie': k.prize || '',
+                    'Status': translateStatus(k.critiqueStatus),
+                    // Egenskaper
+                    'Jaktlyst': scores.JAKTLYST || '',
+                    'Fart': scores.FART || '',
+                    'Selvstendighet': scores.SELVSTENDIGHET || '',
+                    'Søksbredde': scores.SOKSBREDDE || '',
+                    'Reviering': scores.REVIERING || '',
+                    'Samarbeid': scores.SAMARBEID || '',
+                    // Fuglebehandling
+                    'Presisjon': scores.PRESISJON || '',
+                    'Reising': scores.REISING || '',
+                    'Godkj. reis': scores.GODKJENT_REISING ? 'Ja' : '',
+                    // Stand og arbeid
+                    'Stand (m)': scores.STAND_M || '',
+                    'Stand (u)': scores.STAND_U || '',
+                    'Tomstand': scores.TOMSTAND || '',
+                    'Makkerstand': scores.MAKKER_STAND || '',
+                    'Sjanse': scores.SJANSE || '',
+                    'Slipptid (min)': scores.SLIPPTID || '',
+                    // Kritikktekst
+                    'Kritikk': k.critique || ''
+                };
+            });
+
+            // Opprett Excel-arbeidsbok
+            const ws = XLSX.utils.json_to_sheet(rows);
+
+            // Sett kolonnebredder
+            ws['!cols'] = [
+                { wch: 4 },   // Nr
+                { wch: 20 },  // Hundenavn
+                { wch: 15 },  // Rase
+                { wch: 12 },  // Reg.nr
+                { wch: 18 },  // Fører
+                { wch: 18 },  // Eier
+                { wch: 6 },   // Klasse
+                { wch: 15 },  // Parti
+                { wch: 10 },  // Premie
+                { wch: 12 },  // Status
+                { wch: 6 },   // Jaktlyst
+                { wch: 5 },   // Fart
+                { wch: 8 },   // Selvstendighet
+                { wch: 8 },   // Søksbredde
+                { wch: 6 },   // Reviering
+                { wch: 8 },   // Samarbeid
+                { wch: 7 },   // Presisjon
+                { wch: 6 },   // Reising
+                { wch: 8 },   // Godkj. reis
+                { wch: 7 },   // Stand m
+                { wch: 7 },   // Stand u
+                { wch: 7 },   // Tomstand
+                { wch: 9 },   // Makkerstand
+                { wch: 6 },   // Sjanse
+                { wch: 10 },  // Slipptid
+                { wch: 60 }   // Kritikk
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Kritikker');
+
+            // Last ned
+            XLSX.writeFile(wb, fileName);
+
+            // Vis bekreftelse
+            alert(`✅ Eksportert ${kritikker.length} kritikker til ${fileName}`);
+        }
+
+        // Eksporter kritikker per rase (ZIP med separate filer)
+        async function exportKritikkerPerRase() {
+            const kritikker = getAllKritikkerFromStorage();
+
+            if (kritikker.length === 0) {
+                alert('Ingen kritikker funnet.');
+                return;
+            }
+
+            // Grupper per rase
+            const perRase = {};
+            kritikker.forEach(k => {
+                const rase = k.breed || k.rase || 'Ukjent rase';
+                if (!perRase[rase]) perRase[rase] = [];
+                perRase[rase].push(k);
+            });
+
+            const raser = Object.keys(perRase);
+
+            if (raser.length === 1) {
+                // Bare én rase - eksporter direkte som Excel
+                const rase = raser[0];
+                const fileName = `Kritikker_${rase.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+                downloadKritikkerAsExcel(perRase[rase], fileName);
+                return;
+            }
+
+            // Flere raser - lag ZIP
+            const zip = new JSZip();
+            const trialName = document.getElementById('trialName')?.value || 'Prove';
+
+            for (const rase of raser) {
+                const rows = perRase[rase].map((k, idx) => {
+                    const scores = k.rounds && k.rounds.length > 0 ? k.rounds[k.rounds.length - 1].scores : {};
+                    return {
+                        'Nr': k.nr || idx + 1,
+                        'Hundenavn': k.name || k.hundenavn || '',
+                        'Reg.nr': k.regnr || '',
+                        'Fører': k.handler || k.forer || '',
+                        'Eier': k.owner || k.eier || '',
+                        'Klasse': k.klasse || '',
+                        'Parti': k.partyName || '',
+                        'Premie': k.prize || '',
+                        'Jaktlyst': scores.JAKTLYST || '',
+                        'Fart': scores.FART || '',
+                        'Selvstendighet': scores.SELVSTENDIGHET || '',
+                        'Søksbredde': scores.SOKSBREDDE || '',
+                        'Reviering': scores.REVIERING || '',
+                        'Samarbeid': scores.SAMARBEID || '',
+                        'Presisjon': scores.PRESISJON || '',
+                        'Reising': scores.REISING || '',
+                        'Slipptid (min)': scores.SLIPPTID || '',
+                        'Kritikk': k.critique || ''
+                    };
+                });
+
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Kritikker');
+
+                // Eksporter til buffer
+                const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const safeRaseName = rase.replace(/[\/\\:*?"<>|]/g, '_');
+                zip.file(`Kritikker_${safeRaseName}.xlsx`, xlsxData);
+            }
+
+            // Generer og last ned ZIP
+            const content = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `Kritikker_per_rase_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.zip`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+
+            alert(`✅ Eksportert kritikker for ${raser.length} raser til ZIP-fil`);
+        }
+
+        // Hjelpefunksjon: Oversett status
+        function translateStatus(status) {
+            const statuses = {
+                'pending': 'Ikke sendt',
+                'submitted': 'Venter godkjenning',
+                'approved': 'Godkjent',
+                'returned': 'Returnert'
+            };
+            return statuses[status] || status || 'Utkast';
         }
     </script>
 

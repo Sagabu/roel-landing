@@ -546,7 +546,11 @@ window.FuglehundToast = FuglehundToast;
 // Global error handler for unhandled errors
 window.addEventListener('error', function(event) {
   console.error('Uventet feil:', event.error);
-  FuglehundToast.error('En uventet feil oppstod. Prøv å laste siden på nytt.');
+  // Bare vis toast for kritiske feil, ikke for manglende ressurser etc.
+  if (event.error && event.error.message && !event.filename?.includes('cdn.')) {
+    // Logg til konsoll, men ikke vis toast for hver feil
+    // FuglehundToast.error('En uventet feil oppstod. Prøv å laste siden på nytt.');
+  }
 });
 
 // Global handler for unhandled promise rejections

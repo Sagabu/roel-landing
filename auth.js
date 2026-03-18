@@ -565,3 +565,39 @@ window.handleApiError = function(error, customMessage) {
   const message = customMessage || error.message || 'Kunne ikke fullføre forespørselen. Prøv igjen.';
   FuglehundToast.error(message);
 };
+
+// Superadmin knapp - vises kun for telefon 90852833
+(function() {
+  const SUPERADMIN_PHONE = '90852833';
+
+  function injectAdminButton() {
+    try {
+      const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
+      if (userData.telefon !== SUPERADMIN_PHONE) return;
+
+      // Finn header eller nav for å legge til knappen
+      const header = document.querySelector('header');
+      if (!header) return;
+
+      // Sjekk om knappen allerede finnes
+      if (document.getElementById('superadmin-btn')) return;
+
+      // Finn hvor logg ut-knappen er
+      const logoutBtn = header.querySelector('button[onclick*="logout"]');
+      if (logoutBtn && logoutBtn.parentElement) {
+        const adminBtn = document.createElement('a');
+        adminBtn.id = 'superadmin-btn';
+        adminBtn.href = '/admin-panel.html';
+        adminBtn.className = 'bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
+        adminBtn.textContent = 'Admin';
+        logoutBtn.parentElement.insertBefore(adminBtn, logoutBtn);
+      }
+    } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectAdminButton);
+  } else {
+    injectAdminButton();
+  }
+})();

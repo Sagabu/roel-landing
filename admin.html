@@ -1768,7 +1768,7 @@
             '</tr>';
         }
 
-        // Render et parti med flytt-funksjonalitet
+        // Render et parti med flytt-funksjonalitet og terreng-felt
         function renderPartyGlobal(party) {
             var partiId = party.name.replace(/\s+/g, '-');
             var colorBase = party.type === 'vk' ? 'earth' : 'forest';
@@ -1776,16 +1776,29 @@
             var akBadge = party.akCount ? '<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">AK: ' + party.akCount + '</span>' : '';
             var dogRows = party.dogs.map(function(dog, i) { return renderDogRowGlobal(dog, i, party.name); }).join('');
 
-            return '<div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden mb-4" data-party-name="' + party.name + '">' +
+            // Vis displayName hvis satt (f.eks. "UK/AK 1 - Lifjellet nord"), ellers name
+            var displayTitle = party.displayName || party.name;
+            var terrengValue = party.terreng || '';
+
+            return '<div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden mb-4" data-party-name="' + party.name + '" data-party-id="' + partiId + '">' +
                 '<div class="px-6 py-4 bg-' + colorBase + '-50 border-b border-bark-100">' +
                     '<div class="flex items-center justify-between flex-wrap gap-2">' +
-                        '<h4 class="text-lg font-bold font-serif text-' + colorBase + '-800">' + party.name + '</h4>' +
+                        '<h4 id="party-title-' + partiId + '" class="text-lg font-bold font-serif text-' + colorBase + '-800">' + displayTitle + '</h4>' +
                         '<div class="flex items-center gap-2">' +
                             '<span class="px-3 py-1 bg-' + colorBase + '-100 text-' + colorBase + '-700 rounded-full text-sm font-medium">' + party.dogs.length + ' hunder</span>' +
                             ukBadge + akBadge +
                         '</div>' +
                     '</div>' +
+                    // Terreng-felt
                     '<div class="mt-3 pt-3 border-t border-' + colorBase + '-200">' +
+                        '<div class="flex items-center gap-2 flex-wrap mb-3">' +
+                            '<span class="text-sm font-medium text-bark-600">Terreng:</span>' +
+                            '<input type="text" id="terreng-' + partiId + '" placeholder="F.eks. Lifjellet nord" ' +
+                                'value="' + terrengValue.replace(/"/g, '&quot;') + '" ' +
+                                'class="px-3 py-1 text-sm border border-bark-200 rounded-lg focus:border-forest-500 focus:outline-none flex-1 max-w-xs" ' +
+                                'data-party-name="' + party.name + '" data-party-id="' + partiId + '" data-party-num="' + party.partyNum + '" data-party-type="' + party.type + '" ' +
+                                'onchange="updatePartyTerreng(this)">' +
+                        '</div>' +
                         '<div class="flex items-center gap-2 flex-wrap">' +
                             '<span class="text-sm font-medium text-bark-600">Dommer(e):</span>' +
                             '<div id="dommere-' + partiId + '" class="flex flex-wrap gap-1"></div>' +
@@ -1814,6 +1827,43 @@
                     '</table>' +
                 '</div>' +
             '</div>';
+        }
+
+        // Oppdater terreng og partinavn
+        function updatePartyTerreng(input) {
+            const partyName = input.dataset.partyName;
+            const partyId = input.dataset.partyId;
+            const partyNum = input.dataset.partyNum || '1';
+            const partyType = input.dataset.partyType || 'ukak';
+            const terreng = input.value.trim();
+
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const party = parties.find(p => p.name === partyName);
+
+            if (party) {
+                party.terreng = terreng;
+
+                // Bygg nytt displayName basert på type og terreng
+                if (terreng) {
+                    if (partyType === 'vk') {
+                        party.displayName = 'VK ' + partyNum + ' - ' + terreng;
+                    } else {
+                        party.displayName = 'UK/AK ' + partyNum + ' - ' + terreng;
+                    }
+                } else {
+                    // Fjern displayName hvis terreng er tomt
+                    party.displayName = null;
+                }
+
+                // Lagre
+                localStorage.setItem('trialParties', JSON.stringify(parties));
+
+                // Oppdater tittelen direkte i DOM (ikke re-render hele listen)
+                const titleEl = document.getElementById('party-title-' + partyId);
+                if (titleEl) {
+                    titleEl.textContent = party.displayName || party.name;
+                }
+            }
         }
 
         // Render en dag
@@ -1892,11 +1942,16 @@
         function openMoveDialog(regnr, fromPartyName) {
             const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
 
-            // Finn hunden
+            // Finn hunden og kildepartiet
             let dog = null;
+            let fromParty = null;
             for (const party of parties) {
-                dog = party.dogs.find(d => d.regnr === regnr);
-                if (dog) break;
+                const found = party.dogs.find(d => d.regnr === regnr);
+                if (found) {
+                    dog = found;
+                    fromParty = party;
+                    break;
+                }
             }
 
             if (!dog) {
@@ -1907,18 +1962,44 @@
             moveDialogDog = dog;
             moveDialogFromParty = fromPartyName;
 
-            // Bygg liste over mulige destinasjoner
-            const options = parties
-                .filter(p => p.name !== fromPartyName)
-                .map(p => '<option value="' + p.name + '">' + p.name + ' (' + p.dogs.length + '/14 hunder)</option>')
-                .join('');
+            // Bestem hundens klassetype (vk eller ukak)
+            const dogIsVK = dog.klasse === 'VK';
+            const fromPartyType = fromParty?.type || (dogIsVK ? 'vk' : 'ukak');
 
-            const ventelisteOption = '<option value="__venteliste__">Venteliste</option>';
+            // Bygg liste over mulige destinasjoner - BARE partier av samme type
+            const compatibleParties = parties.filter(p => {
+                if (p.name === fromPartyName) return false;
+                // UK/AK-hunder kan bare flyttes til UK/AK-partier
+                // VK-hunder kan bare flyttes til VK-partier
+                if (dogIsVK) return p.type === 'vk';
+                return p.type === 'ukak';
+            });
+
+            const options = compatibleParties.map(p => {
+                const isFull = p.dogs.length >= 14 && p.type !== 'vk';
+                const fullLabel = isFull ? ' ⚠️ FULLT' : '';
+                const disabled = isFull ? ' disabled' : '';
+                return '<option value="' + p.name + '"' + disabled + '>' +
+                    (p.displayName || p.name) + ' (' + p.dogs.length + '/14 hunder)' + fullLabel + '</option>';
+            }).join('');
+
+            const ventelisteOption = '<option value="__venteliste__">Venteliste (' + (dogIsVK ? 'VK' : 'UK/AK') + ')</option>';
+
+            // Advarsel hvis ingen ledige partier
+            const noOptions = compatibleParties.filter(p => p.dogs.length < 14 || p.type === 'vk').length === 0;
+            const warningHtml = noOptions ?
+                '<p class="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">⚠️ Alle ' + (dogIsVK ? 'VK' : 'UK/AK') + '-partier er fulle. Du kan flytte hunden til ventelisten, eller først fjerne en hund fra et parti.</p>' : '';
+
+            const klasseInfo = dogIsVK ?
+                '<p class="text-xs text-bark-500 mb-3">VK-hunder kan kun flyttes til andre VK-partier.</p>' :
+                '<p class="text-xs text-bark-500 mb-3">UK/AK-hunder kan kun flyttes til andre UK/AK-partier.</p>';
 
             const dialogHtml = '<div id="moveDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
                 '<div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">' +
                     '<h3 class="text-lg font-bold text-bark-900 mb-4">Flytt hund</h3>' +
-                    '<p class="text-sm text-bark-600 mb-4">Flytt <strong>' + (dog.hundenavn || '') + '</strong> (' + (dog.klasse || '') + ') fra ' + fromPartyName + ' til:</p>' +
+                    '<p class="text-sm text-bark-600 mb-2">Flytt <strong>' + (dog.hundenavn || '') + '</strong> (' + (dog.klasse || '') + ') fra ' + (fromParty?.displayName || fromPartyName) + ' til:</p>' +
+                    klasseInfo +
+                    warningHtml +
                     '<select id="moveDestination" class="w-full px-4 py-2 rounded-xl border border-bark-200 mb-4">' +
                         options + ventelisteOption +
                     '</select>' +
@@ -2490,8 +2571,10 @@
 
                     const partyDate = new Date(startDate);
 
+                    const partyNum = parties.filter(p => p.type === 'ukak').length + 1;
                     parties.push({
-                        name: `UK/AK Parti ${parties.filter(p => p.type === 'ukak').length + 1}`,
+                        name: `UK/AK Parti ${partyNum}`,
+                        partyNum: partyNum,
                         type: 'ukak',
                         day: 1,
                         date: partyDate.toISOString().split('T')[0],
@@ -2551,8 +2634,10 @@
                     const partyDate = new Date(startDate);
                     partyDate.setDate(partyDate.getDate() + 1);
 
+                    const partyNum2 = parties.filter(p => p.type === 'ukak').length + 1;
                     parties.push({
-                        name: `UK/AK Parti ${parties.filter(p => p.type === 'ukak').length + 1}`,
+                        name: `UK/AK Parti ${partyNum2}`,
+                        partyNum: partyNum2,
                         type: 'ukak',
                         day: 2,
                         date: partyDate.toISOString().split('T')[0],
@@ -2585,6 +2670,7 @@
 
                 parties.push({
                     name: `VK ${i + 1}`,
+                    partyNum: i + 1,
                     type: 'vk',
                     day: vkDay,
                     date: partyDate.toISOString().split('T')[0],

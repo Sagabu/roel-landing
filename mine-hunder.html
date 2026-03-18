@@ -351,9 +351,12 @@
     </div>
 
     <script>
-        // Hent innlogget brukers telefonnummer
+        // Hent innlogget brukers telefonnummer - prøv flere kilder
         const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
-        const userPhone = userSession.phone || '';
+        const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+        const userPhone = userSession.phone || userProfile.phone || localStorage.getItem('userPhone') || '';
+
+        console.log('Debug - userPhone:', userPhone, 'userSession:', userSession, 'userProfile:', userProfile);
 
         // Hunder lastes asynkront fra API
         let dogs = [];
@@ -372,15 +375,28 @@
         // Hent hunder fra API
         async function loadDogs() {
             if (!userPhone) {
-                console.warn('Ingen bruker innlogget');
-                renderDogs();
+                console.warn('Ingen bruker innlogget - userPhone er tom');
+                // Vis melding til bruker
+                const container = document.getElementById('dogsList');
+                container.innerHTML = `
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+                        <p class="text-amber-800 font-medium">Du må logge inn for å se hundene dine</p>
+                        <a href="min-side.html" class="inline-block mt-3 bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg transition">Logg inn</a>
+                    </div>
+                `;
                 return;
             }
 
+            console.log('Henter hunder for telefon:', userPhone);
+
             try {
                 const resp = await fetch(`/api/brukere/${userPhone}/hunder`);
+                console.log('API respons status:', resp.status);
+
                 if (resp.ok) {
                     const data = await resp.json();
+                    console.log('Mottok hunder fra API:', data);
+
                     // Transformer fra DB-format til frontend-format
                     dogs = data.map(h => ({
                         id: h.id.toString(),
@@ -392,7 +408,9 @@
                         photo: h.bilde || null,
                         results: h.results || []
                     }));
+                    console.log('Transformerte hunder:', dogs);
                 } else {
+                    console.warn('API feilet, bruker localStorage fallback');
                     // Fallback til localStorage
                     const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
                     dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);

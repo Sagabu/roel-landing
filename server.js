@@ -3582,7 +3582,7 @@ function serveWithShim(filePath, c, isAdmin = false) {
   if (isAdmin) {
     scripts += `<script src="/admin-lock.js"></script>\n`;
   }
-  scripts += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>`;
+  scripts += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/navbar.js" defer></script>`;
 
   if (html.includes("<head>")) {
     html = html.replace("<head>", `<head>\n${scripts}`);

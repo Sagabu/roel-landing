@@ -355,32 +355,61 @@
         const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
         const userPhone = userSession.phone || '';
 
-        // Hent alle brukeres hunder (objekt med telefon som nøkkel)
-        const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
-
-        // Hent denne brukerens hunder (eller tom array)
-        let dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
+        // Hunder lastes asynkront fra API
+        let dogs = [];
 
         let currentDogPhoto = null;
         let dogToDelete = null;
 
         // Funksjon for å lagre hunder for denne brukeren
         function saveUserDogs() {
+            // Lagre også til localStorage for offline-bruk
             const allDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
-            if (Array.isArray(allDogs)) {
-                // Migrer fra gammel array-format til objekt-format
-                const newFormat = {};
-                newFormat[userPhone] = dogs;
-                localStorage.setItem('userDogs', JSON.stringify(newFormat));
-            } else {
-                allDogs[userPhone] = dogs;
-                localStorage.setItem('userDogs', JSON.stringify(allDogs));
+            allDogs[userPhone] = dogs;
+            localStorage.setItem('userDogs', JSON.stringify(allDogs));
+        }
+
+        // Hent hunder fra API
+        async function loadDogs() {
+            if (!userPhone) {
+                console.warn('Ingen bruker innlogget');
+                renderDogs();
+                return;
             }
+
+            try {
+                const resp = await fetch(`/api/brukere/${userPhone}/hunder`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    // Transformer fra DB-format til frontend-format
+                    dogs = data.map(h => ({
+                        id: h.id.toString(),
+                        name: h.navn,
+                        regNumber: h.regnr,
+                        breed: h.rase,
+                        gender: h.kjonn,
+                        birthDate: h.fodselsdato,
+                        photo: h.bilde || null,
+                        results: h.results || []
+                    }));
+                } else {
+                    // Fallback til localStorage
+                    const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
+                    dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
+                }
+            } catch (e) {
+                console.error('Kunne ikke laste hunder fra API:', e);
+                // Fallback til localStorage
+                const allUserDogs = JSON.parse(localStorage.getItem('userDogs') || '{}');
+                dogs = Array.isArray(allUserDogs) ? allUserDogs : (allUserDogs[userPhone] || []);
+            }
+
+            renderDogs();
         }
 
         // Initialize
-        function init() {
-            renderDogs();
+        async function init() {
+            await loadDogs();
         }
 
         function renderDogs() {
@@ -462,17 +491,25 @@
 
             let resultsHtml = '';
             if (dog.results && dog.results.length > 0) {
-                resultsHtml = dog.results.map(r => `
+                resultsHtml = dog.results.map(r => {
+                    // Støtt både DB-format og frontend-format
+                    const trial = r.prove_navn || r.trial || 'Ukjent prøve';
+                    const date = r.dato || r.date || '';
+                    const klasse = r.klasse || r.class || '';
+                    const premie = r.premie || r.prize || '';
+                    const dommer = r.dommer || r.judge || '';
+
+                    return `
                     <div class="bg-bark-50 rounded-xl p-4 cursor-pointer hover:bg-bark-100 transition" onclick="viewCritique('${r.id}', '${dog.id}')">
                         <div class="flex items-center justify-between mb-2">
                             <div>
-                                <p class="font-semibold text-bark-800">${r.trial}</p>
-                                <p class="text-sm text-bark-500">${formatDate(r.date)} - ${r.location}</p>
+                                <p class="font-semibold text-bark-800">${trial}</p>
+                                <p class="text-sm text-bark-500">${formatDate(date)}</p>
                             </div>
-                            <span class="px-3 py-1 rounded-full text-sm font-medium ${getPrizeClass(r.prize)}">${r.prize}</span>
+                            <span class="px-3 py-1 rounded-full text-sm font-medium ${getPrizeClass(premie)}">${premie}</span>
                         </div>
                         <div class="flex items-center justify-between text-sm">
-                            <span class="text-bark-500">Klasse: ${r.class} | Dommer: ${r.judge}</span>
+                            <span class="text-bark-500">Klasse: ${klasse} | Dommer: ${dommer}</span>
                             <span class="text-sky-500 font-medium flex items-center gap-1">
                                 Se kritikk
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -481,7 +518,7 @@
                             </span>
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
             } else {
                 resultsHtml = `
                     <div class="text-center py-8 text-bark-500">

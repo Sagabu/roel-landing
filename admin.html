@@ -1564,18 +1564,60 @@
             const dag1Partier = parseInt(document.getElementById('ukakPartierDag1').value) || 0;
             const dag2Partier = parseInt(document.getElementById('ukakPartierDag2').value) || 0;
             const vkType = document.getElementById('vkTypeSelect').value;
+            const maxPerParty = 14;
 
             const summaryDiv = document.getElementById('dayScheduleText');
             let summaryHtml = '';
 
+            // Beregn kapasitet
+            const dag1Kapasitet = dag1Partier * maxPerParty;
+            const dag2Kapasitet = dag2Partier * maxPerParty;
+            const totalKapasitet = dag1Kapasitet + dag2Kapasitet;
+
+            // Hent lagrede deltakere for å vise venteliste-estimat
+            let ukAkTotal = 0;
+            let ukDag1 = 0, akDag1 = 0, ukDag2 = 0, akDag2 = 0;
+            try {
+                const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+                const ukDogs = participants.filter(p => p.klasse === 'UK');
+                const akDogs = participants.filter(p => p.klasse === 'AK');
+                ukAkTotal = ukDogs.length + akDogs.length;
+
+                // Tell per dag
+                ukDag1 = ukDogs.filter(p => p.dag === 1 || p.klasseRaw === 'UK1').length;
+                ukDag2 = ukDogs.filter(p => p.dag === 2 || p.klasseRaw === 'UK2').length;
+                akDag1 = akDogs.filter(p => p.dag === 1 || p.klasseRaw === 'AK1').length;
+                akDag2 = akDogs.filter(p => p.dag === 2 || p.klasseRaw === 'AK2').length;
+            } catch (e) {}
+
             // Dag 1
             if (dag1Partier > 0) {
-                summaryHtml += `<div><strong>Dag 1:</strong> ${dag1Partier} UK/AK-parti${dag1Partier > 1 ? 'er' : ''}</div>`;
+                const dag1Hunder = ukDag1 + akDag1;
+                let dag1Info = `${dag1Partier} UK/AK-parti${dag1Partier > 1 ? 'er' : ''} (maks ${dag1Kapasitet} hunder)`;
+                if (dag1Hunder > 0) {
+                    const dag1Venteliste = Math.max(0, dag1Hunder - dag1Kapasitet);
+                    if (dag1Venteliste > 0) {
+                        dag1Info += ` <span class="text-amber-600 font-medium">⚠️ ${dag1Venteliste} på venteliste</span>`;
+                    } else {
+                        dag1Info += ` <span class="text-green-600">(${dag1Hunder} påmeldt)</span>`;
+                    }
+                }
+                summaryHtml += `<div><strong>Dag 1:</strong> ${dag1Info}</div>`;
             }
 
             // Dag 2
             if (dag2Partier > 0) {
-                summaryHtml += `<div><strong>Dag 2:</strong> ${dag2Partier} UK/AK-parti${dag2Partier > 1 ? 'er' : ''}</div>`;
+                const dag2Hunder = ukDag2 + akDag2;
+                let dag2Info = `${dag2Partier} UK/AK-parti${dag2Partier > 1 ? 'er' : ''} (maks ${dag2Kapasitet} hunder)`;
+                if (dag2Hunder > 0) {
+                    const dag2Venteliste = Math.max(0, dag2Hunder - dag2Kapasitet);
+                    if (dag2Venteliste > 0) {
+                        dag2Info += ` <span class="text-amber-600 font-medium">⚠️ ${dag2Venteliste} på venteliste</span>`;
+                    } else {
+                        dag2Info += ` <span class="text-green-600">(${dag2Hunder} påmeldt)</span>`;
+                    }
+                }
+                summaryHtml += `<div><strong>Dag 2:</strong> ${dag2Info}</div>`;
             }
 
             // VK
@@ -1587,6 +1629,14 @@
                 const finaleDag = parseInt(kvalDag) + 1;
                 summaryHtml += `<div><strong>Dag ${kvalDag}:</strong> VK Kval (2 partier)</div>`;
                 summaryHtml += `<div><strong>Dag ${finaleDag}:</strong> VK Finale</div>`;
+            }
+
+            // Total kapasitet
+            if (totalKapasitet > 0 && ukAkTotal > 0) {
+                const totalVenteliste = Math.max(0, ukAkTotal - totalKapasitet);
+                if (totalVenteliste > 0) {
+                    summaryHtml += `<div class="mt-2 pt-2 border-t border-bark-200 text-amber-700"><strong>Totalt:</strong> ${ukAkTotal} UK/AK påmeldt, ${totalKapasitet} plasser = <span class="font-bold">${totalVenteliste} på venteliste</span></div>`;
+                }
             }
 
             if (!summaryHtml) {
@@ -2097,6 +2147,9 @@
             // Save participants to localStorage
             localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
 
+            // Oppdater oppsummering med ny deltaker-info
+            updateDayScheduleSummary();
+
             // Separate dogs by class
             const ukDogs = currentParticipants.filter(p => p.klasse === 'UK');
             const akDogs = currentParticipants.filter(p => p.klasse === 'AK');
@@ -2153,27 +2206,39 @@
             const startDate = new Date(trialStartDate);
 
             const parties = [];
-            const venteliste = { dag1: [], dag2: [] };
+            // Separate ventelister per klasse og dag
+            const venteliste = {
+                dag1: { uk: [], ak: [] },
+                dag2: { uk: [], ak: [] },
+                vk: []  // VK har egen venteliste (ikke dag-spesifikk)
+            };
 
-            // Build dag 1 parties
-            let dag1Hunder = [...ukDag1, ...akDag1];
-            // Add unspecified dogs to fill capacity
-            const dag1Plass = dag1Kapasitet - dag1Hunder.length;
-            if (dag1Plass > 0) {
-                const tilDag1 = [...ukUspesifisert, ...akUspesifisert].slice(0, dag1Plass);
-                dag1Hunder = [...dag1Hunder, ...tilDag1];
-                // Remove used dogs from unspecified pools
-                tilDag1.forEach(d => {
-                    const ukIdx = ukUspesifisert.findIndex(u => u.regnr === d.regnr);
-                    if (ukIdx >= 0) ukUspesifisert.splice(ukIdx, 1);
-                    const akIdx = akUspesifisert.findIndex(a => a.regnr === d.regnr);
-                    if (akIdx >= 0) akUspesifisert.splice(akIdx, 1);
-                });
+            // Build dag 1 parties - UK først, så AK
+            let dag1UkPool = [...ukDag1];
+            let dag1AkPool = [...akDag1];
+
+            // Legg til uspesifiserte til dag 1 først (UK først, så AK)
+            const dag1UkPlass = Math.min(dag1Kapasitet, dag1UkPool.length + ukUspesifisert.length);
+            while (dag1UkPool.length < dag1UkPlass && ukUspesifisert.length > 0) {
+                dag1UkPool.push(ukUspesifisert.shift());
             }
 
-            // If more dogs than capacity for dag 1, put excess on waitlist
+            const dag1TotalUk = dag1UkPool.length;
+            const dag1AkPlass = dag1Kapasitet - dag1TotalUk;
+            while (dag1AkPool.length < dag1AkPlass && akUspesifisert.length > 0) {
+                dag1AkPool.push(akUspesifisert.shift());
+            }
+
+            // Kombiner for dag 1 (UK først for bedre fordeling)
+            let dag1Hunder = [...dag1UkPool, ...dag1AkPool];
+
+            // Hvis flere enn kapasitet, legg overskudd på venteliste PER KLASSE
             if (dag1Hunder.length > dag1Kapasitet) {
-                venteliste.dag1 = dag1Hunder.slice(dag1Kapasitet);
+                const overskudd = dag1Hunder.slice(dag1Kapasitet);
+                overskudd.forEach(d => {
+                    if (d.klasse === 'UK') venteliste.dag1.uk.push(d);
+                    else venteliste.dag1.ak.push(d);
+                });
                 dag1Hunder = dag1Hunder.slice(0, dag1Kapasitet);
             }
 
@@ -2202,12 +2267,20 @@
                 }
             }
 
-            // Build dag 2 parties
-            let dag2Hunder = [...ukDag2, ...akDag2, ...ukUspesifisert, ...akUspesifisert];
+            // Build dag 2 parties - UK først, så AK
+            let dag2UkPool = [...ukDag2, ...ukUspesifisert];  // Resterende uspesifiserte UK
+            let dag2AkPool = [...akDag2, ...akUspesifisert];  // Resterende uspesifiserte AK
 
-            // If more dogs than capacity for dag 2, put excess on waitlist
+            // Kombiner for dag 2 (UK først)
+            let dag2Hunder = [...dag2UkPool, ...dag2AkPool];
+
+            // Hvis flere enn kapasitet, legg overskudd på venteliste PER KLASSE
             if (dag2Hunder.length > dag2Kapasitet) {
-                venteliste.dag2 = dag2Hunder.slice(dag2Kapasitet);
+                const overskudd = dag2Hunder.slice(dag2Kapasitet);
+                overskudd.forEach(d => {
+                    if (d.klasse === 'UK') venteliste.dag2.uk.push(d);
+                    else venteliste.dag2.ak.push(d);
+                });
                 dag2Hunder = dag2Hunder.slice(0, dag2Kapasitet);
             }
 
@@ -2238,12 +2311,21 @@
             }
 
             // Build VK parties (auto-calculate based on number of VK dogs)
-            const vkPartyCount = Math.ceil(vkDogs.length / maxPerPartyVK);
-            const vkDistribution = getEvenDistribution(vkDogs.length, vkPartyCount);
+            // TODO: Legg til VK parti-konfigurasjon hvis ønskelig
+            const vkPartyCount = Math.ceil(vkDogs.length / maxPerPartyVK) || 0;
+            const vkKapasitet = vkPartyCount * maxPerPartyVK;
+            let vkHunderTilPartier = vkDogs.slice(0, vkKapasitet);
+
+            // VK venteliste (egen, ikke dag-spesifikk)
+            if (vkDogs.length > vkKapasitet) {
+                venteliste.vk = vkDogs.slice(vkKapasitet);
+            }
+
+            const vkDistribution = getEvenDistribution(vkHunderTilPartier.length, vkPartyCount);
             let vkOffset = 0;
 
             for (let i = 0; i < vkPartyCount; i++) {
-                const count = vkDistribution[i];
+                const count = vkDistribution[i] || 0;
                 const vkDay = 1; // VK usually on day 1, could be configurable
                 const partyDate = new Date(startDate);
                 partyDate.setDate(partyDate.getDate() + vkDay - 1);
@@ -2253,12 +2335,12 @@
                     type: 'vk',
                     day: vkDay,
                     date: partyDate.toISOString().split('T')[0],
-                    dogs: vkDogs.slice(vkOffset, vkOffset + count)
+                    dogs: vkHunderTilPartier.slice(vkOffset, vkOffset + count)
                 });
                 vkOffset += count;
             }
 
-            // Store waitlist
+            // Store waitlist (med klasseinformasjon)
             localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
 
             // Save parties to localStorage
@@ -2382,17 +2464,34 @@
                 message += `• ${party.name}: ${party.dogs.length} hunder\n`;
             });
 
-            // Add waitlist info
-            const totalVenteliste = venteliste.dag1.length + venteliste.dag2.length;
+            // Add waitlist info per klasse
+            const dag1Uk = venteliste.dag1?.uk || [];
+            const dag1Ak = venteliste.dag1?.ak || [];
+            const dag2Uk = venteliste.dag2?.uk || [];
+            const dag2Ak = venteliste.dag2?.ak || [];
+            const vkVenteliste = venteliste.vk || [];
+            const totalVenteliste = dag1Uk.length + dag1Ak.length + dag2Uk.length + dag2Ak.length + vkVenteliste.length;
+
             if (totalVenteliste > 0) {
                 message += `\n⚠️ VENTELISTE:\n`;
-                if (venteliste.dag1.length > 0) {
-                    message += `• Dag 1: ${venteliste.dag1.length} hunder på venteliste\n`;
+                if (dag1Uk.length > 0 || dag1Ak.length > 0) {
+                    message += `• Dag 1: `;
+                    const dag1Parts = [];
+                    if (dag1Uk.length > 0) dag1Parts.push(`${dag1Uk.length} UK`);
+                    if (dag1Ak.length > 0) dag1Parts.push(`${dag1Ak.length} AK`);
+                    message += dag1Parts.join(', ') + ` på venteliste\n`;
                 }
-                if (venteliste.dag2.length > 0) {
-                    message += `• Dag 2: ${venteliste.dag2.length} hunder på venteliste\n`;
+                if (dag2Uk.length > 0 || dag2Ak.length > 0) {
+                    message += `• Dag 2: `;
+                    const dag2Parts = [];
+                    if (dag2Uk.length > 0) dag2Parts.push(`${dag2Uk.length} UK`);
+                    if (dag2Ak.length > 0) dag2Parts.push(`${dag2Ak.length} AK`);
+                    message += dag2Parts.join(', ') + ` på venteliste\n`;
                 }
-                message += `\nØk antall partier eller flytt hunder til andre dager for å få plass til alle.`;
+                if (vkVenteliste.length > 0) {
+                    message += `• VK: ${vkVenteliste.length} på venteliste\n`;
+                }
+                message += `\nUK-hund erstattes først av UK, deretter AK.\nVK-hund erstattes kun av VK.`;
             } else {
                 message += '\nAlle hunder er plassert i partier.';
             }
@@ -2408,9 +2507,17 @@
             document.getElementById('partilister').scrollIntoView({ behavior: 'smooth' });
         });
 
-        // Funksjon for å rendere venteliste
+        // Funksjon for å rendere venteliste (separert per klasse)
         function renderVenteliste(venteliste) {
-            const totalVenteliste = venteliste.dag1.length + venteliste.dag2.length;
+            // Tell opp totalt per klasse
+            const dag1Uk = venteliste.dag1?.uk || [];
+            const dag1Ak = venteliste.dag1?.ak || [];
+            const dag2Uk = venteliste.dag2?.uk || [];
+            const dag2Ak = venteliste.dag2?.ak || [];
+            const vkVenteliste = venteliste.vk || [];
+
+            const totalVenteliste = dag1Uk.length + dag1Ak.length + dag2Uk.length + dag2Ak.length + vkVenteliste.length;
+
             const ventelisteSection = document.getElementById('venteliste');
             const waitlistTableBody = document.getElementById('waitlistTableBody');
             const waitlistCount = document.getElementById('waitlistCount');
@@ -2421,15 +2528,43 @@
             }
 
             ventelisteSection.classList.remove('hidden');
-            waitlistCount.textContent = totalVenteliste + ' hunder på venteliste';
 
-            // Combine waitlists with day info
-            const allWaitlist = [
-                ...venteliste.dag1.map((d, i) => ({ ...d, dag: 1, plass: i + 1 })),
-                ...venteliste.dag2.map((d, i) => ({ ...d, dag: 2, plass: venteliste.dag1.length + i + 1 }))
-            ];
+            // Lag oppsummering per klasse
+            const ukTotal = dag1Uk.length + dag2Uk.length;
+            const akTotal = dag1Ak.length + dag2Ak.length;
+            const vkTotal = vkVenteliste.length;
+            let countText = totalVenteliste + ' hunder på venteliste';
+            let details = [];
+            if (ukTotal > 0) details.push('UK: ' + ukTotal);
+            if (akTotal > 0) details.push('AK: ' + akTotal);
+            if (vkTotal > 0) details.push('VK: ' + vkTotal);
+            if (details.length > 0) countText += ' (' + details.join(', ') + ')';
+            waitlistCount.textContent = countText;
 
+            // Bygg venteliste med klasseprioritering
+            // UK-hunder først (prio 1), så AK (prio 2), så VK (egen liste)
+            const allWaitlist = [];
+            let plass = 1;
+
+            // Dag 1 - UK først, så AK
+            dag1Uk.forEach(d => { allWaitlist.push({ ...d, dag: 1, plass: plass++, klasse: 'UK' }); });
+            dag1Ak.forEach(d => { allWaitlist.push({ ...d, dag: 1, plass: plass++, klasse: 'AK' }); });
+
+            // Dag 2 - UK først, så AK
+            dag2Uk.forEach(d => { allWaitlist.push({ ...d, dag: 2, plass: plass++, klasse: 'UK' }); });
+            dag2Ak.forEach(d => { allWaitlist.push({ ...d, dag: 2, plass: plass++, klasse: 'AK' }); });
+
+            // VK separat
+            vkVenteliste.forEach((d, i) => { allWaitlist.push({ ...d, dag: '-', plass: i + 1, klasse: 'VK' }); });
+
+            // Render med fargekoding per klasse
             waitlistTableBody.innerHTML = allWaitlist.map(dog => {
+                let klasseColor = 'bg-amber-100 text-amber-700';  // VK
+                if (dog.klasse === 'UK') klasseColor = 'bg-blue-100 text-blue-700';
+                else if (dog.klasse === 'AK') klasseColor = 'bg-green-100 text-green-700';
+
+                const dagText = dog.dag === '-' ? 'VK' : 'Dag ' + dog.dag;
+
                 return '<tr class="border-b border-bark-100 hover:bg-bark-50">' +
                     '<td class="py-3 px-4 text-sm font-medium text-bark-700">' + dog.plass + '</td>' +
                     '<td class="py-3 px-4 text-sm text-bark-700">' + (dog.forer || dog.eier || '') + '</td>' +
@@ -2437,7 +2572,7 @@
                     '<td class="py-3 px-4 text-sm font-medium text-bark-800">' + (dog.hundenavn || '') + '</td>' +
                     '<td class="py-3 px-4 text-sm text-bark-600">' + (dog.regnr || '') + '</td>' +
                     '<td class="py-3 px-4 text-sm">' +
-                        '<span class="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">Dag ' + dog.dag + ' - ' + (dog.klasseRaw || dog.klasse) + '</span>' +
+                        '<span class="px-2 py-1 rounded text-xs font-medium ' + klasseColor + '">' + dagText + ' - ' + dog.klasse + '</span>' +
                     '</td>' +
                     '<td class="py-3 px-4 text-sm text-bark-500">-</td>' +
                     '<td class="py-3 px-4">' +

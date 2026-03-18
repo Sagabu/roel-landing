@@ -112,12 +112,51 @@
             </div>
         </div>
 
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-6 no-print">
+            <button onclick="switchTab('critiques')" id="tabCritiques" class="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium shadow-lg">
+                Kritikker
+            </button>
+            <button onclick="switchTab('signatures')" id="tabSignatures" class="px-5 py-2.5 bg-bark-200 text-bark-700 rounded-xl font-medium hover:bg-bark-300 transition">
+                Partiliste-signaturer
+            </button>
+        </div>
+
         <!-- Filter -->
-        <div class="flex items-center justify-between mb-4 no-print">
+        <div id="filterSection" class="flex items-center justify-between mb-4 no-print">
             <select id="partyFilter" onchange="filterByParty(this.value)"
                 class="bg-white border-2 border-bark-200 rounded-xl px-4 py-2 text-sm font-medium text-bark-700 focus:border-blue-500 focus:outline-none">
                 <option value="all">Alle partier</option>
             </select>
+        </div>
+
+        <!-- Signature Section (hidden by default) -->
+        <div id="signatureSection" class="hidden">
+            <div class="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                        <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-purple-800">Godkjenn partilister</h3>
+                        <p class="text-sm text-purple-600">Partilister som er signert av dommer venter på din godkjenning</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pendingSignaturesList" class="space-y-4 mb-8">
+                <!-- Rendered by JS -->
+            </div>
+
+            <h3 class="text-lg font-bold font-serif text-bark-700 mb-4 flex items-center gap-2">
+                <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+                Godkjente partilister
+            </h3>
+            <div id="approvedSignaturesList" class="space-y-4">
+                <!-- Rendered by JS -->
+            </div>
         </div>
 
         <!-- Pending critiques -->
@@ -900,6 +939,166 @@
             if (!currentReview) return;
             const { partyId, dogId } = currentReview;
             window.open(`kritikk-visning.html?party=${partyId}&dog=${dogId}`, '_blank');
+        }
+
+        // ===== TAB SWITCHING =====
+        let currentTab = 'critiques';
+
+        function switchTab(tab) {
+            currentTab = tab;
+
+            // Update tab styles
+            const tabCritiques = document.getElementById('tabCritiques');
+            const tabSignatures = document.getElementById('tabSignatures');
+
+            if (tab === 'critiques') {
+                tabCritiques.className = 'px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium shadow-lg';
+                tabSignatures.className = 'px-5 py-2.5 bg-bark-200 text-bark-700 rounded-xl font-medium hover:bg-bark-300 transition';
+
+                document.getElementById('filterSection').classList.remove('hidden');
+                document.getElementById('pendingSection').classList.remove('hidden');
+                document.getElementById('approvedSection').classList.remove('hidden');
+                document.getElementById('signatureSection').classList.add('hidden');
+            } else {
+                tabCritiques.className = 'px-5 py-2.5 bg-bark-200 text-bark-700 rounded-xl font-medium hover:bg-bark-300 transition';
+                tabSignatures.className = 'px-5 py-2.5 bg-purple-600 text-white rounded-xl font-medium shadow-lg';
+
+                document.getElementById('filterSection').classList.add('hidden');
+                document.getElementById('pendingSection').classList.add('hidden');
+                document.getElementById('approvedSection').classList.add('hidden');
+                document.getElementById('signatureSection').classList.remove('hidden');
+
+                loadPartySignatures();
+            }
+        }
+
+        // ===== PARTY SIGNATURES =====
+        async function loadPartySignatures() {
+            const proveId = 'default'; // TODO: Get from trial config
+
+            try {
+                const response = await fetch(`/api/prover/${proveId}/signaturer`);
+                const data = await response.json();
+
+                const pending = data.signaturer?.filter(s => s.dommer_signert_at && !s.nkkrep_signert_at) || [];
+                const approved = data.signaturer?.filter(s => s.dommer_signert_at && s.nkkrep_signert_at) || [];
+
+                renderPendingSignatures(pending);
+                renderApprovedSignatures(approved);
+            } catch (err) {
+                console.error('Feil ved lasting av signaturer:', err);
+                document.getElementById('pendingSignaturesList').innerHTML = `
+                    <div class="bg-white rounded-xl p-8 text-center border border-bark-200">
+                        <p class="text-bark-500">Kunne ikke laste signaturer</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderPendingSignatures(signatures) {
+            const container = document.getElementById('pendingSignaturesList');
+
+            if (signatures.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-xl p-8 text-center border border-bark-200">
+                        <p class="text-bark-500">Ingen partilister venter på godkjenning</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = signatures.map(sig => `
+                <div class="bg-white rounded-xl border-2 border-purple-200 hover:border-purple-400 p-5 hover:shadow-lg transition">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center shadow-lg">
+                                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-lg text-bark-800">${PARTIES[sig.parti]?.name || sig.parti}</h3>
+                                <p class="text-sm text-bark-600">Signert av: ${sig.dommer_navn || 'Dommer'}</p>
+                                <p class="text-xs text-bark-400">${new Date(sig.dommer_signert_at).toLocaleString('nb-NO')}</p>
+                            </div>
+                        </div>
+                        <button onclick="approvePartySignature('${sig.prove_id}', '${sig.parti}', '${sig.dommer_telefon}')"
+                            class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl transition flex items-center gap-2 shadow-lg">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Godkjenn
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderApprovedSignatures(signatures) {
+            const container = document.getElementById('approvedSignaturesList');
+
+            if (signatures.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-xl p-8 text-center border border-bark-200">
+                        <p class="text-bark-500">Ingen godkjente partilister ennå</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = signatures.map(sig => `
+                <div class="bg-white rounded-xl border-2 border-green-200 p-5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="w-14 h-14 bg-gradient-to-br from-green-500 to-green-700 rounded-xl flex items-center justify-center shadow-lg">
+                                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-lg text-bark-800">${PARTIES[sig.parti]?.name || sig.parti}</h3>
+                                <div class="text-sm text-bark-600">
+                                    <span>Dommer: ${sig.dommer_navn || '-'}</span>
+                                    <span class="mx-2">•</span>
+                                    <span>NKK-rep: ${sig.nkkrep_navn || '-'}</span>
+                                </div>
+                                <p class="text-xs text-bark-400">Godkjent: ${new Date(sig.nkkrep_signert_at).toLocaleString('nb-NO')}</p>
+                            </div>
+                        </div>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Godkjent
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function approvePartySignature(proveId, parti, dommerTelefon) {
+            // Get NKK-rep phone from session
+            const nkkrepTelefon = nkkRepInfo?.phone || '90000001';
+
+            try {
+                const response = await fetch(`/api/prover/${proveId}/parti/${parti}/signer-nkkrep`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nkkrepTelefon, dommerTelefon })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('Partiliste godkjent!', 'success');
+                    loadPartySignatures();
+                } else {
+                    showToast('Feil: ' + (data.error || 'Kunne ikke godkjenne'), 'warning');
+                }
+            } catch (err) {
+                console.error('Feil ved godkjenning:', err);
+                showToast('En feil oppstod ved godkjenning', 'warning');
+            }
         }
 
         // Initialize

@@ -70,8 +70,8 @@
                     </div>
 
                     <div class="flex-1 text-center md:text-left">
-                        <input type="text" id="clubName" value="Nord-Østerdal Fuglehundklubb"
-                            class="text-3xl font-bold font-serif text-bark-800 bg-transparent border-b-2 border-transparent hover:border-bark-300 focus:border-sky-500 outline-none w-full md:w-auto">
+                        <input type="text" id="clubName" value=""
+                            class="text-xl md:text-2xl lg:text-3xl font-bold font-serif text-bark-800 bg-transparent border-b-2 border-transparent hover:border-bark-300 focus:border-sky-500 outline-none w-full truncate" title="">
                         <div class="mt-2 flex flex-wrap gap-4 justify-center md:justify-start text-bark-600">
                             <span class="flex items-center gap-1">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -315,6 +315,78 @@
     </footer>
 
     <script>
+        let currentClubId = null;
+        let currentClubData = null;
+
+        // Initialize page
+        async function initPage() {
+            // Check URL params first
+            const urlParams = new URLSearchParams(window.location.search);
+            const klubbIdFromUrl = urlParams.get('klubbId');
+
+            if (klubbIdFromUrl) {
+                currentClubId = parseInt(klubbIdFromUrl);
+                await loadClubData(currentClubId);
+            } else {
+                // Try to get from user's klubbAdmin info
+                const phone = localStorage.getItem('userPhone');
+                if (phone) {
+                    try {
+                        const resp = await fetch(`/api/brukere/${phone}`);
+                        if (resp.ok) {
+                            const userData = await resp.json();
+                            if (userData.klubbAdmin && userData.klubbAdmin.klubb_id) {
+                                currentClubId = userData.klubbAdmin.klubb_id;
+                                await loadClubData(currentClubId);
+                            } else {
+                                showNoClubError();
+                            }
+                        } else {
+                            showNoClubError();
+                        }
+                    } catch (e) {
+                        console.error('Kunne ikke hente brukerdata:', e);
+                        showNoClubError();
+                    }
+                } else {
+                    showNoClubError();
+                }
+            }
+        }
+
+        async function loadClubData(klubbId) {
+            try {
+                const resp = await fetch(`/api/klubber/${klubbId}`);
+                if (resp.ok) {
+                    currentClubData = await resp.json();
+                    populateClubData(currentClubData);
+                } else {
+                    showNoClubError();
+                }
+            } catch (e) {
+                console.error('Kunne ikke laste klubbdata:', e);
+                showNoClubError();
+            }
+        }
+
+        function populateClubData(club) {
+            const nameInput = document.getElementById('clubName');
+            nameInput.value = club.navn || 'Ukjent klubb';
+            nameInput.title = club.navn || ''; // Full name on hover
+
+            // Update settings form
+            const settingsName = document.querySelector('input[value="Nord-Østerdal Fuglehundklubb"]');
+            if (settingsName) settingsName.value = club.navn || '';
+
+            // Update title
+            document.title = `${club.navn || 'Min Klubb'} - Fuglehundprøve`;
+        }
+
+        function showNoClubError() {
+            document.getElementById('clubName').value = 'Ingen klubb funnet';
+            document.getElementById('clubName').disabled = true;
+        }
+
         // Logo upload
         const logoUploadArea = document.getElementById('logoUploadArea');
         const logoInput = document.getElementById('logoInput');
@@ -331,20 +403,31 @@
                     clubLogo.src = e.target.result;
                     clubLogo.classList.remove('hidden');
                     logoPlaceholder.classList.add('hidden');
-                    // Save to localStorage for demo
-                    localStorage.setItem('clubLogo', e.target.result);
+                    // Save to localStorage with club-specific key
+                    if (currentClubId) {
+                        localStorage.setItem(`clubLogo_${currentClubId}`, e.target.result);
+                    }
                 };
                 reader.readAsDataURL(file);
             }
         });
 
-        // Load saved logo
-        const savedLogo = localStorage.getItem('clubLogo');
-        if (savedLogo) {
-            clubLogo.src = savedLogo;
-            clubLogo.classList.remove('hidden');
-            logoPlaceholder.classList.add('hidden');
+        // Load saved logo (club-specific)
+        function loadSavedLogo() {
+            const savedLogo = currentClubId
+                ? localStorage.getItem(`clubLogo_${currentClubId}`)
+                : localStorage.getItem('clubLogo');
+            if (savedLogo) {
+                clubLogo.src = savedLogo;
+                clubLogo.classList.remove('hidden');
+                logoPlaceholder.classList.add('hidden');
+            }
         }
+
+        // Initialize on load
+        initPage().then(() => {
+            loadSavedLogo();
+        });
     </script>
 
 </body>

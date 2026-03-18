@@ -308,6 +308,19 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_fkf_dommere_telefon1 ON fkf_godkjente_dommere(telefon1_normalized);
   CREATE INDEX IF NOT EXISTS idx_fkf_dommere_telefon2 ON fkf_godkjente_dommere(telefon2_normalized);
+
+  -- Parti-signaturer for NKK-rapport
+  CREATE TABLE IF NOT EXISTS parti_signaturer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    parti TEXT NOT NULL,
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    dommer_signert_at TEXT DEFAULT NULL,
+    nkkrep_telefon TEXT REFERENCES brukere(telefon),
+    nkkrep_signert_at TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, parti, dommer_telefon)
+  );
 `);
 
 // --- Migrations for existing databases ---
@@ -319,6 +332,10 @@ const migrations = [
   "ALTER TABLE kritikker ADD COLUMN approved_at TEXT DEFAULT NULL",
   "ALTER TABLE kritikker ADD COLUMN approved_by TEXT DEFAULT NULL",
   "ALTER TABLE kritikker ADD COLUMN nkk_comment TEXT DEFAULT NULL",
+  // Aversjonsbevis for sauetrening
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_dato TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_godkjent INTEGER DEFAULT 0",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -2672,6 +2689,209 @@ app.put("/api/hunder/:id/foreldre", async (c) => {
 
   const oppdatert = db.prepare("SELECT * FROM hunder WHERE id = ?").get(hund.id);
   return c.json(oppdatert);
+});
+
+// ============================================
+// AVERSJONSBEVIS API
+// ============================================
+
+// Last opp aversjonsbevis for en hund
+app.post("/api/hunder/:id/aversjonsbevis", async (c) => {
+  const id = c.req.param("id");
+
+  // Sjekk at hunden finnes
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const body = await c.req.json();
+  const { bilde, dato } = body;
+
+  if (!bilde) {
+    return c.json({ error: "Bilde er påkrevd" }, 400);
+  }
+
+  // Sjekk at bildet er base64 og ikke for stort (maks 5MB)
+  const base64Data = bilde.replace(/^data:image\/[a-z]+;base64,/, "");
+  const sizeInBytes = (base64Data.length * 3) / 4;
+  const maxSize = 5 * 1024 * 1024; // 5MB
+
+  if (sizeInBytes > maxSize) {
+    return c.json({ error: "Bildet er for stort. Maks 5MB tillatt." }, 400);
+  }
+
+  // Sjekk at det er et gyldig bilde-format
+  if (!bilde.match(/^data:image\/(jpeg|jpg|png|gif|webp);base64,/)) {
+    return c.json({ error: "Ugyldig bildeformat. Bruk JPEG, PNG, GIF eller WebP." }, 400);
+  }
+
+  db.prepare(`
+    UPDATE hunder
+    SET aversjonsbevis = ?,
+        aversjonsbevis_dato = ?,
+        aversjonsbevis_godkjent = 0
+    WHERE id = ?
+  `).run(bilde, dato || new Date().toISOString().slice(0, 10), id);
+
+  return c.json({
+    success: true,
+    message: "Aversjonsbevis lastet opp. Venter på godkjenning."
+  });
+});
+
+// Hent aversjonsbevis for en hund
+app.get("/api/hunder/:id/aversjonsbevis", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare(`
+    SELECT id, navn, regnr, aversjonsbevis, aversjonsbevis_dato, aversjonsbevis_godkjent
+    FROM hunder WHERE id = ?
+  `).get(id);
+
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  return c.json({
+    harAversjonsbevis: !!hund.aversjonsbevis,
+    bilde: hund.aversjonsbevis,
+    dato: hund.aversjonsbevis_dato,
+    godkjent: hund.aversjonsbevis_godkjent === 1
+  });
+});
+
+// Slett aversjonsbevis
+app.delete("/api/hunder/:id/aversjonsbevis", (c) => {
+  const id = c.req.param("id");
+
+  db.prepare(`
+    UPDATE hunder
+    SET aversjonsbevis = NULL,
+        aversjonsbevis_dato = NULL,
+        aversjonsbevis_godkjent = 0
+    WHERE id = ?
+  `).run(id);
+
+  return c.json({ success: true });
+});
+
+// Godkjenn aversjonsbevis (kun prøveleder/admin)
+app.post("/api/hunder/:id/aversjonsbevis/godkjenn", (c) => {
+  const id = c.req.param("id");
+
+  db.prepare(`
+    UPDATE hunder
+    SET aversjonsbevis_godkjent = 1
+    WHERE id = ?
+  `).run(id);
+
+  return c.json({ success: true, message: "Aversjonsbevis godkjent" });
+});
+
+// ============================================
+// PARTI-SIGNATURER API
+// ============================================
+
+// Hent signaturstatus for et parti
+app.get("/api/prover/:proveId/parti/:parti/signaturer", (c) => {
+  const proveId = c.req.param("proveId");
+  const parti = c.req.param("parti");
+
+  const signaturer = db.prepare(`
+    SELECT ps.*,
+           d.fornavn || ' ' || d.etternavn as dommer_navn,
+           n.fornavn || ' ' || n.etternavn as nkkrep_navn
+    FROM parti_signaturer ps
+    LEFT JOIN brukere d ON ps.dommer_telefon = d.telefon
+    LEFT JOIN brukere n ON ps.nkkrep_telefon = n.telefon
+    WHERE ps.prove_id = ? AND ps.parti = ?
+  `).all(proveId, parti);
+
+  return c.json({
+    signaturer,
+    dommerSignert: signaturer.some(s => s.dommer_signert_at),
+    nkkrepSignert: signaturer.some(s => s.nkkrep_signert_at)
+  });
+});
+
+// Dommer signerer partiliste
+app.post("/api/prover/:proveId/parti/:parti/signer-dommer", async (c) => {
+  const proveId = c.req.param("proveId");
+  const parti = c.req.param("parti");
+  const body = await c.req.json();
+  const { dommerTelefon } = body;
+
+  if (!dommerTelefon) {
+    return c.json({ error: "Mangler dommerTelefon" }, 400);
+  }
+
+  // Sjekk om signatur allerede finnes
+  const existing = db.prepare(`
+    SELECT * FROM parti_signaturer
+    WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+  `).get(proveId, parti, dommerTelefon);
+
+  if (existing) {
+    // Oppdater eksisterende
+    db.prepare(`
+      UPDATE parti_signaturer
+      SET dommer_signert_at = datetime('now')
+      WHERE id = ?
+    `).run(existing.id);
+  } else {
+    // Opprett ny
+    db.prepare(`
+      INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_signert_at)
+      VALUES (?, ?, ?, datetime('now'))
+    `).run(proveId, parti, dommerTelefon);
+  }
+
+  return c.json({ success: true, message: "Partiliste signert av dommer" });
+});
+
+// NKK-rep signerer partiliste
+app.post("/api/prover/:proveId/parti/:parti/signer-nkkrep", async (c) => {
+  const proveId = c.req.param("proveId");
+  const parti = c.req.param("parti");
+  const body = await c.req.json();
+  const { nkkrepTelefon, dommerTelefon } = body;
+
+  if (!nkkrepTelefon || !dommerTelefon) {
+    return c.json({ error: "Mangler nkkrepTelefon eller dommerTelefon" }, 400);
+  }
+
+  // Finn eksisterende signatur fra dommer
+  const existing = db.prepare(`
+    SELECT * FROM parti_signaturer
+    WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+  `).get(proveId, parti, dommerTelefon);
+
+  if (!existing) {
+    return c.json({ error: "Dommer må signere først" }, 400);
+  }
+
+  // Oppdater med NKK-rep signatur
+  db.prepare(`
+    UPDATE parti_signaturer
+    SET nkkrep_telefon = ?, nkkrep_signert_at = datetime('now')
+    WHERE id = ?
+  `).run(nkkrepTelefon, existing.id);
+
+  return c.json({ success: true, message: "Partiliste godkjent av NKK-representant" });
+});
+
+// Hent alle signaturer for en prøve (for admin/rapport)
+app.get("/api/prover/:proveId/signaturer", (c) => {
+  const proveId = c.req.param("proveId");
+
+  const signaturer = db.prepare(`
+    SELECT ps.*,
+           d.fornavn || ' ' || d.etternavn as dommer_navn,
+           n.fornavn || ' ' || n.etternavn as nkkrep_navn
+    FROM parti_signaturer ps
+    LEFT JOIN brukere d ON ps.dommer_telefon = d.telefon
+    LEFT JOIN brukere n ON ps.nkkrep_telefon = n.telefon
+    WHERE ps.prove_id = ?
+    ORDER BY ps.parti
+  `).all(proveId);
+
+  return c.json(signaturer);
 });
 
 // ============================================

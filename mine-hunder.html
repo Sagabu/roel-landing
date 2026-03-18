@@ -268,6 +268,63 @@
         </div>
     </div>
 
+    <!-- Aversjonsbevis Upload Modal -->
+    <div id="aversjonsModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-bold font-serif text-bark-800">Last opp aversjonsbevis</h3>
+                <button onclick="closeAversjonsModal()" class="text-bark-400 hover:text-bark-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="mb-6">
+                <p class="text-bark-600 text-sm mb-4">
+                    Last opp et tydelig bilde av hundens aversjonsbevis (sauetrening).
+                    Bildet må være lesbart slik at prøveleder kan verifisere det.
+                </p>
+
+                <div class="border-2 border-dashed border-bark-300 rounded-xl p-6 text-center hover:border-sky-400 transition cursor-pointer" onclick="document.getElementById('aversjonsInput').click()">
+                    <input type="file" id="aversjonsInput" class="hidden" accept="image/*" onchange="previewAversjonsbevis(this)">
+                    <svg class="w-12 h-12 text-bark-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <p class="text-bark-500">Klikk for å velge bilde</p>
+                    <p class="text-xs text-bark-400 mt-1">JPEG, PNG, GIF eller WebP (maks 5MB)</p>
+                </div>
+
+                <img id="aversjonsPreview" class="hidden mt-4 w-full rounded-xl border border-bark-200" alt="Forhåndsvisning">
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <div class="flex items-start gap-2">
+                    <svg class="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-sm text-amber-800">
+                        <p class="font-medium">Tips for godt bilde:</p>
+                        <ul class="mt-1 list-disc list-inside text-amber-700">
+                            <li>Ta bildet i godt lys</li>
+                            <li>Sørg for at all tekst er lesbar</li>
+                            <li>Hele dokumentet må være synlig</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="closeAversjonsModal()" class="flex-1 bg-bark-100 hover:bg-bark-200 text-bark-700 py-3 rounded-xl font-medium transition">
+                    Avbryt
+                </button>
+                <button onclick="uploadAversjonsbevis()" class="flex-1 bg-sky-500 hover:bg-sky-600 text-white py-3 rounded-xl font-medium transition">
+                    Last opp
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Critique PDF Modal -->
     <div id="critiqueModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[95vh] overflow-hidden flex flex-col">
@@ -397,7 +454,7 @@
             `).join('');
         }
 
-        function viewDogDetails(id) {
+        async function viewDogDetails(id) {
             const dog = dogs.find(d => d.id === id);
             if (!dog) return;
 
@@ -437,6 +494,57 @@
                 `;
             }
 
+            // Hent aversjonsbevis-status
+            let aversjonsHtml = '';
+            try {
+                const avResp = await fetch(`/api/hunder/${dog.id}/aversjonsbevis`);
+                if (avResp.ok) {
+                    const avData = await avResp.json();
+                    if (avData.harAversjonsbevis) {
+                        aversjonsHtml = `
+                            <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        <span class="font-medium text-green-800">Aversjonsbevis lastet opp</span>
+                                    </div>
+                                    <span class="text-xs ${avData.godkjent ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'} px-2 py-1 rounded-full">
+                                        ${avData.godkjent ? 'Godkjent' : 'Venter godkjenning'}
+                                    </span>
+                                </div>
+                                <p class="text-sm text-green-700 mb-3">Dato: ${avData.dato || 'Ukjent'}</p>
+                                <div class="flex gap-2">
+                                    <button onclick="showAversjonsbevis('${dog.id}')" class="text-sm text-sky-600 hover:text-sky-700 font-medium">Se bevis</button>
+                                    <span class="text-bark-300">|</span>
+                                    <button onclick="deleteAversjonsbevis('${dog.id}')" class="text-sm text-red-600 hover:text-red-700 font-medium">Slett</button>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        aversjonsHtml = `
+                            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                <div class="flex items-start gap-3">
+                                    <svg class="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                    </svg>
+                                    <div class="flex-1">
+                                        <p class="font-medium text-amber-800">Aversjonsbevis mangler</p>
+                                        <p class="text-sm text-amber-700 mt-1">Last opp bilde av aversjonsbeviset slik at prøveleder kan verifisere det.</p>
+                                        <button onclick="openAversjonsUpload('${dog.id}')" class="mt-3 bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 py-2 rounded-lg transition">
+                                            Last opp aversjonsbevis
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke hente aversjonsbevis:', e);
+            }
+
             document.getElementById('dogDetailsContent').innerHTML = `
                 <div class="flex items-center gap-4 mb-6">
                     <div class="w-20 h-20 rounded-xl bg-bark-100 overflow-hidden flex-shrink-0">
@@ -456,6 +564,17 @@
                     </div>
                 </div>
 
+                <!-- Aversjonsbevis -->
+                <h4 class="font-semibold text-bark-700 mb-3 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-bark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                    </svg>
+                    Aversjonsbevis (sauetrening)
+                </h4>
+                <div class="mb-6">
+                    ${aversjonsHtml}
+                </div>
+
                 <h4 class="font-semibold text-bark-700 mb-3">Jaktprøver og kritikker</h4>
                 <div class="space-y-3">
                     ${resultsHtml}
@@ -467,6 +586,124 @@
 
         function closeDogDetailsModal() {
             document.getElementById('dogDetailsModal').classList.add('hidden');
+        }
+
+        // Aversjonsbevis-funksjoner
+        let currentAversjonsHundId = null;
+
+        function openAversjonsUpload(hundId) {
+            currentAversjonsHundId = hundId;
+            document.getElementById('aversjonsModal').classList.remove('hidden');
+            document.getElementById('aversjonsPreview').classList.add('hidden');
+            document.getElementById('aversjonsInput').value = '';
+        }
+
+        function closeAversjonsModal() {
+            document.getElementById('aversjonsModal').classList.add('hidden');
+            currentAversjonsHundId = null;
+        }
+
+        function previewAversjonsbevis(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            // Sjekk filstørrelse (maks 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Bildet er for stort. Maks 5MB tillatt.');
+                input.value = '';
+                return;
+            }
+
+            // Sjekk filtype
+            if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+                alert('Ugyldig filtype. Bruk JPEG, PNG, GIF eller WebP.');
+                input.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const preview = document.getElementById('aversjonsPreview');
+                preview.src = e.target.result;
+                preview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function uploadAversjonsbevis() {
+            const input = document.getElementById('aversjonsInput');
+            const file = input.files[0];
+            if (!file || !currentAversjonsHundId) {
+                alert('Velg et bilde først');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64 = e.target.result;
+
+                try {
+                    const resp = await fetch(`/api/hunder/${currentAversjonsHundId}/aversjonsbevis`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            bilde: base64,
+                            dato: new Date().toISOString().slice(0, 10)
+                        })
+                    });
+
+                    const data = await resp.json();
+                    if (resp.ok) {
+                        alert('Aversjonsbevis lastet opp!');
+                        closeAversjonsModal();
+                        // Oppdater visningen
+                        const dog = dogs.find(d => d.id === currentAversjonsHundId);
+                        if (dog) viewDogDetails(dog.id);
+                    } else {
+                        alert('Feil: ' + (data.error || 'Kunne ikke laste opp'));
+                    }
+                } catch (e) {
+                    alert('Nettverksfeil ved opplasting');
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function showAversjonsbevis(hundId) {
+            try {
+                const resp = await fetch(`/api/hunder/${hundId}/aversjonsbevis`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.bilde) {
+                        const win = window.open('', '_blank');
+                        win.document.write(`
+                            <!DOCTYPE html>
+                            <html>
+                            <head><title>Aversjonsbevis</title></head>
+                            <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f0f0;">
+                                <img src="${data.bilde}" style="max-width:100%;max-height:100vh;object-fit:contain;">
+                            </body>
+                            </html>
+                        `);
+                    }
+                }
+            } catch (e) {
+                alert('Kunne ikke vise aversjonsbevis');
+            }
+        }
+
+        async function deleteAversjonsbevis(hundId) {
+            if (!confirm('Er du sikker på at du vil slette aversjonsbeviset?')) return;
+
+            try {
+                const resp = await fetch(`/api/hunder/${hundId}/aversjonsbevis`, { method: 'DELETE' });
+                if (resp.ok) {
+                    alert('Aversjonsbevis slettet');
+                    viewDogDetails(hundId);
+                }
+            } catch (e) {
+                alert('Kunne ikke slette aversjonsbevis');
+            }
         }
 
         function viewCritique(critiqueId, dogId) {

@@ -415,6 +415,9 @@ const migrations = [
   "ALTER TABLE klubber ADD COLUMN admin_epost TEXT DEFAULT NULL",
   "ALTER TABLE klubber ADD COLUMN siste_innlogging TEXT DEFAULT NULL",
   "ALTER TABLE klubber ADD COLUMN verifisert INTEGER DEFAULT 0",
+  // Sporing av dommere med brukerprofil
+  "ALTER TABLE fkf_godkjente_dommere ADD COLUMN linked_bruker_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE fkf_godkjente_dommere ADD COLUMN linked_at TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -1169,7 +1172,7 @@ app.post("/api/auth/verify-code", async (c) => {
   // Sjekk om dette er en FKF-godkjent dommer
   const normalized = normalizePhone(telefon);
   const fkfDommer = db.prepare(`
-    SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost
+    SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost, linked_bruker_telefon
     FROM fkf_godkjente_dommere
     WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
   `).get(normalized, normalized);
@@ -1185,6 +1188,11 @@ app.post("/api/auth/verify-code", async (c) => {
         "auto_dommer_tildelt",
         `Bruker ${telefon} fikk automatisk dommer-rolle ved innlogging (matchet FKF-dommer: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`
       );
+    }
+
+    // Oppdater linked_bruker_telefon på FKF-dommer hvis ikke allerede satt
+    if (fkfDommer && !fkfDommer.linked_bruker_telefon) {
+      db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
     }
 
     const token = generateToken(bruker);
@@ -1222,6 +1230,9 @@ app.post("/api/auth/verify-code", async (c) => {
       "auto_bruker_dommer",
       `Ny bruker opprettet automatisk fra FKF-dommerliste: ${fkfDommer.fornavn} ${fkfDommer.etternavn} (${telefon})`
     );
+
+    // Oppdater linked_bruker_telefon på FKF-dommer
+    db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
 
     bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
     const token = generateToken(bruker);
@@ -1359,7 +1370,35 @@ app.post("/api/auth/register/verify", async (c) => {
     `).run(telefon, fornavn, etternavn, epost, passordHash, now, now, now);
   }
 
-  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  let bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  // Sjekk om dette er en FKF-godkjent dommer
+  const normalized = normalizePhone(telefon);
+  const fkfDommer = db.prepare(`
+    SELECT id, fornavn, etternavn, linked_bruker_telefon
+    FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+  `).get(normalized, normalized);
+
+  let isFkfDommer = false;
+  if (fkfDommer) {
+    isFkfDommer = true;
+    // Gi automatisk dommer-rolle
+    if (!bruker.rolle.includes('dommer')) {
+      const nyRolle = (bruker.rolle || 'deltaker') + ',dommer';
+      db.prepare("UPDATE brukere SET rolle = ?, updated_at = datetime('now') WHERE telefon = ?").run(nyRolle, telefon);
+      bruker.rolle = nyRolle;
+      console.log(`[Auto-dommer] Ny registrert bruker ${telefon} fikk dommer-rolle (FKF: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`);
+      db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+        "auto_dommer_registrering",
+        `Bruker ${telefon} fikk automatisk dommer-rolle ved registrering (matchet FKF-dommer: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`
+      );
+    }
+    // Oppdater linked_bruker_telefon hvis ikke allerede satt
+    if (!fkfDommer.linked_bruker_telefon) {
+      db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
+    }
+  }
 
   // Generer JWT
   const token = jwt.sign(
@@ -1382,7 +1421,8 @@ app.post("/api/auth/register/verify", async (c) => {
       etternavn: bruker.etternavn,
       epost: bruker.epost,
       rolle: bruker.rolle
-    }
+    },
+    isFkfDommer
   });
 });
 
@@ -1615,7 +1655,20 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
 
   // Opprett brukerprofil for klubbleder hvis den ikke finnes
   let brukerOpprettet = false;
-  const eksisterendeBruker = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+  let isFkfDommer = false;
+  const eksisterendeBruker = db.prepare("SELECT telefon, rolle FROM brukere WHERE telefon = ?").get(telefon);
+
+  // Sjekk om dette er en FKF-godkjent dommer
+  const normalized = normalizePhone(telefon);
+  const fkfDommer = db.prepare(`
+    SELECT id, fornavn, etternavn, linked_bruker_telefon
+    FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+  `).get(normalized, normalized);
+
+  if (fkfDommer) {
+    isFkfDommer = true;
+  }
 
   if (!eksisterendeBruker && lederNavn) {
     // Split navn i fornavn og etternavn
@@ -1623,12 +1676,31 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
     const fornavn = navnDeler[0] || "";
     const etternavn = navnDeler.slice(1).join(" ") || "";
 
+    // Sett rolle - inkluder dommer hvis FKF-godkjent
+    const rolle = fkfDommer ? 'deltaker,dommer' : 'deltaker';
+
     db.prepare(`
       INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, rolle)
-      VALUES (?, ?, ?, ?, ?, 1, ?, 'deltaker')
-    `).run(telefon, fornavn, etternavn, epost, passordHash, now);
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(telefon, fornavn, etternavn, epost, passordHash, now, rolle);
     brukerOpprettet = true;
-    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})`);
+    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})${fkfDommer ? ' [FKF-dommer]' : ''}`);
+
+    // Oppdater FKF-dommer kobling
+    if (fkfDommer && !fkfDommer.linked_bruker_telefon) {
+      db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
+      db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+        "auto_dommer_klubb_registrering",
+        `Klubbleder ${lederNavn} (${telefon}) fikk automatisk dommer-rolle ved klubb-registrering (matchet FKF-dommer: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`
+      );
+    }
+  } else if (eksisterendeBruker && fkfDommer && !eksisterendeBruker.rolle.includes('dommer')) {
+    // Eksisterende bruker som er FKF-dommer men mangler rollen
+    const nyRolle = eksisterendeBruker.rolle + ',dommer';
+    db.prepare("UPDATE brukere SET rolle = ?, updated_at = datetime('now') WHERE telefon = ?").run(nyRolle, telefon);
+    if (!fkfDommer.linked_bruker_telefon) {
+      db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
+    }
   }
 
   const token = jwt.sign(
@@ -1650,7 +1722,8 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
       orgnummer: klubb.orgnummer,
       region: klubb.region
     },
-    brukerOpprettet
+    brukerOpprettet,
+    isFkfDommer
   });
 });
 
@@ -1974,6 +2047,33 @@ app.get("/api/stats", (c) => {
   const klubbCount = db.prepare("SELECT COUNT(*) as n FROM klubber").get().n;
   const proveCount = db.prepare("SELECT COUNT(*) as n FROM prover").get().n;
   return c.json({ kvEntries: kvCount, adminLogEntries: logCount, trial, brukere: brukerCount, hunder: hundCount, klubber: klubbCount, prover: proveCount });
+});
+
+// Dommer-statistikk for superadmin
+app.get("/api/stats/dommere", (c) => {
+  const totalt = db.prepare("SELECT COUNT(*) as n FROM fkf_godkjente_dommere WHERE aktiv = 1").get().n;
+  const medProfil = db.prepare("SELECT COUNT(*) as n FROM fkf_godkjente_dommere WHERE aktiv = 1 AND linked_bruker_telefon IS NOT NULL").get().n;
+  const utenProfil = totalt - medProfil;
+
+  // Liste over dommere med profilstatus
+  const dommere = db.prepare(`
+    SELECT
+      d.id, d.fornavn, d.etternavn, d.telefon1, d.telefon2, d.epost,
+      d.linked_bruker_telefon, d.linked_at,
+      b.rolle as bruker_rolle
+    FROM fkf_godkjente_dommere d
+    LEFT JOIN brukere b ON d.linked_bruker_telefon = b.telefon
+    WHERE d.aktiv = 1
+    ORDER BY d.etternavn, d.fornavn
+  `).all();
+
+  return c.json({
+    totalt,
+    medProfil,
+    utenProfil,
+    prosent: totalt > 0 ? Math.round((medProfil / totalt) * 100) : 0,
+    dommere
+  });
 });
 
 // ============================================

@@ -48,7 +48,7 @@
 
     <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
         <!-- Stats -->
-        <div id="statsCards" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div id="statsCards" class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
                 <p class="text-bark-500 text-sm">Datapunkter</p>
                 <p id="statKv" class="text-3xl font-bold text-sky-700 mt-1">-</p>
@@ -60,6 +60,41 @@
             <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
                 <p class="text-bark-500 text-sm">Status</p>
                 <p id="statStatus" class="text-lg font-bold text-sky-700 mt-1">-</p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
+                <p class="text-bark-500 text-sm">FKF-dommere registrert</p>
+                <p id="statDommere" class="text-3xl font-bold text-sky-700 mt-1">-</p>
+                <p id="statDommereDetalj" class="text-xs text-bark-400 mt-1">-</p>
+            </div>
+        </div>
+
+        <!-- Dommer-registreringsstatus -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-serif font-bold text-bark-800">FKF-dommere - Registreringsstatus</h2>
+                    <p class="text-sm text-bark-500">Oversikt over hvilke dommere som har opprettet brukerprofil</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="filterDommere('alle')" class="px-3 py-1 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200 transition" id="filterAlle">Alle</button>
+                    <button onclick="filterDommere('registrert')" class="px-3 py-1 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200 transition" id="filterRegistrert">Registrert</button>
+                    <button onclick="filterDommere('mangler')" class="px-3 py-1 rounded-lg text-sm font-medium bg-bark-100 text-bark-700 hover:bg-bark-200 transition" id="filterMangler">Mangler</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-bark-200">
+                            <th class="text-left py-2 px-3 font-medium text-bark-600">Navn</th>
+                            <th class="text-left py-2 px-3 font-medium text-bark-600">Telefon</th>
+                            <th class="text-left py-2 px-3 font-medium text-bark-600">Status</th>
+                            <th class="text-left py-2 px-3 font-medium text-bark-600">Registrert</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dommerRegistreringListe">
+                        <tr><td colspan="4" class="py-4 text-center text-bark-400">Laster...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -358,6 +393,77 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
         document.getElementById('statKv').textContent = s.kvEntries;
         document.getElementById('statLog').textContent = s.adminLogEntries;
         document.getElementById('statStatus').textContent = s.trial?.is_published ? '✓ Publisert' : 'Kladd';
+
+        // Last dommer-statistikk
+        loadDommerStats();
+    }
+
+    let alleDommere = [];
+    let aktivtFilter = 'alle';
+
+    async function loadDommerStats() {
+        try {
+            const r = await fetch('/api/stats/dommere');
+            const data = await r.json();
+
+            document.getElementById('statDommere').textContent = `${data.prosent}%`;
+            document.getElementById('statDommereDetalj').textContent = `${data.medProfil} av ${data.totalt} dommere`;
+
+            alleDommere = data.dommere || [];
+            renderDommerListe();
+        } catch (e) {
+            console.error('Kunne ikke laste dommer-statistikk:', e);
+            document.getElementById('statDommere').textContent = '-';
+        }
+    }
+
+    function filterDommere(filter) {
+        aktivtFilter = filter;
+        // Oppdater knapper
+        document.querySelectorAll('[id^="filter"]').forEach(btn => {
+            btn.classList.remove('bg-sky-600', 'text-white');
+            btn.classList.add('bg-bark-100', 'text-bark-700');
+        });
+        const activeBtn = document.getElementById('filter' + filter.charAt(0).toUpperCase() + filter.slice(1));
+        if (activeBtn) {
+            activeBtn.classList.remove('bg-bark-100', 'text-bark-700');
+            activeBtn.classList.add('bg-sky-600', 'text-white');
+        }
+        renderDommerListe();
+    }
+
+    function renderDommerListe() {
+        const tbody = document.getElementById('dommerRegistreringListe');
+        let filtrert = alleDommere;
+
+        if (aktivtFilter === 'registrert') {
+            filtrert = alleDommere.filter(d => d.linked_bruker_telefon);
+        } else if (aktivtFilter === 'mangler') {
+            filtrert = alleDommere.filter(d => !d.linked_bruker_telefon);
+        }
+
+        if (filtrert.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-bark-400">Ingen dommere funnet</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filtrert.map(d => {
+            const harProfil = !!d.linked_bruker_telefon;
+            const registrertDato = d.linked_at ? new Date(d.linked_at).toLocaleDateString('no-NO') : '-';
+            return `
+                <tr class="border-b border-bark-100 hover:bg-bark-50">
+                    <td class="py-2 px-3 font-medium">${d.fornavn} ${d.etternavn}</td>
+                    <td class="py-2 px-3 text-bark-600">${d.telefon1 || d.telefon2 || '-'}</td>
+                    <td class="py-2 px-3">
+                        ${harProfil
+                            ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">✓ Registrert</span>'
+                            : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-bark-100 text-bark-600">Mangler profil</span>'
+                        }
+                    </td>
+                    <td class="py-2 px-3 text-bark-500 text-xs">${registrertDato}</td>
+                </tr>
+            `;
+        }).join('');
     }
 
     async function loadTrial() {

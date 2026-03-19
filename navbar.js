@@ -22,10 +22,17 @@
         const userProfile = localStorage.getItem('userProfile');
         const judgeSession = localStorage.getItem('judgeSession');
 
+        // Sjekk også klubb-innlogging
+        const klubbToken = localStorage.getItem('klubbToken');
+        const klubbSession = localStorage.getItem('klubbSession');
+
         let user = null;
         let role = null;
+        let klubb = null;
+        let harBrukerProfil = false;
+        let harKlubbProfil = false;
 
-        // Sjekk JWT-token først (nytt system)
+        // Sjekk JWT-token først (nytt system for brukere)
         if (jwtToken && jwtUser) {
             try {
                 // Verifiser at token ikke er utløpt
@@ -33,6 +40,7 @@
                 if (payload.exp * 1000 > Date.now()) {
                     const userData = JSON.parse(jwtUser);
                     user = { name: `${userData.fornavn} ${userData.etternavn}`, phone: userData.telefon };
+                    harBrukerProfil = true;
                     // Bestem rolle fra komma-separert liste
                     const roller = (userData.rolle || '').split(',').map(r => r.trim());
                     if (roller.includes('admin')) {
@@ -44,31 +52,46 @@
                     } else {
                         role = 'deltaker';
                     }
-                    return { user, role };
                 }
             } catch (e) {}
         }
 
-        // Fallback til legacy system
-        if (judgeSession) {
+        // Sjekk klubb-innlogging
+        if (klubbToken && klubbSession) {
             try {
-                const session = JSON.parse(judgeSession);
-                user = { name: session.name, phone: session.phone };
-                role = session.isNkkRep ? 'nkk' : 'dommer';
-            } catch (e) {}
-        } else if (userProfile) {
-            try {
-                const profile = JSON.parse(userProfile);
-                user = { name: profile.name, phone: profile.phone };
-                role = profile.role || 'deltaker';
-                // Check for admin role
-                if (profile.isAdmin || profile.role === 'admin') {
-                    role = 'admin';
+                const payload = JSON.parse(atob(klubbToken.split('.')[1]));
+                if (payload.exp * 1000 > Date.now()) {
+                    const klubbData = JSON.parse(klubbSession);
+                    klubb = { id: klubbData.id, navn: klubbData.navn };
+                    harKlubbProfil = true;
                 }
             } catch (e) {}
         }
 
-        return { user, role };
+        // Fallback til legacy system for brukere
+        if (!user) {
+            if (judgeSession) {
+                try {
+                    const session = JSON.parse(judgeSession);
+                    user = { name: session.name, phone: session.phone };
+                    role = session.isNkkRep ? 'nkk' : 'dommer';
+                    harBrukerProfil = true;
+                } catch (e) {}
+            } else if (userProfile) {
+                try {
+                    const profile = JSON.parse(userProfile);
+                    user = { name: profile.name, phone: profile.phone };
+                    role = profile.role || 'deltaker';
+                    harBrukerProfil = true;
+                    // Check for admin role
+                    if (profile.isAdmin || profile.role === 'admin') {
+                        role = 'admin';
+                    }
+                } catch (e) {}
+            }
+        }
+
+        return { user, role, klubb, harBrukerProfil, harKlubbProfil };
     }
 
     // Superadmin telefonnummer (har tilgang til admin-panel uansett rolle)
@@ -168,9 +191,19 @@
         }
     };
 
+    // Bytt til klubbvisning
+    window.switchToKlubb = function() {
+        window.location.href = 'klubb-dashboard.html';
+    };
+
+    // Bytt til deltakervisning
+    window.switchToDeltaker = function() {
+        window.location.href = 'profil.html';
+    };
+
     // Render navbar
     function renderNavbar() {
-        const { user, role } = getUserState();
+        const { user, role, klubb, harBrukerProfil, harKlubbProfil } = getUserState();
         const userPhone = user?.phone || '';
         const navItems = getNavItems(role || 'public', currentPage, userPhone);
 
@@ -212,6 +245,32 @@
                         <div class="flex items-center gap-3">
                             ${user ? `
                                 <span class="hidden sm:inline text-forest-200 text-sm">${user.name}</span>
+                                ${harKlubbProfil ? `
+                                    <button onclick="switchToKlubb()"
+                                            class="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                            title="Bytt til klubbvisning">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                                        </svg>
+                                        <span class="hidden lg:inline">${klubb?.navn || 'Klubb'}</span>
+                                    </button>
+                                ` : ''}
+                                <button onclick="sharedLogout()"
+                                        class="text-forest-200 hover:text-white px-3 py-2 text-sm font-medium transition">
+                                    Logg ut
+                                </button>
+                            ` : klubb ? `
+                                <span class="hidden sm:inline text-forest-200 text-sm">${klubb.navn}</span>
+                                ${harBrukerProfil ? `
+                                    <button onclick="switchToDeltaker()"
+                                            class="bg-earth-500 hover:bg-earth-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                            title="Bytt til deltakerprofil">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                        </svg>
+                                        <span class="hidden lg:inline">Deltaker</span>
+                                    </button>
+                                ` : ''}
                                 <button onclick="sharedLogout()"
                                         class="text-forest-200 hover:text-white px-3 py-2 text-sm font-medium transition">
                                     Logg ut

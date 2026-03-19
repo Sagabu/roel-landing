@@ -111,7 +111,7 @@ db.exec(`
   -- Hunder-tabell
   CREATE TABLE IF NOT EXISTS hunder (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    regnr TEXT UNIQUE NOT NULL,
+    regnr TEXT UNIQUE,
     navn TEXT NOT NULL,
     rase TEXT DEFAULT '',
     kjonn TEXT DEFAULT 'male',
@@ -122,6 +122,7 @@ db.exec(`
     mor_id INTEGER REFERENCES hunder(id),
     far_regnr TEXT DEFAULT '',
     mor_regnr TEXT DEFAULT '',
+    bilde TEXT DEFAULT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -382,9 +383,57 @@ const migrations = [
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_godkjent INTEGER DEFAULT 0",
   // Vipps-integrasjon for klubber
   "ALTER TABLE klubber ADD COLUMN vipps_nummer TEXT DEFAULT NULL",
+  // Bilde-kolonne for hunder
+  "ALTER TABLE hunder ADD COLUMN bilde TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
+}
+
+// Fix regnr NOT NULL constraint on existing databases (allow dogs without registration number)
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(hunder)").all();
+  const regnrCol = tableInfo.find(c => c.name === 'regnr');
+  if (regnrCol && regnrCol.notnull === 1) {
+    // Get current columns to handle migration correctly
+    const cols = tableInfo.map(c => c.name);
+    const selectCols = cols.join(', ');
+    const needsBilde = !cols.includes('bilde');
+    const needsAversjon = !cols.includes('aversjonsbevis');
+
+    db.exec("BEGIN TRANSACTION");
+    db.exec(`ALTER TABLE hunder RENAME TO hunder_old`);
+    db.exec(`
+      CREATE TABLE hunder (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        regnr TEXT UNIQUE,
+        navn TEXT NOT NULL,
+        rase TEXT DEFAULT '',
+        kjonn TEXT DEFAULT 'male',
+        fodt TEXT DEFAULT '',
+        eier_telefon TEXT REFERENCES brukere(telefon),
+        klubb_id TEXT REFERENCES klubber(id),
+        far_id INTEGER REFERENCES hunder(id),
+        mor_id INTEGER REFERENCES hunder(id),
+        far_regnr TEXT DEFAULT '',
+        mor_regnr TEXT DEFAULT '',
+        bilde TEXT DEFAULT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        aversjonsbevis TEXT DEFAULT NULL,
+        aversjonsbevis_dato TEXT DEFAULT NULL,
+        aversjonsbevis_godkjent INTEGER DEFAULT 0
+      )
+    `);
+    db.exec(`INSERT INTO hunder (${selectCols}) SELECT ${selectCols} FROM hunder_old`);
+    db.exec(`DROP TABLE hunder_old`);
+    db.exec("COMMIT");
+    console.log("✅ Migrated hunder table: regnr now nullable, bilde column added");
+  }
+} catch (e) {
+  try { db.exec("ROLLBACK"); } catch {}
+  if (!e.message.includes('already exists') && !e.message.includes('no such table: hunder_old')) {
+    console.error("Migration warning:", e.message);
+  }
 }
 
 // --- Seed initial data if tables are empty ---
@@ -1510,16 +1559,18 @@ app.put("/api/hunder/:id", async (c) => {
     return c.json({ error: "Hund ikke funnet" }, 404);
   }
 
-  const fields = ["regnr", "navn", "rase", "kjonn", "fodt", "klubb_id", "bilde"];
+  // Map frontend field names → db column names
+  const fieldMap = {
+    regnr: "regnr", navn: "navn", rase: "rase", kjonn: "kjonn",
+    fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde"
+  };
   const sets = [];
   const vals = [];
 
-  for (const f of fields) {
-    if (f in body) {
-      // Map frontend field names to db field names
-      const dbField = f === "fodselsdato" ? "fodt" : f;
-      sets.push(`${dbField} = ?`);
-      vals.push(body[f]);
+  for (const [bodyKey, dbCol] of Object.entries(fieldMap)) {
+    if (bodyKey in body) {
+      sets.push(`${dbCol} = ?`);
+      vals.push(body[bodyKey]);
     }
   }
 

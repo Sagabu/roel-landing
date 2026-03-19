@@ -430,26 +430,43 @@
 
         // Hent hunder fra API
         async function loadDogs() {
-            // Hent telefonnummer fra FuglehundAuth
-            // Prøv FuglehundAuth først, deretter direkte localStorage
+            // Hent telefonnummer fra alle mulige kilder
+            userPhone = '';
+
+            // 1. Prøv FuglehundAuth først
             userPhone = FuglehundAuth.getSessionPhone() || '';
 
-            // Fallback: sjekk localStorage direkte
+            // 2. Fallback: sjekk localStorage direkte
             if (!userPhone) {
-                const userSession = localStorage.getItem('userSession');
-                const userProfile = localStorage.getItem('userProfile');
-                const directPhone = localStorage.getItem('userPhone');
+                const sources = [
+                    { key: 'userSession', field: 'phone' },
+                    { key: 'userProfile', field: 'phone' },
+                    { key: 'fuglehund_user', field: 'telefon' },
+                    { key: 'judgeSession', field: 'phone' }
+                ];
 
-                if (userSession) {
-                    try { userPhone = JSON.parse(userSession).phone || ''; } catch {}
-                }
-                if (!userPhone && userProfile) {
-                    try { userPhone = JSON.parse(userProfile).phone || ''; } catch {}
-                }
-                if (!userPhone && directPhone) {
-                    userPhone = directPhone;
+                for (const source of sources) {
+                    const data = localStorage.getItem(source.key);
+                    if (data) {
+                        try {
+                            const parsed = JSON.parse(data);
+                            const phone = parsed[source.field] || parsed.phone || parsed.telefon;
+                            if (phone) {
+                                userPhone = phone;
+                                break;
+                            }
+                        } catch {}
+                    }
                 }
             }
+
+            // 3. Siste fallback: direkte userPhone
+            if (!userPhone) {
+                userPhone = localStorage.getItem('userPhone') || '';
+            }
+
+            // Normaliser telefonnummer (fjern alt unntatt tall)
+            userPhone = userPhone.replace(/\D/g, '');
 
             console.log('Debug - userPhone:', userPhone);
 
@@ -470,10 +487,12 @@
             }
 
             console.log('Henter hunder for telefon:', userPhone);
+            console.log('API URL:', `/api/brukere/${userPhone}/hunder`);
 
             try {
                 const resp = await fetch(`/api/brukere/${userPhone}/hunder`);
                 console.log('API respons status:', resp.status);
+                console.log('API respons headers:', Object.fromEntries(resp.headers.entries()));
 
                 if (resp.ok) {
                     const data = await resp.json();
@@ -510,6 +529,16 @@
 
         // Initialize
         async function init() {
+            // Debug: Vis alle relevante localStorage-verdier
+            console.log('=== DEBUG: localStorage-status ===');
+            console.log('userSession:', localStorage.getItem('userSession'));
+            console.log('userProfile:', localStorage.getItem('userProfile'));
+            console.log('fuglehund_user:', localStorage.getItem('fuglehund_user'));
+            console.log('userPhone:', localStorage.getItem('userPhone'));
+            console.log('FuglehundAuth.getSessionPhone():', FuglehundAuth.getSessionPhone());
+            console.log('FuglehundAuth.isLoggedIn():', FuglehundAuth.isLoggedIn());
+            console.log('=================================');
+
             await loadDogs();
         }
 

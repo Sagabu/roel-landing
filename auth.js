@@ -388,7 +388,7 @@ const FuglehundAuth = (function() {
     'dommer-vk.html': 'dommer',
     'dommer-kritikk.html': 'dommer',
     'admin.html': 'admin',         // Krever admin-rolle
-    'admin-panel.html': 'admin',
+    // admin-panel.html er beskyttet med PIN via admin-lock.js, ikke rolle
     'klubb.html': 'admin',
     'opprett-prove.html': 'admin',
     'opprett-klubb.html': 'admin',

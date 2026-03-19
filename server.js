@@ -185,6 +185,25 @@ db.exec(`
     UNIQUE(klubb_id, telefon_normalized)
   );
 
+  -- Klubb-forespørsler (ventende klubb-opprettelser)
+  CREATE TABLE IF NOT EXISTS klubb_foresporsel (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    orgnummer TEXT NOT NULL,
+    navn TEXT NOT NULL,
+    postnummer TEXT DEFAULT '',
+    sted TEXT DEFAULT '',
+    adresse TEXT DEFAULT '',
+    leder_navn TEXT NOT NULL,
+    leder_telefon TEXT NOT NULL,
+    leder_epost TEXT DEFAULT '',
+    ekstra_admins TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'pending',
+    behandlet_av TEXT DEFAULT NULL,
+    behandlet_dato TEXT DEFAULT NULL,
+    avslag_grunn TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Kritikker-tabell (fullstendige FKF kritikkskjemaer)
   CREATE TABLE IF NOT EXISTS kritikker (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1491,6 +1510,220 @@ app.post("/api/klubber/:id/medlemmer/match", requireAdmin, (c) => {
 app.delete("/api/klubber/:id/medlemmer", requireAdmin, (c) => {
   const klubbId = c.req.param("id");
   db.prepare("DELETE FROM klubb_medlemmer WHERE klubb_id = ?").run(klubbId);
+  return c.json({ success: true });
+});
+
+// ============================================
+// KLUBB-FORESPØRSLER API
+// ============================================
+
+// Send inn klubb-forespørsel (offentlig - ingen auth kreves)
+app.post("/api/klubb-foresporsel", async (c) => {
+  const body = await c.req.json();
+  const { orgnummer, navn, postnummer, sted, adresse, leder, admins } = body;
+
+  if (!orgnummer || !navn || !leder?.navn || !leder?.telefon) {
+    return c.json({ error: "Mangler påkrevde felt" }, 400);
+  }
+
+  // Sjekk om orgnummer allerede finnes
+  const existing = db.prepare("SELECT id FROM klubber WHERE orgnummer = ?").get(orgnummer.replace(/\s/g, ''));
+  if (existing) {
+    return c.json({ error: "En klubb med dette organisasjonsnummeret er allerede registrert" }, 400);
+  }
+
+  // Sjekk om det allerede er en ventende forespørsel
+  const pendingRequest = db.prepare("SELECT id FROM klubb_foresporsel WHERE orgnummer = ? AND status = 'pending'").get(orgnummer.replace(/\s/g, ''));
+  if (pendingRequest) {
+    return c.json({ error: "Det finnes allerede en ventende forespørsel for dette organisasjonsnummeret" }, 400);
+  }
+
+  const result = db.prepare(`
+    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, ekstra_admins)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    orgnummer.replace(/\s/g, ''),
+    navn.trim(),
+    postnummer || '',
+    sted || '',
+    adresse || '',
+    leder.navn.trim(),
+    normalizePhone(leder.telefon),
+    leder.email || '',
+    JSON.stringify(admins || [])
+  );
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "klubb_foresporsel",
+    `Ny klubb-forespørsel: ${navn} (org.nr: ${orgnummer})`
+  );
+
+  return c.json({ success: true, id: result.lastInsertRowid });
+});
+
+// Hent alle klubb-forespørsler (kun superadmin)
+app.get("/api/klubb-foresporsel", (c) => {
+  const status = c.req.query("status") || "pending";
+  const rows = db.prepare(`
+    SELECT * FROM klubb_foresporsel
+    WHERE status = ?
+    ORDER BY created_at DESC
+  `).all(status);
+  return c.json({ foresporsel: rows });
+});
+
+// Godkjenn klubb-forespørsel (kun superadmin)
+app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
+  const id = c.req.param("id");
+  const foresporsel = db.prepare("SELECT * FROM klubb_foresporsel WHERE id = ?").get(id);
+
+  if (!foresporsel) {
+    return c.json({ error: "Forespørsel ikke funnet" }, 404);
+  }
+
+  if (foresporsel.status !== 'pending') {
+    return c.json({ error: "Denne forespørselen er allerede behandlet" }, 400);
+  }
+
+  // Generer klubb-ID fra navn
+  const klubbId = foresporsel.navn
+    .toLowerCase()
+    .replace(/[^a-zæøå0-9\s]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 30);
+
+  // Opprett klubb
+  db.prepare(`
+    INSERT INTO klubber (id, orgnummer, navn, region)
+    VALUES (?, ?, ?, ?)
+  `).run(klubbId, foresporsel.orgnummer, foresporsel.navn, '');
+
+  // Opprett bruker for leder hvis ikke finnes
+  const existingUser = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
+  if (!existingUser) {
+    const nameParts = foresporsel.leder_navn.split(' ');
+    const fornavn = nameParts[0] || '';
+    const etternavn = nameParts.slice(1).join(' ') || '';
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
+      VALUES (?, ?, ?, ?, 'deltaker,klubbleder')
+    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost);
+  } else {
+    // Oppdater rolle til å inkludere klubbleder
+    db.prepare(`
+      UPDATE brukere SET rolle = rolle || ',klubbleder'
+      WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
+    `).run(foresporsel.leder_telefon);
+  }
+
+  // Legg til leder som klubb-admin
+  db.prepare(`
+    INSERT OR IGNORE INTO klubb_admins (telefon, klubb_id, rolle)
+    VALUES (?, ?, 'leder')
+  `).run(foresporsel.leder_telefon, klubbId);
+
+  // Behandle ekstra admins
+  try {
+    const ekstraAdmins = JSON.parse(foresporsel.ekstra_admins || '[]');
+    for (const admin of ekstraAdmins) {
+      if (admin.phone) {
+        const adminTlf = normalizePhone(admin.phone);
+        db.prepare(`
+          INSERT OR IGNORE INTO klubb_admins (telefon, klubb_id, rolle)
+          VALUES (?, ?, 'admin')
+        `).run(adminTlf, klubbId);
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  // Oppdater forespørsel-status
+  db.prepare(`
+    UPDATE klubb_foresporsel
+    SET status = 'approved', behandlet_dato = datetime('now')
+    WHERE id = ?
+  `).run(id);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "klubb_godkjent",
+    `Godkjent klubb: ${foresporsel.navn} (ID: ${klubbId})`
+  );
+
+  return c.json({ success: true, klubbId });
+});
+
+// Avslå klubb-forespørsel (kun superadmin)
+app.post("/api/klubb-foresporsel/:id/avslaa", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { grunn } = body;
+
+  const foresporsel = db.prepare("SELECT * FROM klubb_foresporsel WHERE id = ?").get(id);
+  if (!foresporsel) {
+    return c.json({ error: "Forespørsel ikke funnet" }, 404);
+  }
+
+  db.prepare(`
+    UPDATE klubb_foresporsel
+    SET status = 'rejected', behandlet_dato = datetime('now'), avslag_grunn = ?
+    WHERE id = ?
+  `).run(grunn || '', id);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "klubb_avslatt",
+    `Avslått klubb-forespørsel: ${foresporsel.navn} - ${grunn || 'Ingen grunn oppgitt'}`
+  );
+
+  return c.json({ success: true });
+});
+
+// ============================================
+// SUPERADMIN API - Brukeradministrasjon
+// ============================================
+
+// Hent alle brukere (kun superadmin)
+app.get("/api/superadmin/brukere", (c) => {
+  const search = c.req.query("search") || '';
+  const limit = parseInt(c.req.query("limit") || '50');
+  const offset = parseInt(c.req.query("offset") || '0');
+
+  let rows;
+  if (search) {
+    rows = db.prepare(`
+      SELECT telefon, fornavn, etternavn, epost, rolle, created_at
+      FROM brukere
+      WHERE telefon LIKE ? OR fornavn LIKE ? OR etternavn LIKE ? OR epost LIKE ?
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit, offset);
+  } else {
+    rows = db.prepare(`
+      SELECT telefon, fornavn, etternavn, epost, rolle, created_at
+      FROM brukere
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+  }
+
+  const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
+  return c.json({ brukere: rows, total });
+});
+
+// Oppdater bruker-rolle (kun superadmin)
+app.put("/api/superadmin/brukere/:telefon/rolle", async (c) => {
+  const telefon = c.req.param("telefon");
+  const body = await c.req.json();
+  const { rolle } = body;
+
+  if (!rolle) {
+    return c.json({ error: "Rolle må oppgis" }, 400);
+  }
+
+  db.prepare("UPDATE brukere SET rolle = ?, updated_at = datetime('now') WHERE telefon = ?").run(rolle, telefon);
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_rolle_endret",
+    `Endret rolle for ${telefon} til: ${rolle}`
+  );
+
   return c.json({ success: true });
 });
 

@@ -305,6 +305,20 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
             </div>
         </div>
 
+        <!-- Undersøkelsessvar -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-serif font-bold text-bark-800">Undersøkelsessvar</h2>
+                    <p class="text-sm text-bark-500">Svar fra dommere på spørreundersøkelsen</p>
+                </div>
+                <span id="surveyCount" class="px-3 py-1 bg-sky-100 text-sky-700 rounded-full text-sm font-medium">0 svar</span>
+            </div>
+            <div id="surveyList" class="space-y-4">
+                <p class="text-bark-400">Laster...</p>
+            </div>
+        </div>
+
         <!-- Brukeroversikt -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
             <div class="flex items-center justify-between mb-4">
@@ -892,11 +906,117 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
         brukerSearchTimeout = setTimeout(() => loadBrukere(e.target.value), 300);
     });
 
+    // ========================================
+    // UNDERSØKELSESSVAR
+    // ========================================
+    async function loadSurveys() {
+        try {
+            const resp = await fetch('/api/storage');
+            const { keys } = await resp.json();
+
+            // Filtrer ut survey-nøkler
+            const surveyKeys = keys.filter(k => k.key.startsWith('survey_'));
+
+            document.getElementById('surveyCount').textContent = `${surveyKeys.length} svar`;
+
+            const container = document.getElementById('surveyList');
+            if (surveyKeys.length === 0) {
+                container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen svar mottatt ennå</p>';
+                return;
+            }
+
+            // Hent alle survey-data
+            const surveys = await Promise.all(surveyKeys.map(async k => {
+                const r = await fetch(`/api/storage/${encodeURIComponent(k.key)}`);
+                const { value } = await r.json();
+                return { key: k.key, data: typeof value === 'string' ? JSON.parse(value) : value, updated: k.updated_at };
+            }));
+
+            // Sorter etter tidspunkt (nyeste først)
+            surveys.sort((a, b) => new Date(b.data.submitted_at || b.updated) - new Date(a.data.submitted_at || a.updated));
+
+            container.innerHTML = surveys.map((s, idx) => {
+                const d = s.data;
+                const dato = d.submitted_at ? new Date(d.submitted_at).toLocaleString('no-NO') : s.updated;
+
+                return `
+                <details class="border border-bark-200 rounded-xl">
+                    <summary class="px-4 py-3 cursor-pointer hover:bg-bark-50 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <span class="bg-sky-100 text-sky-700 rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">${idx + 1}</span>
+                            <div>
+                                <span class="font-medium text-bark-700">${d.navn || 'Anonym'}</span>
+                                <span class="text-bark-400 text-sm ml-2">${d.alder || ''}</span>
+                            </div>
+                        </div>
+                        <span class="text-xs text-bark-400">${dato}</span>
+                    </summary>
+                    <div class="px-4 py-4 bg-bark-50 border-t border-bark-200 space-y-3">
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div><strong>Erfaring:</strong> ${d.erfaring || '-'}</div>
+                            <div><strong>Prøver/sesong:</strong> ${d.prover_per_ar || '-'}</div>
+                        </div>
+
+                        ${d.papir_utfordringer ? `
+                        <div class="text-sm">
+                            <strong>Utfordringer med papir:</strong>
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                ${(Array.isArray(d.papir_utfordringer) ? d.papir_utfordringer : [d.papir_utfordringer]).map(u => `<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">${u}</span>`).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        ${d.karakterer_underveis ? `<div class="text-sm"><strong>Karakterer underveis:</strong> ${d.karakterer_underveis}</div>` : ''}
+                        ${d.glemt_obs ? `<div class="text-sm"><strong>Glemt observasjoner:</strong> ${d.glemt_obs}</div>` : ''}
+
+                        ${d.noterer ? `
+                        <div class="text-sm">
+                            <strong>Noterer underveis:</strong>
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                ${(Array.isArray(d.noterer) ? d.noterer : [d.noterer]).map(n => `<span class="px-2 py-0.5 bg-sky-100 text-sky-700 rounded text-xs">${n}</span>`).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        ${d.forkortelser ? `<div class="text-sm"><strong>Forkortelser:</strong> ${d.forkortelser}</div>` : ''}
+                        ${d.forkortelser_eksempler ? `<div class="text-sm"><strong>Eksempler:</strong> ${d.forkortelser_eksempler}</div>` : ''}
+
+                        ${d.samme_i_vk ? `<div class="text-sm"><strong>Samme i VK:</strong> ${d.samme_i_vk}</div>` : ''}
+                        ${d.vk_forskjell_beskrivelse ? `<div class="text-sm"><strong>VK-forskjell:</strong> ${d.vk_forskjell_beskrivelse}</div>` : ''}
+
+                        ${d.ubrukte_felt ? `<div class="text-sm"><strong>Ubrukte felt:</strong> ${d.ubrukte_felt}</div>` : ''}
+                        ${d.felt_kan_fjernes ? `<div class="text-sm"><strong>Kan fjernes:</strong> ${d.felt_kan_fjernes}</div>` : ''}
+
+                        ${d.input_preferanse ? `<div class="text-sm"><strong>Input-preferanse:</strong> ${d.input_preferanse}</div>` : ''}
+
+                        ${d.kritikk_tidspunkt ? `<div class="text-sm"><strong>Kritikk-tidspunkt:</strong> ${d.kritikk_tidspunkt}</div>` : ''}
+                        ${d.kritikk_sted ? `<div class="text-sm"><strong>Kritikk-sted:</strong> ${d.kritikk_sted}</div>` : ''}
+
+                        ${d.fungerer_bra ? `<div class="text-sm bg-green-50 p-2 rounded"><strong>Fungerer bra:</strong> ${d.fungerer_bra}</div>` : ''}
+                        ${d.onske_annerledes ? `<div class="text-sm bg-amber-50 p-2 rounded"><strong>Ønsker annerledes:</strong> ${d.onske_annerledes}</div>` : ''}
+                        ${d.andre_tips ? `<div class="text-sm bg-sky-50 p-2 rounded"><strong>Andre tips:</strong> ${d.andre_tips}</div>` : ''}
+
+                        ${d.kontakt_navn || d.kontakt_info ? `
+                        <div class="text-sm border-t border-bark-200 pt-2 mt-2">
+                            <strong>Vil teste:</strong> ${d.kontakt_navn || ''} ${d.kontakt_info ? `(${d.kontakt_info})` : ''}
+                        </div>
+                        ` : ''}
+                    </div>
+                </details>
+                `;
+            }).join('');
+
+        } catch (err) {
+            document.getElementById('surveyList').innerHTML = '<p class="text-red-500">Feil ved lasting: ' + err.message + '</p>';
+        }
+    }
+
     loadStats();
     loadTrial();
     loadTeam();
     loadFkfDommere();
     loadKlubbForesporsel();
+    loadSurveys();
     loadBrukere();
     loadData();
     loadLog();

@@ -1027,22 +1027,54 @@
                             </div>
                         </div>
 
-                        <!-- EGENSKAPER (SUM) Section -->
-                        <div class="bg-earth-50 rounded-xl p-3 mb-3">
-                            <h4 class="text-xs font-bold text-earth-700 uppercase tracking-wider mb-2">Egenskaper (1-6)</h4>
-                            <div class="grid grid-cols-6 gap-1">
-                                ${CHARACTER_FIELDS.map(field => `
-                                    <div class="text-center">
-                                        <label class="block text-sm font-bold text-earth-600 mb-0" title="${field.title}: ${field.description}">${field.label}</label>
-                                        <span class="block text-[8px] italic text-earth-500 mb-1">${field.title}</span>
-                                        <input type="number" min="1" max="6"
-                                            value="${currentRound.scores[field.key] !== null ? currentRound.scores[field.key] : ''}"
-                                            onchange="updateScore(${dog.id}, '${field.key}', this.value)"
-                                            placeholder="-"
-                                            class="score-input w-full h-9 text-center text-base font-bold rounded-lg border-2 border-earth-200 focus:border-earth-500 focus:ring-0 outline-none bg-white">
-                                    </div>
-                                `).join('')}
+                        <!-- NOTATER Section (under Stand og arbeid) -->
+                        <div class="bg-yellow-50 rounded-xl p-3 mb-3 border border-yellow-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-xs font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                    </svg>
+                                    Notater (slipp ${roundNum})
+                                </h4>
+                                <button onclick="toggleVoiceRecording(${dog.id})" id="voiceBtn-${dog.id}"
+                                    class="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                                    </svg>
+                                    <span id="voiceBtnText-${dog.id}">Dikter</span>
+                                </button>
                             </div>
+
+                            <!-- Previous slips notes (read-only) -->
+                            ${dog.rounds.length > 1 ? `
+                                <div class="mb-2 space-y-1">
+                                    ${dog.rounds.slice(0, -1).map(r => r.notes ? `
+                                        <div class="bg-yellow-100/50 rounded-lg px-3 py-2 border border-yellow-200">
+                                            <span class="text-[10px] font-semibold text-yellow-600 uppercase">Slipp ${r.roundNum}:</span>
+                                            <p class="text-sm text-bark-600 italic">${r.notes}</p>
+                                        </div>
+                                    ` : '').join('')}
+                                </div>
+                            ` : ''}
+
+                            <div class="relative">
+                                <textarea
+                                    id="notes-${dog.id}"
+                                    rows="2"
+                                    onchange="updateCurrentRoundNotes(${dog.id}, this.value)"
+                                    placeholder="Skriv eller dikter notater for slipp ${roundNum}..."
+                                    class="w-full px-3 py-2 rounded-lg border border-yellow-300 focus:border-yellow-500 focus:ring-0 outline-none text-sm resize-none bg-white">${currentRound.notes || ''}</textarea>
+                                <div id="voiceStatus-${dog.id}" class="hidden absolute right-2 top-2 text-xs text-red-600 flex items-center gap-1">
+                                    <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
+                                    Lytter...
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-yellow-600 mt-1 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                </svg>
+                                Kun synlig for deg - publiseres ikke
+                            </p>
                         </div>
 
                         <!-- ADFERD Section -->
@@ -1099,49 +1131,21 @@
                             </div>
                         </div>
 
-                        <!-- Private Notes with Voice Recording -->
-                        <div class="mt-4">
-                            <div class="flex items-center justify-between mb-1">
-                                <label class="text-xs font-medium text-bark-500">
-                                    <span class="flex items-center gap-1">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                                        </svg>
-                                        Notater fra fjellet (kun for deg - publiseres ikke)
-                                    </span>
-                                </label>
-                                <button onclick="toggleVoiceRecording(${dog.id})" id="voiceBtn-${dog.id}"
-                                    class="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-                                    </svg>
-                                    <span id="voiceBtnText-${dog.id}">Dikter</span>
-                                </button>
-                            </div>
-
-                            <!-- Previous slips notes (read-only) -->
-                            ${dog.rounds.length > 1 ? `
-                                <div class="mb-2 space-y-1">
-                                    ${dog.rounds.slice(0, -1).map(r => r.notes ? `
-                                        <div class="bg-bark-50 rounded-lg px-3 py-2 border border-bark-200">
-                                            <span class="text-[10px] font-semibold text-bark-400 uppercase">Slipp ${r.roundNum}:</span>
-                                            <p class="text-sm text-bark-500 italic">${r.notes}</p>
-                                        </div>
-                                    ` : '').join('')}
-                                </div>
-                            ` : ''}
-
-                            <div class="relative">
-                                <textarea
-                                    id="notes-${dog.id}"
-                                    rows="2"
-                                    onchange="updateCurrentRoundNotes(${dog.id}, this.value)"
-                                    placeholder="Skriv eller dikter notater for slipp ${roundNum}..."
-                                    class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none text-sm resize-none bg-yellow-50">${currentRound.notes || ''}</textarea>
-                                <div id="voiceStatus-${dog.id}" class="hidden absolute right-2 top-2 text-xs text-red-600 flex items-center gap-1">
-                                    <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
-                                    Lytter...
-                                </div>
+                        <!-- EGENSKAPER (SUM) Section - flyttet til nederst -->
+                        <div class="bg-earth-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-xs font-bold text-earth-700 uppercase tracking-wider mb-2">Egenskaper (1-6)</h4>
+                            <div class="grid grid-cols-6 gap-1">
+                                ${CHARACTER_FIELDS.map(field => `
+                                    <div class="text-center">
+                                        <label class="block text-sm font-bold text-earth-600 mb-0" title="${field.title}: ${field.description}">${field.label}</label>
+                                        <span class="block text-[8px] italic text-earth-500 mb-1">${field.title}</span>
+                                        <input type="number" min="1" max="6"
+                                            value="${currentRound.scores[field.key] !== null ? currentRound.scores[field.key] : ''}"
+                                            onchange="updateScore(${dog.id}, '${field.key}', this.value)"
+                                            placeholder="-"
+                                            class="score-input w-full h-9 text-center text-base font-bold rounded-lg border-2 border-earth-200 focus:border-earth-500 focus:ring-0 outline-none bg-white">
+                                    </div>
+                                `).join('')}
                             </div>
                         </div>
 

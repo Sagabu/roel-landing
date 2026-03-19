@@ -303,6 +303,7 @@ db.exec(`
     telefon2 TEXT DEFAULT '',
     telefon1_normalized TEXT DEFAULT '',
     telefon2_normalized TEXT DEFAULT '',
+    epost TEXT DEFAULT '',
     aktiv INTEGER DEFAULT 1,
     imported_at TEXT DEFAULT (datetime('now'))
   );
@@ -1780,8 +1781,8 @@ app.post("/api/fkf-dommere/import", requireAdmin, async (c) => {
 
     const insert = db.prepare(`
       INSERT INTO fkf_godkjente_dommere
-        (fornavn, etternavn, adresse, postnummer, sted, telefon1, telefon2, telefon1_normalized, telefon2_normalized)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (fornavn, etternavn, adresse, postnummer, sted, telefon1, telefon2, telefon1_normalized, telefon2_normalized, epost)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     let importert = 0;
@@ -1800,7 +1801,8 @@ app.post("/api/fkf-dommere/import", requireAdmin, async (c) => {
           d.telefon1 || '',
           d.telefon2 || '',
           t1 || '',
-          t2 || ''
+          t2 || '',
+          d.epost || ''
         );
         importert++;
       } catch (e) {

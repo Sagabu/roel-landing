@@ -9,6 +9,12 @@
     // Determine current page and user state
     const currentPage = window.location.pathname.split('/').pop() || 'index.html';
 
+    // Sider som har egen navigasjon og ikke skal ha shared navbar
+    const EXCLUDED_PAGES = ['min-side.html', 'dommer-undersokelse.html'];
+    if (EXCLUDED_PAGES.includes(currentPage)) {
+        return; // Ikke injiser navbar på disse sidene
+    }
+
     // Check login states - sjekker JWT først, deretter legacy localStorage
     function getUserState() {
         const jwtToken = localStorage.getItem('fuglehund_token');

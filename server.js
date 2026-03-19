@@ -74,6 +74,15 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Spørreundersøkelser
+  CREATE TABLE IF NOT EXISTS undersokelser (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT NOT NULL,
+    source TEXT DEFAULT 'ukjent',
+    ip_address TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- OTP codes for SMS login
   CREATE TABLE IF NOT EXISTS otp_codes (
     telefon TEXT NOT NULL,
@@ -1277,6 +1286,55 @@ app.get("/api/admin/log", requireAdmin, (c) => {
   const limit = Number(c.req.query("limit") || 50);
   const rows = db.prepare("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?").all(limit);
   return c.json({ items: rows });
+});
+
+// ============================================
+// SPØRREUNDERSØKELSER API
+// ============================================
+
+// Motta undersøkelsessvar (åpen for alle)
+app.post("/api/undersokelse", async (c) => {
+  try {
+    const data = await c.req.json();
+    const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "ukjent";
+    const source = data.source || "ukjent";
+
+    db.prepare(`
+      INSERT INTO undersokelser (data, source, ip_address)
+      VALUES (?, ?, ?)
+    `).run(JSON.stringify(data), source, ip);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "undersokelse_mottatt",
+      `Nytt svar fra ${data.navn || data.kontakt_navn || 'Anonym'} (${source})`
+    );
+
+    return c.json({ ok: true, message: "Takk for ditt svar!" });
+  } catch (err) {
+    console.error("Feil ved lagring av undersøkelse:", err);
+    return c.json({ error: "Kunne ikke lagre svar" }, 500);
+  }
+});
+
+// Hent alle undersøkelsessvar (kun admin)
+app.get("/api/undersokelser", requireAdmin, (c) => {
+  const rows = db.prepare("SELECT * FROM undersokelser ORDER BY created_at DESC").all();
+  // Parse JSON data for hver rad
+  const parsed = rows.map(r => ({
+    ...r,
+    data: JSON.parse(r.data)
+  }));
+  return c.json({ items: parsed, count: rows.length });
+});
+
+// Slett undersøkelsessvar (kun admin)
+app.delete("/api/undersokelser/:id", requireAdmin, (c) => {
+  const id = c.req.param("id");
+  const existing = db.prepare("SELECT id FROM undersokelser WHERE id = ?").get(id);
+  if (!existing) return c.json({ error: "Svar ikke funnet" }, 404);
+
+  db.prepare("DELETE FROM undersokelser WHERE id = ?").run(id);
+  return c.json({ ok: true });
 });
 
 // --- Stats ---
@@ -4084,6 +4142,9 @@ function serveWithShim(filePath, c, isAdmin = false) {
 }
 
 app.get("/", (c) => serveWithShim(join(__dirname, "index.html"), c));
+
+// Clean URL for undersøkelse landingsside
+app.get("/undersokelse", (c) => serveWithShim(join(__dirname, "undersokelse.html"), c));
 
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");

@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dommertest - Fuglehundprøve</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: { DEFAULT: '#FAF8F5', 50: '#FFFFFF', 100: '#FAF8F5', 200: '#F5F0E8', 300: '#E7DAC8' },
+                        sky: { 50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 300: '#7dd3fc', 400: '#38bdf8', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1' },
+                        earth: { 50: '#faf6f2', 100: '#f3ebe0', 200: '#e6d5c0', 300: '#d5b899', 400: '#c49a72', 500: '#b88255', 600: '#aa6e48', 700: '#8e583d', 800: '#734837', 900: '#5e3c2f', 950: '#321e17' },
+                        bark: { 50: '#f7f5f4', 100: '#edeae7', 200: '#ddd6d0', 300: '#c7bcb2', 400: '#ae9d90', 500: '#9a8677', 600: '#8d776a', 700: '#756259', 800: '#61524b', 900: '#2a2321' },
+                        forest: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .score-input:focus { transform: scale(1.05); }
+        .card-active { box-shadow: 0 0 0 3px #f59e0b; }
+        .live-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        input[type="number"] { font-size: 16px; }
+        .touch-target { min-height: 48px; min-width: 48px; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans">
+
+    <!-- Test Banner -->
+    <div class="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium">
+        TESTMODUS - Denne siden er kun for testing av dommergrensesnittet
+    </div>
+
+    <!-- Main Interface -->
+    <div id="mainInterface">
+        <!-- Sticky Header -->
+        <header class="bg-gradient-to-r from-forest-600 to-forest-700 text-white sticky top-0 z-50 shadow-lg">
+            <div class="px-4 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <a href="/" class="p-2 -ml-2 hover:bg-white/20 rounded-xl transition" title="Tilbake til forsiden">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                        </a>
+                        <div>
+                            <p class="font-bold font-serif">Test-parti: Neadalen</p>
+                            <p class="text-forest-100 text-xs">Dommer: Testbruker</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 bg-green-300 rounded-full live-pulse"></span>
+                        <span class="text-xs">Live</span>
+                        <button onclick="showRanking()" class="ml-3 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-xl text-sm font-medium transition">
+                            Rangering
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- View Toggle -->
+        <div class="bg-white border-b border-bark-100 px-4 py-2 flex gap-2">
+            <button onclick="setView('single')" id="viewSingle" class="flex-1 py-2 rounded-xl text-sm font-medium bg-forest-100 text-forest-700">
+                Ett kort
+            </button>
+            <button onclick="setView('dual')" id="viewDual" class="flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600">
+                To kort
+            </button>
+        </div>
+
+        <!-- Dog Cards Container -->
+        <main id="cardsContainer" class="p-4 space-y-4 pb-32">
+            <!-- Cards will be inserted here -->
+        </main>
+
+        <!-- Bottom Navigation - Dog Selector -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-100 shadow-lg z-40">
+            <div class="px-4 py-2">
+                <p class="text-xs text-bark-500 mb-2">Velg hund:</p>
+                <div id="dogSelector" class="flex gap-2 overflow-x-auto pb-2">
+                    <!-- Dog buttons inserted here -->
+                </div>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Ranking Modal -->
+    <div id="rankingModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
+        <div class="bg-white w-full sm:max-w-lg sm:rounded-xl rounded-t-xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-forest-600 to-forest-700 text-white flex items-center justify-between">
+                <h2 class="font-bold font-serif">Rangering</h2>
+                <button onclick="hideRanking()" class="p-2 hover:bg-white/20 rounded-xl transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+                <div class="space-y-2" id="rankingList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Score Field Legend Modal -->
+    <div id="legendModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-bark-100">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-bold font-serif text-bark-800">Forklaring av felt</h2>
+                    <button onclick="hideLegend()" class="text-bark-400 hover:text-bark-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <div class="space-y-4 text-sm">
+                    <div class="bg-sky-50 rounded-xl p-4">
+                        <h3 class="font-bold text-sky-800 mb-2">Fuglearbeid</h3>
+                        <ul class="space-y-1 text-bark-700">
+                            <li><strong>Stand m/</strong> - Stand med makker tilstede</li>
+                            <li><strong>Stand u/</strong> - Stand uten makker</li>
+                            <li><strong>Tomstand</strong> - Stand uten fugl</li>
+                            <li><strong>Sjanse</strong> - Sjanser på fugl</li>
+                            <li><strong>Makkerstand</strong> - Sekunderer makkers stand</li>
+                        </ul>
+                    </div>
+                    <div class="bg-forest-50 rounded-xl p-4">
+                        <h3 class="font-bold text-forest-800 mb-2">Reis og apport</h3>
+                        <ul class="space-y-1 text-bark-700">
+                            <li><strong>Presisjon</strong> - 1-4 (4 = best)</li>
+                            <li><strong>Reising</strong> - 1-6 (6 = best)</li>
+                            <li><strong>Godkj. reis</strong> - Godkjent reising</li>
+                            <li><strong>Apport</strong> - 1 = Godkjent, 2 = Ikke godkjent</li>
+                        </ul>
+                    </div>
+                    <div class="bg-amber-50 rounded-xl p-4">
+                        <h3 class="font-bold text-amber-800 mb-2">Egenskaper (1-6)</h3>
+                        <ul class="space-y-1 text-bark-700">
+                            <li><strong>Jaktlyst</strong> - Vilje og intensitet</li>
+                            <li><strong>Fart</strong> - Tempo i søk</li>
+                            <li><strong>Selvst.</strong> - Selvstendighet</li>
+                            <li><strong>Søksbr.</strong> - Søksbredde</li>
+                            <li><strong>Reviering</strong> - Utnyttelse av terreng</li>
+                            <li><strong>Samarb.</strong> - Samarbeid med fører</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Test data - Neadalens hunder
+        const TEST_DOGS = [
+            {
+                id: 1,
+                nr: 1,
+                name: "Neadalens Zlatan",
+                breed: 'ES',
+                handler: 'Roel, Aleksander',
+                owner: 'Roel, Aleksander',
+                regnr: 'NO12345/22'
+            },
+            {
+                id: 2,
+                nr: 2,
+                name: "Neadalens Braut",
+                breed: 'ES',
+                handler: 'Roel, Aleksander',
+                owner: 'Roel, Aleksander',
+                regnr: 'NO12346/23'
+            }
+        ];
+
+        // State
+        const state = {
+            dogs: [],
+            selectedDogs: [0],
+            viewMode: 'single',
+            currentRound: 1
+        };
+
+        // Initialize dog with empty scores
+        function initDog(dog) {
+            return {
+                ...dog,
+                rounds: [createRound(1)],
+                knocked: false,
+                knockedRound: null
+            };
+        }
+
+        function createRound(roundNumber) {
+            return {
+                round: roundNumber,
+                notes: '',
+                scores: {
+                    STAND_M: null, STAND_U: null, TOMSTAND: null,
+                    SJANSE: null, MAKKER_STAND: null, SLIPPTID: null,
+                    PRESISJON: null, REISING: null, GODKJENT_REISING: false,
+                    JAKTLYST: null, FART: null, SELVSTENDIGHET: null,
+                    SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
+                    SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null,
+                    RAPPORT_SPONTAN: false, ADFERD: ''
+                },
+                completed: false
+            };
+        }
+
+        // Initialize
+        state.dogs = TEST_DOGS.map(initDog);
+
+        // Load saved data if exists
+        const saved = localStorage.getItem('judgeData_test');
+        if (saved) {
+            try {
+                state.dogs = JSON.parse(saved);
+            } catch (e) {}
+        }
+
+        // View mode
+        function setView(mode) {
+            state.viewMode = mode;
+            document.getElementById('viewSingle').className = mode === 'single'
+                ? 'flex-1 py-2 rounded-xl text-sm font-medium bg-forest-100 text-forest-700'
+                : 'flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600';
+            document.getElementById('viewDual').className = mode === 'dual'
+                ? 'flex-1 py-2 rounded-xl text-sm font-medium bg-forest-100 text-forest-700'
+                : 'flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600';
+            renderCards();
+        }
+
+        // Dog selector
+        function renderDogSelector() {
+            const container = document.getElementById('dogSelector');
+            container.innerHTML = state.dogs.map((dog, idx) => `
+                <button onclick="selectDog(${idx})"
+                    class="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition touch-target
+                    ${state.selectedDogs.includes(idx)
+                        ? 'bg-forest-500 text-white'
+                        : dog.knocked
+                            ? 'bg-red-100 text-red-600 line-through'
+                            : 'bg-bark-100 text-bark-700 hover:bg-bark-200'
+                    }">
+                    ${dog.nr}. ${dog.name.split(' ').pop()}
+                </button>
+            `).join('');
+        }
+
+        function selectDog(idx) {
+            if (state.viewMode === 'single') {
+                state.selectedDogs = [idx];
+            } else {
+                if (state.selectedDogs.includes(idx)) {
+                    if (state.selectedDogs.length > 1) {
+                        state.selectedDogs = state.selectedDogs.filter(i => i !== idx);
+                    }
+                } else {
+                    if (state.selectedDogs.length >= 2) {
+                        state.selectedDogs.shift();
+                    }
+                    state.selectedDogs.push(idx);
+                }
+            }
+            renderDogSelector();
+            renderCards();
+        }
+
+        // Render dog cards
+        function renderCards() {
+            const container = document.getElementById('cardsContainer');
+            const dogsToShow = state.selectedDogs.map(idx => state.dogs[idx]);
+
+            container.innerHTML = dogsToShow.map((dog, viewIdx) => {
+                const round = dog.rounds[dog.rounds.length - 1];
+                const s = round.scores;
+
+                return `
+                <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-bark-100 ${state.selectedDogs.length > 1 && viewIdx === 0 ? 'card-active' : ''}">
+                    <!-- Dog Header -->
+                    <div class="bg-gradient-to-r from-forest-500 to-forest-600 text-white px-4 py-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="font-bold font-serif text-lg">${dog.nr}. ${dog.name}</p>
+                                <p class="text-forest-100 text-sm">${dog.breed} | ${dog.handler}</p>
+                                <p class="text-forest-200 text-xs">${dog.regnr || ''}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="showLegend()" class="bg-white/20 hover:bg-white/30 p-2 rounded-xl transition" title="Forklaring">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </button>
+                                ${dog.knocked ? '<span class="bg-red-500 px-2 py-1 rounded text-xs font-bold">UTSLÅTT</span>' : ''}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scoring Grid -->
+                    <div class="p-4 space-y-4">
+                        <!-- Fuglearbeid -->
+                        <div class="bg-sky-50 rounded-xl p-3">
+                            <h4 class="text-xs font-bold text-sky-700 mb-2 uppercase tracking-wide">Fuglearbeid</h4>
+                            <div class="grid grid-cols-5 gap-2">
+                                ${renderScoreInput(dog.id, 'STAND_M', 'Stand m/', s.STAND_M, 0, 99)}
+                                ${renderScoreInput(dog.id, 'STAND_U', 'Stand u/', s.STAND_U, 0, 99)}
+                                ${renderScoreInput(dog.id, 'TOMSTAND', 'Tomstand', s.TOMSTAND, 0, 99)}
+                                ${renderScoreInput(dog.id, 'SJANSE', 'Sjanse', s.SJANSE, 0, 99)}
+                                ${renderScoreInput(dog.id, 'MAKKER_STAND', 'Makkerst.', s.MAKKER_STAND, 0, 99)}
+                            </div>
+                        </div>
+
+                        <!-- Reis og slipptid -->
+                        <div class="bg-forest-50 rounded-xl p-3">
+                            <h4 class="text-xs font-bold text-forest-700 mb-2 uppercase tracking-wide">Reis & Slipptid</h4>
+                            <div class="grid grid-cols-4 gap-2">
+                                ${renderScoreInput(dog.id, 'PRESISJON', 'Presisjon', s.PRESISJON, 1, 4)}
+                                ${renderScoreInput(dog.id, 'REISING', 'Reising', s.REISING, 1, 6)}
+                                ${renderCheckbox(dog.id, 'GODKJENT_REISING', 'Godkj. reis', s.GODKJENT_REISING)}
+                                ${renderScoreInput(dog.id, 'SLIPPTID', 'Slipptid', s.SLIPPTID, 0, 180)}
+                            </div>
+                        </div>
+
+                        <!-- Egenskaper -->
+                        <div class="bg-amber-50 rounded-xl p-3">
+                            <h4 class="text-xs font-bold text-amber-700 mb-2 uppercase tracking-wide">Egenskaper (1-6)</h4>
+                            <div class="grid grid-cols-6 gap-2">
+                                ${renderScoreInput(dog.id, 'JAKTLYST', 'Jaktlyst', s.JAKTLYST, 1, 6)}
+                                ${renderScoreInput(dog.id, 'FART', 'Fart', s.FART, 1, 6)}
+                                ${renderScoreInput(dog.id, 'SELVSTENDIGHET', 'Selvst.', s.SELVSTENDIGHET, 1, 6)}
+                                ${renderScoreInput(dog.id, 'SOKSBREDDE', 'Søksbr.', s.SOKSBREDDE, 1, 6)}
+                                ${renderScoreInput(dog.id, 'REVIERING', 'Reviering', s.REVIERING, 1, 6)}
+                                ${renderScoreInput(dog.id, 'SAMARBEID', 'Samarb.', s.SAMARBEID, 1, 6)}
+                            </div>
+                        </div>
+
+                        <!-- Sekundering og apport -->
+                        <div class="bg-bark-50 rounded-xl p-3">
+                            <h4 class="text-xs font-bold text-bark-600 mb-2 uppercase tracking-wide">Sekundering & Apport</h4>
+                            <div class="grid grid-cols-4 gap-2">
+                                ${renderScoreInput(dog.id, 'SEK_SPONTAN', 'Sek. spont.', s.SEK_SPONTAN, 0, 99)}
+                                ${renderScoreInput(dog.id, 'SEK_FORBI', 'Sek. forbi', s.SEK_FORBI, 0, 99)}
+                                ${renderScoreInput(dog.id, 'APPORT', 'Apport', s.APPORT, 1, 2)}
+                                ${renderCheckbox(dog.id, 'RAPPORT_SPONTAN', 'Rapp. spont.', s.RAPPORT_SPONTAN)}
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        <div>
+                            <label class="text-xs font-bold text-bark-600 mb-1 block uppercase tracking-wide">Notater</label>
+                            <textarea
+                                onchange="updateNotes(${dog.id}, this.value)"
+                                class="w-full p-3 border-2 border-bark-200 rounded-xl text-sm resize-none focus:border-forest-500 focus:ring-0 outline-none"
+                                rows="2"
+                                placeholder="Skriv notater her..."
+                            >${round.notes || ''}</textarea>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex gap-2">
+                            ${!dog.knocked ? `
+                                <button onclick="knockOut(${dog.id})" class="flex-1 bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-4 rounded-xl transition text-sm">
+                                    Slå ut
+                                </button>
+                            ` : `
+                                <button onclick="reinstatedog(${dog.id})" class="flex-1 bg-green-100 hover:bg-green-200 text-green-700 font-medium py-2 px-4 rounded-xl transition text-sm">
+                                    Gjenopprett
+                                </button>
+                            `}
+                            <button onclick="addRound(${dog.id})" class="flex-1 bg-forest-100 hover:bg-forest-200 text-forest-700 font-medium py-2 px-4 rounded-xl transition text-sm">
+                                + Ny runde
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        function renderScoreInput(dogId, field, label, value, min, max) {
+            return `
+                <div class="text-center">
+                    <input type="number" min="${min}" max="${max}"
+                        value="${value !== null ? value : ''}"
+                        onchange="updateScore(${dogId}, '${field}', this.value)"
+                        class="w-full h-10 text-center text-lg font-bold border-2 border-bark-200 rounded-lg score-input focus:border-forest-500 focus:ring-0 outline-none bg-white"
+                        placeholder="-"
+                    >
+                    <p class="text-[10px] text-bark-500 mt-1">${label}</p>
+                </div>
+            `;
+        }
+
+        function renderCheckbox(dogId, field, label, checked) {
+            return `
+                <div class="text-center">
+                    <button onclick="toggleCheck(${dogId}, '${field}')"
+                        class="w-full h-10 flex items-center justify-center border-2 rounded-lg transition
+                        ${checked ? 'bg-forest-500 border-forest-500 text-white' : 'bg-white border-bark-200 text-bark-400'}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </button>
+                    <p class="text-[10px] text-bark-500 mt-1">${label}</p>
+                </div>
+            `;
+        }
+
+        // Update functions
+        function updateScore(dogId, field, value) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (!dog) return;
+            const round = dog.rounds[dog.rounds.length - 1];
+            round.scores[field] = value === '' ? null : parseInt(value);
+            saveLive();
+        }
+
+        function toggleCheck(dogId, field) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (!dog) return;
+            const round = dog.rounds[dog.rounds.length - 1];
+            round.scores[field] = !round.scores[field];
+            saveLive();
+            renderCards();
+        }
+
+        function updateNotes(dogId, value) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (!dog) return;
+            const round = dog.rounds[dog.rounds.length - 1];
+            round.notes = value;
+            saveLive();
+        }
+
+        function knockOut(dogId) {
+            if (!confirm('Er du sikker på at du vil slå ut denne hunden?')) return;
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (!dog) return;
+            dog.knocked = true;
+            dog.knockedRound = dog.rounds.length;
+            saveLive();
+            renderDogSelector();
+            renderCards();
+        }
+
+        function reinstatedog(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (!dog) return;
+            dog.knocked = false;
+            dog.knockedRound = null;
+            saveLive();
+            renderDogSelector();
+            renderCards();
+        }
+
+        function addRound(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (!dog) return;
+            const nextRound = dog.rounds.length + 1;
+            dog.rounds.push(createRound(nextRound));
+            saveLive();
+            renderCards();
+        }
+
+        // Save to localStorage
+        function saveLive() {
+            localStorage.setItem('judgeData_test', JSON.stringify(state.dogs));
+            console.log('Saved:', state.dogs);
+        }
+
+        // Ranking
+        function showRanking() {
+            document.getElementById('rankingModal').classList.remove('hidden');
+            renderRankingList();
+        }
+
+        function hideRanking() {
+            document.getElementById('rankingModal').classList.add('hidden');
+        }
+
+        function renderRankingList() {
+            const container = document.getElementById('rankingList');
+            const activeDogs = state.dogs.filter(d => !d.knocked);
+
+            // Sort by total jaktlyst + fart
+            activeDogs.sort((a, b) => {
+                const scoreA = (a.rounds[0]?.scores?.JAKTLYST || 0) + (a.rounds[0]?.scores?.FART || 0);
+                const scoreB = (b.rounds[0]?.scores?.JAKTLYST || 0) + (b.rounds[0]?.scores?.FART || 0);
+                return scoreB - scoreA;
+            });
+
+            container.innerHTML = activeDogs.map((dog, idx) => `
+                <div class="flex items-center gap-3 p-3 bg-bark-50 rounded-xl">
+                    <span class="w-8 h-8 bg-forest-500 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                        ${idx + 1}
+                    </span>
+                    <div class="flex-1">
+                        <p class="font-semibold text-bark-800">${dog.name}</p>
+                        <p class="text-xs text-bark-500">${dog.breed} | ${dog.handler}</p>
+                    </div>
+                </div>
+            `).join('') || '<p class="text-bark-400 text-center py-4">Ingen aktive hunder</p>';
+        }
+
+        // Legend modal
+        function showLegend() {
+            document.getElementById('legendModal').classList.remove('hidden');
+        }
+
+        function hideLegend() {
+            document.getElementById('legendModal').classList.add('hidden');
+        }
+
+        // Initial render
+        renderDogSelector();
+        renderCards();
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('[SW] Registered:', reg.scope))
+                .catch(err => console.warn('[SW] Registration failed:', err));
+        }
+    </script>
+</body>
+</html>

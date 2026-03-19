@@ -4146,6 +4146,9 @@ app.get("/", (c) => serveWithShim(join(__dirname, "index.html"), c));
 // Clean URL for undersøkelse landingsside
 app.get("/undersokelse", (c) => serveWithShim(join(__dirname, "undersokelse.html"), c));
 
+// Clean URL for dommer-testside
+app.get("/dommertest", (c) => serveWithShim(join(__dirname, "dommertest.html"), c));
+
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");
   const isAdmin = ADMIN_PAGES.includes(page);

@@ -427,12 +427,31 @@ try {
     `);
     db.exec(`INSERT INTO hunder (${selectCols}) SELECT ${selectCols} FROM hunder_old`);
     db.exec(`DROP TABLE hunder_old`);
+
+    // SQLite ALTER TABLE RENAME corrupts FK references in other tables
+    // (they get rewritten to point at "hunder_old" instead of "hunder")
+    const fkTables = ["resultater", "kritikker", "pameldinger", "fullmakter"];
+    for (const t of fkTables) {
+      const meta = db.prepare("SELECT sql FROM sqlite_master WHERE name = ?").get(t);
+      if (meta && meta.sql.includes('"hunder_old"')) {
+        const fixedSql = meta.sql
+          .replace(/"hunder_old"/g, 'hunder')
+          .replace(`CREATE TABLE ${t}`, `CREATE TABLE ${t}_fkfix`);
+        const tCols = db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name).join(', ');
+        db.exec(fixedSql);
+        db.exec(`INSERT INTO ${t}_fkfix (${tCols}) SELECT ${tCols} FROM ${t}`);
+        db.exec(`DROP TABLE ${t}`);
+        db.exec(`ALTER TABLE ${t}_fkfix RENAME TO ${t}`);
+      }
+    }
+
     db.exec("COMMIT");
     db.pragma("foreign_keys = ON");
     console.log("✅ Migrated hunder table: regnr now nullable, bilde column added");
   }
 } catch (e) {
   try { db.exec("ROLLBACK"); } catch {}
+  db.pragma("foreign_keys = ON");
   if (!e.message.includes('already exists') && !e.message.includes('no such table: hunder_old')) {
     console.error("Migration warning:", e.message);
   }

@@ -1316,8 +1316,8 @@ app.post("/api/undersokelse", async (c) => {
   }
 });
 
-// Hent alle undersøkelsessvar (kun admin)
-app.get("/api/undersokelser", requireAdmin, (c) => {
+// Hent alle undersøkelsessvar (admin-panel er beskyttet via admin-lock)
+app.get("/api/undersokelser", (c) => {
   const rows = db.prepare("SELECT * FROM undersokelser ORDER BY created_at DESC").all();
   // Parse JSON data for hver rad
   const parsed = rows.map(r => ({

@@ -911,26 +911,46 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
     // ========================================
     async function loadSurveys() {
         try {
-            const resp = await fetch('/api/storage');
-            const { keys } = await resp.json();
+            // Hent fra ny undersøkelses-API
+            const resp = await fetch('/api/undersokelser');
+            const result = await resp.json();
 
-            // Filtrer ut survey-nøkler
-            const surveyKeys = keys.filter(k => k.key.startsWith('survey_'));
+            // Håndter både gammelt og nytt format
+            let surveys = [];
+            if (result.items) {
+                // Nytt format fra /api/undersokelser
+                surveys = result.items.map(item => ({
+                    id: item.id,
+                    data: item.data,
+                    updated: item.created_at,
+                    source: item.source
+                }));
+            }
 
-            document.getElementById('surveyCount').textContent = `${surveyKeys.length} svar`;
+            // Prøv også å hente fra gammel kv_store (for bakoverkompatibilitet)
+            try {
+                const kvResp = await fetch('/api/storage');
+                const kvResult = await kvResp.json();
+                if (kvResult.keys) {
+                    const surveyKeys = kvResult.keys.filter(k => k.key.startsWith('survey_') || k.key.startsWith('undersokelse_'));
+                    for (const k of surveyKeys) {
+                        const r = await fetch(`/api/storage/${encodeURIComponent(k.key)}`);
+                        const { value } = await r.json();
+                        const data = typeof value === 'string' ? JSON.parse(value) : value;
+                        surveys.push({ id: k.key, data, updated: k.updated_at, source: 'kv_store' });
+                    }
+                }
+            } catch (kvErr) {
+                console.warn('Kunne ikke hente fra kv_store:', kvErr);
+            }
+
+            document.getElementById('surveyCount').textContent = `${surveys.length} svar`;
 
             const container = document.getElementById('surveyList');
-            if (surveyKeys.length === 0) {
+            if (surveys.length === 0) {
                 container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen svar mottatt ennå</p>';
                 return;
             }
-
-            // Hent alle survey-data
-            const surveys = await Promise.all(surveyKeys.map(async k => {
-                const r = await fetch(`/api/storage/${encodeURIComponent(k.key)}`);
-                const { value } = await r.json();
-                return { key: k.key, data: typeof value === 'string' ? JSON.parse(value) : value, updated: k.updated_at };
-            }));
 
             // Sorter etter tidspunkt (nyeste først)
             surveys.sort((a, b) => new Date(b.data.submitted_at || b.updated) - new Date(a.data.submitted_at || a.updated));

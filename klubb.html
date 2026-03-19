@@ -70,8 +70,8 @@
                     </div>
 
                     <div class="flex-1 text-center md:text-left">
-                        <input type="text" id="clubName" value="Nord-Østerdal Fuglehundklubb"
-                            class="text-3xl font-bold font-serif text-bark-800 bg-transparent border-b-2 border-transparent hover:border-bark-300 focus:border-sky-500 outline-none w-full md:w-auto">
+                        <input type="text" id="clubName" value=""
+                            class="text-xl md:text-2xl lg:text-3xl font-bold font-serif text-bark-800 bg-transparent border-b-2 border-transparent hover:border-bark-300 focus:border-sky-500 outline-none w-full truncate" title="">
                         <div class="mt-2 flex flex-wrap gap-4 justify-center md:justify-start text-bark-600">
                             <span class="flex items-center gap-1">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -184,8 +184,8 @@
                                             <div class="text-xs text-bark-500">SØN</div>
                                         </div>
                                         <div>
-                                            <p class="font-semibold text-sky-800">Vinterprøven 2026</p>
-                                            <p class="text-sm text-bark-500">UK/AK/VK • Høgkjølen, Tynset</p>
+                                            <p class="font-semibold text-sky-800" id="activeTrialName">Ingen aktiv prøve</p>
+                                            <p class="text-sm text-bark-500" id="activeTrialInfo">Opprett ny prøve for å komme i gang</p>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3">
@@ -267,7 +267,7 @@
                 <div class="grid md:grid-cols-2 gap-6">
                     <div>
                         <label class="block text-sm font-medium text-bark-700 mb-2">Klubbnavn</label>
-                        <input type="text" value="Nord-Østerdal Fuglehundklubb"
+                        <input type="text" id="settingsNavn" value=""
                             class="w-full px-4 py-2 rounded-xl border border-bark-300 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none">
                     </div>
                     <div>
@@ -287,18 +287,37 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-bark-700 mb-2">Nettside</label>
-                        <input type="url" value="https://nord-osterdal-fuglehund.no"
+                        <input type="url" id="settingsNettside" value="https://nord-osterdal-fuglehund.no"
                             class="w-full px-4 py-2 rounded-xl border border-bark-300 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none">
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-bark-700 mb-2">Adresse</label>
-                        <input type="text" value="Fuglehundveien 12, 2500 Tynset"
+                        <input type="text" id="settingsAdresse" value="Fuglehundveien 12, 2500 Tynset"
                             class="w-full px-4 py-2 rounded-xl border border-bark-300 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none">
+                    </div>
+
+                    <!-- Vipps-nummer -->
+                    <div class="md:col-span-2">
+                        <div class="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
+                            <div class="flex items-start gap-3">
+                                <div class="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                                    <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                    </svg>
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-sm font-semibold text-orange-800 mb-1">Vipps-nummer (bedrift)</label>
+                                    <p class="text-xs text-orange-600 mb-3">6-sifret Vipps-nummer for å motta betalinger fra deltakere (parkering, loddsalg, etc.)</p>
+                                    <input type="text" id="settingsVipps" placeholder="123456" maxlength="6" pattern="[0-9]{5,6}" inputmode="numeric"
+                                        class="w-full max-w-xs px-4 py-2 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none bg-white">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="mt-6 pt-6 border-t border-bark-100 flex justify-end">
-                    <button class="bg-sky-600 hover:bg-sky-700 text-white px-6 py-2 rounded-xl font-medium transition">
+                    <button onclick="saveClubSettings()" class="bg-sky-600 hover:bg-sky-700 text-white px-6 py-2 rounded-xl font-medium transition">
                         Lagre endringer
                     </button>
                 </div>
@@ -315,6 +334,130 @@
     </footer>
 
     <script>
+        let currentClubId = null;
+        let currentClubData = null;
+
+        // Initialize page
+        async function initPage() {
+            // Check URL params first
+            const urlParams = new URLSearchParams(window.location.search);
+            const klubbIdFromUrl = urlParams.get('klubbId');
+
+            if (klubbIdFromUrl) {
+                // klubbId can be string (e.g. 'namdal') or number - don't force parseInt
+                currentClubId = klubbIdFromUrl;
+                await loadClubData(currentClubId);
+            } else {
+                // Try to get from user's klubbAdmin info
+                const phone = localStorage.getItem('userPhone');
+                if (phone) {
+                    try {
+                        const resp = await fetch(`/api/brukere/${phone}`);
+                        if (resp.ok) {
+                            const userData = await resp.json();
+                            if (userData.klubbAdmin && userData.klubbAdmin.klubb_id) {
+                                currentClubId = userData.klubbAdmin.klubb_id;
+                                await loadClubData(currentClubId);
+                            } else {
+                                showNoClubError();
+                            }
+                        } else {
+                            showNoClubError();
+                        }
+                    } catch (e) {
+                        console.error('Kunne ikke hente brukerdata:', e);
+                        showNoClubError();
+                    }
+                } else {
+                    showNoClubError();
+                }
+            }
+        }
+
+        async function loadClubData(klubbId) {
+            try {
+                const resp = await fetch(`/api/klubber/${klubbId}`);
+                if (resp.ok) {
+                    currentClubData = await resp.json();
+                    populateClubData(currentClubData);
+                } else {
+                    showNoClubError();
+                }
+            } catch (e) {
+                console.error('Kunne ikke laste klubbdata:', e);
+                showNoClubError();
+            }
+        }
+
+        function populateClubData(club) {
+            const nameInput = document.getElementById('clubName');
+            nameInput.value = club.navn || 'Ukjent klubb';
+            nameInput.title = club.navn || ''; // Full name on hover
+
+            // Update settings form
+            const settingsName = document.getElementById('settingsNavn');
+            if (settingsName) settingsName.value = club.navn || '';
+
+            // Populate Vipps-nummer
+            const vippsInput = document.getElementById('settingsVipps');
+            if (vippsInput && club.vipps_nummer) {
+                vippsInput.value = club.vipps_nummer;
+            }
+
+            // Update title
+            document.title = `${club.navn || 'Min Klubb'} - Fuglehundprøve`;
+        }
+
+        async function saveClubSettings() {
+            if (!currentClubId) {
+                alert('Ingen klubb valgt');
+                return;
+            }
+
+            const vippsNummer = document.getElementById('settingsVipps')?.value?.trim() || null;
+
+            // Validate Vipps-nummer (5-6 digits)
+            if (vippsNummer && !/^\d{5,6}$/.test(vippsNummer)) {
+                alert('Vipps-nummer må være 5-6 siffer');
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/klubber/${currentClubId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        vipps_nummer: vippsNummer
+                    })
+                });
+
+                if (resp.ok) {
+                    const updated = await resp.json();
+                    currentClubData = updated;
+                    showToast('Innstillinger lagret!');
+                } else {
+                    const err = await resp.json();
+                    alert('Feil: ' + (err.error || 'Kunne ikke lagre'));
+                }
+            } catch (e) {
+                console.error('Feil ved lagring:', e);
+                alert('Nettverksfeil ved lagring');
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-xl shadow-lg z-50';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        function showNoClubError() {
+            document.getElementById('clubName').value = 'Ingen klubb funnet';
+            document.getElementById('clubName').disabled = true;
+        }
+
         // Logo upload
         const logoUploadArea = document.getElementById('logoUploadArea');
         const logoInput = document.getElementById('logoInput');
@@ -331,20 +474,31 @@
                     clubLogo.src = e.target.result;
                     clubLogo.classList.remove('hidden');
                     logoPlaceholder.classList.add('hidden');
-                    // Save to localStorage for demo
-                    localStorage.setItem('clubLogo', e.target.result);
+                    // Save to localStorage with club-specific key
+                    if (currentClubId) {
+                        localStorage.setItem(`clubLogo_${currentClubId}`, e.target.result);
+                    }
                 };
                 reader.readAsDataURL(file);
             }
         });
 
-        // Load saved logo
-        const savedLogo = localStorage.getItem('clubLogo');
-        if (savedLogo) {
-            clubLogo.src = savedLogo;
-            clubLogo.classList.remove('hidden');
-            logoPlaceholder.classList.add('hidden');
+        // Load saved logo (club-specific)
+        function loadSavedLogo() {
+            const savedLogo = currentClubId
+                ? localStorage.getItem(`clubLogo_${currentClubId}`)
+                : localStorage.getItem('clubLogo');
+            if (savedLogo) {
+                clubLogo.src = savedLogo;
+                clubLogo.classList.remove('hidden');
+                logoPlaceholder.classList.add('hidden');
+            }
         }
+
+        // Initialize on load
+        initPage().then(() => {
+            loadSavedLogo();
+        });
     </script>
 
 </body>

@@ -378,17 +378,18 @@ const FuglehundAuth = (function() {
   }
 
   // Sider som krever innlogging og hvilken rolle
+  // MERK: min-side.html er IKKE beskyttet - den ER innloggingssiden
   const PROTECTED_PAGES = {
     'profil.html': null,           // Krever innlogging, alle roller
     'mine-hunder.html': null,
     'jaktprover.html': null,
     'fullmakter.html': null,
-    'min-side.html': null,
+    // 'min-side.html': null,      // FJERNET - dette er innloggingssiden!
     'dommer-hjem.html': 'dommer',  // Krever dommer-rolle
     'dommer-vk.html': 'dommer',
     'dommer-kritikk.html': 'dommer',
     'admin.html': 'admin',         // Krever admin-rolle
-    'admin-panel.html': 'admin',
+    // admin-panel.html er beskyttet med PIN via admin-lock.js, ikke rolle
     'klubb.html': 'admin',
     'opprett-prove.html': 'admin',
     'opprett-klubb.html': 'admin',
@@ -455,3 +456,160 @@ const FuglehundAuth = (function() {
 
 // Gjør tilgjengelig globalt
 window.FuglehundAuth = FuglehundAuth;
+
+/**
+ * Global Toast/Notification System
+ * Brukervennlige meldinger for feil, suksess og advarsler
+ */
+const FuglehundToast = (function() {
+  let container = null;
+
+  function ensureContainer() {
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'fuglehund-toast-container';
+      container.className = 'fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm';
+      document.body.appendChild(container);
+    }
+    return container;
+  }
+
+  function show(message, type = 'info', duration = 5000) {
+    const cont = ensureContainer();
+
+    const colors = {
+      success: 'bg-green-50 border-green-200 text-green-800',
+      error: 'bg-red-50 border-red-200 text-red-800',
+      warning: 'bg-amber-50 border-amber-200 text-amber-800',
+      info: 'bg-sky-50 border-sky-200 text-sky-800'
+    };
+
+    const icons = {
+      success: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+      error: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+      warning: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>',
+      info: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `${colors[type] || colors.info} border rounded-xl p-4 shadow-lg flex items-start gap-3 animate-slide-in`;
+    toast.innerHTML = `
+      <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        ${icons[type] || icons.info}
+      </svg>
+      <div class="flex-1">
+        <p class="text-sm font-medium">${message}</p>
+      </div>
+      <button onclick="this.parentElement.remove()" class="text-current opacity-50 hover:opacity-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    `;
+
+    // Add animation styles if not exists
+    if (!document.getElementById('toast-styles')) {
+      const style = document.createElement('style');
+      style.id = 'toast-styles';
+      style.textContent = `
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        .animate-slide-in { animation: slideIn 0.3s ease-out; }
+        .animate-slide-out { animation: slideOut 0.3s ease-in forwards; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    cont.appendChild(toast);
+
+    // Auto-remove etter duration
+    if (duration > 0) {
+      setTimeout(() => {
+        toast.classList.add('animate-slide-out');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
+    return toast;
+  }
+
+  return {
+    show,
+    success: (msg, dur) => show(msg, 'success', dur),
+    error: (msg, dur) => show(msg, 'error', dur || 8000),
+    warning: (msg, dur) => show(msg, 'warning', dur),
+    info: (msg, dur) => show(msg, 'info', dur)
+  };
+})();
+
+window.FuglehundToast = FuglehundToast;
+
+// Global error handler for unhandled errors
+window.addEventListener('error', function(event) {
+  console.error('Uventet feil:', event.error);
+  // Bare vis toast for kritiske feil, ikke for manglende ressurser etc.
+  if (event.error && event.error.message && !event.filename?.includes('cdn.')) {
+    // Logg til konsoll, men ikke vis toast for hver feil
+    // FuglehundToast.error('En uventet feil oppstod. Prøv å laste siden på nytt.');
+  }
+});
+
+// Global handler for unhandled promise rejections
+window.addEventListener('unhandledrejection', function(event) {
+  console.error('Ubehandlet Promise-feil:', event.reason);
+  // Ikke vis toast for alle promise-feil, bare logg
+});
+
+// Helper for API-feil
+window.handleApiError = function(error, customMessage) {
+  console.error('API-feil:', error);
+  const message = customMessage || error.message || 'Kunne ikke fullføre forespørselen. Prøv igjen.';
+  FuglehundToast.error(message);
+};
+
+// Superadmin knapp - vises kun for telefon 90852833
+(function() {
+  const SUPERADMIN_PHONE = '90852833';
+
+  function injectAdminButton() {
+    try {
+      const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
+      if (userData.telefon !== SUPERADMIN_PHONE) return;
+
+      // Sjekk om knappen allerede finnes
+      if (document.getElementById('superadmin-btn')) return;
+
+      // Finn header
+      const header = document.querySelector('header');
+      if (!header) return;
+
+      // Lag admin-knappen
+      const adminBtn = document.createElement('a');
+      adminBtn.id = 'superadmin-btn';
+      adminBtn.href = '/admin-panel.html';
+      adminBtn.className = 'bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
+      adminBtn.textContent = 'Admin';
+
+      // Prøv å finne logg ut-knappen først
+      const logoutBtn = header.querySelector('button[onclick*="logout"]');
+      if (logoutBtn && logoutBtn.parentElement) {
+        logoutBtn.parentElement.insertBefore(adminBtn, logoutBtn);
+        return;
+      }
+
+      // Fallback: legg til i første div med flex i header
+      const flexContainer = header.querySelector('.flex.items-center.gap-3') ||
+                            header.querySelector('.flex.items-center') ||
+                            header.querySelector('div > div:last-child');
+      if (flexContainer) {
+        flexContainer.appendChild(adminBtn);
+      }
+    } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectAdminButton);
+  } else {
+    injectAdminButton();
+  }
+})();

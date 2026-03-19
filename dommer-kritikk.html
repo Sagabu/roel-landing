@@ -583,6 +583,9 @@
             const godkjentReis = getChecked('edit_GODKJENT_REISING');
             const standM = getVal('edit_STAND_M');
             const standU = getVal('edit_STAND_U');
+            const makkerStand = getVal('edit_MAKKER_STAND');
+            const sjanse = getVal('edit_SJANSE');
+            const tomstand = getVal('edit_TOMSTAND');
             const hasStand = standM > 0 || standU > 0;
 
             let errors = [];
@@ -590,6 +593,7 @@
 
             // Check if it's a 1. premie
             const is1Premie = premie.startsWith('1.');
+            const is1AK = premie === '1. AK';
 
             if (is1Premie) {
                 // 1. premie requirements: 60+ min slipptid AND stand AND godkjent reis
@@ -602,6 +606,19 @@
                 if (!godkjentReis) {
                     errors.push('Mangler godkjent reis (kreves for 1. premie)');
                 }
+
+                // Additional "ren" warnings for 1. AK (VK-qualification)
+                if (is1AK) {
+                    if (makkerStand > 0) {
+                        warnings.push(`Makkerstand registrert (${makkerStand}) - hunden bør være "ren" for 1. AK`);
+                    }
+                    if (sjanse > 0) {
+                        warnings.push(`Sjanse på fugl registrert (${sjanse}) - hunden bør være "ren" for 1. AK`);
+                    }
+                    if (tomstand > 0) {
+                        warnings.push(`Tomstand registrert (${tomstand}) - hunden bør være "ren" for 1. AK`);
+                    }
+                }
             } else {
                 // 2.-6. premie requirements: must have stand
                 if (!hasStand) {
@@ -613,19 +630,31 @@
             if (errors.length > 0) {
                 validationDiv.innerHTML = `
                     <div class="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl">
-                        <p class="font-medium mb-1">⚠️ Premiekrav ikke oppfylt:</p>
+                        <p class="font-medium mb-1">Premiekrav ikke oppfylt:</p>
                         <ul class="list-disc list-inside text-xs">
                             ${errors.map(e => `<li>${e}</li>`).join('')}
                         </ul>
-                        <p class="text-xs mt-2 italic">Du kan fortsatt sende kritikken, men premien vil bli markert som under vurdering.</p>
+                        <p class="text-xs mt-2 italic">Du kan fortsatt sende kritikken til NKK-rep for vurdering.</p>
                     </div>
                 `;
                 validationDiv.classList.remove('hidden');
-                return { valid: false, errors };
+                return { valid: false, errors, warnings };
+            } else if (warnings.length > 0) {
+                validationDiv.innerHTML = `
+                    <div class="bg-amber-50 border border-amber-200 text-amber-700 p-3 rounded-xl">
+                        <p class="font-medium mb-1">Merknad til 1. AK:</p>
+                        <ul class="list-disc list-inside text-xs">
+                            ${warnings.map(w => `<li>${w}</li>`).join('')}
+                        </ul>
+                        <p class="text-xs mt-2 italic">Premiekrav er oppfylt, men NKK-rep bør vurdere om hunden er "ren" nok for 1. AK.</p>
+                    </div>
+                `;
+                validationDiv.classList.remove('hidden');
+                return { valid: true, warnings };
             } else {
                 validationDiv.innerHTML = `
                     <div class="bg-green-50 border border-green-200 text-green-700 p-3 rounded-xl">
-                        <p class="font-medium">✓ Premiekrav oppfylt</p>
+                        <p class="font-medium">Premiekrav oppfylt</p>
                     </div>
                 `;
                 validationDiv.classList.remove('hidden');
@@ -638,7 +667,7 @@
 
         // Also validate when relevant score fields change
         document.addEventListener('input', function(e) {
-            if (['edit_SLIPPTID', 'edit_GODKJENT_REISING', 'edit_STAND_M', 'edit_STAND_U'].includes(e.target.id)) {
+            if (['edit_SLIPPTID', 'edit_GODKJENT_REISING', 'edit_STAND_M', 'edit_STAND_U', 'edit_MAKKER_STAND', 'edit_SJANSE', 'edit_TOMSTAND'].includes(e.target.id)) {
                 validatePremie();
             }
         });

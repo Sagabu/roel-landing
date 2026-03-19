@@ -226,10 +226,10 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
             </div>
-            <h3 class="text-xl font-bold font-serif text-bark-800 mb-2">Klubbprofil opprettet!</h3>
-            <p class="text-bark-600 mb-6">Din klubb er nå registrert. Klubbleder kan logge inn for å opprette jaktprøver.</p>
-            <a href="min-side.html" class="inline-block bg-sky-600 hover:bg-sky-700 text-white px-6 py-3 rounded-xl font-medium transition">
-                Gå til Min side
+            <h3 class="text-xl font-bold font-serif text-bark-800 mb-2">Forespørsel sendt!</h3>
+            <p class="text-bark-600 mb-6">Din klubb-forespørsel er nå sendt til godkjenning. Du vil få beskjed når forespørselen er behandlet.</p>
+            <a href="index.html" class="inline-block bg-sky-600 hover:bg-sky-700 text-white px-6 py-3 rounded-xl font-medium transition">
+                Tilbake til forsiden
             </a>
         </div>
     </div>
@@ -423,57 +423,47 @@
             `;
         }
 
-        function submitForm() {
+        async function submitForm() {
             // Collect all data
             const clubData = {
-                orgNumber: document.getElementById('orgNumber').value.replace(/\D/g, ''),
-                name: document.getElementById('clubName').value.trim(),
-                zipCode: document.getElementById('zipCode').value.trim(),
-                city: document.getElementById('city').value.trim(),
-                address: document.getElementById('address').value.trim(),
-                leader: {
-                    name: document.getElementById('leaderName').value.trim(),
-                    phone: document.getElementById('leaderPhone').value.replace(/\D/g, ''),
+                orgnummer: document.getElementById('orgNumber').value.replace(/\D/g, ''),
+                navn: document.getElementById('clubName').value.trim(),
+                postnummer: document.getElementById('zipCode').value.trim(),
+                sted: document.getElementById('city').value.trim(),
+                adresse: document.getElementById('address').value.trim(),
+                leder: {
+                    navn: document.getElementById('leaderName').value.trim(),
+                    telefon: document.getElementById('leaderPhone').value.replace(/\D/g, ''),
                     email: document.getElementById('leaderEmail').value.trim()
                 },
-                admins: [
-                    // Leader is always admin
-                    {
-                        name: document.getElementById('leaderName').value.trim(),
-                        phone: document.getElementById('leaderPhone').value.replace(/\D/g, ''),
-                        email: document.getElementById('leaderEmail').value.trim(),
-                        role: 'leder'
-                    },
-                    // Additional admins
-                    ...additionalAdmins.filter(a => a.name && a.phone).map(a => ({
-                        name: a.name,
-                        phone: a.phone.replace(/\D/g, ''),
-                        email: a.email,
-                        role: 'admin'
-                    }))
-                ],
-                createdAt: new Date().toISOString()
+                admins: additionalAdmins.filter(a => a.name && a.phone).map(a => ({
+                    name: a.name,
+                    phone: a.phone.replace(/\D/g, ''),
+                    email: a.email
+                }))
             };
 
-            // Save to localStorage (would be API call in production)
-            const clubs = JSON.parse(localStorage.getItem('registeredClubs') || '[]');
-            clubs.push(clubData);
-            localStorage.setItem('registeredClubs', JSON.stringify(clubs));
+            // Send til server
+            try {
+                const resp = await fetch('/api/klubb-foresporsel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(clubData)
+                });
 
-            // Also save club admins mapping for login lookup
-            const clubAdmins = JSON.parse(localStorage.getItem('clubAdmins') || '{}');
-            clubData.admins.forEach(admin => {
-                clubAdmins[admin.phone] = {
-                    clubId: clubData.orgNumber,
-                    clubName: clubData.name,
-                    name: admin.name,
-                    role: admin.role
-                };
-            });
-            localStorage.setItem('clubAdmins', JSON.stringify(clubAdmins));
+                const result = await resp.json();
 
-            // Show success modal
-            document.getElementById('successModal').classList.remove('hidden');
+                if (!resp.ok) {
+                    alert(result.error || 'Noe gikk galt. Prøv igjen.');
+                    return;
+                }
+
+                // Show success modal
+                document.getElementById('successModal').classList.remove('hidden');
+            } catch (err) {
+                console.error('Feil:', err);
+                alert('Kunne ikke sende forespørselen. Sjekk internettforbindelsen og prøv igjen.');
+            }
         }
     </script>
 </body>

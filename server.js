@@ -7,6 +7,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { config } from "dotenv";
+import { createHash, randomBytes } from "crypto";
 
 // Load environment variables
 config();
@@ -24,10 +25,19 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
-// --- Sveve SMS config ---
+// --- SMS config (Twilio eller Sveve) ---
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER || "";
+const twilioConfigured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER);
+
+// Fallback: Sveve (legacy)
 const SVEVE_USER = process.env.SVEVE_USER || "";
 const SVEVE_PASS = process.env.SVEVE_PASS || "";
 const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
+
+// SMS provider prioritet: Twilio > Sveve > Dev mode
+const smsProvider = twilioConfigured ? "twilio" : (sveveConfigured ? "sveve" : "dev");
 
 // Warn if using default secret
 if (!process.env.JWT_SECRET) {
@@ -394,6 +404,16 @@ const migrations = [
   "ALTER TABLE klubber ADD COLUMN vipps_nummer TEXT DEFAULT NULL",
   // Bilde-kolonne for hunder
   "ALTER TABLE hunder ADD COLUMN bilde TEXT DEFAULT NULL",
+  // Passord-autentisering for brukere
+  "ALTER TABLE brukere ADD COLUMN passord_hash TEXT DEFAULT NULL",
+  "ALTER TABLE brukere ADD COLUMN siste_innlogging TEXT DEFAULT NULL",
+  "ALTER TABLE brukere ADD COLUMN verifisert INTEGER DEFAULT 0",
+  // Passord-autentisering for klubber
+  "ALTER TABLE klubber ADD COLUMN passord_hash TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN admin_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN admin_epost TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN siste_innlogging TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN verifisert INTEGER DEFAULT 0",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -819,6 +839,32 @@ const requireDommer = async (c, next) => {
 };
 
 // ============================================
+// PASSWORD HELPERS
+// ============================================
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = createHash('sha256').update(password + salt).digest('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!storedHash) return false;
+  const [salt, hash] = storedHash.split(':');
+  const checkHash = createHash('sha256').update(password + salt).digest('hex');
+  return hash === checkHash;
+}
+
+// Sjekk om bruker trenger re-verifisering (>60 dager siden siste innlogging)
+function needsReverification(sisteInnlogging) {
+  if (!sisteInnlogging) return true;
+  const lastLogin = new Date(sisteInnlogging);
+  const now = new Date();
+  const daysSince = (now - lastLogin) / (1000 * 60 * 60 * 24);
+  return daysSince > 60;
+}
+
+// ============================================
 // SMS / OTP HELPERS
 // ============================================
 
@@ -838,32 +884,80 @@ function checkOTPRate(telefon) {
 }
 
 async function sendSMS(telefon, message) {
-  if (!sveveConfigured) {
-    console.log(`📱 [DEV MODE] SMS til ${telefon}: ${message}`);
+  // Formater telefonnummer til internasjonalt format
+  let phoneFormatted = telefon.replace(/\s/g, '');
+  if (phoneFormatted.startsWith('4') && phoneFormatted.length === 8) {
+    phoneFormatted = '+47' + phoneFormatted;
+  } else if (!phoneFormatted.startsWith('+')) {
+    phoneFormatted = '+47' + phoneFormatted;
+  }
+
+  // Dev mode - ingen SMS-leverandør konfigurert
+  if (smsProvider === "dev") {
+    console.log(`📱 [DEV MODE] SMS til ${phoneFormatted}: ${message}`);
     return { success: true, devMode: true };
   }
 
-  const url = new URL("https://sveve.no/SMS/SendSMS");
-  url.searchParams.set("user", SVEVE_USER);
-  url.searchParams.set("passwd", SVEVE_PASS);
-  url.searchParams.set("to", telefon);
-  url.searchParams.set("msg", message);
-  url.searchParams.set("from", "Fuglehund");
+  // Twilio
+  if (smsProvider === "twilio") {
+    try {
+      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+      const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
 
-  try {
-    const resp = await fetch(url.toString());
-    const text = await resp.text();
-    if (text.includes("<response>") && !text.includes("feil") && !text.includes("error")) {
-      console.log(`📱 SMS sendt til ${telefon}`);
-      return { success: true };
-    } else {
-      console.error("Sveve SMS error:", text);
-      return { success: false, error: text };
+      const resp = await fetch(twilioUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          To: phoneFormatted,
+          From: TWILIO_PHONE_NUMBER,
+          Body: message
+        })
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok && data.sid) {
+        console.log(`📱 [Twilio] SMS sendt til ${phoneFormatted} (SID: ${data.sid})`);
+        return { success: true, provider: 'twilio', sid: data.sid };
+      } else {
+        console.error("Twilio SMS error:", data);
+        return { success: false, error: data.message || 'Twilio error', provider: 'twilio' };
+      }
+    } catch (err) {
+      console.error("Twilio SMS fetch error:", err.message);
+      return { success: false, error: err.message, provider: 'twilio' };
     }
-  } catch (err) {
-    console.error("Sveve SMS fetch error:", err.message);
-    return { success: false, error: err.message };
   }
+
+  // Sveve (legacy fallback)
+  if (smsProvider === "sveve") {
+    const url = new URL("https://sveve.no/SMS/SendSMS");
+    url.searchParams.set("user", SVEVE_USER);
+    url.searchParams.set("passwd", SVEVE_PASS);
+    url.searchParams.set("to", telefon);
+    url.searchParams.set("msg", message);
+    url.searchParams.set("from", "Fuglehund");
+
+    try {
+      const resp = await fetch(url.toString());
+      const text = await resp.text();
+      if (text.includes("<response>") && !text.includes("feil") && !text.includes("error")) {
+        console.log(`📱 [Sveve] SMS sendt til ${telefon}`);
+        return { success: true, provider: 'sveve' };
+      } else {
+        console.error("Sveve SMS error:", text);
+        return { success: false, error: text, provider: 'sveve' };
+      }
+    } catch (err) {
+      console.error("Sveve SMS fetch error:", err.message);
+      return { success: false, error: err.message, provider: 'sveve' };
+    }
+  }
+
+  return { success: false, error: 'No SMS provider configured' };
 }
 
 function cleanExpired() {
@@ -1162,6 +1256,516 @@ app.post("/api/auth/consent", requireAuth, (c) => {
   const payload = c.get("bruker");
   db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(payload.telefon);
   return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+});
+
+// ============================================
+// NY AUTENTISERING MED PASSORD
+// ============================================
+
+// Steg 1: Registrer ny bruker (send SMS-kode for verifisering)
+app.post("/api/auth/register/send-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const fornavn = (body.fornavn || "").trim();
+  const etternavn = (body.etternavn || "").trim();
+  const epost = (body.epost || "").trim();
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer (8 siffer)" }, 400);
+  }
+  if (!fornavn || !etternavn) {
+    return c.json({ error: "Fornavn og etternavn er påkrevd" }, 400);
+  }
+
+  // Sjekk om bruker allerede eksisterer og er verifisert
+  const existing = db.prepare("SELECT telefon, verifisert FROM brukere WHERE telefon = ?").get(telefon);
+  if (existing && existing.verifisert) {
+    return c.json({ error: "Bruker med dette telefonnummeret eksisterer allerede. Logg inn i stedet." }, 409);
+  }
+
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  // Ugyldiggjør gamle koder
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  const smsResult = await sendSMS(telefon, `Din verifiseringskode for Fuglehundprøve: ${code}`);
+
+  if (!smsResult.success) {
+    return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+  }
+
+  return c.json({
+    ok: true,
+    message: "Verifiseringskode sendt på SMS",
+    devMode: smsResult.devMode || false
+  });
+});
+
+// Steg 2: Verifiser kode og opprett bruker med passord
+app.post("/api/auth/register/verify", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const code = (body.code || "").trim();
+  const passord = body.passord || "";
+  const fornavn = (body.fornavn || "").trim();
+  const etternavn = (body.etternavn || "").trim();
+  const epost = (body.epost || "").trim();
+
+  if (!telefon || !code || !passord) {
+    return c.json({ error: "Telefon, kode og passord er påkrevd" }, 400);
+  }
+  if (!fornavn || !etternavn) {
+    return c.json({ error: "Fornavn og etternavn er påkrevd" }, 400);
+  }
+
+  // Verifiser OTP
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+
+  // Hash passordet
+  const passordHash = hashPassword(passord);
+  const now = new Date().toISOString();
+
+  // Opprett eller oppdater bruker
+  const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE brukere SET
+        fornavn = ?, etternavn = ?, epost = ?,
+        passord_hash = ?, verifisert = 1,
+        siste_innlogging = ?, updated_at = ?
+      WHERE telefon = ?
+    `).run(fornavn, etternavn, epost, passordHash, now, now, telefon);
+  } else {
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `).run(telefon, fornavn, etternavn, epost, passordHash, now, now, now);
+  }
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  // Generer JWT
+  const token = jwt.sign(
+    {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      rolle: bruker.rolle || "deltaker"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    token,
+    bruker: {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      epost: bruker.epost,
+      rolle: bruker.rolle
+    }
+  });
+});
+
+// Logg inn med passord
+app.post("/api/auth/login-password", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const passord = body.passord || "";
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+  if (!passord) {
+    return c.json({ error: "Passord er påkrevd" }, 400);
+  }
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
+
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet eller ikke verifisert" }, 401);
+  }
+
+  if (!verifyPassword(passord, bruker.passord_hash)) {
+    return c.json({ error: "Feil passord" }, 401);
+  }
+
+  // Sjekk om re-verifisering kreves (>60 dager)
+  if (needsReverification(bruker.siste_innlogging)) {
+    return c.json({
+      requiresVerification: true,
+      message: "Det er over 60 dager siden siste innlogging. Verifiser med SMS-kode.",
+      telefon
+    }, 200);
+  }
+
+  // Oppdater siste innlogging
+  db.prepare("UPDATE brukere SET siste_innlogging = datetime('now') WHERE telefon = ?").run(telefon);
+
+  const token = jwt.sign(
+    {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      rolle: bruker.rolle || "deltaker"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    token,
+    bruker: {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      epost: bruker.epost,
+      rolle: bruker.rolle
+    }
+  });
+});
+
+// Send re-verifiseringskode (for 60-dagers regel)
+app.post("/api/auth/reverify/send-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  const bruker = db.prepare("SELECT telefon FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet" }, 404);
+  }
+
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  const smsResult = await sendSMS(telefon, `Din verifiseringskode for Fuglehundprøve: ${code}`);
+
+  if (!smsResult.success) {
+    return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+  }
+
+  return c.json({ ok: true, message: "Kode sendt på SMS", devMode: smsResult.devMode || false });
+});
+
+// Verifiser re-verifiseringskode og logg inn
+app.post("/api/auth/reverify/verify", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const code = (body.code || "").trim();
+
+  if (!telefon || !code) {
+    return c.json({ error: "Telefon og kode er påkrevd" }, 400);
+  }
+
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet" }, 404);
+  }
+
+  // Oppdater siste innlogging
+  db.prepare("UPDATE brukere SET siste_innlogging = datetime('now') WHERE telefon = ?").run(telefon);
+
+  const token = jwt.sign(
+    {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      rolle: bruker.rolle || "deltaker"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    token,
+    bruker: {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      epost: bruker.epost,
+      rolle: bruker.rolle
+    }
+  });
+});
+
+// ============================================
+// KLUBB-AUTENTISERING MED PASSORD
+// ============================================
+
+// Registrer ny klubb - send SMS-kode
+app.post("/api/auth/klubb/register/send-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const klubbNavn = (body.navn || "").trim();
+  const orgnummer = (body.orgnummer || "").trim();
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer (8 siffer)" }, 400);
+  }
+  if (!klubbNavn) {
+    return c.json({ error: "Klubbnavn er påkrevd" }, 400);
+  }
+
+  // Sjekk om klubb med orgnummer allerede finnes
+  if (orgnummer) {
+    const existing = db.prepare("SELECT id FROM klubber WHERE orgnummer = ?").get(orgnummer);
+    if (existing) {
+      return c.json({ error: "Klubb med dette organisasjonsnummeret eksisterer allerede" }, 409);
+    }
+  }
+
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  const smsResult = await sendSMS(telefon, `Verifiseringskode for ${klubbNavn}: ${code}`);
+
+  if (!smsResult.success) {
+    return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+  }
+
+  return c.json({ ok: true, message: "Kode sendt på SMS", devMode: smsResult.devMode || false });
+});
+
+// Verifiser og opprett klubb med passord
+app.post("/api/auth/klubb/register/verify", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const code = (body.code || "").trim();
+  const passord = body.passord || "";
+  const klubbNavn = (body.navn || "").trim();
+  const orgnummer = (body.orgnummer || "").trim();
+  const epost = (body.epost || "").trim();
+  const region = (body.region || "").trim();
+
+  if (!telefon || !code || !passord || !klubbNavn) {
+    return c.json({ error: "Alle påkrevde felt må fylles ut" }, 400);
+  }
+
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+
+  const passordHash = hashPassword(passord);
+  const klubbId = `klubb_${Date.now()}`;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost, verifisert, siste_innlogging)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+  `).run(klubbId, orgnummer || null, klubbNavn, region, passordHash, telefon, epost, now);
+
+  const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(klubbId);
+
+  const token = jwt.sign(
+    {
+      klubbId: klubb.id,
+      navn: klubb.navn,
+      type: "klubb"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    token,
+    klubb: {
+      id: klubb.id,
+      navn: klubb.navn,
+      orgnummer: klubb.orgnummer,
+      region: klubb.region
+    }
+  });
+});
+
+// Klubb-innlogging med passord
+app.post("/api/auth/klubb/login", async (c) => {
+  const body = await c.req.json();
+  const identifier = (body.identifier || "").trim(); // kan være orgnummer, klubb-id eller admin-telefon
+  const passord = body.passord || "";
+
+  if (!identifier || !passord) {
+    return c.json({ error: "Klubb-ID og passord er påkrevd" }, 400);
+  }
+
+  // Finn klubb basert på ulike identifikatorer
+  let klubb = db.prepare("SELECT * FROM klubber WHERE id = ? OR orgnummer = ? OR admin_telefon = ?")
+    .get(identifier, identifier, identifier.replace(/\s/g, ""));
+
+  if (!klubb) {
+    return c.json({ error: "Klubb ikke funnet" }, 401);
+  }
+
+  if (!klubb.verifisert) {
+    return c.json({ error: "Klubben er ikke verifisert" }, 401);
+  }
+
+  if (!verifyPassword(passord, klubb.passord_hash)) {
+    return c.json({ error: "Feil passord" }, 401);
+  }
+
+  // Sjekk re-verifisering
+  if (needsReverification(klubb.siste_innlogging)) {
+    return c.json({
+      requiresVerification: true,
+      message: "Det er over 60 dager siden siste innlogging. Verifiser med SMS-kode.",
+      telefon: klubb.admin_telefon,
+      klubbId: klubb.id
+    }, 200);
+  }
+
+  db.prepare("UPDATE klubber SET siste_innlogging = datetime('now') WHERE id = ?").run(klubb.id);
+
+  const token = jwt.sign(
+    {
+      klubbId: klubb.id,
+      navn: klubb.navn,
+      type: "klubb"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    token,
+    klubb: {
+      id: klubb.id,
+      navn: klubb.navn,
+      orgnummer: klubb.orgnummer,
+      region: klubb.region
+    }
+  });
+});
+
+// Klubb re-verifisering
+app.post("/api/auth/klubb/reverify/send-code", async (c) => {
+  const body = await c.req.json();
+  const klubbId = body.klubbId;
+
+  const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(klubbId);
+  if (!klubb || !klubb.admin_telefon) {
+    return c.json({ error: "Klubb ikke funnet" }, 404);
+  }
+
+  const telefon = klubb.admin_telefon;
+
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  const smsResult = await sendSMS(telefon, `Verifiseringskode for ${klubb.navn}: ${code}`);
+
+  if (!smsResult.success) {
+    return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+  }
+
+  return c.json({ ok: true, message: "Kode sendt på SMS", devMode: smsResult.devMode || false });
+});
+
+// Verifiser klubb re-verifisering
+app.post("/api/auth/klubb/reverify/verify", async (c) => {
+  const body = await c.req.json();
+  const klubbId = body.klubbId;
+  const code = (body.code || "").trim();
+
+  const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(klubbId);
+  if (!klubb) {
+    return c.json({ error: "Klubb ikke funnet" }, 404);
+  }
+
+  const telefon = klubb.admin_telefon;
+
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+  db.prepare("UPDATE klubber SET siste_innlogging = datetime('now') WHERE id = ?").run(klubb.id);
+
+  const token = jwt.sign(
+    {
+      klubbId: klubb.id,
+      navn: klubb.navn,
+      type: "klubb"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    token,
+    klubb: {
+      id: klubb.id,
+      navn: klubb.navn,
+      orgnummer: klubb.orgnummer,
+      region: klubb.region
+    }
+  });
 });
 
 // ============================================
@@ -4185,5 +4789,6 @@ serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(`🐕 Fuglehundprøve running on http://0.0.0.0:${PORT}`);
   console.log(`   Admin: http://localhost:${PORT}/admin-panel.html`);
   console.log(`   Backup: http://localhost:${PORT}/api/backup`);
-  console.log(`   SMS: ${sveveConfigured ? "Sveve configured" : "Dev mode (codes logged to console)"}`);
+  const smsStatus = smsProvider === "twilio" ? "Twilio" : (smsProvider === "sveve" ? "Sveve" : "Dev mode (codes logged to console)");
+  console.log(`   SMS: ${smsStatus}`);
 });

@@ -25,6 +25,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .code-input {
+            width: 3rem;
+            height: 3.5rem;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        .code-input:focus {
+            border-color: #0ea5e9;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+        }
+    </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
 
@@ -64,20 +78,27 @@
                     <p class="text-bark-500 mt-2">For klubbadministratorer og arrangører</p>
                 </div>
 
-                <!-- Login Form -->
-                <div id="loginForm">
+                <!-- Step 1: Login Form -->
+                <div id="step1">
                     <div class="space-y-5">
                         <div>
-                            <label class="block text-sm font-medium text-bark-700 mb-2">Klubb-ID eller e-post</label>
-                            <input type="text" id="clubId" placeholder="klubb@eksempel.no"
-                                class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none text-lg">
+                            <label class="block text-sm font-medium text-bark-700 mb-2">Mobilnummer (administrator)</label>
+                            <div class="flex">
+                                <span class="inline-flex items-center px-4 rounded-l-xl border-2 border-r-0 border-bark-200 bg-bark-50 text-bark-500">
+                                    +47
+                                </span>
+                                <input type="tel" id="phoneNumber" placeholder="XXX XX XXX" maxlength="11"
+                                    class="flex-1 px-4 py-3 rounded-r-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none"
+                                    oninput="formatPhoneNumber(this)">
+                            </div>
+                            <p class="text-xs text-bark-400 mt-1">Telefonnummeret registrert som klubbadministrator</p>
                         </div>
 
                         <div>
                             <label class="block text-sm font-medium text-bark-700 mb-2">Passord</label>
                             <div class="relative">
-                                <input type="password" id="password" placeholder="••••••••"
-                                    class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none text-lg pr-12">
+                                <input type="password" id="password" placeholder="Klubbens passord"
+                                    class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none pr-12">
                                 <button type="button" onclick="togglePassword()" class="absolute right-4 top-1/2 -translate-y-1/2 text-bark-400 hover:text-bark-600">
                                     <svg id="eyeIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -89,15 +110,16 @@
 
                         <p id="loginError" class="text-red-500 text-sm hidden"></p>
 
-                        <button onclick="loginClub()" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
+                        <button onclick="loginClub()" id="loginBtn" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <span id="loginBtnText">Logg inn</span>
+                            <svg id="loginSpinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            Logg inn
                         </button>
 
                         <div class="flex items-center justify-between pt-4 border-t border-bark-100">
-                            <a href="#" onclick="showForgotPassword()" class="text-sky-600 hover:text-sky-700 text-sm font-medium">
+                            <a href="#" onclick="showForgotPassword(); return false;" class="text-sky-600 hover:text-sky-700 text-sm font-medium">
                                 Glemt passord?
                             </a>
                             <a href="opprett-klubb.html" class="text-sky-600 hover:text-sky-700 text-sm font-medium">
@@ -107,49 +129,74 @@
                     </div>
                 </div>
 
-                <!-- Forgot Password -->
-                <div id="forgotPassword" class="hidden">
+                <!-- Step 2: Re-verification (60 days) -->
+                <div id="step2" class="hidden">
                     <div class="text-center mb-6">
+                        <div class="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-bark-900 mb-2">Verifisering påkrevd</h3>
                         <p class="text-bark-500 text-sm">
-                            Skriv inn e-postadressen til klubben, så sender vi en lenke for å tilbakestille passordet.
+                            Det er over 60 dager siden siste innlogging.<br>
+                            Vi har sendt en kode til <span class="font-semibold text-bark-700" id="displayPhone">+47 XXX XX XXX</span>
                         </p>
                     </div>
 
-                    <div class="space-y-5">
+                    <div class="space-y-6">
                         <div>
-                            <label class="block text-sm font-medium text-bark-700 mb-2">E-post</label>
-                            <input type="email" id="resetEmail" placeholder="klubb@eksempel.no"
-                                class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none text-lg">
+                            <label class="block text-sm font-medium text-bark-700 mb-3 text-center">Verifiseringskode (4 siffer)</label>
+                            <div class="flex justify-center gap-3">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="code1" oninput="handleCodeInput(this, 'code2')" onkeydown="handleCodeKeydown(event, null, 'code2')">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="code2" oninput="handleCodeInput(this, 'code3')" onkeydown="handleCodeKeydown(event, 'code1', 'code3')">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="code3" oninput="handleCodeInput(this, 'code4')" onkeydown="handleCodeKeydown(event, 'code2', 'code4')">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="code4" oninput="handleCodeInput(this, null)" onkeydown="handleCodeKeydown(event, 'code3', null)">
+                            </div>
+                            <p id="codeError" class="text-red-500 text-sm text-center mt-2 hidden"></p>
                         </div>
 
-                        <button onclick="sendResetLink()" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-4 rounded-xl text-lg transition">
-                            Send tilbakestillingslenke
+                        <button onclick="verifyReverification()" id="verifyBtn" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <span id="verifyBtnText">Bekreft og logg inn</span>
+                            <svg id="verifySpinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
                         </button>
 
-                        <button onclick="showLoginForm()" class="w-full text-bark-500 hover:text-bark-700 text-sm font-medium flex items-center justify-center gap-1">
+                        <button onclick="goBackToStep1()" class="w-full text-bark-500 hover:text-bark-700 text-sm font-medium flex items-center justify-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                             </svg>
-                            Tilbake til innlogging
+                            Tilbake
                         </button>
                     </div>
                 </div>
 
-                <!-- Reset Link Sent -->
-                <div id="resetSent" class="hidden">
-                    <div class="text-center">
-                        <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold font-serif text-bark-900 mb-2">E-post sendt!</h3>
-                        <p class="text-bark-500 mb-6">Sjekk innboksen din for en lenke til å tilbakestille passordet.</p>
-
-                        <button onclick="showLoginForm()" class="w-full border-2 border-bark-300 hover:border-bark-400 text-bark-700 font-semibold py-4 rounded-xl text-lg transition">
-                            Tilbake til innlogging
-                        </button>
+                <!-- Forgot Password -->
+                <div id="forgotPassword" class="hidden">
+                    <div class="text-center mb-6">
+                        <p class="text-bark-500 text-sm">
+                            Kontakt support for å tilbakestille passord for din klubb.
+                        </p>
                     </div>
+
+                    <div class="bg-sky-50 border border-sky-200 rounded-xl p-4 mb-6">
+                        <p class="text-sky-700 text-sm">
+                            Send e-post til <a href="mailto:support@fuglehundprove.no" class="font-medium underline">support@fuglehundprove.no</a> med klubbnavn og administratorens telefonnummer.
+                        </p>
+                    </div>
+
+                    <button onclick="showLoginForm()" class="w-full text-bark-500 hover:text-bark-700 text-sm font-medium flex items-center justify-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                        Tilbake til innlogging
+                    </button>
                 </div>
             </div>
 
@@ -172,72 +219,187 @@
     </main>
 
     <script>
-        function togglePassword() {
-            const input = document.getElementById('password');
-            const icon = document.getElementById('eyeIcon');
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>';
-            } else {
-                input.type = 'password';
-                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
+        let klubbId = null;
+        let adminTelefon = null;
+
+        function formatPhoneNumber(input) {
+            let value = input.value.replace(/\D/g, '');
+            if (value.length > 3 && value.length <= 5) {
+                value = value.slice(0, 3) + ' ' + value.slice(3);
+            } else if (value.length > 5) {
+                value = value.slice(0, 3) + ' ' + value.slice(3, 5) + ' ' + value.slice(5, 8);
             }
+            input.value = value;
         }
 
-        function loginClub() {
-            const clubId = document.getElementById('clubId').value.trim();
-            const password = document.getElementById('password').value;
-            const errorEl = document.getElementById('loginError');
+        function togglePassword() {
+            const input = document.getElementById('password');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
 
-            if (!clubId) {
-                errorEl.textContent = 'Vennligst fyll inn klubb-ID eller e-post';
-                errorEl.classList.remove('hidden');
+        function showError(message) {
+            const el = document.getElementById('loginError');
+            el.textContent = message;
+            el.classList.remove('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('loginError').classList.add('hidden');
+        }
+
+        async function loginClub() {
+            hideError();
+
+            const phone = document.getElementById('phoneNumber').value.replace(/\s/g, '');
+            const password = document.getElementById('password').value;
+
+            if (phone.length !== 8) {
+                showError('Vennligst fyll inn et gyldig mobilnummer (8 siffer)');
                 return;
             }
             if (!password) {
-                errorEl.textContent = 'Vennligst fyll inn passord';
-                errorEl.classList.remove('hidden');
+                showError('Vennligst fyll inn passord');
                 return;
             }
 
-            errorEl.classList.add('hidden');
+            const btn = document.getElementById('loginBtn');
+            const text = document.getElementById('loginBtnText');
+            const spinner = document.getElementById('loginSpinner');
+            btn.disabled = true;
+            text.textContent = 'Logger inn...';
+            spinner.classList.remove('hidden');
 
-            // Simuler innlogging (i produksjon: kall API)
-            // For demo: aksepter enhver kombinasjon
-            const clubSession = {
-                clubId: clubId,
-                name: 'Demo Fuglehundklubb',
-                loggedInAt: new Date().toISOString()
-            };
+            try {
+                const resp = await fetch('/api/auth/klubb/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ identifier: phone, passord: password })
+                });
 
-            localStorage.setItem('clubSession', JSON.stringify(clubSession));
-            localStorage.setItem('isClubLoggedIn', 'true');
+                const data = await resp.json();
 
-            // Redirect til klubb-admin
-            window.location.href = 'admin.html';
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Innlogging feilet');
+                }
+
+                // Sjekk om re-verifisering kreves
+                if (data.requiresVerification) {
+                    klubbId = data.klubbId;
+                    adminTelefon = data.telefon;
+
+                    // Send kode
+                    const codeResp = await fetch('/api/auth/klubb/reverify/send-code', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ klubbId: klubbId })
+                    });
+
+                    if (!codeResp.ok) {
+                        const codeData = await codeResp.json();
+                        throw new Error(codeData.error || 'Kunne ikke sende kode');
+                    }
+
+                    document.getElementById('displayPhone').textContent = '+47 ' + adminTelefon.slice(0,3) + ' ' + adminTelefon.slice(3,5) + ' ' + adminTelefon.slice(5);
+                    document.getElementById('step1').classList.add('hidden');
+                    document.getElementById('step2').classList.remove('hidden');
+                    document.getElementById('code1').focus();
+
+                    btn.disabled = false;
+                    text.textContent = 'Logg inn';
+                    spinner.classList.add('hidden');
+                    return;
+                }
+
+                // Vellykket innlogging
+                localStorage.setItem('klubbToken', data.token);
+                localStorage.setItem('klubbSession', JSON.stringify(data.klubb));
+                localStorage.setItem('isKlubbLoggedIn', 'true');
+
+                window.location.href = 'admin.html';
+
+            } catch (err) {
+                showError(err.message);
+                btn.disabled = false;
+                text.textContent = 'Logg inn';
+                spinner.classList.add('hidden');
+            }
+        }
+
+        function handleCodeInput(current, nextId) {
+            current.value = current.value.replace(/\D/g, '');
+            if (current.value && nextId) {
+                document.getElementById(nextId).focus();
+            }
+        }
+
+        function handleCodeKeydown(event, prevId, nextId) {
+            if (event.key === 'Backspace' && !event.target.value && prevId) {
+                document.getElementById(prevId).focus();
+            }
+        }
+
+        function getCode() {
+            return ['code1', 'code2', 'code3', 'code4'].map(id => document.getElementById(id).value).join('');
+        }
+
+        async function verifyReverification() {
+            const code = getCode();
+            if (code.length !== 4) {
+                document.getElementById('codeError').textContent = 'Vennligst fyll inn alle 4 siffer';
+                document.getElementById('codeError').classList.remove('hidden');
+                return;
+            }
+
+            const btn = document.getElementById('verifyBtn');
+            const text = document.getElementById('verifyBtnText');
+            const spinner = document.getElementById('verifySpinner');
+            btn.disabled = true;
+            text.textContent = 'Verifiserer...';
+            spinner.classList.remove('hidden');
+
+            try {
+                const resp = await fetch('/api/auth/klubb/reverify/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ klubbId: klubbId, code: code })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Verifisering feilet');
+                }
+
+                localStorage.setItem('klubbToken', data.token);
+                localStorage.setItem('klubbSession', JSON.stringify(data.klubb));
+                localStorage.setItem('isKlubbLoggedIn', 'true');
+
+                window.location.href = 'admin.html';
+
+            } catch (err) {
+                document.getElementById('codeError').textContent = err.message;
+                document.getElementById('codeError').classList.remove('hidden');
+                btn.disabled = false;
+                text.textContent = 'Bekreft og logg inn';
+                spinner.classList.add('hidden');
+            }
+        }
+
+        function goBackToStep1() {
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step1').classList.remove('hidden');
+            ['code1', 'code2', 'code3', 'code4'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('codeError').classList.add('hidden');
         }
 
         function showForgotPassword() {
-            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('step1').classList.add('hidden');
             document.getElementById('forgotPassword').classList.remove('hidden');
         }
 
         function showLoginForm() {
             document.getElementById('forgotPassword').classList.add('hidden');
-            document.getElementById('resetSent').classList.add('hidden');
-            document.getElementById('loginForm').classList.remove('hidden');
-        }
-
-        function sendResetLink() {
-            const email = document.getElementById('resetEmail').value.trim();
-            if (!email || !email.includes('@')) {
-                alert('Vennligst fyll inn en gyldig e-postadresse');
-                return;
-            }
-
-            // Simuler sending (i produksjon: kall API)
-            document.getElementById('forgotPassword').classList.add('hidden');
-            document.getElementById('resetSent').classList.remove('hidden');
+            document.getElementById('step1').classList.remove('hidden');
         }
     </script>
 </body>

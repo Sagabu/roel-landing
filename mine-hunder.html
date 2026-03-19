@@ -1248,49 +1248,62 @@
         }
 
         // Form submit
-        document.getElementById('dogForm').addEventListener('submit', function(e) {
+        document.getElementById('dogForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            const id = document.getElementById('dogId').value || Date.now().toString();
+            const existingId = document.getElementById('dogId').value;
             const genderInput = document.querySelector('input[name="dogGender"]:checked');
             const regNumber = document.getElementById('dogRegNumber').value;
 
-            const dogData = {
-                id: id,
-                name: document.getElementById('dogName').value,
-                breed: document.getElementById('dogBreed').value,
-                regNumber: regNumber,
-                gender: genderInput ? genderInput.value : null,
-                birthDate: document.getElementById('dogBirthDate').value,
-                photo: currentDogPhoto,
-                eierbevis: currentDocuments.eierbevis,
-                aversjonsbevis: currentDocuments.aversjonsbevis,
-                vaksinasjon: currentDocuments.vaksinasjon,
-                vaksinasjonDato: documentDates.vaksinasjon,
-                results: []
+            // Data for API (backend format)
+            const apiData = {
+                regnr: regNumber || null,
+                navn: document.getElementById('dogName').value,
+                rase: document.getElementById('dogBreed').value || null,
+                kjonn: genderInput ? genderInput.value : null,
+                fodselsdato: document.getElementById('dogBirthDate').value || null,
+                eier_telefon: userPhone,
+                bilde: currentDogPhoto || null
             };
 
-            // Auto-attach critiques based on regNumber
-            const matchingCritiques = sampleCritiques.filter(c => c.regNumber === regNumber);
-            if (matchingCritiques.length > 0) {
-                dogData.results = matchingCritiques;
-            }
+            try {
+                let response;
+                let savedDog;
 
-            const existingIndex = dogs.findIndex(d => d.id === id);
-            if (existingIndex >= 0) {
-                // Keep existing results if no new matches
-                if (dogData.results.length === 0) {
-                    dogData.results = dogs[existingIndex].results || [];
+                if (existingId) {
+                    // Oppdater eksisterende hund
+                    response = await fetch(`/api/hunder/${existingId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(apiData)
+                    });
+                } else {
+                    // Opprett ny hund
+                    response = await fetch('/api/hunder', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(apiData)
+                    });
                 }
-                dogs[existingIndex] = dogData;
-            } else {
-                dogs.push(dogData);
-            }
 
-            saveUserDogs();
-            closeDogModal();
-            renderDogs();
-            showToast(existingIndex >= 0 ? 'Hund oppdatert' : 'Hund lagt til');
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Feil: ' + (error.error || 'Kunne ikke lagre hund'));
+                    return;
+                }
+
+                savedDog = await response.json();
+                console.log('Hund lagret:', savedDog);
+
+                // Oppdater lokal liste
+                await loadDogs();
+                closeDogModal();
+                showToast(existingId ? 'Hund oppdatert' : 'Hund lagt til');
+
+            } catch (err) {
+                console.error('Feil ved lagring av hund:', err);
+                alert('Kunne ikke lagre hund. Prøv igjen.');
+            }
         });
 
         function deleteDog(id) {
@@ -1305,12 +1318,27 @@
             dogToDelete = null;
         }
 
-        function confirmDelete() {
+        async function confirmDelete() {
             if (dogToDelete) {
-                dogs = dogs.filter(d => d.id !== dogToDelete);
-                saveUserDogs();
-                renderDogs();
-                showToast('Hund slettet');
+                try {
+                    const response = await fetch(`/api/hunder/${dogToDelete}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        alert('Feil: ' + (error.error || 'Kunne ikke slette hund'));
+                        closeDeleteModal();
+                        return;
+                    }
+
+                    // Oppdater lokal liste
+                    await loadDogs();
+                    showToast('Hund slettet');
+                } catch (err) {
+                    console.error('Feil ved sletting av hund:', err);
+                    alert('Kunne ikke slette hund. Prøv igjen.');
+                }
             }
             closeDeleteModal();
         }

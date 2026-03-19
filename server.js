@@ -1459,6 +1459,97 @@ app.get("/api/hunder", (c) => {
   return c.json(rows);
 });
 
+// Opprett ny hund
+app.post("/api/hunder", async (c) => {
+  const body = await c.req.json();
+  const { regnr, navn, rase, kjonn, fodselsdato, eier_telefon, klubb_id, bilde } = body;
+
+  if (!navn) {
+    return c.json({ error: "Navn er påkrevd" }, 400);
+  }
+
+  if (!eier_telefon) {
+    return c.json({ error: "Eier-telefon er påkrevd" }, 400);
+  }
+
+  // Sjekk at eier finnes
+  const eier = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(eier_telefon);
+  if (!eier) {
+    return c.json({ error: "Eier ikke funnet" }, 404);
+  }
+
+  // Sjekk om regnr allerede finnes (hvis oppgitt)
+  if (regnr) {
+    const existing = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(regnr);
+    if (existing) {
+      return c.json({ error: "En hund med dette registreringsnummeret finnes allerede" }, 409);
+    }
+  }
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO hunder (regnr, navn, rase, kjonn, fodt, eier_telefon, klubb_id, bilde)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(regnr || null, navn, rase || null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null);
+
+    const newHund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(result.lastInsertRowid);
+    return c.json(newHund, 201);
+  } catch (e) {
+    console.error("Feil ved opprettelse av hund:", e);
+    return c.json({ error: "Kunne ikke opprette hund" }, 500);
+  }
+});
+
+// Oppdater hund
+app.put("/api/hunder/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const existing = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!existing) {
+    return c.json({ error: "Hund ikke funnet" }, 404);
+  }
+
+  const fields = ["regnr", "navn", "rase", "kjonn", "fodt", "klubb_id", "bilde"];
+  const sets = [];
+  const vals = [];
+
+  for (const f of fields) {
+    if (f in body) {
+      // Map frontend field names to db field names
+      const dbField = f === "fodselsdato" ? "fodt" : f;
+      sets.push(`${dbField} = ?`);
+      vals.push(body[f]);
+    }
+  }
+
+  if (sets.length === 0) {
+    return c.json({ error: "Ingen felter å oppdatere" }, 400);
+  }
+
+  vals.push(id);
+  db.prepare(`UPDATE hunder SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+
+  const updated = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  return c.json(updated);
+});
+
+// Slett hund
+app.delete("/api/hunder/:id", (c) => {
+  const id = c.req.param("id");
+
+  const existing = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!existing) {
+    return c.json({ error: "Hund ikke funnet" }, 404);
+  }
+
+  // Slett relaterte data først
+  db.prepare("DELETE FROM resultater WHERE hund_id = ?").run(id);
+  db.prepare("DELETE FROM hunder WHERE id = ?").run(id);
+
+  return c.json({ ok: true, message: "Hund slettet" });
+});
+
 // Hent én hund
 app.get("/api/hunder/:id", (c) => {
   const id = c.req.param("id");

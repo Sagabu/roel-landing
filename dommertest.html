@@ -34,6 +34,10 @@
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
         input[type="number"] { font-size: 16px; }
         .touch-target { min-height: 48px; min-width: 48px; }
+        .nav-arrow { transition: all 0.15s; }
+        .nav-arrow:active { transform: scale(0.95); }
+        .recording { animation: recording-pulse 1s infinite; }
+        @keyframes recording-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } }
     </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
@@ -110,6 +114,15 @@
             </div>
             <div class="flex-1 overflow-y-auto p-4">
                 <div class="space-y-2" id="rankingList"></div>
+                <div class="mt-6">
+                    <h3 class="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        Utslått
+                    </h3>
+                    <div id="knockedOutList" class="space-y-2"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -118,53 +131,72 @@
     <div id="legendModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div class="px-6 py-4 border-b border-bark-100">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-lg font-bold font-serif text-bark-800">Forklaring av felt</h2>
-                    <button onclick="hideLegend()" class="text-bark-400 hover:text-bark-600">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
+                <h3 class="font-bold font-serif text-bark-800">Kritikkskjema - Feltoversikt</h3>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-4">
+                <!-- Fuglebehandling -->
+                <div>
+                    <h4 class="text-xs font-bold text-sky-700 uppercase tracking-wider mb-2">Fuglebehandling</h4>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between"><span class="font-medium">Presisjon</span><span class="text-bark-500">1-4 (1=Meget upresis, 4=Presis)</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Reising</span><span class="text-bark-500">1-6 (1=Nekter, 6=Djerv)</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Godkj. reising</span><span class="text-bark-500">Avkryssing</span></div>
+                    </div>
+                </div>
+                <!-- Stand/Arbeid -->
+                <div>
+                    <h4 class="text-xs font-bold text-bark-600 uppercase tracking-wider mb-2">Stand og arbeid</h4>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between"><span class="font-medium">Stand m/makker</span><span class="text-bark-500">Antall stand i konkurranse</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Stand u/makker</span><span class="text-bark-500">Antall stand uten konkurranse</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Tomstand</span><span class="text-bark-500">Antall tomstand</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Makkers stand</span><span class="text-bark-500">Antall sekundert</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Sjanse på fugl</span><span class="text-bark-500">Antall sjanser</span></div>
+                        <div class="flex justify-between"><span class="font-medium bg-amber-100 px-2 rounded">Slipptid</span><span class="text-bark-500">Minutter</span></div>
+                    </div>
+                </div>
+                <!-- Egenskaper (Sum) -->
+                <div>
+                    <h4 class="text-xs font-bold text-earth-700 uppercase tracking-wider mb-2">Egenskaper (1-6 skala)</h4>
+                    <div class="space-y-2 text-sm">
+                        <div><span class="font-medium">Jaktlyst:</span> <span class="text-bark-500">1=Mangler intensitet, 6=Særdeles høy intensitet</span></div>
+                        <div><span class="font-medium">Fart:</span> <span class="text-bark-500">1=Lav fart, 6=Særdeles stor fart</span></div>
+                        <div><span class="font-medium">Selvstendighet:</span> <span class="text-bark-500">1=Helt avhengig av makker, 6=Helt selvstendig</span></div>
+                        <div><span class="font-medium">Søksbredde:</span> <span class="text-bark-500">1=Liten søksbredde, 6=Alt for stor søksbredde</span></div>
+                        <div><span class="font-medium">Reviering:</span> <span class="text-bark-500">1=Planløst uten framdrift, 6=Alt for åpen reviering</span></div>
+                        <div><span class="font-medium">Samarbeid:</span> <span class="text-bark-500">1=Totalt førerfiksert, 6=Samarbeider ikke</span></div>
+                    </div>
+                </div>
+                <!-- Sekundering & Apport -->
+                <div>
+                    <h4 class="text-xs font-bold text-purple-700 uppercase tracking-wider mb-2">Sekundering & Apport</h4>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between"><span class="font-medium">Sekundering spontan</span><span class="text-bark-500">Antall</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Sekundering går forbi</span><span class="text-bark-500">Antall</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Apport</span><span class="text-bark-500">1=Godkjent, 2=Ikke godkjent</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Rapport spontan</span><span class="text-bark-500">Avkryssing</span></div>
+                    </div>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto p-6">
-                <div class="space-y-4 text-sm">
-                    <div class="bg-sky-50 rounded-xl p-4">
-                        <h3 class="font-bold text-sky-800 mb-2">Fuglearbeid</h3>
-                        <ul class="space-y-1 text-bark-700">
-                            <li><strong>Stand m/</strong> - Stand med makker tilstede</li>
-                            <li><strong>Stand u/</strong> - Stand uten makker</li>
-                            <li><strong>Tomstand</strong> - Stand uten fugl</li>
-                            <li><strong>Sjanse</strong> - Sjanser på fugl</li>
-                            <li><strong>Makkerstand</strong> - Sekunderer makkers stand</li>
-                        </ul>
-                    </div>
-                    <div class="bg-forest-50 rounded-xl p-4">
-                        <h3 class="font-bold text-forest-800 mb-2">Reis og apport</h3>
-                        <ul class="space-y-1 text-bark-700">
-                            <li><strong>Presisjon</strong> - 1-4 (4 = best)</li>
-                            <li><strong>Reising</strong> - 1-6 (6 = best)</li>
-                            <li><strong>Godkj. reis</strong> - Godkjent reising</li>
-                            <li><strong>Apport</strong> - 1 = Godkjent, 2 = Ikke godkjent</li>
-                        </ul>
-                    </div>
-                    <div class="bg-amber-50 rounded-xl p-4">
-                        <h3 class="font-bold text-amber-800 mb-2">Egenskaper (1-6)</h3>
-                        <ul class="space-y-1 text-bark-700">
-                            <li><strong>Jaktlyst</strong> - Vilje og intensitet</li>
-                            <li><strong>Fart</strong> - Tempo i søk</li>
-                            <li><strong>Selvst.</strong> - Selvstendighet</li>
-                            <li><strong>Søksbr.</strong> - Søksbredde</li>
-                            <li><strong>Reviering</strong> - Utnyttelse av terreng</li>
-                            <li><strong>Samarb.</strong> - Samarbeid med fører</li>
-                        </ul>
-                    </div>
-                </div>
+            <div class="p-4 border-t border-bark-100">
+                <button onclick="hideLegend()" class="w-full py-3 bg-bark-100 hover:bg-bark-200 rounded-xl font-medium transition">
+                    Lukk
+                </button>
             </div>
         </div>
     </div>
 
     <script>
+        // Character fields definition (same as production)
+        const CHARACTER_FIELDS = [
+            { key: 'JAKTLYST', label: 'JL', title: 'Jaktlyst', max: 6, description: '1=Mangler intensitet, 6=Særdeles høy intensitet' },
+            { key: 'FART', label: 'FA', title: 'Fart', max: 6, description: '1=Lav fart, 6=Særdeles stor fart' },
+            { key: 'SELVSTENDIGHET', label: 'SE', title: 'Selvstendighet', max: 6, description: '1=Helt avhengig av makker, 6=Helt selvstendig' },
+            { key: 'SOKSBREDDE', label: 'SB', title: 'Søksbredde', max: 6, description: '1=Liten søksbredde, 6=Alt for stor søksbredde' },
+            { key: 'REVIERING', label: 'RE', title: 'Reviering', max: 6, description: '1=Planløst uten framdrift, 6=Alt for åpen reviering' },
+            { key: 'SAMARBEID', label: 'SA', title: 'Samarbeid', max: 6, description: '1=Totalt førerfiksert, 6=Samarbeider ikke' }
+        ];
+
         // Test data - Neadalens hunder
         const TEST_DOGS = [
             {
@@ -191,34 +223,34 @@
         const state = {
             dogs: [],
             selectedDogs: [0],
-            viewMode: 'single',
-            currentRound: 1
+            cardDogIndex: [0],
+            viewMode: 'single'
         };
+
+        // Create empty round (same structure as production)
+        function createEmptyRound(roundNum) {
+            return {
+                roundNum: roundNum,
+                scores: {
+                    PRESISJON: null, REISING: null, GODKJENT_REISING: false,
+                    STAND_M: null, STAND_U: null, TOMSTAND: null, MAKKER_STAND: null, SJANSE: null,
+                    SLIPPTID: null, JAKTLYST: null, FART: null, SELVSTENDIGHET: null,
+                    SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
+                    SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
+                },
+                notes: '',
+                completed: false
+            };
+        }
 
         // Initialize dog with empty scores
         function initDog(dog) {
             return {
                 ...dog,
-                rounds: [createRound(1)],
+                rounds: [createEmptyRound(1)],
                 knocked: false,
-                knockedRound: null
-            };
-        }
-
-        function createRound(roundNumber) {
-            return {
-                round: roundNumber,
-                notes: '',
-                scores: {
-                    STAND_M: null, STAND_U: null, TOMSTAND: null,
-                    SJANSE: null, MAKKER_STAND: null, SLIPPTID: null,
-                    PRESISJON: null, REISING: null, GODKJENT_REISING: false,
-                    JAKTLYST: null, FART: null, SELVSTENDIGHET: null,
-                    SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
-                    SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null,
-                    RAPPORT_SPONTAN: false, ADFERD: ''
-                },
-                completed: false
+                knockedRound: null,
+                status: 'active'
             };
         }
 
@@ -229,7 +261,10 @@
         const saved = localStorage.getItem('judgeData_test');
         if (saved) {
             try {
-                state.dogs = JSON.parse(saved);
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    state.dogs = parsed;
+                }
             } catch (e) {}
         }
 
@@ -242,288 +277,698 @@
             document.getElementById('viewDual').className = mode === 'dual'
                 ? 'flex-1 py-2 rounded-xl text-sm font-medium bg-sky-100 text-sky-700'
                 : 'flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600';
+
+            if (mode === 'single') {
+                state.selectedDogs = [state.selectedDogs[0]];
+                state.cardDogIndex = [state.cardDogIndex[0]];
+            } else {
+                if (state.selectedDogs.length === 1) {
+                    const nextIdx = (state.cardDogIndex[0] + 1) % state.dogs.length;
+                    state.selectedDogs.push(state.dogs[nextIdx].id);
+                    state.cardDogIndex.push(nextIdx);
+                }
+            }
             renderCards();
+            renderDogSelector();
+        }
+
+        // Navigate dog on specific card (prev/next)
+        function navigateCard(cardIndex, direction) {
+            let newIdx = state.cardDogIndex[cardIndex] + direction;
+            if (newIdx < 0) newIdx = state.dogs.length - 1;
+            if (newIdx >= state.dogs.length) newIdx = 0;
+
+            if (state.viewMode === 'dual') {
+                const otherCardIdx = cardIndex === 0 ? 1 : 0;
+                if (newIdx === state.cardDogIndex[otherCardIdx]) {
+                    newIdx = newIdx + direction;
+                    if (newIdx < 0) newIdx = state.dogs.length - 1;
+                    if (newIdx >= state.dogs.length) newIdx = 0;
+                }
+            }
+
+            state.cardDogIndex[cardIndex] = newIdx;
+            state.selectedDogs[cardIndex] = state.dogs[newIdx].id;
+            renderCards();
+            renderDogSelector();
         }
 
         // Dog selector
         function renderDogSelector() {
             const container = document.getElementById('dogSelector');
-            container.innerHTML = state.dogs.map((dog, idx) => `
-                <button onclick="selectDog(${idx})"
-                    class="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition touch-target
-                    ${state.selectedDogs.includes(idx)
-                        ? 'bg-sky-500 text-white'
-                        : dog.knocked
-                            ? 'bg-red-100 text-red-600 line-through'
-                            : 'bg-bark-100 text-bark-700 hover:bg-bark-200'
-                    }">
-                    ${dog.nr}. ${dog.name.split(' ').pop()}
-                </button>
-            `).join('');
+            container.innerHTML = state.dogs.map((dog, idx) => {
+                const isSelected = state.cardDogIndex.includes(idx);
+                const hasScores = dog.rounds.some(r => Object.values(r.scores).some(v => v !== null && v !== false && v !== ''));
+                const statusClass = dog.knocked ? 'bg-red-100 text-red-600 border-red-300'
+                    : dog.status === 'done' ? 'bg-green-100 text-green-700 border-green-300'
+                    : isSelected ? 'bg-sky-500 text-white border-transparent'
+                    : hasScores ? 'bg-blue-50 text-blue-700 border-blue-300'
+                    : 'bg-white text-bark-700 border-bark-300';
+
+                return `
+                    <button onclick="selectDog(${idx})"
+                        class="flex-shrink-0 w-12 h-12 rounded-xl border-2 font-bold transition ${statusClass} touch-target">
+                        ${dog.nr}
+                    </button>
+                `;
+            }).join('');
         }
 
         function selectDog(idx) {
             if (state.viewMode === 'single') {
-                state.selectedDogs = [idx];
+                state.selectedDogs = [state.dogs[idx].id];
+                state.cardDogIndex = [idx];
             } else {
-                if (state.selectedDogs.includes(idx)) {
+                const existingIdx = state.cardDogIndex.indexOf(idx);
+                if (existingIdx > -1) {
                     if (state.selectedDogs.length > 1) {
-                        state.selectedDogs = state.selectedDogs.filter(i => i !== idx);
+                        state.selectedDogs.splice(existingIdx, 1);
+                        state.cardDogIndex.splice(existingIdx, 1);
                     }
                 } else {
                     if (state.selectedDogs.length >= 2) {
                         state.selectedDogs.shift();
+                        state.cardDogIndex.shift();
                     }
-                    state.selectedDogs.push(idx);
+                    state.selectedDogs.push(state.dogs[idx].id);
+                    state.cardDogIndex.push(idx);
                 }
             }
             renderDogSelector();
             renderCards();
         }
 
-        // Render dog cards
+        // Render dog cards (matching production layout)
         function renderCards() {
             const container = document.getElementById('cardsContainer');
-            const dogsToShow = state.selectedDogs.map(idx => state.dogs[idx]);
+            const selectedDogs = state.cardDogIndex.map(idx => state.dogs[idx]).filter(Boolean);
 
-            container.innerHTML = dogsToShow.map((dog, viewIdx) => {
-                const round = dog.rounds[dog.rounds.length - 1];
-                const s = round.scores;
+            if (state.viewMode === 'single') {
+                selectedDogs.length = 1;
+            }
+
+            container.innerHTML = selectedDogs.map((dog, cardIdx) => {
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                const roundNum = currentRound.roundNum;
+                const s = currentRound.scores;
 
                 return `
-                <div class="bg-white rounded-2xl shadow-lg overflow-hidden border border-bark-100 ${state.selectedDogs.length > 1 && viewIdx === 0 ? 'card-active' : ''}">
-                    <!-- Dog Header -->
-                    <div class="bg-gradient-to-r from-sky-500 to-sky-600 text-white px-4 py-3">
+                <div class="bg-white rounded-2xl shadow-lg overflow-hidden ${selectedDogs.length > 1 && cardIdx === 0 ? 'ring-2 ring-amber-400' : ''}">
+                    <!-- Card Header with Navigation -->
+                    <div class="bg-gradient-to-r from-bark-700 to-bark-800 text-white px-4 py-3">
                         <div class="flex items-center justify-between">
-                            <div>
-                                <p class="font-bold font-serif text-lg">${dog.nr}. ${dog.name}</p>
-                                <p class="text-sky-100 text-sm">${dog.breed} | ${dog.handler}</p>
-                                <p class="text-sky-200 text-xs">${dog.regnr || ''}</p>
+                            <!-- Left Arrow -->
+                            <button onclick="navigateCard(${cardIdx}, -1)" class="nav-arrow p-2 -ml-2 hover:bg-white/20 rounded-lg transition touch-target">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                </svg>
+                            </button>
+
+                            <!-- Dog Info -->
+                            <div class="flex-1 text-center px-2">
+                                <div class="flex items-center justify-center gap-2">
+                                    <span class="bg-white/20 px-2 py-0.5 rounded text-sm font-bold">${dog.nr}</span>
+                                    <span class="font-bold font-serif truncate">${dog.name}</span>
+                                </div>
+                                <p class="text-white/70 text-sm mt-1">${dog.breed} • ${dog.handler}</p>
                             </div>
+
+                            <!-- Right Arrow -->
+                            <button onclick="navigateCard(${cardIdx}, 1)" class="nav-arrow p-2 -mr-2 hover:bg-white/20 rounded-lg transition touch-target">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- Round selector & Knockout -->
+                        <div class="flex items-center justify-between mt-3 pt-3 border-t border-white/20">
                             <div class="flex items-center gap-2">
-                                <button onclick="showLegend()" class="bg-white/20 hover:bg-white/30 p-2 rounded-xl transition" title="Forklaring">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
+                                <span class="text-xs text-white/70">Slipp:</span>
+                                ${dog.rounds.map((r, rIdx) => `
+                                    <button onclick="selectRound(${dog.id}, ${rIdx})"
+                                        class="w-8 h-8 rounded-lg text-sm font-bold transition ${rIdx === dog.rounds.length - 1 ? 'bg-white text-bark-800' : 'bg-white/20 hover:bg-white/30'}">
+                                        ${r.roundNum}
+                                    </button>
+                                `).join('')}
+                                <button onclick="addRound(${dog.id})" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white text-lg transition" title="Legg til nytt slipp">
+                                    +
                                 </button>
-                                ${dog.knocked ? '<span class="bg-red-500 px-2 py-1 rounded text-xs font-bold">UTSLÅTT</span>' : ''}
                             </div>
+                            <button onclick="toggleKnockout(${dog.id})"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium transition ${dog.knocked ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-red-500/80 text-white'}">
+                                ${dog.knocked ? 'Utslått ✓' : 'Slå ut'}
+                            </button>
                         </div>
                     </div>
 
-                    <!-- Scoring Grid -->
-                    <div class="p-4 space-y-4">
-                        <!-- Fuglearbeid -->
-                        <div class="bg-sky-50 rounded-xl p-3">
-                            <h4 class="text-xs font-bold text-sky-700 mb-2 uppercase tracking-wide">Fuglearbeid</h4>
-                            <div class="grid grid-cols-5 gap-2">
-                                ${renderScoreInput(dog.id, 'STAND_M', 'Stand m/', s.STAND_M, 0, 99)}
-                                ${renderScoreInput(dog.id, 'STAND_U', 'Stand u/', s.STAND_U, 0, 99)}
-                                ${renderScoreInput(dog.id, 'TOMSTAND', 'Tomstand', s.TOMSTAND, 0, 99)}
-                                ${renderScoreInput(dog.id, 'SJANSE', 'Sjanse', s.SJANSE, 0, 99)}
-                                ${renderScoreInput(dog.id, 'MAKKER_STAND', 'Makkerst.', s.MAKKER_STAND, 0, 99)}
+                    <!-- Score Inputs - Official FKF Critique Form -->
+                    <div class="p-4 ${dog.knocked ? 'opacity-50 pointer-events-none' : ''}">
+                        <!-- Header with legend button -->
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <span class="text-xs font-semibold text-bark-600 uppercase tracking-wide">Slipp ${roundNum} - Kritikkskjema</span>
+                                ${roundNum > 1 ? `
+                                    <div class="text-xs text-bark-500 mt-1">
+                                        <span class="font-medium">Forrige slipp:</span>
+                                        ${(() => {
+                                            const prevRound = dog.rounds[dog.rounds.length - 2];
+                                            if (prevRound && prevRound.scores) {
+                                                const prevSlipp = prevRound.scores.SLIPPTID || 0;
+                                                const totalSlipp = dog.rounds.slice(0, -1).reduce((sum, r) => sum + (r.scores?.SLIPPTID || 0), 0);
+                                                return prevSlipp + ' min (totalt: ' + totalSlipp + ' min)';
+                                            }
+                                            return 'Ikke registrert';
+                                        })()}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <button onclick="showLegend()" class="flex items-center gap-1 text-bark-400 hover:text-bark-600 text-xs">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Hjelp
+                            </button>
+                        </div>
+
+                        <!-- FUGLEBEHANDLING Section -->
+                        <div class="bg-sky-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-xs font-bold text-sky-700 uppercase tracking-wider mb-2">Fuglebehandling</h4>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="text-center">
+                                    <label class="block text-xs font-medium text-bark-500 mb-1" title="Presisjon (1-4)">Presisjon</label>
+                                    <input type="number" min="1" max="4"
+                                        value="${s.PRESISJON !== null ? s.PRESISJON : ''}"
+                                        onchange="updateScore(${dog.id}, 'PRESISJON', this.value)"
+                                        placeholder="1-4"
+                                        class="score-input w-full h-12 text-center text-xl font-bold rounded-xl border-2 border-sky-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-xs font-medium text-bark-500 mb-1" title="Reising (1-6)">Reising</label>
+                                    <input type="number" min="1" max="6"
+                                        value="${s.REISING !== null ? s.REISING : ''}"
+                                        onchange="updateScore(${dog.id}, 'REISING', this.value)"
+                                        placeholder="1-6"
+                                        class="score-input w-full h-12 text-center text-xl font-bold rounded-xl border-2 border-sky-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="flex items-end justify-center pb-1">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox"
+                                            ${s.GODKJENT_REISING ? 'checked' : ''}
+                                            onchange="updateScore(${dog.id}, 'GODKJENT_REISING', this.checked)"
+                                            class="w-5 h-5 rounded border-2 border-forest-300 text-forest-600 focus:ring-forest-500">
+                                        <span class="text-xs font-medium text-bark-600">Godkj.</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Reis og slipptid -->
-                        <div class="bg-earth-50 rounded-xl p-3">
-                            <h4 class="text-xs font-bold text-earth-700 mb-2 uppercase tracking-wide">Reis & Slipptid</h4>
+                        <!-- STAND/ARBEID Section -->
+                        <div class="bg-bark-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-xs font-bold text-bark-600 uppercase tracking-wider mb-2">Stand og arbeid</h4>
+                            <div class="grid grid-cols-4 gap-2 mb-2">
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Stand m/makker">St.M</label>
+                                    <span class="block text-[9px] italic text-bark-400 mb-1">Stand m/makker</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.STAND_M !== null ? s.STAND_M : ''}"
+                                        onchange="updateScore(${dog.id}, 'STAND_M', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Stand u/makker">St.U</label>
+                                    <span class="block text-[9px] italic text-bark-400 mb-1">Stand u/makker</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.STAND_U !== null ? s.STAND_U : ''}"
+                                        onchange="updateScore(${dog.id}, 'STAND_U', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Tomstand">TS</label>
+                                    <span class="block text-[9px] italic text-bark-400 mb-1">Tomstand</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.TOMSTAND !== null ? s.TOMSTAND : ''}"
+                                        onchange="updateScore(${dog.id}, 'TOMSTAND', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Makkers stand">MS</label>
+                                    <span class="block text-[9px] italic text-bark-400 mb-1">Makkerstand</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.MAKKER_STAND !== null ? s.MAKKER_STAND : ''}"
+                                        onchange="updateScore(${dog.id}, 'MAKKER_STAND', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Sjanse på fugl">SJ</label>
+                                    <span class="block text-[9px] italic text-bark-400 mb-1">Sjanse</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.SJANSE !== null ? s.SJANSE : ''}"
+                                        onchange="updateScore(${dog.id}, 'SJANSE', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-amber-600 mb-0" title="Slipptid (min)">SL</label>
+                                    <span class="block text-[9px] italic text-amber-500 mb-1">Slipptid (min)</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.SLIPPTID !== null ? s.SLIPPTID : ''}"
+                                        onchange="updateScore(${dog.id}, 'SLIPPTID', this.value)"
+                                        placeholder="min"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-amber-300 focus:border-amber-500 focus:ring-0 outline-none bg-amber-50">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- EGENSKAPER (SUM) Section -->
+                        <div class="bg-earth-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-xs font-bold text-earth-700 uppercase tracking-wider mb-2">Egenskaper (1-6)</h4>
+                            <div class="grid grid-cols-6 gap-1">
+                                ${CHARACTER_FIELDS.map(field => `
+                                    <div class="text-center">
+                                        <label class="block text-sm font-bold text-earth-600 mb-0" title="${field.title}: ${field.description}">${field.label}</label>
+                                        <span class="block text-[8px] italic text-earth-500 mb-1">${field.title}</span>
+                                        <input type="number" min="1" max="6"
+                                            value="${s[field.key] !== null ? s[field.key] : ''}"
+                                            onchange="updateScore(${dog.id}, '${field.key}', this.value)"
+                                            placeholder="-"
+                                            class="score-input w-full h-9 text-center text-base font-bold rounded-lg border-2 border-earth-200 focus:border-earth-500 focus:ring-0 outline-none bg-white">
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- ADFERD Section -->
+                        <div class="bg-red-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-[10px] font-bold text-red-600 uppercase mb-2">Adferd (beskriv uønsket)</h4>
+                            <input type="text"
+                                value="${s.ADFERD || ''}"
+                                onchange="updateScore(${dog.id}, 'ADFERD', this.value)"
+                                placeholder="Ingen uønsket adferd"
+                                class="w-full px-3 py-2 rounded-lg border border-red-200 focus:border-red-400 outline-none text-sm bg-white">
+                        </div>
+
+                        <!-- SEKUNDERING & APPORT Section -->
+                        <div class="bg-purple-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-xs font-bold text-purple-700 uppercase tracking-wider mb-2">Sekundering & Apport</h4>
                             <div class="grid grid-cols-4 gap-2">
-                                ${renderScoreInput(dog.id, 'PRESISJON', 'Presisjon', s.PRESISJON, 1, 4)}
-                                ${renderScoreInput(dog.id, 'REISING', 'Reising', s.REISING, 1, 6)}
-                                ${renderCheckbox(dog.id, 'GODKJENT_REISING', 'Godkj. reis', s.GODKJENT_REISING)}
-                                ${renderScoreInput(dog.id, 'SLIPPTID', 'Slipptid', s.SLIPPTID, 0, 180)}
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Sekundering spontan">SekS</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Sek. spont.</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.SEK_SPONTAN !== null ? s.SEK_SPONTAN : ''}"
+                                        onchange="updateScore(${dog.id}, 'SEK_SPONTAN', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Sekundering går forbi">SekF</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Sek. forbi</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${s.SEK_FORBI !== null ? s.SEK_FORBI : ''}"
+                                        onchange="updateScore(${dog.id}, 'SEK_FORBI', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Apport (1=Godkjent, 2=Ikke godkjent)">App</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Apport</span>
+                                    <input type="number" min="1" max="2"
+                                        value="${s.APPORT !== null ? s.APPORT : ''}"
+                                        onchange="updateScore(${dog.id}, 'APPORT', this.value)"
+                                        placeholder="1-2"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="flex flex-col items-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Rapport spontan">RapS</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Rapp. spont.</span>
+                                    <label class="flex items-center justify-center h-10 cursor-pointer">
+                                        <input type="checkbox"
+                                            ${s.RAPPORT_SPONTAN ? 'checked' : ''}
+                                            onchange="updateScore(${dog.id}, 'RAPPORT_SPONTAN', this.checked)"
+                                            class="w-6 h-6 rounded border-2 border-purple-300 text-purple-600 focus:ring-purple-500">
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Egenskaper -->
-                        <div class="bg-amber-50 rounded-xl p-3">
-                            <h4 class="text-xs font-bold text-amber-700 mb-2 uppercase tracking-wide">Egenskaper (1-6)</h4>
-                            <div class="grid grid-cols-6 gap-2">
-                                ${renderScoreInput(dog.id, 'JAKTLYST', 'Jaktlyst', s.JAKTLYST, 1, 6)}
-                                ${renderScoreInput(dog.id, 'FART', 'Fart', s.FART, 1, 6)}
-                                ${renderScoreInput(dog.id, 'SELVSTENDIGHET', 'Selvst.', s.SELVSTENDIGHET, 1, 6)}
-                                ${renderScoreInput(dog.id, 'SOKSBREDDE', 'Søksbr.', s.SOKSBREDDE, 1, 6)}
-                                ${renderScoreInput(dog.id, 'REVIERING', 'Reviering', s.REVIERING, 1, 6)}
-                                ${renderScoreInput(dog.id, 'SAMARBEID', 'Samarb.', s.SAMARBEID, 1, 6)}
-                            </div>
-                        </div>
-
-                        <!-- Sekundering og apport -->
-                        <div class="bg-bark-50 rounded-xl p-3">
-                            <h4 class="text-xs font-bold text-bark-600 mb-2 uppercase tracking-wide">Sekundering & Apport</h4>
-                            <div class="grid grid-cols-4 gap-2">
-                                ${renderScoreInput(dog.id, 'SEK_SPONTAN', 'Sek. spont.', s.SEK_SPONTAN, 0, 99)}
-                                ${renderScoreInput(dog.id, 'SEK_FORBI', 'Sek. forbi', s.SEK_FORBI, 0, 99)}
-                                ${renderScoreInput(dog.id, 'APPORT', 'Apport', s.APPORT, 1, 2)}
-                                ${renderCheckbox(dog.id, 'RAPPORT_SPONTAN', 'Rapp. spont.', s.RAPPORT_SPONTAN)}
-                            </div>
-                        </div>
-
-                        <!-- Notes -->
-                        <div>
-                            <label class="text-xs font-bold text-bark-600 mb-1 block uppercase tracking-wide">Notater</label>
-                            <textarea
-                                onchange="updateNotes(${dog.id}, this.value)"
-                                class="w-full p-3 border-2 border-bark-200 rounded-xl text-sm resize-none focus:border-sky-500 focus:ring-0 outline-none"
-                                rows="2"
-                                placeholder="Skriv notater her..."
-                            >${round.notes || ''}</textarea>
-                        </div>
-
-                        <!-- Actions -->
-                        <div class="flex gap-2">
-                            ${!dog.knocked ? `
-                                <button onclick="knockOut(${dog.id})" class="flex-1 bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-4 rounded-xl transition text-sm">
-                                    Slå ut
+                        <!-- Private Notes with Voice Recording -->
+                        <div class="mt-4">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-xs font-medium text-bark-500">
+                                    <span class="flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                        </svg>
+                                        Notater fra fjellet (kun for deg - publiseres ikke)
+                                    </span>
+                                </label>
+                                <button onclick="toggleVoiceRecording(${dog.id})" id="voiceBtn-${dog.id}"
+                                    class="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                                    </svg>
+                                    <span id="voiceBtnText-${dog.id}">Dikter</span>
                                 </button>
-                            ` : `
-                                <button onclick="reinstatedog(${dog.id})" class="flex-1 bg-green-100 hover:bg-green-200 text-green-700 font-medium py-2 px-4 rounded-xl transition text-sm">
-                                    Gjenopprett
-                                </button>
-                            `}
-                            <button onclick="addRound(${dog.id})" class="flex-1 bg-sky-100 hover:bg-sky-200 text-sky-700 font-medium py-2 px-4 rounded-xl transition text-sm">
-                                + Ny runde
+                            </div>
+
+                            <!-- Previous slips notes (read-only) -->
+                            ${dog.rounds.length > 1 ? `
+                                <div class="mb-2 space-y-1">
+                                    ${dog.rounds.slice(0, -1).map(r => r.notes ? `
+                                        <div class="bg-bark-50 rounded-lg px-3 py-2 border border-bark-200">
+                                            <span class="text-[10px] font-semibold text-bark-400 uppercase">Slipp ${r.roundNum}:</span>
+                                            <p class="text-sm text-bark-500 italic">${r.notes}</p>
+                                        </div>
+                                    ` : '').join('')}
+                                </div>
+                            ` : ''}
+
+                            <div class="relative">
+                                <textarea
+                                    id="notes-${dog.id}"
+                                    rows="2"
+                                    onchange="updateCurrentRoundNotes(${dog.id}, this.value)"
+                                    placeholder="Skriv eller dikter notater for slipp ${roundNum}..."
+                                    class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-sky-500 focus:ring-0 outline-none text-sm resize-none bg-yellow-50">${currentRound.notes || ''}</textarea>
+                                <div id="voiceStatus-${dog.id}" class="hidden absolute right-2 top-2 text-xs text-red-600 flex items-center gap-1">
+                                    <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
+                                    Lytter...
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="flex gap-2 mt-4">
+                            <button onclick="saveSlipAndContinue(${dog.id})"
+                                class="flex-1 py-3 rounded-xl font-medium transition bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                Lagre ${roundNum}.slipp
+                            </button>
+                            <button onclick="markDone(${dog.id})"
+                                class="flex-1 py-3 rounded-xl font-medium transition ${dog.status === 'done' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
+                                ${dog.status === 'done' ? '✓ Avsluttet' : 'Avslutt hund'}
+                            </button>
+                        </div>
+                        <div class="flex gap-2 mt-2">
+                            <button onclick="clearRound(${dog.id})"
+                                class="flex-1 py-2 rounded-xl bg-bark-100 text-bark-600 hover:bg-bark-200 text-sm font-medium transition">
+                                Nullstill slipp
                             </button>
                         </div>
                     </div>
                 </div>
-                `;
-            }).join('');
+            `}).join('');
+
+            container.innerHTML += '<div class="h-24"></div>';
         }
 
-        function renderScoreInput(dogId, field, label, value, min, max) {
-            return `
-                <div class="text-center">
-                    <input type="number" min="${min}" max="${max}"
-                        value="${value !== null ? value : ''}"
-                        onchange="updateScore(${dogId}, '${field}', this.value)"
-                        class="w-full h-10 text-center text-lg font-bold border-2 border-bark-200 rounded-lg score-input focus:border-sky-500 focus:ring-0 outline-none bg-white"
-                        placeholder="-"
-                    >
-                    <p class="text-[10px] text-bark-500 mt-1">${label}</p>
-                </div>
-            `;
-        }
-
-        function renderCheckbox(dogId, field, label, checked) {
-            return `
-                <div class="text-center">
-                    <button onclick="toggleCheck(${dogId}, '${field}')"
-                        class="w-full h-10 flex items-center justify-center border-2 rounded-lg transition
-                        ${checked ? 'bg-sky-500 border-sky-500 text-white' : 'bg-white border-bark-200 text-bark-400'}">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
-                        </svg>
-                    </button>
-                    <p class="text-[10px] text-bark-500 mt-1">${label}</p>
-                </div>
-            `;
-        }
-
-        // Update functions
+        // Update Score (handles both numeric and boolean values)
         function updateScore(dogId, field, value) {
             const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-            const round = dog.rounds[dog.rounds.length - 1];
-            round.scores[field] = value === '' ? null : parseInt(value);
-            saveLive();
+            if (dog) {
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                if (typeof value === 'boolean') {
+                    currentRound.scores[field] = value;
+                } else if (field === 'ADFERD') {
+                    currentRound.scores[field] = value;
+                } else {
+                    currentRound.scores[field] = value === '' ? null : parseInt(value);
+                }
+                saveLive();
+            }
         }
 
-        function toggleCheck(dogId, field) {
+        // Update notes for current round/slip
+        function updateCurrentRoundNotes(dogId, value) {
             const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-            const round = dog.rounds[dog.rounds.length - 1];
-            round.scores[field] = !round.scores[field];
-            saveLive();
-            renderCards();
+            if (dog) {
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                currentRound.notes = value;
+                saveLive();
+            }
         }
 
-        function updateNotes(dogId, value) {
+        // Save current slip and move to next dog
+        function saveSlipAndContinue(dogId) {
             const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-            const round = dog.rounds[dog.rounds.length - 1];
-            round.notes = value;
-            saveLive();
+            if (dog) {
+                const textarea = document.getElementById('notes-' + dogId);
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                if (textarea) {
+                    currentRound.notes = textarea.value;
+                }
+                currentRound.completed = true;
+                saveLive();
+
+                // Move to next dog
+                const currentIdx = state.dogs.findIndex(d => d.id === dogId);
+                let nextIdx = (currentIdx + 1) % state.dogs.length;
+
+                // Skip knocked dogs
+                while (state.dogs[nextIdx].knocked && nextIdx !== currentIdx) {
+                    nextIdx = (nextIdx + 1) % state.dogs.length;
+                }
+
+                if (nextIdx !== currentIdx) {
+                    state.selectedDogs = [state.dogs[nextIdx].id];
+                    state.cardDogIndex = [nextIdx];
+                    renderCards();
+                    renderDogSelector();
+                } else {
+                    alert('Slipp ' + currentRound.roundNum + ' lagret for ' + dog.name);
+                }
+            }
         }
 
-        function knockOut(dogId) {
-            if (!confirm('Er du sikker på at du vil slå ut denne hunden?')) return;
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-            dog.knocked = true;
-            dog.knockedRound = dog.rounds.length;
-            saveLive();
-            renderDogSelector();
-            renderCards();
-        }
-
-        function reinstatedog(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-            dog.knocked = false;
-            dog.knockedRound = null;
-            saveLive();
-            renderDogSelector();
-            renderCards();
-        }
-
+        // Add Round
         function addRound(dogId) {
             const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-            const nextRound = dog.rounds.length + 1;
-            dog.rounds.push(createRound(nextRound));
-            saveLive();
-            renderCards();
+            if (dog) {
+                const nextRoundNum = dog.rounds.length + 1;
+                dog.rounds.push(createEmptyRound(nextRoundNum));
+                renderCards();
+                saveLive();
+            }
         }
 
-        // Save to localStorage
+        // Select Round
+        function selectRound(dogId, roundIdx) {
+            alert('Viser slipp ' + (roundIdx + 1) + '. Redigering av tidligere slipp kommer snart.');
+        }
+
+        // Clear current round
+        function clearRound(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog && confirm('Nullstille poeng for dette slippet?')) {
+                const currentRound = dog.rounds[dog.rounds.length - 1];
+                currentRound.scores = {
+                    PRESISJON: null, REISING: null, GODKJENT_REISING: false,
+                    STAND_M: null, STAND_U: null, TOMSTAND: null, MAKKER_STAND: null, SJANSE: null, SLIPPTID: null,
+                    JAKTLYST: null, FART: null, SELVSTENDIGHET: null, SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
+                    SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
+                };
+                renderCards();
+                saveLive();
+            }
+        }
+
+        // Mark Done
+        function markDone(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                dog.status = dog.status === 'done' ? 'active' : 'done';
+                renderCards();
+                renderDogSelector();
+                saveLive();
+            }
+        }
+
+        // Toggle Knockout
+        function toggleKnockout(dogId) {
+            const dog = state.dogs.find(d => d.id === dogId);
+            if (dog) {
+                dog.knocked = !dog.knocked;
+                renderCards();
+                renderDogSelector();
+                saveLive();
+            }
+        }
+
+        // Save Live
         function saveLive() {
             localStorage.setItem('judgeData_test', JSON.stringify(state.dogs));
             console.log('Saved:', state.dogs);
         }
 
-        // Ranking
+        // Show/Hide Legend
+        function showLegend() {
+            document.getElementById('legendModal').classList.remove('hidden');
+        }
+        function hideLegend() {
+            document.getElementById('legendModal').classList.add('hidden');
+        }
+
+        // Show/Hide Ranking
         function showRanking() {
             document.getElementById('rankingModal').classList.remove('hidden');
             renderRankingList();
         }
-
         function hideRanking() {
             document.getElementById('rankingModal').classList.add('hidden');
         }
 
+        // Render Ranking List
         function renderRankingList() {
-            const container = document.getElementById('rankingList');
             const activeDogs = state.dogs.filter(d => !d.knocked);
+            const knockedDogs = state.dogs.filter(d => d.knocked);
 
-            // Sort by total jaktlyst + fart
             activeDogs.sort((a, b) => {
-                const scoreA = (a.rounds[0]?.scores?.JAKTLYST || 0) + (a.rounds[0]?.scores?.FART || 0);
-                const scoreB = (b.rounds[0]?.scores?.JAKTLYST || 0) + (b.rounds[0]?.scores?.FART || 0);
-                return scoreB - scoreA;
+                const totalA = a.rounds.reduce((sum, r) => sum + (r.scores.JAKTLYST || 0) + (r.scores.FART || 0), 0);
+                const totalB = b.rounds.reduce((sum, r) => sum + (r.scores.JAKTLYST || 0) + (r.scores.FART || 0), 0);
+                return totalB - totalA;
             });
 
-            container.innerHTML = activeDogs.map((dog, idx) => `
-                <div class="flex items-center gap-3 p-3 bg-bark-50 rounded-xl">
-                    <span class="w-8 h-8 bg-sky-500 text-white rounded-full flex items-center justify-center font-bold text-sm">
-                        ${idx + 1}
-                    </span>
-                    <div class="flex-1">
-                        <p class="font-semibold text-bark-800">${dog.name}</p>
-                        <p class="text-xs text-bark-500">${dog.breed} | ${dog.handler}</p>
+            const rankingContainer = document.getElementById('rankingList');
+            rankingContainer.innerHTML = activeDogs.map((dog, idx) => {
+                const rank = idx + 1;
+                const medalClass = rank === 1 ? 'bg-amber-500' : rank === 2 ? 'bg-gray-400' : rank === 3 ? 'bg-amber-700' : 'bg-bark-300';
+
+                return `
+                    <div class="flex items-center gap-3 bg-bark-50 rounded-xl p-3">
+                        <div class="w-8 h-8 ${medalClass} text-white rounded-full flex items-center justify-center font-bold text-sm">
+                            ${rank}
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-semibold text-bark-800">${dog.name}</p>
+                            <p class="text-xs text-bark-500">${dog.breed} • ${dog.handler} • ${dog.rounds.length} slipp</p>
+                        </div>
                     </div>
+                `;
+            }).join('') || '<p class="text-center text-bark-500 py-4">Ingen hunder registrert ennå</p>';
+
+            const knockedContainer = document.getElementById('knockedOutList');
+            knockedContainer.innerHTML = knockedDogs.map(dog => `
+                <div class="flex items-center gap-3 bg-red-50 rounded-xl p-3">
+                    <div class="w-8 h-8 bg-red-200 text-red-600 rounded-full flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-medium text-red-800">${dog.name}</p>
+                        <p class="text-xs text-red-600">${dog.breed} • ${dog.handler}</p>
+                    </div>
+                    <button onclick="toggleKnockout(${dog.id}); renderRankingList();"
+                        class="text-xs text-red-600 hover:text-red-800 underline">
+                        Angre
+                    </button>
                 </div>
-            `).join('') || '<p class="text-bark-400 text-center py-4">Ingen aktive hunder</p>';
+            `).join('') || '<p class="text-center text-bark-400 text-sm py-2">Ingen utslåtte hunder</p>';
         }
 
-        // Legend modal
-        function showLegend() {
-            document.getElementById('legendModal').classList.remove('hidden');
+        // ===== VOICE RECORDING =====
+        let recognition = null;
+        let activeRecordingDogId = null;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'nb-NO';
+
+            recognition.onresult = function(event) {
+                if (!activeRecordingDogId) return;
+
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript + ' ';
+                    }
+                }
+
+                if (finalTranscript) {
+                    const textarea = document.getElementById('notes-' + activeRecordingDogId);
+                    if (textarea) {
+                        textarea.value += finalTranscript;
+                        updateCurrentRoundNotes(activeRecordingDogId, textarea.value);
+                    }
+                }
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Speech recognition error:', event.error);
+                stopVoiceRecording();
+            };
+
+            recognition.onend = function() {
+                if (activeRecordingDogId) {
+                    try { recognition.start(); } catch (e) {}
+                }
+            };
         }
 
-        function hideLegend() {
-            document.getElementById('legendModal').classList.add('hidden');
+        function toggleVoiceRecording(dogId) {
+            if (activeRecordingDogId === dogId) {
+                stopVoiceRecording();
+            } else {
+                startVoiceRecording(dogId);
+            }
+        }
+
+        function startVoiceRecording(dogId) {
+            if (!recognition) {
+                alert('Talegjenkjenning støttes ikke i denne nettleseren. Prøv Chrome, Edge eller Safari.');
+                return;
+            }
+
+            if (activeRecordingDogId) {
+                stopVoiceRecording();
+            }
+
+            activeRecordingDogId = dogId;
+            try {
+                recognition.start();
+            } catch (e) {}
+
+            const btn = document.getElementById('voiceBtn-' + dogId);
+            const btnText = document.getElementById('voiceBtnText-' + dogId);
+            const status = document.getElementById('voiceStatus-' + dogId);
+
+            if (btn) {
+                btn.classList.remove('bg-red-100', 'hover:bg-red-200', 'text-red-700');
+                btn.classList.add('bg-red-500', 'text-white', 'recording');
+            }
+            if (btnText) btnText.textContent = 'Stopp';
+            if (status) status.classList.remove('hidden');
+        }
+
+        function stopVoiceRecording() {
+            const dogId = activeRecordingDogId;
+            activeRecordingDogId = null;
+
+            if (recognition) {
+                try { recognition.stop(); } catch (e) {}
+            }
+
+            if (dogId) {
+                const btn = document.getElementById('voiceBtn-' + dogId);
+                const btnText = document.getElementById('voiceBtnText-' + dogId);
+                const status = document.getElementById('voiceStatus-' + dogId);
+
+                if (btn) {
+                    btn.classList.add('bg-red-100', 'hover:bg-red-200', 'text-red-700');
+                    btn.classList.remove('bg-red-500', 'text-white', 'recording');
+                }
+                if (btnText) btnText.textContent = 'Dikter';
+                if (status) status.classList.add('hidden');
+            }
         }
 
         // Initial render

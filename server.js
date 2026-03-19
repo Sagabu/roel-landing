@@ -1585,6 +1585,7 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
   const orgnummer = (body.orgnummer || "").trim();
   const epost = (body.epost || "").trim();
   const region = (body.region || "").trim();
+  const lederNavn = (body.lederNavn || "").trim();
 
   if (!telefon || !code || !passord || !klubbNavn) {
     return c.json({ error: "Alle påkrevde felt må fylles ut" }, 400);
@@ -1604,12 +1605,31 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
   const klubbId = `klubb_${Date.now()}`;
   const now = new Date().toISOString();
 
+  // Opprett klubb
   db.prepare(`
     INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost, verifisert, siste_innlogging)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
   `).run(klubbId, orgnummer || null, klubbNavn, region, passordHash, telefon, epost, now);
 
   const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(klubbId);
+
+  // Opprett brukerprofil for klubbleder hvis den ikke finnes
+  let brukerOpprettet = false;
+  const eksisterendeBruker = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
+
+  if (!eksisterendeBruker && lederNavn) {
+    // Split navn i fornavn og etternavn
+    const navnDeler = lederNavn.trim().split(/\s+/);
+    const fornavn = navnDeler[0] || "";
+    const etternavn = navnDeler.slice(1).join(" ") || "";
+
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, rolle)
+      VALUES (?, ?, ?, ?, ?, 1, ?, 'deltaker')
+    `).run(telefon, fornavn, etternavn, epost, passordHash, now);
+    brukerOpprettet = true;
+    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})`);
+  }
 
   const token = jwt.sign(
     {
@@ -1629,7 +1649,8 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
       navn: klubb.navn,
       orgnummer: klubb.orgnummer,
       region: klubb.region
-    }
+    },
+    brukerOpprettet
   });
 });
 

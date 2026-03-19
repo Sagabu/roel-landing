@@ -3914,6 +3914,9 @@ function serveWithShim(filePath, c, isAdmin = false) {
     html = scripts + "\n" + html;
   }
   c.header("Content-Type", "text/html; charset=utf-8");
+  c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+  c.header("Pragma", "no-cache");
+  c.header("Expires", "0");
   return c.body(html);
 }
 

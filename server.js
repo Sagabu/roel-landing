@@ -933,7 +933,14 @@ app.post("/api/auth/send-code", async (c) => {
   const dommerCheck = db.prepare("SELECT dommer_telefon FROM dommer_tildelinger WHERE dommer_telefon = ? LIMIT 1").get(telefon);
   const userCheck = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
 
-  if (!dommerCheck && !userCheck) {
+  // Sjekk også om dette er en FKF-godkjent dommer (tillat innlogging selv uten eksisterende bruker)
+  const normalized = normalizePhone(telefon);
+  const fkfDommer = db.prepare(`
+    SELECT id FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+  `).get(normalized, normalized);
+
+  if (!dommerCheck && !userCheck && !fkfDommer) {
     return c.json({ error: "Telefonnummeret er ikke registrert" }, 404);
   }
 
@@ -982,9 +989,29 @@ app.post("/api/auth/verify-code", async (c) => {
     db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
   }
 
-  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  let bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  // Sjekk om dette er en FKF-godkjent dommer
+  const normalized = normalizePhone(telefon);
+  const fkfDommer = db.prepare(`
+    SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost
+    FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+  `).get(normalized, normalized);
 
   if (bruker) {
+    // Sjekk om eksisterende bruker mangler dommer-rolle men er FKF-godkjent
+    if (fkfDommer && !bruker.rolle.includes('dommer')) {
+      const nyRolle = bruker.rolle + ',dommer';
+      db.prepare("UPDATE brukere SET rolle = ?, updated_at = datetime('now') WHERE telefon = ?").run(nyRolle, telefon);
+      bruker.rolle = nyRolle;
+      console.log(`[Auto-dommer] Eksisterende bruker ${telefon} fikk dommer-rolle ved innlogging`);
+      db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+        "auto_dommer_tildelt",
+        `Bruker ${telefon} fikk automatisk dommer-rolle ved innlogging (matchet FKF-dommer: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`
+      );
+    }
+
     const token = generateToken(bruker);
     return c.json({
       token,
@@ -993,11 +1020,50 @@ app.post("/api/auth/verify-code", async (c) => {
         fornavn: bruker.fornavn,
         etternavn: bruker.etternavn,
         rolle: bruker.rolle
-      }
+      },
+      isFkfDommer: !!fkfDommer
     });
   }
 
-  // Dommer uten brukerprofil — returner begrenset info
+  // Ny bruker - opprett automatisk hvis FKF-dommer
+  if (fkfDommer) {
+    const rolle = 'deltaker,dommer';
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      telefon,
+      fkfDommer.fornavn || '',
+      fkfDommer.etternavn || '',
+      fkfDommer.epost || '',
+      fkfDommer.adresse || '',
+      fkfDommer.postnummer || '',
+      fkfDommer.sted || '',
+      rolle
+    );
+
+    console.log(`[Auto-dommer] Ny bruker ${telefon} opprettet med dommer-rolle (FKF: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "auto_bruker_dommer",
+      `Ny bruker opprettet automatisk fra FKF-dommerliste: ${fkfDommer.fornavn} ${fkfDommer.etternavn} (${telefon})`
+    );
+
+    bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+    const token = generateToken(bruker);
+    return c.json({
+      token,
+      bruker: {
+        telefon: bruker.telefon,
+        fornavn: bruker.fornavn,
+        etternavn: bruker.etternavn,
+        rolle: bruker.rolle
+      },
+      isFkfDommer: true,
+      autoCreated: true
+    });
+  }
+
+  // Dommer uten brukerprofil (tildelt via prøve, men ikke i FKF-listen)
   const dommerInfo = db.prepare(`
     SELECT dt.parti, dt.dommer_rolle, p.navn as prove_navn
     FROM dommer_tildelinger dt
@@ -1187,26 +1253,37 @@ app.put("/api/brukere/:telefon", async (c) => {
   const telefon = c.req.param("telefon");
   const body = await c.req.json();
 
-  // Sjekk om bruker prøver å få dommer-rollen
   const existing = db.prepare("SELECT telefon, rolle FROM brukere WHERE telefon = ?").get(telefon);
-  const nyRolle = body.rolle || (existing ? existing.rolle : 'deltaker');
+  let nyRolle = body.rolle || (existing ? existing.rolle : 'deltaker');
   const hadDommerRolle = existing && existing.rolle && existing.rolle.includes('dommer');
   const vilHaDommerRolle = nyRolle.includes('dommer');
 
-  // Hvis bruker vil ha dommer-rolle og ikke allerede har det, sjekk FKF-listen
-  if (vilHaDommerRolle && !hadDommerRolle) {
-    const normalized = normalizePhone(telefon);
-    const fkfGodkjent = db.prepare(`
-      SELECT id FROM fkf_godkjente_dommere
-      WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
-    `).get(normalized, normalized);
+  // Sjekk om telefonnummeret matcher en FKF-godkjent dommer
+  const normalized = normalizePhone(telefon);
+  const fkfDommer = db.prepare(`
+    SELECT id, fornavn, etternavn FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
+  `).get(normalized, normalized);
 
-    if (!fkfGodkjent) {
-      return c.json({
-        error: "Ikke godkjent dommer",
-        detail: "Du må være registrert som godkjent dommer hos FKF for å få dommer-tilgang. Kontakt din klubb hvis du mener dette er feil."
-      }, 403);
+  // Automatisk gi dommer-rolle hvis telefonnummeret matcher FKF-listen
+  if (fkfDommer && !hadDommerRolle && !vilHaDommerRolle) {
+    // Legg til dommer-rolle automatisk
+    if (!nyRolle.includes('dommer')) {
+      nyRolle = nyRolle ? nyRolle + ',dommer' : 'deltaker,dommer';
     }
+    console.log(`[Auto-dommer] Bruker ${telefon} gjenkjent som FKF-dommer: ${fkfDommer.fornavn} ${fkfDommer.etternavn}`);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "auto_dommer_tildelt",
+      `Bruker ${telefon} fikk automatisk dommer-rolle (matchet FKF-dommer: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`
+    );
+  }
+
+  // Hvis bruker eksplisitt vil ha dommer-rolle og ikke allerede har det, sjekk FKF-listen
+  if (vilHaDommerRolle && !hadDommerRolle && !fkfDommer) {
+    return c.json({
+      error: "Ikke godkjent dommer",
+      detail: "Du må være registrert som godkjent dommer hos FKF for å få dommer-tilgang. Kontakt din klubb hvis du mener dette er feil."
+    }, 403);
   }
 
   if (existing) {

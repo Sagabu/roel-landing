@@ -7,7 +7,7 @@
  * 3. Oppdaterer cache i bakgrunnen når online
  */
 
-const CACHE_NAME = 'fuglehund-v1';
+const CACHE_NAME = 'fuglehund-v2';
 
 // Filer som må caches for offline-bruk
 const CORE_FILES = [
@@ -18,6 +18,8 @@ const CORE_FILES = [
   '/dommer-vk.html',
   '/dommer-kritikk.html',
   '/dommer-undersokelse.html',
+  '/dommertest.html',
+  '/undersokelse.html',
   '/min-side.html',
   '/mine-hunder.html',
   '/pamelding.html',

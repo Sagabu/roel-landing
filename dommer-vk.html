@@ -1055,6 +1055,50 @@
                                 class="w-full px-3 py-2 rounded-lg border border-red-200 focus:border-red-400 outline-none text-sm bg-white">
                         </div>
 
+                        <!-- SEKUNDERING & APPORT Section -->
+                        <div class="bg-purple-50 rounded-xl p-3 mb-3">
+                            <h4 class="text-xs font-bold text-purple-700 uppercase tracking-wider mb-2">Sekundering & Apport</h4>
+                            <div class="grid grid-cols-4 gap-2">
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Sekundering spontan">SekS</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Sek. spont.</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${currentRound.scores.SEK_SPONTAN !== null ? currentRound.scores.SEK_SPONTAN : ''}"
+                                        onchange="updateScore(${dog.id}, 'SEK_SPONTAN', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Sekundering går forbi">SekF</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Sek. forbi</span>
+                                    <input type="number" min="0" max="99"
+                                        value="${currentRound.scores.SEK_FORBI !== null ? currentRound.scores.SEK_FORBI : ''}"
+                                        onchange="updateScore(${dog.id}, 'SEK_FORBI', this.value)"
+                                        placeholder="-"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="text-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Apport (1=Godkjent, 2=Ikke godkjent)">App</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Apport</span>
+                                    <input type="number" min="1" max="2"
+                                        value="${currentRound.scores.APPORT !== null ? currentRound.scores.APPORT : ''}"
+                                        onchange="updateScore(${dog.id}, 'APPORT', this.value)"
+                                        placeholder="1-2"
+                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
+                                </div>
+                                <div class="flex flex-col items-center">
+                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Rapport spontan">RapS</label>
+                                    <span class="block text-[9px] italic text-purple-500 mb-1">Rapp. spont.</span>
+                                    <label class="flex items-center justify-center h-10 cursor-pointer">
+                                        <input type="checkbox"
+                                            ${currentRound.scores.RAPPORT_SPONTAN ? 'checked' : ''}
+                                            onchange="updateScore(${dog.id}, 'RAPPORT_SPONTAN', this.checked)"
+                                            class="w-6 h-6 rounded border-2 border-purple-300 text-purple-600 focus:ring-purple-500">
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Private Notes with Voice Recording -->
                         <div class="mt-4">
                             <div class="flex items-center justify-between mb-1">
@@ -1130,7 +1174,12 @@
             const dog = state.dogs.find(d => d.id === dogId);
             if (dog) {
                 const currentRound = dog.rounds[dog.rounds.length - 1];
-                currentRound.scores[field] = value === '' ? null : parseInt(value);
+                // Handle boolean fields (checkboxes) differently from numeric fields
+                if (typeof value === 'boolean') {
+                    currentRound.scores[field] = value;
+                } else {
+                    currentRound.scores[field] = value === '' ? null : parseInt(value);
+                }
                 saveLive();
             }
         }

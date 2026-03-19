@@ -401,6 +401,7 @@ try {
     const needsBilde = !cols.includes('bilde');
     const needsAversjon = !cols.includes('aversjonsbevis');
 
+    db.pragma("foreign_keys = OFF");
     db.exec("BEGIN TRANSACTION");
     db.exec(`ALTER TABLE hunder RENAME TO hunder_old`);
     db.exec(`
@@ -427,6 +428,7 @@ try {
     db.exec(`INSERT INTO hunder (${selectCols}) SELECT ${selectCols} FROM hunder_old`);
     db.exec(`DROP TABLE hunder_old`);
     db.exec("COMMIT");
+    db.pragma("foreign_keys = ON");
     console.log("✅ Migrated hunder table: regnr now nullable, bilde column added");
   }
 } catch (e) {

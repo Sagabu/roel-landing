@@ -378,12 +378,13 @@ const FuglehundAuth = (function() {
   }
 
   // Sider som krever innlogging og hvilken rolle
+  // MERK: min-side.html er IKKE beskyttet - den ER innloggingssiden
   const PROTECTED_PAGES = {
     'profil.html': null,           // Krever innlogging, alle roller
     'mine-hunder.html': null,
     'jaktprover.html': null,
     'fullmakter.html': null,
-    'min-side.html': null,
+    // 'min-side.html': null,      // FJERNET - dette er innloggingssiden!
     'dommer-hjem.html': 'dommer',  // Krever dommer-rolle
     'dommer-vk.html': 'dommer',
     'dommer-kritikk.html': 'dommer',

@@ -29,7 +29,8 @@ const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER || "";
-const twilioConfigured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER);
+const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || "";
+const twilioConfigured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_PHONE_NUMBER || TWILIO_MESSAGING_SERVICE_SID));
 
 // Fallback: Sveve (legacy)
 const SVEVE_USER = process.env.SVEVE_USER || "";
@@ -910,17 +911,18 @@ async function sendSMS(telefon, message) {
           'Authorization': `Basic ${auth}`,
           'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: new URLSearchParams({
-          To: phoneFormatted,
-          From: TWILIO_PHONE_NUMBER,
-          Body: message
-        })
+        body: new URLSearchParams(
+          TWILIO_MESSAGING_SERVICE_SID
+            ? { To: phoneFormatted, MessagingServiceSid: TWILIO_MESSAGING_SERVICE_SID, Body: message }
+            : { To: phoneFormatted, From: TWILIO_PHONE_NUMBER, Body: message }
+        )
       });
 
       const data = await resp.json();
 
       if (resp.ok && data.sid) {
-        console.log(`📱 [Twilio] SMS sendt til ${phoneFormatted} (SID: ${data.sid})`);
+        const mode = TWILIO_MESSAGING_SERVICE_SID ? 'Alpha Sender' : 'Phone';
+        console.log(`📱 [Twilio/${mode}] SMS sendt til ${phoneFormatted} (SID: ${data.sid})`);
         return { success: true, provider: 'twilio', sid: data.sid };
       } else {
         console.error("Twilio SMS error:", data);

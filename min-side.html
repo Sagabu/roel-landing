@@ -368,7 +368,7 @@
         }
 
         // Send verification code
-        function sendCode() {
+        async function sendCode() {
             const input = document.getElementById('phoneNumber');
             const rawPhone = input.value.replace(/\D/g, '');
 
@@ -382,13 +382,34 @@
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Sender kode...';
 
-            setTimeout(() => {
+            try {
+                // Sjekk om bruker finnes og send kode
+                const resp = await fetch('/api/auth/send-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: rawPhone })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    document.getElementById('loadingOverlay').classList.add('hidden');
+                    alert(data.error || 'Telefonnummeret er ikke registrert i systemet');
+                    return;
+                }
+
+                // Bruker finnes - vis kode-input
                 document.getElementById('loadingOverlay').classList.add('hidden');
                 document.getElementById('step1').classList.add('hidden');
                 document.getElementById('step2').classList.remove('hidden');
                 document.getElementById('displayPhone').textContent = '+47 ' + input.value;
                 document.getElementById('code1').focus();
-            }, 1500);
+
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                alert('Kunne ikke koble til serveren. Prøv igjen.');
+                console.error('Send code error:', err);
+            }
         }
 
         function handleCodeInput(input, nextId) {

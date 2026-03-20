@@ -160,7 +160,7 @@
     }
 
     // Logo SVG
-    const logoSvg = `<svg class="w-10 h-10 text-earth-400" fill="currentColor" viewBox="0 0 24 24">
+    const logoSvg = `<svg class="w-10 h-10 text-warm-500" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12 2C9.5 2 7 3.5 6 6c-2 0-4 1.5-4 4 0 2 1.5 3.5 3 4-.5 1-1 2.5-1 4 0 3 2.5 4 5 4 1 0 2-.5 3-1 1 .5 2 1 3 1 2.5 0 5-1 5-4 0-1.5-.5-3-1-4 1.5-.5 3-2 3-4 0-2.5-2-4-4-4-1-2.5-3.5-4-6-4zm0 2c2 0 3.5 1 4 3h1c1.5 0 2.5 1 2.5 2.5 0 1-1 2-2 2.5l-.5.5.5 1c.5 1 1 2 1 3 0 1.5-1.5 2.5-3.5 2.5-.5 0-1.5-.5-2-1l-1-.5-1 .5c-.5.5-1.5 1-2 1-2 0-3.5-1-3.5-2.5 0-1 .5-2 1-3l.5-1-.5-.5c-1-.5-2-1.5-2-2.5C4.5 8 5.5 7 7 7h1c.5-2 2-3 4-3z"/>
     </svg>`;
 
@@ -218,7 +218,7 @@
         }
 
         const navHtml = `
-            <nav id="shared-navbar" data-shared-navbar="true" class="fixed top-0 w-full bg-forest-900/95 backdrop-blur-sm shadow-lg z-50">
+            <nav id="shared-navbar" data-shared-navbar="true" class="fixed top-0 w-full bg-warm-800/95 backdrop-blur-sm shadow-lg z-50">
                 <div class="max-w-6xl mx-auto px-4 py-4">
                     <div class="flex items-center justify-between">
                         <!-- Logo -->
@@ -233,8 +233,8 @@
                                 <a href="${item.href}"
                                    class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition
                                           ${currentPage === item.href
-                                              ? 'bg-forest-700 text-white'
-                                              : 'text-forest-200 hover:text-white hover:bg-forest-800'}">
+                                              ? 'bg-warm-600 text-white'
+                                              : 'text-warm-100 hover:text-white hover:bg-warm-700'}">
                                     ${getIcon(item.icon)}
                                     <span>${item.label}</span>
                                 </a>
@@ -244,10 +244,10 @@
                         <!-- User Section -->
                         <div class="flex items-center gap-3">
                             ${user ? `
-                                <span class="hidden sm:inline text-forest-200 text-sm">${user.name}</span>
+                                <span class="hidden sm:inline text-warm-100 text-sm">${user.name}</span>
                                 ${harKlubbProfil ? `
                                     <button onclick="switchToKlubb()"
-                                            class="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                            class="bg-warm-500 hover:bg-warm-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1"
                                             title="Bytt til klubbvisning">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
@@ -256,14 +256,14 @@
                                     </button>
                                 ` : ''}
                                 <button onclick="sharedLogout()"
-                                        class="text-forest-200 hover:text-white px-3 py-2 text-sm font-medium transition">
+                                        class="text-warm-100 hover:text-white px-3 py-2 text-sm font-medium transition">
                                     Logg ut
                                 </button>
                             ` : klubb ? `
-                                <span class="hidden sm:inline text-forest-200 text-sm">${klubb.navn}</span>
+                                <span class="hidden sm:inline text-warm-100 text-sm">${klubb.navn}</span>
                                 ${harBrukerProfil ? `
                                     <button onclick="switchToDeltaker()"
-                                            class="bg-earth-500 hover:bg-earth-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1"
+                                            class="bg-warm-500 hover:bg-warm-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1"
                                             title="Bytt til deltakerprofil">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
@@ -272,19 +272,19 @@
                                     </button>
                                 ` : ''}
                                 <button onclick="sharedLogout()"
-                                        class="text-forest-200 hover:text-white px-3 py-2 text-sm font-medium transition">
+                                        class="text-warm-100 hover:text-white px-3 py-2 text-sm font-medium transition">
                                     Logg ut
                                 </button>
                             ` : `
                                 <a href="min-side.html"
-                                   class="bg-earth-500 hover:bg-earth-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                   class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
                                     ${getIcon('user')}
                                     <span class="hidden sm:inline">Min side</span>
                                 </a>
                             `}
 
                             <!-- Mobile Menu Button -->
-                            <button onclick="toggleMobileMenu()" class="md:hidden text-forest-200 hover:text-white p-2">
+                            <button onclick="toggleMobileMenu()" class="md:hidden text-warm-100 hover:text-white p-2">
                                 <span id="menuOpenIcon">${getIcon('menu')}</span>
                                 <span id="menuCloseIcon" class="hidden">${getIcon('close')}</span>
                             </button>
@@ -292,14 +292,14 @@
                     </div>
 
                     <!-- Mobile Menu -->
-                    <div id="mobileMenu" class="hidden md:hidden mt-4 pt-4 border-t border-forest-700">
+                    <div id="mobileMenu" class="hidden md:hidden mt-4 pt-4 border-t border-warm-600">
                         <div class="flex flex-col gap-1">
                             ${navItems.map(item => `
                                 <a href="${item.href}"
                                    class="flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition
                                           ${currentPage === item.href
-                                              ? 'bg-forest-700 text-white'
-                                              : 'text-forest-200 hover:text-white hover:bg-forest-800'}">
+                                              ? 'bg-warm-600 text-white'
+                                              : 'text-warm-100 hover:text-white hover:bg-warm-700'}">
                                     ${getIcon(item.icon)}
                                     <span>${item.label}</span>
                                 </a>

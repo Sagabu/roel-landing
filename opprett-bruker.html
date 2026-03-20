@@ -378,10 +378,20 @@
                     throw new Error(data.error || 'Kunne ikke opprette bruker');
                 }
 
-                // Lagre token og brukerdata
-                localStorage.setItem('authToken', data.token);
+                // Lagre token og brukerdata (konsistent med FuglehundAuth)
+                localStorage.setItem('fuglehund_token', data.token);
+                localStorage.setItem('fuglehund_user', JSON.stringify(data.bruker));
+                localStorage.setItem('authToken', data.token); // Legacy
                 localStorage.setItem('userProfile', JSON.stringify(data.bruker));
                 localStorage.setItem('isLoggedIn', 'true');
+
+                // Opprett userSession for min-side.html kompatibilitet
+                const userSession = {
+                    phone: userData.phone,
+                    name: `${data.bruker.fornavn} ${data.bruker.etternavn}`.trim(),
+                    loggedInAt: new Date().toISOString()
+                };
+                localStorage.setItem('userSession', JSON.stringify(userSession));
 
                 document.getElementById('step2').classList.add('hidden');
                 document.getElementById('step3').classList.remove('hidden');

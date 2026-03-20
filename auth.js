@@ -392,7 +392,7 @@ const FuglehundAuth = (function() {
     // admin-panel.html er beskyttet med PIN via admin-lock.js, ikke rolle
     'klubb.html': 'admin',
     'opprett-prove.html': 'admin',
-    'opprett-klubb.html': 'admin',
+    // 'opprett-klubb.html' er IKKE beskyttet - skal være offentlig tilgjengelig for nye klubber
     'nkk-godkjenning.html': 'nkkrep'
   };
 

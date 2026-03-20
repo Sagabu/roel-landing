@@ -632,10 +632,29 @@
                     throw new Error(data.error || 'Kunne ikke opprette klubb');
                 }
 
-                // Lagre token og vis suksess
-                localStorage.setItem('klubbToken', data.token);
+                // Lagre token og vis suksess (konsistent med FuglehundAuth)
+                localStorage.setItem('fuglehund_token', data.token);
+                localStorage.setItem('klubbToken', data.token); // Legacy
                 localStorage.setItem('klubbSession', JSON.stringify(data.klubb));
                 localStorage.setItem('isKlubbLoggedIn', 'true');
+
+                // Opprett userSession for min-side.html kompatibilitet
+                const userSession = {
+                    phone: clubData.telefon,
+                    name: clubData.lederNavn,
+                    loggedInAt: new Date().toISOString(),
+                    isTrialAdmin: true,
+                    clubName: data.klubb.navn,
+                    clubId: data.klubb.id,
+                    clubRole: 'leder'
+                };
+                localStorage.setItem('userSession', JSON.stringify(userSession));
+                localStorage.setItem('fuglehund_user', JSON.stringify({
+                    telefon: clubData.telefon,
+                    fornavn: clubData.lederNavn.split(' ')[0] || '',
+                    etternavn: clubData.lederNavn.split(' ').slice(1).join(' ') || '',
+                    rolle: 'klubbleder'
+                }));
 
                 document.getElementById('successModal').classList.remove('hidden');
 

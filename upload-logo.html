@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Last opp logo - Fuglehundprøve</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
+        <h1 class="text-2xl font-bold text-center mb-6">Last opp logo</h1>
+        
+        <form id="uploadForm" enctype="multipart/form-data" class="space-y-4">
+            <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-orange-500 transition cursor-pointer" onclick="document.getElementById('logoFile').click()">
+                <input type="file" id="logoFile" name="logo" accept="image/*" class="hidden" onchange="previewImage(this)">
+                <div id="preview" class="hidden mb-4">
+                    <img id="previewImg" class="max-h-40 mx-auto rounded">
+                </div>
+                <div id="placeholder">
+                    <svg class="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <p class="text-gray-500">Trykk for å velge bilde</p>
+                </div>
+            </div>
+            
+            <button type="submit" id="submitBtn" class="w-full bg-orange-500 text-white py-3 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50" disabled>
+                Last opp logo
+            </button>
+        </form>
+        
+        <div id="status" class="mt-4 text-center hidden">
+            <p class="text-green-600 font-medium">Logo lastet opp!</p>
+        </div>
+    </div>
+
+    <script>
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('previewImg').src = e.target.result;
+                    document.getElementById('preview').classList.remove('hidden');
+                    document.getElementById('placeholder').classList.add('hidden');
+                    document.getElementById('submitBtn').disabled = false;
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            const file = document.getElementById('logoFile').files[0];
+            formData.append('logo', file);
+            
+            document.getElementById('submitBtn').textContent = 'Laster opp...';
+            document.getElementById('submitBtn').disabled = true;
+            
+            try {
+                const response = await fetch('/api/upload-logo', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    document.getElementById('status').classList.remove('hidden');
+                    document.getElementById('submitBtn').textContent = 'Ferdig!';
+                } else {
+                    alert('Feil ved opplasting');
+                    document.getElementById('submitBtn').textContent = 'Last opp logo';
+                    document.getElementById('submitBtn').disabled = false;
+                }
+            } catch (err) {
+                alert('Feil: ' + err.message);
+                document.getElementById('submitBtn').textContent = 'Last opp logo';
+                document.getElementById('submitBtn').disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import Database from "better-sqlite3";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
@@ -4818,6 +4818,41 @@ app.post("/api/parse-participants", async (c) => {
   } catch (err) {
     console.error("Parse error:", err);
     return c.json({ error: "Kunne ikke lese filen: " + err.message }, 500);
+  }
+});
+
+// --- Logo upload endpoint ---
+app.post("/api/upload-logo", async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get("logo");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "Ingen fil mottatt" }, 400);
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const ext = file.name.split(".").pop().toLowerCase();
+
+    // Save as PNG (primary format)
+    if (ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "svg") {
+      const logoPath = join(__dirname, "images", "logo." + ext);
+      writeFileSync(logoPath, buffer);
+
+      // Also save as logo.png if not already PNG
+      if (ext !== "png") {
+        const pngPath = join(__dirname, "images", "logo-original." + ext);
+        writeFileSync(pngPath, buffer);
+      }
+
+      console.log("✅ Logo uploaded:", file.name, "->", logoPath);
+      return c.json({ success: true, filename: "logo." + ext });
+    } else {
+      return c.json({ error: "Ugyldig filformat. Bruk PNG, JPG eller SVG." }, 400);
+    }
+  } catch (err) {
+    console.error("Logo upload error:", err);
+    return c.json({ error: "Feil ved opplasting: " + err.message }, 500);
   }
 });
 

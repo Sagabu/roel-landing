@@ -386,6 +386,23 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(foresporsel_id, deltaker_telefon)
   );
+
+  -- SMS-logging for statistikk og feilsøking
+  CREATE TABLE IF NOT EXISTS sms_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    retning TEXT NOT NULL CHECK(retning IN ('ut', 'inn')),
+    fra TEXT NOT NULL,
+    til TEXT NOT NULL,
+    type TEXT NOT NULL,
+    melding TEXT,
+    twilio_sid TEXT,
+    status TEXT DEFAULT 'sent',
+    klubb_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_sms_log_created ON sms_log(created_at);
+  CREATE INDEX IF NOT EXISTS idx_sms_log_type ON sms_log(type);
+  CREATE INDEX IF NOT EXISTS idx_sms_log_klubb ON sms_log(klubb_id);
 `);
 
 // --- Migrations for existing databases ---
@@ -887,7 +904,21 @@ function checkOTPRate(telefon) {
   return true;
 }
 
-async function sendSMS(telefon, message) {
+// Logg SMS til database for statistikk
+function logSMS(retning, fra, til, type, melding, twilio_sid = null, status = 'sent', klubb_id = null) {
+  try {
+    db.prepare(`
+      INSERT INTO sms_log (retning, fra, til, type, melding, twilio_sid, status, klubb_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(retning, fra, til, type, melding || null, twilio_sid, status, klubb_id);
+  } catch (e) {
+    console.error('SMS logging error:', e.message);
+  }
+}
+
+async function sendSMS(telefon, message, options = {}) {
+  const { type = 'verifisering', klubb_id = null } = options;
+
   // Formater telefonnummer til internasjonalt format
   let phoneFormatted = telefon.replace(/\s/g, '');
   if (phoneFormatted.startsWith('4') && phoneFormatted.length === 8) {
@@ -896,9 +927,12 @@ async function sendSMS(telefon, message) {
     phoneFormatted = '+47' + phoneFormatted;
   }
 
+  const fromNumber = TWILIO_PHONE_NUMBER || 'Fuglehund';
+
   // Dev mode - ingen SMS-leverandør konfigurert
   if (smsProvider === "dev") {
     console.log(`📱 [DEV MODE] SMS til ${phoneFormatted}: ${message}`);
+    logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'dev', klubb_id);
     return { success: true, devMode: true };
   }
 
@@ -926,13 +960,16 @@ async function sendSMS(telefon, message) {
       if (resp.ok && data.sid) {
         const mode = TWILIO_MESSAGING_SERVICE_SID ? 'Alpha Sender' : 'Phone';
         console.log(`📱 [Twilio/${mode}] SMS sendt til ${phoneFormatted} (SID: ${data.sid})`);
+        logSMS('ut', fromNumber, phoneFormatted, type, message, data.sid, 'sent', klubb_id);
         return { success: true, provider: 'twilio', sid: data.sid };
       } else {
         console.error("Twilio SMS error:", data);
+        logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'failed', klubb_id);
         return { success: false, error: data.message || 'Twilio error', provider: 'twilio' };
       }
     } catch (err) {
       console.error("Twilio SMS fetch error:", err.message);
+      logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'error', klubb_id);
       return { success: false, error: err.message, provider: 'twilio' };
     }
   }
@@ -951,13 +988,16 @@ async function sendSMS(telefon, message) {
       const text = await resp.text();
       if (text.includes("<response>") && !text.includes("feil") && !text.includes("error")) {
         console.log(`📱 [Sveve] SMS sendt til ${telefon}`);
+        logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'sent', klubb_id);
         return { success: true, provider: 'sveve' };
       } else {
         console.error("Sveve SMS error:", text);
+        logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'failed', klubb_id);
         return { success: false, error: text, provider: 'sveve' };
       }
     } catch (err) {
       console.error("Sveve SMS fetch error:", err.message);
+      logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'error', klubb_id);
       return { success: false, error: err.message, provider: 'sveve' };
     }
   }
@@ -2750,6 +2790,189 @@ app.put("/api/superadmin/brukere/:telefon/rolle", async (c) => {
   );
 
   return c.json({ success: true });
+});
+
+// ============================================
+// SMS STATISTIKK API (SUPERADMIN)
+// ============================================
+
+// Hent SMS-statistikk med filtrering
+app.get("/api/superadmin/sms-stats", (c) => {
+  const periode = c.req.query("periode") || "maaned";
+  const type = c.req.query("type") || "alle";
+  const klubb_id = c.req.query("klubb_id") || null;
+
+  // Beregn datointervall
+  let datoFra;
+  const now = new Date();
+  switch (periode) {
+    case "uke":
+      datoFra = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case "maaned":
+      datoFra = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case "aar":
+      datoFra = new Date(now.getFullYear(), 0, 1);
+      break;
+    default:
+      datoFra = new Date(2020, 0, 1); // "alle" - fra starten
+  }
+  const datoFraStr = datoFra.toISOString().split('T')[0];
+
+  // Bygg WHERE-klausul
+  let whereClauses = ["date(created_at) >= ?"];
+  let params = [datoFraStr];
+
+  if (type === "verifisering") {
+    whereClauses.push("type = 'verifisering'");
+  } else if (type.startsWith("klubb:")) {
+    whereClauses.push("klubb_id = ?");
+    params.push(type.replace("klubb:", ""));
+  } else if (type !== "alle") {
+    whereClauses.push("type = ?");
+    params.push(type);
+  }
+
+  const whereSQL = whereClauses.join(" AND ");
+
+  // Totalt ut og inn
+  const totalt = db.prepare(`
+    SELECT
+      SUM(CASE WHEN retning = 'ut' THEN 1 ELSE 0 END) as ut,
+      SUM(CASE WHEN retning = 'inn' THEN 1 ELSE 0 END) as inn
+    FROM sms_log
+    WHERE ${whereSQL}
+  `).get(...params) || { ut: 0, inn: 0 };
+
+  // Per dag
+  const perDag = db.prepare(`
+    SELECT
+      date(created_at) as dato,
+      SUM(CASE WHEN retning = 'ut' THEN 1 ELSE 0 END) as ut,
+      SUM(CASE WHEN retning = 'inn' THEN 1 ELSE 0 END) as inn
+    FROM sms_log
+    WHERE ${whereSQL}
+    GROUP BY date(created_at)
+    ORDER BY dato DESC
+    LIMIT 60
+  `).all(...params) || [];
+
+  // Per type
+  const perTypeRows = db.prepare(`
+    SELECT type, COUNT(*) as antall
+    FROM sms_log
+    WHERE ${whereSQL}
+    GROUP BY type
+    ORDER BY antall DESC
+  `).all(...params) || [];
+
+  const perType = {};
+  perTypeRows.forEach(r => { perType[r.type] = r.antall; });
+
+  // Per klubb (topp 10)
+  const perKlubb = db.prepare(`
+    SELECT
+      s.klubb_id,
+      k.navn as klubb_navn,
+      SUM(CASE WHEN s.retning = 'ut' THEN 1 ELSE 0 END) as ut,
+      SUM(CASE WHEN s.retning = 'inn' THEN 1 ELSE 0 END) as inn
+    FROM sms_log s
+    LEFT JOIN klubber k ON s.klubb_id = k.id
+    WHERE ${whereSQL} AND s.klubb_id IS NOT NULL
+    GROUP BY s.klubb_id
+    ORDER BY (ut + inn) DESC
+    LIMIT 10
+  `).all(...params) || [];
+
+  // Siste 20 meldinger
+  const siste = db.prepare(`
+    SELECT id, retning, fra, til, type, melding, status, klubb_id, created_at
+    FROM sms_log
+    WHERE ${whereSQL}
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(...params) || [];
+
+  return c.json({
+    periode,
+    totalt,
+    perDag: perDag.reverse(),
+    perType,
+    perKlubb,
+    siste
+  });
+});
+
+// Hent alle klubber som har sendt/mottatt SMS
+app.get("/api/superadmin/sms-klubber", (c) => {
+  const klubber = db.prepare(`
+    SELECT DISTINCT s.klubb_id, k.navn as klubb_navn
+    FROM sms_log s
+    LEFT JOIN klubber k ON s.klubb_id = k.id
+    WHERE s.klubb_id IS NOT NULL
+    ORDER BY k.navn
+  `).all();
+
+  return c.json(klubber);
+});
+
+// Eksporter SMS-log som CSV
+app.get("/api/superadmin/sms-export", (c) => {
+  const periode = c.req.query("periode") || "maaned";
+  const type = c.req.query("type") || "alle";
+
+  // Beregn datointervall
+  let datoFra;
+  const now = new Date();
+  switch (periode) {
+    case "uke":
+      datoFra = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case "maaned":
+      datoFra = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case "aar":
+      datoFra = new Date(now.getFullYear(), 0, 1);
+      break;
+    default:
+      datoFra = new Date(2020, 0, 1);
+  }
+  const datoFraStr = datoFra.toISOString().split('T')[0];
+
+  let whereClauses = ["date(created_at) >= ?"];
+  let params = [datoFraStr];
+
+  if (type === "verifisering") {
+    whereClauses.push("type = 'verifisering'");
+  } else if (type.startsWith("klubb:")) {
+    whereClauses.push("klubb_id = ?");
+    params.push(type.replace("klubb:", ""));
+  } else if (type !== "alle") {
+    whereClauses.push("type = ?");
+    params.push(type);
+  }
+
+  const whereSQL = whereClauses.join(" AND ");
+
+  const rows = db.prepare(`
+    SELECT id, retning, fra, til, type, melding, twilio_sid, status, klubb_id, created_at
+    FROM sms_log
+    WHERE ${whereSQL}
+    ORDER BY created_at DESC
+  `).all(...params);
+
+  // Generer CSV
+  const header = "ID,Retning,Fra,Til,Type,Melding,Twilio SID,Status,Klubb ID,Tidspunkt\n";
+  const csvRows = rows.map(r =>
+    `${r.id},"${r.retning}","${r.fra}","${r.til}","${r.type}","${(r.melding || '').replace(/"/g, '""')}","${r.twilio_sid || ''}","${r.status}","${r.klubb_id || ''}","${r.created_at}"`
+  ).join("\n");
+
+  const csv = header + csvRows;
+
+  c.header("Content-Type", "text/csv; charset=utf-8");
+  c.header("Content-Disposition", `attachment; filename="sms-log-${new Date().toISOString().split('T')[0]}.csv"`);
+  return c.body(csv);
 });
 
 // ============================================

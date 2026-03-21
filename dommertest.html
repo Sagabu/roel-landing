@@ -426,12 +426,55 @@
 
         // Save and finish dog
         function finishDog() {
-            saveData();
+            // Save current slipp data first
+            state.data.fuglebehandling = {
+                presisjon: document.getElementById('presisjon').value || null,
+                reising: document.getElementById('reising').value || null,
+                godkjentReising: document.getElementById('godkjentReising').checked
+            };
 
-            if (confirm('Er du sikker på at du vil avslutte bedømmelsen av denne hunden?')) {
-                alert('Hund avsluttet! Data er lagret.');
-                // Her kan det legges til logikk for å gå tilbake til hundelisten
-                // window.location.href = '/dommer-hjem.html';
+            if (!state.data.slipps) state.data.slipps = {};
+            FIELDS.forEach(field => {
+                if (!state.data.slipps[field]) state.data.slipps[field] = {};
+                for (let s = 1; s <= 9; s++) {
+                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
+                    if (input && input.value) {
+                        state.data.slipps[field][s] = parseInt(input.value) || 0;
+                    }
+                }
+            });
+
+            if (!state.data.comments) state.data.comments = {};
+            state.data.comments[state.currentSlipp] = document.getElementById('currentComment').value;
+
+            const currentDog = testPartyList[currentDogIndex];
+            const dogName = currentDog ? currentDog.name : 'denne hunden';
+
+            if (confirm(`Er du sikker på at du vil avslutte bedømmelsen av ${dogName}?`)) {
+                // Mark dog as finished
+                setDogFinished(currentDogIndex);
+                saveCurrentDogData();
+
+                // Find next unfinished dog
+                let nextDogIndex = -1;
+                for (let i = 0; i < testPartyList.length; i++) {
+                    if (!isDogFinished(i)) {
+                        nextDogIndex = i;
+                        break;
+                    }
+                }
+
+                if (nextDogIndex >= 0) {
+                    // Switch to next unfinished dog
+                    currentDogIndex = nextDogIndex;
+                    loadDogData(currentDogIndex);
+                    updateDogNavigation();
+                    alert(`${dogName} er avsluttet! Bytter til ${testPartyList[nextDogIndex].name}.`);
+                } else {
+                    // All dogs finished
+                    alert(`${dogName} er avsluttet! Alle hunder i partiet er nå bedømt.`);
+                    showPartyList();
+                }
             }
         }
 
@@ -489,38 +532,74 @@
             });
         }
 
+        // Parti-info (will come from backend based on judge assignment)
+        const partyInfo = {
+            id: 'parti-neadalen-2026',
+            name: 'Neadalen',
+            date: '2026-03-21',
+            judge: 'Testbruker'
+        };
+
         // Test data for party list (will come from backend in production)
         const testPartyList = [
             { nr: 1, name: 'Neadalens Zlatan', race: 'ES', owner: 'Roel, Aleksander', klasse: 'UK' },
             { nr: 2, name: 'Heggelunds Bransen', race: 'IS', owner: 'Hansen, Erik', klasse: 'UK' },
             { nr: 3, name: 'Skogstjernas Luna', race: 'ES', owner: 'Berg, Kari', klasse: 'AK' },
             { nr: 4, name: 'Fjellheimens Storm', race: 'GS', owner: 'Olsen, Per', klasse: 'AK' },
+            { nr: 5, name: 'Vindens Pil', race: 'VP', owner: 'Johansen, Lise', klasse: 'UK' },
+            { nr: 6, name: 'Skogens Ull', race: 'GS', owner: 'Nilsen, Anders', klasse: 'UK' },
         ];
 
         let currentDogIndex = 0; // Index in testPartyList
+
+        // Track finished dogs (stored in localStorage)
+        function getFinishedDogs() {
+            const saved = localStorage.getItem(`finishedDogs_${partyInfo.id}`);
+            return saved ? JSON.parse(saved) : [];
+        }
+
+        function setDogFinished(dogIndex) {
+            const finished = getFinishedDogs();
+            if (!finished.includes(dogIndex)) {
+                finished.push(dogIndex);
+                localStorage.setItem(`finishedDogs_${partyInfo.id}`, JSON.stringify(finished));
+            }
+        }
+
+        function isDogFinished(dogIndex) {
+            return getFinishedDogs().includes(dogIndex);
+        }
 
         // Update navigation buttons based on current dog
         function updateDogNavigation() {
             const currentPairStart = Math.floor(currentDogIndex / 2) * 2;
             const dog1 = testPartyList[currentPairStart];
             const dog2 = testPartyList[currentPairStart + 1];
+            const isFinished1 = isDogFinished(currentPairStart);
+            const isFinished2 = isDogFinished(currentPairStart + 1);
 
             // Update left button
             const leftBtn = document.getElementById('dogLeftBtn');
             const leftName = document.getElementById('dogLeftName');
             if (dog1) {
-                leftName.textContent = `${dog1.race} ${dog1.name.split(' ').pop()}`;
+                const checkmark = isFinished1 ? '✓ ' : '';
+                leftName.textContent = `${checkmark}${dog1.race} ${dog1.name.split(' ').pop()}`;
                 leftBtn.classList.toggle('ring-2', currentDogIndex === currentPairStart);
                 leftBtn.classList.toggle('ring-warm-500', currentDogIndex === currentPairStart);
+                leftBtn.classList.toggle('bg-forest-50', isFinished1 && currentDogIndex !== currentPairStart);
+                leftBtn.classList.toggle('border-forest-300', isFinished1);
             }
 
             // Update right button
             const rightBtn = document.getElementById('dogRightBtn');
             const rightName = document.getElementById('dogRightName');
             if (dog2) {
-                rightName.textContent = `${dog2.race} ${dog2.name.split(' ').pop()}`;
+                const checkmark = isFinished2 ? '✓ ' : '';
+                rightName.textContent = `${checkmark}${dog2.race} ${dog2.name.split(' ').pop()}`;
                 rightBtn.classList.toggle('ring-2', currentDogIndex === currentPairStart + 1);
                 rightBtn.classList.toggle('ring-warm-500', currentDogIndex === currentPairStart + 1);
+                rightBtn.classList.toggle('bg-forest-50', isFinished2 && currentDogIndex !== currentPairStart + 1);
+                rightBtn.classList.toggle('border-forest-300', isFinished2);
                 rightBtn.disabled = false;
                 rightBtn.classList.remove('opacity-50');
             } else {
@@ -559,37 +638,87 @@
             modal.id = 'partyListModal';
             modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
 
-            let listHtml = testPartyList.map((dog, idx) => {
-                const isActive = idx === currentDogIndex;
-                const pairNr = Math.floor(idx / 2) + 1;
-                const isOddPair = pairNr % 2 === 1;
-                return `
-                    <button onclick="selectDogFromList(${idx})"
-                        class="w-full text-left p-3 rounded-xl transition ${isActive ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'} ${isOddPair ? '' : 'bg-bark-50'}">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <span class="font-bold text-bark-800">Nr. ${dog.nr}</span>
-                                <span class="text-bark-600 ml-2">${dog.race}</span>
-                                <span class="font-medium text-bark-800 ml-1">${dog.name}</span>
+            const finishedCount = getFinishedDogs().length;
+            const totalCount = testPartyList.length;
+
+            let listHtml = '';
+
+            // Group dogs by pairs
+            for (let pairIdx = 0; pairIdx < Math.ceil(testPartyList.length / 2); pairIdx++) {
+                const dog1Idx = pairIdx * 2;
+                const dog2Idx = pairIdx * 2 + 1;
+                const dog1 = testPartyList[dog1Idx];
+                const dog2 = testPartyList[dog2Idx];
+
+                listHtml += `<div class="mb-3">
+                    <p class="text-xs font-medium text-bark-500 mb-1 px-1">Par ${pairIdx + 1}</p>
+                    <div class="space-y-1">`;
+
+                // Dog 1
+                if (dog1) {
+                    const isActive1 = dog1Idx === currentDogIndex;
+                    const isFinished1 = isDogFinished(dog1Idx);
+                    listHtml += `
+                        <button onclick="selectDogFromList(${dog1Idx})"
+                            class="w-full text-left p-3 rounded-xl transition ${isFinished1 ? 'bg-forest-50 border-2 border-forest-300' : isActive1 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    ${isFinished1 ? '<svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : ''}
+                                    <span class="font-bold text-bark-800">Nr. ${dog1.nr}</span>
+                                    <span class="text-bark-600">${dog1.race}</span>
+                                    <span class="font-medium text-bark-800">${dog1.name}</span>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${isFinished1 ? 'bg-forest-100 text-forest-700' : 'bg-bark-100 text-bark-600'}">${isFinished1 ? 'Ferdig' : dog1.klasse}</span>
                             </div>
-                            <span class="text-xs px-2 py-1 rounded bg-bark-100 text-bark-600">${dog.klasse}</span>
-                        </div>
-                        <p class="text-sm text-bark-500 mt-1">${dog.owner}</p>
-                    </button>
-                `;
-            }).join('');
+                            <p class="text-sm text-bark-500 mt-1 ${isFinished1 ? 'ml-7' : ''}">${dog1.owner}</p>
+                        </button>`;
+                }
+
+                // Dog 2
+                if (dog2) {
+                    const isActive2 = dog2Idx === currentDogIndex;
+                    const isFinished2 = isDogFinished(dog2Idx);
+                    listHtml += `
+                        <button onclick="selectDogFromList(${dog2Idx})"
+                            class="w-full text-left p-3 rounded-xl transition ${isFinished2 ? 'bg-forest-50 border-2 border-forest-300' : isActive2 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    ${isFinished2 ? '<svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : ''}
+                                    <span class="font-bold text-bark-800">Nr. ${dog2.nr}</span>
+                                    <span class="text-bark-600">${dog2.race}</span>
+                                    <span class="font-medium text-bark-800">${dog2.name}</span>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${isFinished2 ? 'bg-forest-100 text-forest-700' : 'bg-bark-100 text-bark-600'}">${isFinished2 ? 'Ferdig' : dog2.klasse}</span>
+                            </div>
+                            <p class="text-sm text-bark-500 mt-1 ${isFinished2 ? 'ml-7' : ''}">${dog2.owner}</p>
+                        </button>`;
+                }
+
+                listHtml += `</div></div>`;
+            }
 
             modal.innerHTML = `
                 <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
-                    <div class="bg-bark-700 text-white px-4 py-3 flex items-center justify-between">
-                        <h2 class="font-bold font-serif">Partiliste</h2>
-                        <button onclick="closePartyList()" class="p-1 hover:bg-white/20 rounded-lg transition">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
+                    <div class="bg-bark-700 text-white px-4 py-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="font-bold font-serif">${partyInfo.name}</h2>
+                                <p class="text-xs text-white/70">${partyInfo.date} • Dommer: ${partyInfo.judge}</p>
+                            </div>
+                            <button onclick="closePartyList()" class="p-1 hover:bg-white/20 rounded-lg transition">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="mt-2 flex items-center gap-2">
+                            <div class="flex-1 bg-white/20 rounded-full h-2">
+                                <div class="bg-forest-400 h-2 rounded-full transition-all" style="width: ${(finishedCount / totalCount) * 100}%"></div>
+                            </div>
+                            <span class="text-xs font-medium">${finishedCount}/${totalCount}</span>
+                        </div>
                     </div>
-                    <div class="p-4 space-y-2 overflow-y-auto max-h-[60vh]">
+                    <div class="p-4 overflow-y-auto max-h-[60vh]">
                         ${listHtml}
                     </div>
                 </div>

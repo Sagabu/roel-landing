@@ -755,10 +755,52 @@
             renderDogList();
             updateProgress();
 
+            // Check if all dogs now have critiques submitted
+            const activeDogs = state.dogs.filter(d => !d.knocked);
+            const allSubmitted = activeDogs.every(d => d.critiqueStatus === 'submitted' || d.critiqueStatus === 'approved');
+
+            // Send SMS notification to NKK-rep when all critiques are submitted
+            if (allSubmitted) {
+                notifyNkkRep(activeDogs.length);
+            }
+
             // Show success
             document.getElementById('successMessage').textContent =
                 `Kritikken for ${dog.name} er sendt til NKK-representant for godkjenning.`;
             document.getElementById('successModal').classList.remove('hidden');
+        }
+
+        // Notify NKK-rep via SMS when all critiques are ready
+        async function notifyNkkRep(dogCount) {
+            try {
+                const response = await fetch('/api/varsle-nkkrep', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        partyId: state.party,
+                        partyName: state.partyConfig?.name || state.party,
+                        judgeName: state.judgeName,
+                        dogCount: dogCount
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    console.log('NKK-rep varslet via SMS');
+                    // Update success message to mention SMS sent
+                    setTimeout(() => {
+                        const msg = document.getElementById('successMessage');
+                        if (msg) {
+                            msg.innerHTML += '<br><br><span class="text-green-600 text-sm">NKK-representant er varslet på SMS.</span>';
+                        }
+                    }, 100);
+                } else {
+                    console.warn('Kunne ikke varsle NKK-rep:', result.error);
+                }
+            } catch (err) {
+                console.error('Feil ved varsling av NKK-rep:', err);
+            }
         }
 
         function hideSuccess() {

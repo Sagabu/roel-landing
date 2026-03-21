@@ -5608,6 +5608,69 @@ app.delete("/api/superadmin/brukere/:telefon", (c) => {
   }
 });
 
+// ==========================================
+// NKK-REP VARSLING
+// ==========================================
+
+// Send SMS-varsling til NKK-rep når kritikker er klare for godkjenning
+app.post("/api/varsle-nkkrep", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { partyId, partyName, judgeName, dogCount } = body;
+
+    if (!partyId || !judgeName) {
+      return c.json({ error: "Mangler påkrevde felter" }, 400);
+    }
+
+    // Hent NKK-rep info fra trialTeam i kv_store
+    const teamRow = db.prepare("SELECT value FROM kv_store WHERE key = ?").get("trialTeam");
+    if (!teamRow) {
+      return c.json({ error: "Ingen prøveteam konfigurert" }, 404);
+    }
+
+    let team;
+    try {
+      team = JSON.parse(teamRow.value);
+    } catch (e) {
+      return c.json({ error: "Ugyldig prøveteam-data" }, 500);
+    }
+
+    if (!team.nkkrep || !team.nkkrep.phone) {
+      return c.json({ error: "NKK-representant ikke konfigurert eller mangler telefonnummer" }, 404);
+    }
+
+    const nkkRepPhone = team.nkkrep.phone;
+    const nkkRepName = team.nkkrep.name || "NKK-rep";
+
+    // Lag SMS-melding
+    const message = `Kritikker fra ${partyName || partyId} er klare for godkjenning. Dommer: ${judgeName}. ${dogCount ? dogCount + ' hunder. ' : ''}Logg inn på fuglehundprove.no/nkk-godkjenning`;
+
+    // Send SMS
+    const smsResult = await sendSMS(nkkRepPhone, message, { type: "nkk_varsling" });
+
+    if (!smsResult.success) {
+      console.error(`Kunne ikke sende NKK-varsling til ${nkkRepPhone}:`, smsResult.error);
+      return c.json({
+        success: false,
+        error: "Kunne ikke sende SMS",
+        details: smsResult.error
+      }, 500);
+    }
+
+    console.log(`📱 NKK-varsling sendt til ${nkkRepName} (${nkkRepPhone}) om kritikker fra ${partyName}`);
+
+    return c.json({
+      success: true,
+      message: `Varsling sendt til ${nkkRepName}`,
+      devMode: smsResult.devMode || false
+    });
+
+  } catch (err) {
+    console.error("Feil ved NKK-varsling:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // Static files
 app.use("/*", serveStatic({ root: __dirname }));
 

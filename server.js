@@ -1800,6 +1800,51 @@ app.post("/api/auth/forgot-password/reset", async (c) => {
   });
 });
 
+// Endre passord (innlogget bruker)
+app.post("/api/auth/change-password", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const currentPassword = body.currentPassword || "";
+  const newPassword = body.newPassword || "";
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+  if (!currentPassword) {
+    return c.json({ error: "Nåværende passord er påkrevd" }, 400);
+  }
+  if (!newPassword || newPassword.length < 8) {
+    return c.json({ error: "Nytt passord må være minst 8 tegn" }, 400);
+  }
+
+  // Hent bruker
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
+  if (!bruker) {
+    return c.json({ error: "Bruker ikke funnet" }, 404);
+  }
+
+  // Verifiser nåværende passord
+  if (!verifyPassword(currentPassword, bruker.passord_hash)) {
+    return c.json({ error: "Feil nåværende passord" }, 401);
+  }
+
+  // Oppdater passord
+  const passordHash = hashPassword(newPassword);
+  db.prepare(`
+    UPDATE brukere
+    SET passord_hash = ?, updated_at = datetime('now')
+    WHERE telefon = ?
+  `).run(passordHash, telefon);
+
+  // Auto-backup etter passordendring
+  autoBackup("passord_endret");
+
+  return c.json({
+    ok: true,
+    message: "Passord endret"
+  });
+});
+
 // ============================================
 // KLUBB-AUTENTISERING MED PASSORD
 // ============================================

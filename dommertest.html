@@ -34,6 +34,8 @@
         input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
         .slipp-input { min-width: 36px; }
         .previous-comment { color: #9CA3AF; font-style: italic; }
+        .slipp-completed { background-color: #E5E7EB !important; color: #9CA3AF !important; pointer-events: none; }
+        .slipp-header-completed { background-color: #E5E7EB !important; color: #9CA3AF !important; }
     </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
@@ -223,16 +225,6 @@
                 </div>
             </div>
 
-            <!-- Slipp-velger -->
-            <div class="p-4 bg-bark-50 border-t border-bark-200">
-                <div class="flex items-center justify-between">
-                    <span class="text-sm font-medium text-bark-600">Aktivt slipp:</span>
-                    <div class="flex gap-2" id="slippSelector">
-                        <!-- Genereres av JavaScript -->
-                    </div>
-                </div>
-            </div>
-
         </div>
     </main>
 
@@ -269,10 +261,12 @@
         // Initialize
         function init() {
             loadFromStorage();
-            renderSlippSelector();
             renderPreviousComments();
             updateTotals();
             setupEventListeners();
+            updateCompletedSlipps();
+            updateSaveButtonText();
+            document.getElementById('currentSlippLabel').textContent = `Slipp ${state.currentSlipp}:`;
         }
 
         // Load from localStorage
@@ -313,8 +307,16 @@
             }
         }
 
-        // Save to localStorage
+        // Save to localStorage and move to next slipp
         function saveData() {
+            // Check if slipptid is filled for current slipp
+            const slipptidInput = document.querySelector(`input[data-field="slipptid"][data-slipp="${state.currentSlipp}"]`);
+            if (!slipptidInput || !slipptidInput.value) {
+                alert(`Du må fylle ut slipptid for slipp ${state.currentSlipp} før du kan lagre.`);
+                slipptidInput?.focus();
+                return;
+            }
+
             // Gather fuglebehandling
             state.data.fuglebehandling = {
                 presisjon: document.getElementById('presisjon').value || null,
@@ -338,19 +340,66 @@
             if (!state.data.comments) state.data.comments = {};
             state.data.comments[state.currentSlipp] = document.getElementById('currentComment').value;
 
+            // Mark this slipp as completed
+            if (!state.data.completedSlipps) state.data.completedSlipps = [];
+            if (!state.data.completedSlipps.includes(state.currentSlipp)) {
+                state.data.completedSlipps.push(state.currentSlipp);
+            }
+
+            // Move to next slipp if not at max
+            if (state.currentSlipp < state.maxSlipp) {
+                state.currentSlipp++;
+            }
             state.data.currentSlipp = state.currentSlipp;
 
             localStorage.setItem('dommertest_ukak', JSON.stringify(state.data));
 
+            // Update UI
+            updateCompletedSlipps();
+            renderPreviousComments();
+            document.getElementById('currentComment').value = state.data.comments?.[state.currentSlipp] || '';
+            document.getElementById('currentSlippLabel').textContent = `Slipp ${state.currentSlipp}:`;
+            updateSaveButtonText();
+
             // Visual feedback
-            const btn = event.target;
-            const origText = btn.textContent;
+            const btn = document.getElementById('saveBtn');
             btn.textContent = 'Lagret!';
             btn.classList.replace('bg-forest-600', 'bg-green-500');
             setTimeout(() => {
-                btn.textContent = origText;
+                updateSaveButtonText();
                 btn.classList.replace('bg-green-500', 'bg-forest-600');
-            }, 1500);
+            }, 1000);
+        }
+
+        // Gray out completed slipp columns
+        function updateCompletedSlipps() {
+            const completedSlipps = state.data.completedSlipps || [];
+
+            // Update header cells
+            for (let s = 1; s <= 9; s++) {
+                const headerCell = document.querySelector(`th:nth-child(${s + 1})`);
+                if (completedSlipps.includes(s)) {
+                    headerCell?.classList.add('slipp-header-completed');
+                } else {
+                    headerCell?.classList.remove('slipp-header-completed');
+                }
+            }
+
+            // Update input cells
+            FIELDS.forEach(field => {
+                for (let s = 1; s <= 9; s++) {
+                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
+                    if (input) {
+                        if (completedSlipps.includes(s)) {
+                            input.classList.add('slipp-completed');
+                            input.disabled = true;
+                        } else {
+                            input.classList.remove('slipp-completed');
+                            input.disabled = false;
+                        }
+                    }
+                }
+            });
         }
 
         // Save and finish dog
@@ -364,43 +413,12 @@
             }
         }
 
-        // Render slipp selector buttons
-        function renderSlippSelector() {
-            const container = document.getElementById('slippSelector');
-            let html = '';
-            for (let s = 1; s <= state.maxSlipp; s++) {
-                const isActive = s === state.currentSlipp;
-                const hasData = state.data.comments?.[s] || Object.values(state.data.slipps || {}).some(f => f[s]);
-                const btnClass = isActive
-                    ? 'bg-warm-500 text-white'
-                    : hasData
-                        ? 'bg-forest-100 text-forest-700 border border-forest-300'
-                        : 'bg-white text-bark-600 border border-bark-200';
-                html += `<button onclick="selectSlipp(${s})" class="w-8 h-8 rounded-lg text-sm font-bold transition ${btnClass}">${s}</button>`;
-            }
-            container.innerHTML = html;
-            document.getElementById('currentSlippLabel').textContent = `Slipp ${state.currentSlipp}:`;
-            updateSaveButtonText();
-        }
-
         // Update save button text with current slipp number
         function updateSaveButtonText() {
             const btn = document.getElementById('saveBtn');
             if (btn) {
                 btn.textContent = `Lagre slipp ${state.currentSlipp}`;
             }
-        }
-
-        // Select a specific slipp
-        function selectSlipp(s) {
-            // Save current comment first
-            if (!state.data.comments) state.data.comments = {};
-            state.data.comments[state.currentSlipp] = document.getElementById('currentComment').value;
-
-            state.currentSlipp = s;
-            renderSlippSelector();
-            renderPreviousComments();
-            document.getElementById('currentComment').value = state.data.comments?.[s] || '';
         }
 
         // Render previous comments (grå, kursiv, ikke redigerbare)

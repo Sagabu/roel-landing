@@ -146,6 +146,12 @@
                             </div>
                         </div>
 
+                        <div class="text-right">
+                            <button type="button" onclick="showForgotPassword()" class="text-sm text-warm-600 hover:text-warm-700 font-medium">
+                                Glemt passord?
+                            </button>
+                        </div>
+
                         <p id="loginError" class="text-red-500 text-sm hidden"></p>
 
                         <button onclick="loginWithPassword()" id="loginBtn" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
@@ -209,6 +215,134 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                             </svg>
                             Tilbake
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Glemt passord - skriv inn telefon -->
+                <div id="stepForgot" class="hidden">
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 bg-warm-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-bark-900 mb-2">Glemt passord</h3>
+                        <p class="text-bark-500 text-sm">
+                            Skriv inn ditt mobilnummer, så sender vi deg en verifiseringskode.
+                        </p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-2">Mobilnummer</label>
+                            <input type="tel" id="forgotPhone" placeholder="XXX XX XXX"
+                                class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none text-lg tracking-wider text-center"
+                                maxlength="10" oninput="formatPhoneInput(this)">
+                        </div>
+
+                        <p id="forgotError" class="text-red-500 text-sm text-center hidden"></p>
+
+                        <button onclick="sendForgotPasswordCode()" id="forgotSendBtn" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <span id="forgotSendBtnText">Send verifiseringskode</span>
+                            <svg id="forgotSendSpinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </button>
+
+                        <button onclick="goBackToStep1()" class="w-full text-bark-500 hover:text-bark-700 text-sm font-medium flex items-center justify-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                            Tilbake til innlogging
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 4: Glemt passord - verifiseringskode -->
+                <div id="stepForgotVerify" class="hidden">
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-bark-900 mb-2">Skriv inn kode</h3>
+                        <p class="text-bark-500 text-sm">
+                            Vi har sendt en kode til<br>
+                            <span class="font-semibold text-bark-700" id="forgotDisplayPhone">+47 XXX XX XXX</span>
+                        </p>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-3 text-center">Verifiseringskode (4 siffer)</label>
+                            <div class="flex justify-center gap-3">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="forgotCode1" oninput="handleCodeInput(this, 'forgotCode2')" onkeydown="handleCodeKeydown(event, null, 'forgotCode2')">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="forgotCode2" oninput="handleCodeInput(this, 'forgotCode3')" onkeydown="handleCodeKeydown(event, 'forgotCode1', 'forgotCode3')">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="forgotCode3" oninput="handleCodeInput(this, 'forgotCode4')" onkeydown="handleCodeKeydown(event, 'forgotCode2', 'forgotCode4')">
+                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                    id="forgotCode4" oninput="handleCodeInput(this, null)" onkeydown="handleCodeKeydown(event, 'forgotCode3', null)">
+                            </div>
+                            <p id="forgotCodeError" class="text-red-500 text-sm text-center mt-2 hidden"></p>
+                        </div>
+
+                        <button onclick="verifyForgotPasswordCode()" id="forgotVerifyBtn" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <span id="forgotVerifyBtnText">Bekreft kode</span>
+                            <svg id="forgotVerifySpinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </button>
+
+                        <button onclick="showForgotPassword()" class="w-full text-bark-500 hover:text-bark-700 text-sm font-medium flex items-center justify-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                            Tilbake
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 5: Sett nytt passord -->
+                <div id="stepNewPassword" class="hidden">
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-bark-900 mb-2">Sett nytt passord</h3>
+                        <p class="text-bark-500 text-sm">
+                            Velg et nytt passord for kontoen din.
+                        </p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-2">Nytt passord</label>
+                            <input type="password" id="newPassword" placeholder="Minimum 6 tegn"
+                                class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none text-lg">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-2">Bekreft passord</label>
+                            <input type="password" id="confirmPassword" placeholder="Skriv passordet på nytt"
+                                class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none text-lg">
+                        </div>
+
+                        <p id="newPasswordError" class="text-red-500 text-sm text-center hidden"></p>
+
+                        <button onclick="setNewPassword()" id="setPasswordBtn" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <span id="setPasswordBtnText">Lagre nytt passord</span>
+                            <svg id="setPasswordSpinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
                         </button>
                     </div>
                 </div>
@@ -890,9 +1024,204 @@
 
         function goBackToStep1() {
             document.getElementById('step2').classList.add('hidden');
+            document.getElementById('stepForgot').classList.add('hidden');
+            document.getElementById('stepForgotVerify').classList.add('hidden');
+            document.getElementById('stepNewPassword').classList.add('hidden');
             document.getElementById('step1').classList.remove('hidden');
             clearCodeInputs();
+            clearForgotCodeInputs();
             document.getElementById('codeError').classList.add('hidden');
+        }
+
+        // ========================================
+        // GLEMT PASSORD - Funksjoner
+        // ========================================
+        let forgotPasswordPhone = '';
+        let resetToken = '';
+
+        function showForgotPassword() {
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('stepForgot').classList.remove('hidden');
+            document.getElementById('forgotPhone').value = document.getElementById('phoneNumber').value || '';
+            document.getElementById('forgotPhone').focus();
+            document.getElementById('forgotError').classList.add('hidden');
+        }
+
+        function clearForgotCodeInputs() {
+            ['forgotCode1', 'forgotCode2', 'forgotCode3', 'forgotCode4'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+        }
+
+        async function sendForgotPasswordCode() {
+            const input = document.getElementById('forgotPhone');
+            const rawPhone = input.value.replace(/\D/g, '');
+            const errorEl = document.getElementById('forgotError');
+
+            if (rawPhone.length !== 8) {
+                errorEl.textContent = 'Vennligst skriv inn et gyldig mobilnummer (8 siffer)';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            forgotPasswordPhone = rawPhone;
+
+            const btn = document.getElementById('forgotSendBtn');
+            const text = document.getElementById('forgotSendBtnText');
+            const spinner = document.getElementById('forgotSendSpinner');
+            btn.disabled = true;
+            text.textContent = 'Sender...';
+            spinner.classList.remove('hidden');
+            errorEl.classList.add('hidden');
+
+            try {
+                const resp = await fetch('/api/auth/forgot-password/send-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: rawPhone })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Kunne ikke sende kode');
+                }
+
+                // Gå til verifiseringssteg
+                document.getElementById('stepForgot').classList.add('hidden');
+                document.getElementById('stepForgotVerify').classList.remove('hidden');
+                document.getElementById('forgotDisplayPhone').textContent = '+47 ' + input.value;
+                document.getElementById('forgotCode1').focus();
+
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                text.textContent = 'Send verifiseringskode';
+                spinner.classList.add('hidden');
+            }
+        }
+
+        async function verifyForgotPasswordCode() {
+            const code = ['forgotCode1', 'forgotCode2', 'forgotCode3', 'forgotCode4']
+                .map(id => document.getElementById(id).value)
+                .join('');
+
+            const errorEl = document.getElementById('forgotCodeError');
+
+            if (code.length !== 4) {
+                errorEl.textContent = 'Vennligst fyll inn alle 4 siffer';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const btn = document.getElementById('forgotVerifyBtn');
+            const text = document.getElementById('forgotVerifyBtnText');
+            const spinner = document.getElementById('forgotVerifySpinner');
+            btn.disabled = true;
+            text.textContent = 'Verifiserer...';
+            spinner.classList.remove('hidden');
+            errorEl.classList.add('hidden');
+
+            try {
+                const resp = await fetch('/api/auth/forgot-password/verify-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: forgotPasswordPhone, kode: code })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Ugyldig kode');
+                }
+
+                // Lagre reset-token og gå til nytt passord-steg
+                resetToken = data.resetToken;
+                document.getElementById('stepForgotVerify').classList.add('hidden');
+                document.getElementById('stepNewPassword').classList.remove('hidden');
+                document.getElementById('newPassword').focus();
+
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.remove('hidden');
+                clearForgotCodeInputs();
+                document.getElementById('forgotCode1').focus();
+            } finally {
+                btn.disabled = false;
+                text.textContent = 'Bekreft kode';
+                spinner.classList.add('hidden');
+            }
+        }
+
+        async function setNewPassword() {
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const errorEl = document.getElementById('newPasswordError');
+
+            if (newPassword.length < 6) {
+                errorEl.textContent = 'Passord må være minst 6 tegn';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                errorEl.textContent = 'Passordene er ikke like';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const btn = document.getElementById('setPasswordBtn');
+            const text = document.getElementById('setPasswordBtnText');
+            const spinner = document.getElementById('setPasswordSpinner');
+            btn.disabled = true;
+            text.textContent = 'Lagrer...';
+            spinner.classList.remove('hidden');
+            errorEl.classList.add('hidden');
+
+            try {
+                const resp = await fetch('/api/auth/forgot-password/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telefon: forgotPasswordPhone,
+                        resetToken: resetToken,
+                        nyttPassord: newPassword
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Kunne ikke oppdatere passord');
+                }
+
+                // Vellykket! Logg inn automatisk
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('userProfile', JSON.stringify(data.bruker));
+                localStorage.setItem('isLoggedIn', 'true');
+
+                // Vis dashboard
+                currentUser = {
+                    phone: forgotPasswordPhone,
+                    name: data.bruker.fornavn + ' ' + data.bruker.etternavn,
+                    trials: [],
+                    isTrialAdmin: false
+                };
+
+                showDashboard();
+
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                text.textContent = 'Lagre nytt passord';
+                spinner.classList.add('hidden');
+            }
         }
 
         // Show the dashboard

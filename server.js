@@ -1660,6 +1660,147 @@ app.post("/api/auth/reverify/verify", async (c) => {
 });
 
 // ============================================
+// GLEMT PASSORD
+// ============================================
+
+// Send kode for passord-reset
+app.post("/api/auth/forgot-password/send-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+
+  if (!/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  // Sjekk om bruker finnes
+  const bruker = db.prepare("SELECT telefon, fornavn FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) {
+    // Av sikkerhetsgrunner gir vi samme melding uansett
+    return c.json({ ok: true, message: "Hvis nummeret er registrert, sendes en kode på SMS" });
+  }
+
+  if (!checkOTPRate(telefon)) {
+    return c.json({ error: "For mange forsøk. Vent litt." }, 429);
+  }
+
+  // Marker gamle koder som brukt
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
+
+  // Generer ny kode
+  const code = generateOTP();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+
+  const smsResult = await sendSMS(telefon, `Din kode for å tilbakestille passord: ${code}`);
+
+  if (!smsResult.success) {
+    return c.json({ error: "Kunne ikke sende SMS. Prøv igjen." }, 500);
+  }
+
+  return c.json({ ok: true, message: "Kode sendt på SMS" });
+});
+
+// Verifiser kode og få reset-token
+app.post("/api/auth/forgot-password/verify-code", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const kode = (body.kode || "").trim();
+
+  if (!telefon || !kode) {
+    return c.json({ error: "Telefon og kode er påkrevd" }, 400);
+  }
+
+  const otp = db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, kode);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  // Marker koden som brukt
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+
+  // Generer en engangs reset-token (gyldig i 15 minutter)
+  const resetToken = randomBytes(32).toString('hex');
+  const resetExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  // Lagre reset-token i en midlertidig tabell eller i otp_codes
+  db.prepare(`
+    INSERT INTO otp_codes (telefon, code, expires_at, used)
+    VALUES (?, ?, ?, 0)
+  `).run(telefon, 'RESET:' + resetToken, resetExpires);
+
+  return c.json({ ok: true, resetToken });
+});
+
+// Sett nytt passord med reset-token
+app.post("/api/auth/forgot-password/reset", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const resetToken = (body.resetToken || "").trim();
+  const nyttPassord = body.nyttPassord || "";
+
+  if (!telefon || !resetToken || !nyttPassord) {
+    return c.json({ error: "Alle felt er påkrevd" }, 400);
+  }
+
+  if (nyttPassord.length < 6) {
+    return c.json({ error: "Passord må være minst 6 tegn" }, 400);
+  }
+
+  // Verifiser reset-token
+  const tokenRecord = db.prepare(
+    "SELECT rowid FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now')"
+  ).get(telefon, 'RESET:' + resetToken);
+
+  if (!tokenRecord) {
+    return c.json({ error: "Ugyldig eller utløpt reset-lenke. Prøv på nytt." }, 401);
+  }
+
+  // Marker token som brukt
+  db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(tokenRecord.rowid);
+
+  // Oppdater passord
+  const passordHash = hashPassword(nyttPassord);
+  db.prepare(`
+    UPDATE brukere
+    SET passord_hash = ?, verifisert = 1, siste_innlogging = datetime('now'), updated_at = datetime('now')
+    WHERE telefon = ?
+  `).run(passordHash, telefon);
+
+  // Auto-backup etter passordendring
+  autoBackup("passord_reset");
+
+  // Hent bruker og generer token
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+
+  const token = jwt.sign(
+    {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      rolle: bruker.rolle || "deltaker"
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return c.json({
+    ok: true,
+    message: "Passord oppdatert",
+    token,
+    bruker: {
+      telefon: bruker.telefon,
+      fornavn: bruker.fornavn,
+      etternavn: bruker.etternavn,
+      epost: bruker.epost,
+      rolle: bruker.rolle
+    }
+  });
+});
+
+// ============================================
 // KLUBB-AUTENTISERING MED PASSORD
 // ============================================
 

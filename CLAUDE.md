@@ -2,6 +2,25 @@
 
 Event management platform for Norwegian bird dog field trials.
 
+## ⚠️ KRITISK: Deploy-rutine
+
+**ALDRI bruk vanlig rsync for deploy!** Bruk ALLTID denne kommandoen:
+
+```bash
+./deploy.sh
+```
+
+Eller hvis du MÅ bruke rsync manuelt, ALLTID inkluder:
+```bash
+rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '*.db' --exclude '*.db-wal' --exclude '*.db-shm' --exclude 'fuglehund.db*' --exclude 'backups/' ./ root@135.181.28.134:/var/www/fuglehundprove/
+```
+
+**HVORFOR:** Databasen `fuglehund.db` inneholder alle brukere, hunder, prøver, etc. Hvis den overskrives med en lokal tom fil, mistes ALL data.
+
+**Server:** root@135.181.28.134
+**Remote dir:** /var/www/fuglehundprove/
+**PM2 restart:** `ssh root@135.181.28.134 "cd /var/www/fuglehundprove && pm2 restart fuglehund"`
+
 ## ⚠️ VIKTIG: Les reglene først!
 
 **Før du gjør NOEN endringer på kritikker, premieberegning, eller avlsstatistikk:**

@@ -428,12 +428,13 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
     }
 
     async function loadTrial() {
-        const r = await fetch('/api/trial');
-        const t = await r.json();
-        const form = document.getElementById('trialForm');
-        for (const [k, v] of Object.entries(t)) {
-            const el = form.elements[k];
-            if (el) el.value = v ?? '';
+        // Prøvekonfigurasjon-skjemaet er fjernet, men vi laster fortsatt trial-data for stats
+        try {
+            const r = await fetch('/api/trial');
+            const t = await r.json();
+            // Brukes kun for å oppdatere statusindikatorer
+        } catch (e) {
+            console.log('Kunne ikke laste trial-data:', e);
         }
     }
 
@@ -489,27 +490,7 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
         `).join('');
     }
 
-    document.getElementById('trialForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const body = {};
-        for (const el of form.elements) {
-            if (el.name) body[el.name] = el.type === 'number' || el.name === 'is_published' ? Number(el.value) : el.value;
-        }
-        await fetch('/api/trial', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        loadStats();
-        loadLog();
-        // Flash success
-        const btn = form.querySelector('button[type=submit]');
-        const orig = btn.textContent;
-        btn.textContent = '✓ Lagret!';
-        btn.classList.replace('bg-warm-600', 'bg-warm-500');
-        setTimeout(() => { btn.textContent = orig; btn.classList.replace('bg-warm-500', 'bg-warm-600'); }, 1500);
-    });
+    // Prøvekonfigurasjon-skjemaet er fjernet, så denne event listener trengs ikke lenger
 
     // Team management
     async function loadTeam() {
@@ -633,21 +614,7 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
         document.getElementById(id).addEventListener('input', updateTeamStatus);
     });
 
-    // Intercept publish and validate team
-    const origSubmit = document.getElementById('trialForm').onsubmit;
-    document.getElementById('trialForm').addEventListener('submit', async (e) => {
-        const publishSelect = document.querySelector('select[name="is_published"]');
-        if (publishSelect.value === '1') {
-            const teamComplete = updateTeamStatus();
-            if (!teamComplete) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                alert('Du må legge inn både prøveleder og NKK-representant før prøven kan publiseres.\n\nGå til Team-seksjonen og fyll ut obligatorisk informasjon.');
-                publishSelect.value = '0';
-                return false;
-            }
-        }
-    }, true);
+    // Prøvekonfigurasjon-skjemaet er fjernet, så publish-validering trengs ikke her
 
     // ============================================
     // FKF GODKJENTE DOMMERE

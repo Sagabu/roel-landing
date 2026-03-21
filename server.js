@@ -2311,6 +2311,9 @@ app.post("/api/undersokelse", async (c) => {
       `Nytt svar fra ${data.navn || data.kontakt_navn || 'Anonym'} (${source})`
     );
 
+    // Auto-backup ved nytt undersøkelsessvar
+    autoBackup("undersokelse");
+
     return c.json({ ok: true, message: "Takk for ditt svar!" });
   } catch (err) {
     console.error("Feil ved lagring av undersøkelse:", err);

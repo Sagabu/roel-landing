@@ -5202,29 +5202,80 @@ app.get("/api/system/health", (c) => {
   return c.json({ dbSize, uptime, memory, nodeVersion });
 });
 
-// SMS-statistikk (driftsadmin)
+// SMS-statistikk (driftsadmin) med filtrering
 app.get("/api/sms/stats", (c) => {
   try {
+    const klubbId = c.req.query("klubb") || "";
+    const periode = c.req.query("periode") || "all";
+
     // Sjekk om sms_log-tabellen eksisterer
     const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sms_log'").get();
 
     if (!tableExists) {
-      return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [] });
+      return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [], klubber: [] });
     }
 
-    const totalt = db.prepare("SELECT COUNT(*) as n FROM sms_log").get()?.n || 0;
-    const vellykket = db.prepare("SELECT COUNT(*) as n FROM sms_log WHERE status = 'sent'").get()?.n || 0;
+    // Bygg WHERE-klausul basert på filtre
+    let whereConditions = [];
+    let params = [];
+
+    // Klubb-filter
+    if (klubbId === "fuglehundprove.no") {
+      whereConditions.push("(klubb_id IS NULL OR klubb_id = '' OR type = 'verifisering')");
+    } else if (klubbId) {
+      whereConditions.push("klubb_id = ?");
+      params.push(klubbId);
+    }
+
+    // Periode-filter
+    const now = new Date();
+    let dateFilter = "";
+    switch (periode) {
+      case "today":
+        dateFilter = `date(created_at) = date('now')`;
+        break;
+      case "week":
+        dateFilter = `created_at >= datetime('now', '-7 days')`;
+        break;
+      case "month":
+        dateFilter = `strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`;
+        break;
+      case "last_month":
+        dateFilter = `strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now', '-1 month')`;
+        break;
+      case "year":
+        dateFilter = `strftime('%Y', created_at) = strftime('%Y', 'now')`;
+        break;
+      default:
+        dateFilter = "";
+    }
+    if (dateFilter) {
+      whereConditions.push(dateFilter);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+
+    const totalt = db.prepare(`SELECT COUNT(*) as n FROM sms_log ${whereClause}`).get(...params)?.n || 0;
+    const vellykket = db.prepare(`SELECT COUNT(*) as n FROM sms_log ${whereClause} ${whereClause ? "AND" : "WHERE"} status = 'sent'`).get(...params)?.n || 0;
     const feilet = totalt - vellykket;
 
     // Estimert kostnad (ca 0.50 kr per SMS)
     const kostnad = (vellykket * 0.5).toFixed(0);
 
-    // Siste 10 SMS
-    const siste = db.prepare("SELECT * FROM sms_log ORDER BY created_at DESC LIMIT 10").all();
+    // Siste 20 SMS med filter
+    const siste = db.prepare(`SELECT * FROM sms_log ${whereClause} ORDER BY created_at DESC LIMIT 20`).all(...params);
 
-    return c.json({ totalt, vellykket, feilet, kostnad, siste });
+    // Hent liste over klubber som har sendt SMS
+    const klubber = db.prepare(`
+      SELECT DISTINCT k.id, k.navn
+      FROM klubber k
+      INNER JOIN sms_log s ON s.klubb_id = k.id
+      ORDER BY k.navn
+    `).all();
+
+    return c.json({ totalt, vellykket, feilet, kostnad, siste, klubber });
   } catch (err) {
-    return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [], error: err.message });
+    return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [], klubber: [], error: err.message });
   }
 });
 

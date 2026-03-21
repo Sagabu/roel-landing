@@ -1011,6 +1011,37 @@
             return getFinishedDogs().includes(dogIndex);
         }
 
+        // Get dog status for display in party list
+        function getDogStatus(dogIndex) {
+            const isFinished = isDogFinished(dogIndex);
+            const isInActivePair = dogIndex === activePair.left || dogIndex === activePair.right;
+            const isCurrentDog = dogIndex === currentDogIndex;
+
+            // Get completed slipps count from saved data
+            const dogKey = `dommertest_dog_${dogIndex}`;
+            const saved = localStorage.getItem(dogKey);
+            let completedSlipps = 0;
+
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    completedSlipps = (parsed.completedSlipps || []).length;
+                } catch (e) {}
+            }
+
+            if (isFinished) {
+                return { text: 'Ferdig', class: 'bg-forest-100 text-forest-700', icon: 'check' };
+            } else if (isCurrentDog) {
+                return { text: 'Bedømmes nå', class: 'bg-warm-100 text-warm-700 animate-pulse', icon: 'active' };
+            } else if (isInActivePair) {
+                return { text: 'I aktivt par', class: 'bg-amber-100 text-amber-700', icon: 'pair' };
+            } else if (completedSlipps > 0) {
+                return { text: `${completedSlipps} slipp utført`, class: 'bg-blue-100 text-blue-700', icon: 'progress' };
+            } else {
+                return { text: 'Venter', class: 'bg-bark-100 text-bark-600', icon: 'waiting' };
+            }
+        }
+
         // Update navigation buttons based on active pair
         function updateDogNavigation() {
             // Use the active pair instead of calculating from currentDogIndex
@@ -1112,41 +1143,71 @@
 
                 // Dog 1
                 if (dog1) {
-                    const isActive1 = dog1Idx === currentDogIndex;
                     const isFinished1 = isDogFinished(dog1Idx);
+                    const status1 = getDogStatus(dog1Idx);
+                    const statusIcon1 = status1.icon === 'check'
+                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                        : status1.icon === 'active'
+                        ? '<span class="w-2 h-2 bg-warm-500 rounded-full"></span>'
+                        : status1.icon === 'pair'
+                        ? '<span class="w-2 h-2 bg-amber-500 rounded-full"></span>'
+                        : status1.icon === 'progress'
+                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+                        : '';
+
                     listHtml += `
                         <button ${isFinished1 ? 'disabled' : `onclick="selectDogFromList(${dog1Idx})"`}
-                            class="w-full text-left p-3 rounded-xl transition ${isFinished1 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : isActive1 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
+                            class="w-full text-left p-3 rounded-xl transition ${isFinished1 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : status1.icon === 'active' ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2">
-                                    ${isFinished1 ? '<svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : ''}
                                     <span class="${isFinished1 ? 'text-bark-500' : 'text-bark-800'} font-bold">Nr. ${dog1.nr}</span>
                                     <span class="${isFinished1 ? 'text-bark-400' : 'text-bark-600'}">${dog1.race}</span>
                                     <span class="${isFinished1 ? 'text-bark-500' : 'text-bark-800'} font-medium">${dog1.name}</span>
+                                    <span class="text-xs text-bark-400">(${dog1.klasse})</span>
                                 </div>
-                                <span class="text-xs px-2 py-1 rounded ${isFinished1 ? 'bg-forest-100 text-forest-700' : 'bg-bark-100 text-bark-600'}">${isFinished1 ? 'Ferdig' : dog1.klasse}</span>
                             </div>
-                            <p class="text-sm ${isFinished1 ? 'text-bark-400' : 'text-bark-500'} mt-1 ${isFinished1 ? 'ml-7' : ''}">${dog1.owner}</p>
+                            <div class="flex items-center justify-between mt-1">
+                                <p class="text-sm ${isFinished1 ? 'text-bark-400' : 'text-bark-500'}">${dog1.owner}</p>
+                                <span class="text-xs px-2 py-1 rounded flex items-center gap-1 ${status1.class}">
+                                    ${statusIcon1}
+                                    ${status1.text}
+                                </span>
+                            </div>
                         </button>`;
                 }
 
                 // Dog 2
                 if (dog2) {
-                    const isActive2 = dog2Idx === currentDogIndex;
                     const isFinished2 = isDogFinished(dog2Idx);
+                    const status2 = getDogStatus(dog2Idx);
+                    const statusIcon2 = status2.icon === 'check'
+                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                        : status2.icon === 'active'
+                        ? '<span class="w-2 h-2 bg-warm-500 rounded-full"></span>'
+                        : status2.icon === 'pair'
+                        ? '<span class="w-2 h-2 bg-amber-500 rounded-full"></span>'
+                        : status2.icon === 'progress'
+                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+                        : '';
+
                     listHtml += `
                         <button ${isFinished2 ? 'disabled' : `onclick="selectDogFromList(${dog2Idx})"`}
-                            class="w-full text-left p-3 rounded-xl transition ${isFinished2 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : isActive2 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
+                            class="w-full text-left p-3 rounded-xl transition ${isFinished2 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : status2.icon === 'active' ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2">
-                                    ${isFinished2 ? '<svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : ''}
                                     <span class="${isFinished2 ? 'text-bark-500' : 'text-bark-800'} font-bold">Nr. ${dog2.nr}</span>
                                     <span class="${isFinished2 ? 'text-bark-400' : 'text-bark-600'}">${dog2.race}</span>
                                     <span class="${isFinished2 ? 'text-bark-500' : 'text-bark-800'} font-medium">${dog2.name}</span>
+                                    <span class="text-xs text-bark-400">(${dog2.klasse})</span>
                                 </div>
-                                <span class="text-xs px-2 py-1 rounded ${isFinished2 ? 'bg-forest-100 text-forest-700' : 'bg-bark-100 text-bark-600'}">${isFinished2 ? 'Ferdig' : dog2.klasse}</span>
                             </div>
-                            <p class="text-sm ${isFinished2 ? 'text-bark-400' : 'text-bark-500'} mt-1 ${isFinished2 ? 'ml-7' : ''}">${dog2.owner}</p>
+                            <div class="flex items-center justify-between mt-1">
+                                <p class="text-sm ${isFinished2 ? 'text-bark-400' : 'text-bark-500'}">${dog2.owner}</p>
+                                <span class="text-xs px-2 py-1 rounded flex items-center gap-1 ${status2.class}">
+                                    ${statusIcon2}
+                                    ${status2.text}
+                                </span>
+                            </div>
                         </button>`;
                 }
 

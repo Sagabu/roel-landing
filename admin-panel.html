@@ -1378,8 +1378,8 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
                                 </td>
                                 <td class="px-3 py-2 text-bark-400 text-xs">${new Date(b.created_at).toLocaleDateString('no-NO')}</td>
                                 <td class="px-3 py-2 text-right">
-                                    <button onclick="editBrukerRolle(${b.id}, '${b.fornavn} ${b.etternavn}', '${b.rolle || 'deltaker'}')" class="text-warm-600 hover:text-warm-700 text-xs mr-2">Endre rolle</button>
-                                    <button onclick="deleteBruker(${b.id}, '${b.fornavn} ${b.etternavn}')" class="text-red-500 hover:text-red-700 text-xs">Slett</button>
+                                    <button onclick="editBrukerRolle('${b.telefon}', '${b.fornavn} ${b.etternavn}', '${b.rolle || 'deltaker'}')" class="text-warm-600 hover:text-warm-700 text-xs mr-2">Endre rolle</button>
+                                    <button onclick="deleteBruker('${b.telefon}', '${b.fornavn} ${b.etternavn}')" class="text-red-500 hover:text-red-700 text-xs">Slett</button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -1392,12 +1392,12 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
         }
     }
 
-    async function editBrukerRolle(id, navn, currentRolle) {
+    async function editBrukerRolle(telefon, navn, currentRolle) {
         const nyRolle = prompt(`Endre rolle for ${navn}\n\nNåværende: ${currentRolle}\n\nGyldige roller: deltaker, dommer, klubb_admin, admin, superadmin\n(kan kombineres med komma)`, currentRolle);
         if (!nyRolle || nyRolle === currentRolle) return;
 
         try {
-            const resp = await fetch(`/api/superadmin/brukere/${id}/rolle`, {
+            const resp = await fetch(`/api/superadmin/brukere/${telefon}/rolle`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rolle: nyRolle })
@@ -1415,12 +1415,12 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
         }
     }
 
-    async function deleteBruker(id, navn) {
+    async function deleteBruker(telefon, navn) {
         const bekreft = prompt(`⚠️ ADVARSEL: Du er i ferd med å slette brukeren "${navn}".\n\nDette kan ikke angres!\n\nSkriv "SLETT" for å bekrefte:`);
         if (bekreft !== 'SLETT') return;
 
         try {
-            const resp = await fetch(`/api/superadmin/brukere/${id}`, { method: 'DELETE' });
+            const resp = await fetch(`/api/superadmin/brukere/${telefon}`, { method: 'DELETE' });
             if (resp.ok) {
                 loadBrukere(document.getElementById('brukerSearch').value);
                 loadLog();

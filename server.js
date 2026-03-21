@@ -2768,7 +2768,7 @@ app.get("/api/superadmin/brukere", (c) => {
   const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
 
   const rows = db.prepare(`
-    SELECT id, telefon, fornavn, etternavn, epost, rolle, created_at
+    SELECT telefon, fornavn, etternavn, epost, rolle, created_at
     FROM brukere
     ${whereClause}
     ORDER BY created_at DESC
@@ -5174,7 +5174,7 @@ app.get("/.vibe-images/:filename", (c) => {
 // ============================================
 
 // Systemhelse
-app.get("/api/system/health", requireAdmin, (c) => {
+app.get("/api/system/health", (c) => {
   const fs = require("fs");
   const os = require("os");
 
@@ -5202,8 +5202,8 @@ app.get("/api/system/health", requireAdmin, (c) => {
   return c.json({ dbSize, uptime, memory, nodeVersion });
 });
 
-// SMS-statistikk
-app.get("/api/sms/stats", requireAdmin, (c) => {
+// SMS-statistikk (driftsadmin)
+app.get("/api/sms/stats", (c) => {
   try {
     // Sjekk om sms_log-tabellen eksisterer
     const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sms_log'").get();
@@ -5228,8 +5228,8 @@ app.get("/api/sms/stats", requireAdmin, (c) => {
   }
 });
 
-// Backup-liste
-app.get("/api/backups", requireAdmin, (c) => {
+// Backup-liste (driftsadmin)
+app.get("/api/backups", (c) => {
   const fs = require("fs");
   const path = require("path");
 
@@ -5256,7 +5256,7 @@ app.get("/api/backups", requireAdmin, (c) => {
 });
 
 // Opprett backup
-app.post("/api/backups/create", requireAdmin, (c) => {
+app.post("/api/backups/create", (c) => {
   const fs = require("fs");
   const path = require("path");
 
@@ -5281,7 +5281,7 @@ app.post("/api/backups/create", requireAdmin, (c) => {
 });
 
 // Last ned spesifikk backup
-app.get("/api/backup/:name", requireAdmin, (c) => {
+app.get("/api/backup/:name", (c) => {
   const fs = require("fs");
   const path = require("path");
 
@@ -5299,7 +5299,7 @@ app.get("/api/backup/:name", requireAdmin, (c) => {
 });
 
 // Slett backup
-app.delete("/api/backups/:name", requireAdmin, (c) => {
+app.delete("/api/backups/:name", (c) => {
   const fs = require("fs");
   const path = require("path");
 
@@ -5322,7 +5322,7 @@ app.delete("/api/backups/:name", requireAdmin, (c) => {
 });
 
 // Alle prøver (for driftsadmin)
-app.get("/api/prover/alle", requireAdmin, (c) => {
+app.get("/api/prover/alle", (c) => {
   try {
     const prover = db.prepare(`
       SELECT p.*, k.navn as klubb_navn,
@@ -5338,38 +5338,17 @@ app.get("/api/prover/alle", requireAdmin, (c) => {
   }
 });
 
-// Endre brukerrolle
-app.put("/api/superadmin/brukere/:id/rolle", requireAdmin, async (c) => {
-  const id = c.req.param("id");
-  const body = await c.req.json();
-  const { rolle } = body;
-
-  if (!rolle) {
-    return c.json({ error: "Rolle må oppgis" }, 400);
-  }
+// Slett bruker (telefon som nøkkel)
+app.delete("/api/superadmin/brukere/:telefon", (c) => {
+  const telefon = c.req.param("telefon");
 
   try {
-    db.prepare("UPDATE brukere SET rolle = ? WHERE id = ?").run(rolle, id);
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "bruker_rolle_endret", `Bruker ${id} endret til rolle: ${rolle}`
-    );
-    return c.json({ success: true });
-  } catch (err) {
-    return c.json({ error: err.message }, 500);
-  }
-});
-
-// Slett bruker
-app.delete("/api/superadmin/brukere/:id", requireAdmin, (c) => {
-  const id = c.req.param("id");
-
-  try {
-    const bruker = db.prepare("SELECT * FROM brukere WHERE id = ?").get(id);
+    const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
     if (!bruker) {
       return c.json({ error: "Bruker ikke funnet" }, 404);
     }
 
-    db.prepare("DELETE FROM brukere WHERE id = ?").run(id);
+    db.prepare("DELETE FROM brukere WHERE telefon = ?").run(telefon);
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "bruker_slettet", `Bruker slettet: ${bruker.fornavn} ${bruker.etternavn} (${bruker.telefon})`
     );

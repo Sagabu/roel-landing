@@ -5339,7 +5339,7 @@ app.get("/api/prover/alle", requireAdmin, (c) => {
 });
 
 // Endre brukerrolle
-app.put("/api/superadmin/brukere/:id/rolle", requireSuperadmin, async (c) => {
+app.put("/api/superadmin/brukere/:id/rolle", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const { rolle } = body;
@@ -5360,7 +5360,7 @@ app.put("/api/superadmin/brukere/:id/rolle", requireSuperadmin, async (c) => {
 });
 
 // Slett bruker
-app.delete("/api/superadmin/brukere/:id", requireSuperadmin, (c) => {
+app.delete("/api/superadmin/brukere/:id", requireAdmin, (c) => {
   const id = c.req.param("id");
 
   try {

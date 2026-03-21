@@ -769,13 +769,9 @@
                 const nextOtherClassIdx = findNextReplacementDogOtherClass();
 
                 if (nextOtherClassIdx === -1) {
-                    // All dogs finished
-                    buttonsHtml = `
-                        <button onclick="closeNextDogDialog(); showPartyList();"
-                            class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
-                            Se partiliste (alle ferdige)
-                        </button>
-                    `;
+                    // ALL dogs in the party are finished! Show completion screen
+                    showPartyCompletedDialog();
+                    return;
                 } else {
                     // Only dogs from other class available
                     const nextDog = partyList[nextOtherClassIdx];
@@ -869,6 +865,104 @@
         // Show party list specifically for replacing a dog
         function showPartyListForReplace() {
             showPartyList();
+        }
+
+        // Show completion dialog when ALL dogs in party are finished
+        function showPartyCompletedDialog() {
+            closeNextDogDialog();
+
+            const finishedDogs = getFinishedDogs();
+            const totalDogs = partyList.length;
+
+            // Count premiums
+            let premiumCounts = { '0': 0, '1': 0, '2': 0, '3': 0 };
+            for (let i = 0; i < partyList.length; i++) {
+                const dogKey = `dommer_ukak_${partyId}_dog_${i}`;
+                const saved = localStorage.getItem(dogKey);
+                if (saved) {
+                    try {
+                        const data = JSON.parse(saved);
+                        const premie = data.premie || '0';
+                        if (premiumCounts[premie] !== undefined) {
+                            premiumCounts[premie]++;
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            const modal = document.createElement('div');
+            modal.id = 'partyCompletedModal';
+            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
+
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden">
+                    <div class="bg-gradient-to-r from-forest-600 to-forest-700 text-white px-6 py-6 text-center">
+                        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-2xl font-bold font-serif">Parti fullført!</h2>
+                        <p class="text-forest-100 mt-1">${partyInfo.name}</p>
+                    </div>
+
+                    <div class="p-6">
+                        <div class="bg-bark-50 rounded-xl p-4 mb-4">
+                            <h3 class="text-sm font-semibold text-bark-700 mb-3">Oppsummering</h3>
+                            <div class="grid grid-cols-2 gap-3 text-center">
+                                <div class="bg-white rounded-lg p-2">
+                                    <span class="block text-2xl font-bold text-bark-800">${totalDogs}</span>
+                                    <span class="text-xs text-bark-500">Hunder bedømt</span>
+                                </div>
+                                <div class="bg-white rounded-lg p-2">
+                                    <span class="block text-2xl font-bold text-forest-600">${premiumCounts['1']}</span>
+                                    <span class="text-xs text-bark-500">1. premie</span>
+                                </div>
+                                <div class="bg-white rounded-lg p-2">
+                                    <span class="block text-2xl font-bold text-warm-600">${premiumCounts['2']}</span>
+                                    <span class="text-xs text-bark-500">2. premie</span>
+                                </div>
+                                <div class="bg-white rounded-lg p-2">
+                                    <span class="block text-2xl font-bold text-bark-600">${premiumCounts['3']}</span>
+                                    <span class="text-xs text-bark-500">3. premie</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <button onclick="goToWriteCritiques()"
+                                class="w-full bg-warm-500 hover:bg-warm-600 text-white py-3 px-4 rounded-xl font-semibold transition flex items-center justify-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Skriv kritikker
+                            </button>
+                            <button onclick="closePartyCompletedDialog(); showPartyList();"
+                                class="w-full bg-bark-100 hover:bg-bark-200 text-bark-700 py-3 px-4 rounded-xl font-semibold transition">
+                                Se partiliste
+                            </button>
+                            <button onclick="goBackToJudgeHome()"
+                                class="w-full text-bark-500 hover:text-bark-700 py-2 px-4 text-sm transition">
+                                Tilbake til dommerportalen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+        }
+
+        function closePartyCompletedDialog() {
+            document.getElementById('partyCompletedModal')?.remove();
+        }
+
+        function goToWriteCritiques() {
+            window.location.href = 'dommer-kritikk.html?party=' + partyId;
+        }
+
+        function goBackToJudgeHome() {
+            window.location.href = 'dommer-hjem.html';
         }
 
         function selectNextDog(idx) {
@@ -1473,7 +1567,18 @@
             loadDogData(currentDogIndex); // Load the current dog's data
             updateDogNavigation();
             initOfflineSupport();
+
+            // Check if all dogs are already finished
+            checkIfPartyCompleted();
         });
+
+        // Check if all dogs in party are finished (show completion dialog if so)
+        function checkIfPartyCompleted() {
+            const finishedDogs = getFinishedDogs();
+            if (finishedDogs.length === partyList.length && partyList.length > 0) {
+                showPartyCompletedDialog();
+            }
+        }
 
         // Offline support
         function initOfflineSupport() {

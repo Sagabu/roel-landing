@@ -10,7 +10,41 @@
     const currentPage = window.location.pathname.split('/').pop() || 'index.html';
 
     // Sider som har egen navigasjon og ikke skal ha shared navbar
-    const EXCLUDED_PAGES = ['min-side.html', 'dommer-undersokelse.html'];
+    const EXCLUDED_PAGES = [
+        'min-side.html',
+        'dommer-undersokelse.html',
+        'avlssok.html',
+        'index.html',
+        'profil.html',
+        'mine-hunder.html',
+        'jaktprover.html',
+        'fullmakter.html',
+        'partilister.html',
+        'hund.html',
+        'terminliste.html',
+        'slik-fungerer-det.html',
+        'personvern.html',
+        'flytskjema-klubb.html',
+        'klubb.html',
+        'klubb-login.html',
+        'admin.html',
+        'admin-panel.html',
+        'superadmin.html',
+        'opprett-klubb.html',
+        'opprett-bruker.html',
+        'opprett-prove.html',
+        'pamelding.html',
+        'deltaker.html',
+        'dommer.html',
+        'dommer-hjem.html',
+        'dommer-vk.html',
+        'dommer-kritikk.html',
+        'nkk-godkjenning.html',
+        'kritikk-visning.html',
+        'upload-logo.html',
+        'undersokelse.html',
+        'dommertest.html'
+    ];
     if (EXCLUDED_PAGES.includes(currentPage)) {
         return; // Ikke injiser navbar på disse sidene
     }

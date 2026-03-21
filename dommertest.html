@@ -72,6 +72,7 @@
             <button onclick="switchToDog(1)" id="dogLeftBtn" class="flex-1 bg-white hover:bg-bark-50 border border-bark-300 rounded-xl px-3 py-2 text-left transition shadow-sm">
                 <span class="text-xs text-bark-500 block">Hund 1</span>
                 <span class="text-sm font-semibold text-bark-800 truncate block" id="dogLeftName">ES Zlatan</span>
+                <span class="text-xs text-bark-500 block" id="dogLeftKlasse">(UK)</span>
             </button>
 
             <!-- Party list button -->
@@ -83,6 +84,7 @@
             <button onclick="switchToDog(2)" id="dogRightBtn" class="flex-1 bg-white hover:bg-bark-50 border border-bark-300 rounded-xl px-3 py-2 text-right transition shadow-sm">
                 <span class="text-xs text-bark-500 block">Hund 2</span>
                 <span class="text-sm font-semibold text-bark-800 truncate block" id="dogRightName">IS Braut</span>
+                <span class="text-xs text-bark-500 block" id="dogRightKlasse">(UK)</span>
             </button>
         </div>
     </div>
@@ -455,27 +457,85 @@
                 setDogFinished(currentDogIndex);
                 saveCurrentDogData();
 
-                // Find next unfinished dog
-                let nextDogIndex = -1;
-                for (let i = 0; i < testPartyList.length; i++) {
-                    if (!isDogFinished(i)) {
-                        nextDogIndex = i;
-                        break;
-                    }
-                }
+                // Show choice dialog
+                showNextDogDialog(dogName);
+            }
+        }
 
-                if (nextDogIndex >= 0) {
-                    // Switch to next unfinished dog
-                    currentDogIndex = nextDogIndex;
-                    loadDogData(currentDogIndex);
-                    updateDogNavigation();
-                    alert(`${dogName} er avsluttet! Bytter til ${testPartyList[nextDogIndex].name}.`);
-                } else {
-                    // All dogs finished
-                    alert(`${dogName} er avsluttet! Alle hunder i partiet er nå bedømt.`);
-                    showPartyList();
+        // Show dialog to choose next action after finishing a dog
+        function showNextDogDialog(finishedDogName) {
+            // Find next unfinished dog in order
+            let nextDogIndex = -1;
+            for (let i = 0; i < testPartyList.length; i++) {
+                if (!isDogFinished(i)) {
+                    nextDogIndex = i;
+                    break;
                 }
             }
+
+            const modal = document.createElement('div');
+            modal.id = 'nextDogModal';
+            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
+
+            const finishedCount = getFinishedDogs().length;
+            const totalCount = testPartyList.length;
+            const allFinished = finishedCount >= totalCount;
+
+            let buttonsHtml = '';
+
+            if (allFinished) {
+                buttonsHtml = `
+                    <button onclick="closeNextDogDialog(); showPartyList();"
+                        class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
+                        Se partiliste (alle ferdige)
+                    </button>
+                `;
+            } else {
+                const nextDog = testPartyList[nextDogIndex];
+                buttonsHtml = `
+                    <button onclick="selectNextDog(${nextDogIndex})"
+                        class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
+                        <span class="block text-sm opacity-80">Neste på listen:</span>
+                        <span class="block">${nextDog.race} ${nextDog.name} (${nextDog.klasse})</span>
+                    </button>
+                    <button onclick="closeNextDogDialog(); showPartyList();"
+                        class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
+                        Velg hund fra partilisten
+                    </button>
+                `;
+            }
+
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden">
+                    <div class="bg-forest-600 text-white px-4 py-3 text-center">
+                        <svg class="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        <h2 class="font-bold font-serif text-lg">${finishedDogName}</h2>
+                        <p class="text-forest-100 text-sm">Bedømmelse avsluttet</p>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-center text-bark-600 mb-4">
+                            <span class="font-medium">${finishedCount} av ${totalCount}</span> hunder bedømt
+                        </p>
+                        ${buttonsHtml}
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            updateDogNavigation();
+        }
+
+        function closeNextDogDialog() {
+            document.getElementById('nextDogModal')?.remove();
+        }
+
+        function selectNextDog(idx) {
+            closeNextDogDialog();
+            currentDogIndex = idx;
+            loadDogData(currentDogIndex);
+            updateDogNavigation();
         }
 
         // Update save button text with current slipp number
@@ -581,9 +641,12 @@
             // Update left button
             const leftBtn = document.getElementById('dogLeftBtn');
             const leftName = document.getElementById('dogLeftName');
+            const leftKlasse = document.getElementById('dogLeftKlasse');
             if (dog1) {
                 const checkmark = isFinished1 ? '✓ ' : '';
                 leftName.textContent = `${checkmark}${dog1.race} ${dog1.name.split(' ').pop()}`;
+                leftKlasse.textContent = isFinished1 ? '(Ferdig)' : `(${dog1.klasse})`;
+                leftKlasse.classList.toggle('text-forest-600', isFinished1);
                 leftBtn.classList.toggle('ring-2', currentDogIndex === currentPairStart);
                 leftBtn.classList.toggle('ring-warm-500', currentDogIndex === currentPairStart);
                 leftBtn.classList.toggle('bg-forest-50', isFinished1 && currentDogIndex !== currentPairStart);
@@ -593,9 +656,12 @@
             // Update right button
             const rightBtn = document.getElementById('dogRightBtn');
             const rightName = document.getElementById('dogRightName');
+            const rightKlasse = document.getElementById('dogRightKlasse');
             if (dog2) {
                 const checkmark = isFinished2 ? '✓ ' : '';
                 rightName.textContent = `${checkmark}${dog2.race} ${dog2.name.split(' ').pop()}`;
+                rightKlasse.textContent = isFinished2 ? '(Ferdig)' : `(${dog2.klasse})`;
+                rightKlasse.classList.toggle('text-forest-600', isFinished2);
                 rightBtn.classList.toggle('ring-2', currentDogIndex === currentPairStart + 1);
                 rightBtn.classList.toggle('ring-warm-500', currentDogIndex === currentPairStart + 1);
                 rightBtn.classList.toggle('bg-forest-50', isFinished2 && currentDogIndex !== currentPairStart + 1);
@@ -604,6 +670,7 @@
                 rightBtn.classList.remove('opacity-50');
             } else {
                 rightName.textContent = '—';
+                rightKlasse.textContent = '';
                 rightBtn.disabled = true;
                 rightBtn.classList.add('opacity-50');
             }

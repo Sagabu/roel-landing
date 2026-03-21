@@ -2748,29 +2748,38 @@ app.post("/api/klubb-foresporsel/:id/avslaa", async (c) => {
 // Hent alle brukere (kun superadmin)
 app.get("/api/superadmin/brukere", (c) => {
   const search = c.req.query("search") || '';
+  const rolle = c.req.query("rolle") || '';
   const limit = parseInt(c.req.query("limit") || '50');
   const offset = parseInt(c.req.query("offset") || '0');
 
-  let rows;
+  let whereConditions = [];
+  let params = [];
+
   if (search) {
-    rows = db.prepare(`
-      SELECT telefon, fornavn, etternavn, epost, rolle, created_at
-      FROM brukere
-      WHERE telefon LIKE ? OR fornavn LIKE ? OR etternavn LIKE ? OR epost LIKE ?
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `).all(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit, offset);
-  } else {
-    rows = db.prepare(`
-      SELECT telefon, fornavn, etternavn, epost, rolle, created_at
-      FROM brukere
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset);
+    whereConditions.push("(telefon LIKE ? OR fornavn LIKE ? OR etternavn LIKE ? OR epost LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
 
-  const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
-  return c.json({ brukere: rows, total });
+  if (rolle) {
+    whereConditions.push("rolle LIKE ?");
+    params.push(`%${rolle}%`);
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+
+  const rows = db.prepare(`
+    SELECT id, telefon, fornavn, etternavn, epost, rolle, created_at
+    FROM brukere
+    ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  const totalQuery = whereClause
+    ? db.prepare(`SELECT COUNT(*) as n FROM brukere ${whereClause}`).get(...params)
+    : db.prepare("SELECT COUNT(*) as n FROM brukere").get();
+
+  return c.json({ brukere: rows, total: totalQuery.n });
 });
 
 // Oppdater bruker-rolle (kun superadmin)
@@ -5158,6 +5167,216 @@ app.get("/.vibe-images/:filename", (c) => {
   };
   c.header("Content-Type", mimeTypes[ext] || "application/octet-stream");
   return c.body(data);
+});
+
+// ============================================
+// DRIFTSADMIN API-ENDEPUNKTER
+// ============================================
+
+// Systemhelse
+app.get("/api/system/health", requireAdmin, (c) => {
+  const fs = require("fs");
+  const os = require("os");
+
+  // Database størrelse
+  let dbSize = "-";
+  try {
+    const stats = fs.statSync(DB_PATH);
+    const sizeKb = stats.size / 1024;
+    dbSize = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb.toFixed(0)} KB`;
+  } catch (e) {}
+
+  // Oppetid
+  const uptimeSeconds = process.uptime();
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const uptime = hours > 0 ? `${hours}t ${minutes}m` : `${minutes}m`;
+
+  // Minne
+  const memUsed = process.memoryUsage().heapUsed / 1024 / 1024;
+  const memory = `${memUsed.toFixed(0)} MB`;
+
+  // Node versjon
+  const nodeVersion = process.version;
+
+  return c.json({ dbSize, uptime, memory, nodeVersion });
+});
+
+// SMS-statistikk
+app.get("/api/sms/stats", requireAdmin, (c) => {
+  try {
+    // Sjekk om sms_log-tabellen eksisterer
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sms_log'").get();
+
+    if (!tableExists) {
+      return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [] });
+    }
+
+    const totalt = db.prepare("SELECT COUNT(*) as n FROM sms_log").get()?.n || 0;
+    const vellykket = db.prepare("SELECT COUNT(*) as n FROM sms_log WHERE status = 'sent'").get()?.n || 0;
+    const feilet = totalt - vellykket;
+
+    // Estimert kostnad (ca 0.50 kr per SMS)
+    const kostnad = (vellykket * 0.5).toFixed(0);
+
+    // Siste 10 SMS
+    const siste = db.prepare("SELECT * FROM sms_log ORDER BY created_at DESC LIMIT 10").all();
+
+    return c.json({ totalt, vellykket, feilet, kostnad, siste });
+  } catch (err) {
+    return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [], error: err.message });
+  }
+});
+
+// Backup-liste
+app.get("/api/backups", requireAdmin, (c) => {
+  const fs = require("fs");
+  const path = require("path");
+
+  const backupDir = path.join(__dirname, "backups");
+
+  if (!fs.existsSync(backupDir)) {
+    return c.json({ backups: [] });
+  }
+
+  const files = fs.readdirSync(backupDir)
+    .filter(f => f.endsWith(".db"))
+    .map(name => {
+      const stats = fs.statSync(path.join(backupDir, name));
+      const sizeKb = stats.size / 1024;
+      return {
+        name,
+        size: sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb.toFixed(0)} KB`,
+        created: stats.mtime.toLocaleString("no-NO")
+      };
+    })
+    .sort((a, b) => b.name.localeCompare(a.name));
+
+  return c.json({ backups: files });
+});
+
+// Opprett backup
+app.post("/api/backups/create", requireAdmin, (c) => {
+  const fs = require("fs");
+  const path = require("path");
+
+  const backupDir = path.join(__dirname, "backups");
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "").slice(0, 15);
+  const backupName = `fuglehund_${timestamp}.db`;
+  const backupPath = path.join(backupDir, backupName);
+
+  try {
+    fs.copyFileSync(DB_PATH, backupPath);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "backup_created", `Backup opprettet: ${backupName}`
+    );
+    return c.json({ success: true, name: backupName });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Last ned spesifikk backup
+app.get("/api/backup/:name", requireAdmin, (c) => {
+  const fs = require("fs");
+  const path = require("path");
+
+  const name = c.req.param("name");
+  const backupPath = path.join(__dirname, "backups", name);
+
+  if (!fs.existsSync(backupPath) || !name.endsWith(".db")) {
+    return c.json({ error: "Backup ikke funnet" }, 404);
+  }
+
+  const data = fs.readFileSync(backupPath);
+  c.header("Content-Type", "application/octet-stream");
+  c.header("Content-Disposition", `attachment; filename="${name}"`);
+  return c.body(data);
+});
+
+// Slett backup
+app.delete("/api/backups/:name", requireAdmin, (c) => {
+  const fs = require("fs");
+  const path = require("path");
+
+  const name = c.req.param("name");
+  const backupPath = path.join(__dirname, "backups", name);
+
+  if (!fs.existsSync(backupPath) || !name.endsWith(".db")) {
+    return c.json({ error: "Backup ikke funnet" }, 404);
+  }
+
+  try {
+    fs.unlinkSync(backupPath);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "backup_deleted", `Backup slettet: ${name}`
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Alle prøver (for driftsadmin)
+app.get("/api/prover/alle", requireAdmin, (c) => {
+  try {
+    const prover = db.prepare(`
+      SELECT p.*, k.navn as klubb_navn,
+             (SELECT COUNT(*) FROM pameldte WHERE prove_id = p.id) as antall_pameldte
+      FROM prover p
+      LEFT JOIN klubber k ON p.klubb_id = k.id
+      ORDER BY p.dato_fra DESC
+    `).all();
+    return c.json({ prover });
+  } catch (err) {
+    // Hvis tabellen ikke finnes ennå
+    return c.json({ prover: [] });
+  }
+});
+
+// Endre brukerrolle
+app.put("/api/superadmin/brukere/:id/rolle", requireSuperadmin, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { rolle } = body;
+
+  if (!rolle) {
+    return c.json({ error: "Rolle må oppgis" }, 400);
+  }
+
+  try {
+    db.prepare("UPDATE brukere SET rolle = ? WHERE id = ?").run(rolle, id);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "bruker_rolle_endret", `Bruker ${id} endret til rolle: ${rolle}`
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett bruker
+app.delete("/api/superadmin/brukere/:id", requireSuperadmin, (c) => {
+  const id = c.req.param("id");
+
+  try {
+    const bruker = db.prepare("SELECT * FROM brukere WHERE id = ?").get(id);
+    if (!bruker) {
+      return c.json({ error: "Bruker ikke funnet" }, 404);
+    }
+
+    db.prepare("DELETE FROM brukere WHERE id = ?").run(id);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "bruker_slettet", `Bruker slettet: ${bruker.fornavn} ${bruker.etternavn} (${bruker.telefon})`
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
 });
 
 // Static files

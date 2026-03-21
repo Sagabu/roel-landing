@@ -505,12 +505,20 @@
             showSlippSavedDialog(dogName);
         }
 
+        // Get the current pair indices (the two dogs being judged together)
+        function getCurrentPairIndices() {
+            const pairStart = Math.floor(currentDogIndex / 2) * 2;
+            return [pairStart, pairStart + 1];
+        }
+
         // Show dialog after saving a slipp (not finishing dog)
         function showSlippSavedDialog(dogName) {
-            // Find next dog in sequential order
+            // Find next dog NOT in current pair and not finished
+            const currentPair = getCurrentPairIndices();
             let nextSequentialIdx = -1;
             for (let i = 0; i < testPartyList.length; i++) {
-                if (!isDogFinished(i) && i !== currentDogIndex) {
+                // Skip dogs in current pair and finished dogs
+                if (!currentPair.includes(i) && !isDogFinished(i)) {
                     nextSequentialIdx = i;
                     break;
                 }
@@ -523,20 +531,16 @@
             let buttonsHtml = '';
 
             if (nextSequentialIdx === -1) {
-                // No other dogs available
+                // No other dogs available outside current pair
                 buttonsHtml = `
                     <button onclick="closeSlippSavedDialog();"
                         class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
-                        Fortsett med ${dogName}
+                        OK
                     </button>
                 `;
             } else {
                 const nextDog = testPartyList[nextSequentialIdx];
                 buttonsHtml = `
-                    <button onclick="closeSlippSavedDialog();"
-                        class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
-                        Fortsett med ${dogName}
-                    </button>
                     <button onclick="closeSlippSavedDialog(); replaceWithNextDog(${nextSequentialIdx});"
                         class="w-full bg-warm-500 hover:bg-warm-600 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
                         <span class="block text-sm opacity-80">Erstatt med neste hund på listen:</span>
@@ -558,7 +562,6 @@
                         <h2 class="font-bold font-serif">Slipp lagret!</h2>
                     </div>
                     <div class="p-4">
-                        <p class="text-center text-bark-600 mb-4">Hva vil du gjøre nå?</p>
                         ${buttonsHtml}
                     </div>
                 </div>
@@ -640,14 +643,12 @@
 
         // Show dialog to choose next action after finishing a dog
         function showNextDogDialog(finishedDogName, isReplace = false) {
-            // Find next dog in sequential order (not just unfinished)
-            // This is used when replacing a dog in a pair
-            const finishedDogIdx = currentDogIndex;
-
-            // Find next sequential dog that hasn't been finished
+            // Find next dog NOT in current pair and not finished
+            const currentPair = getCurrentPairIndices();
             let nextSequentialIdx = -1;
             for (let i = 0; i < testPartyList.length; i++) {
-                if (!isDogFinished(i) && i !== finishedDogIdx) {
+                // Skip dogs in current pair and finished dogs
+                if (!currentPair.includes(i) && !isDogFinished(i)) {
                     nextSequentialIdx = i;
                     break;
                 }

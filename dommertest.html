@@ -889,10 +889,12 @@
                 leftName.textContent = `${checkmark}${dog1.race} ${dog1.name.split(' ').pop()}`;
                 leftKlasse.textContent = isFinished1 ? '(Ferdig)' : `(${dog1.klasse})`;
                 leftKlasse.classList.toggle('text-forest-600', isFinished1);
-                leftBtn.classList.toggle('ring-2', currentDogIndex === activePair.left);
-                leftBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.left);
-                leftBtn.classList.toggle('bg-forest-50', isFinished1 && currentDogIndex !== activePair.left);
-                leftBtn.classList.toggle('border-forest-300', isFinished1);
+                leftBtn.classList.toggle('ring-2', currentDogIndex === activePair.left && !isFinished1);
+                leftBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.left && !isFinished1);
+                leftBtn.classList.toggle('bg-bark-100', isFinished1);
+                leftBtn.classList.toggle('opacity-60', isFinished1);
+                leftBtn.classList.toggle('cursor-not-allowed', isFinished1);
+                leftBtn.disabled = isFinished1;
             }
 
             // Update right button
@@ -904,12 +906,12 @@
                 rightName.textContent = `${checkmark}${dog2.race} ${dog2.name.split(' ').pop()}`;
                 rightKlasse.textContent = isFinished2 ? '(Ferdig)' : `(${dog2.klasse})`;
                 rightKlasse.classList.toggle('text-forest-600', isFinished2);
-                rightBtn.classList.toggle('ring-2', currentDogIndex === activePair.right);
-                rightBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.right);
-                rightBtn.classList.toggle('bg-forest-50', isFinished2 && currentDogIndex !== activePair.right);
-                rightBtn.classList.toggle('border-forest-300', isFinished2);
-                rightBtn.disabled = false;
-                rightBtn.classList.remove('opacity-50');
+                rightBtn.classList.toggle('ring-2', currentDogIndex === activePair.right && !isFinished2);
+                rightBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.right && !isFinished2);
+                rightBtn.classList.toggle('bg-bark-100', isFinished2);
+                rightBtn.classList.toggle('opacity-60', isFinished2);
+                rightBtn.classList.toggle('cursor-not-allowed', isFinished2);
+                rightBtn.disabled = isFinished2;
             } else {
                 rightName.textContent = '—';
                 rightKlasse.textContent = '';
@@ -930,6 +932,11 @@
         function switchToDog(position) {
             // Use active pair instead of calculating
             const newIndex = position === 1 ? activePair.left : activePair.right;
+
+            // Don't allow switching to finished dogs
+            if (isDogFinished(newIndex)) {
+                return;
+            }
 
             if (testPartyList[newIndex]) {
                 // Save current dog data first
@@ -969,18 +976,18 @@
                     const isActive1 = dog1Idx === currentDogIndex;
                     const isFinished1 = isDogFinished(dog1Idx);
                     listHtml += `
-                        <button onclick="selectDogFromList(${dog1Idx})"
-                            class="w-full text-left p-3 rounded-xl transition ${isFinished1 ? 'bg-forest-50 border-2 border-forest-300' : isActive1 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
+                        <button ${isFinished1 ? 'disabled' : `onclick="selectDogFromList(${dog1Idx})"`}
+                            class="w-full text-left p-3 rounded-xl transition ${isFinished1 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : isActive1 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2">
                                     ${isFinished1 ? '<svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : ''}
-                                    <span class="font-bold text-bark-800">Nr. ${dog1.nr}</span>
-                                    <span class="text-bark-600">${dog1.race}</span>
-                                    <span class="font-medium text-bark-800">${dog1.name}</span>
+                                    <span class="${isFinished1 ? 'text-bark-500' : 'text-bark-800'} font-bold">Nr. ${dog1.nr}</span>
+                                    <span class="${isFinished1 ? 'text-bark-400' : 'text-bark-600'}">${dog1.race}</span>
+                                    <span class="${isFinished1 ? 'text-bark-500' : 'text-bark-800'} font-medium">${dog1.name}</span>
                                 </div>
                                 <span class="text-xs px-2 py-1 rounded ${isFinished1 ? 'bg-forest-100 text-forest-700' : 'bg-bark-100 text-bark-600'}">${isFinished1 ? 'Ferdig' : dog1.klasse}</span>
                             </div>
-                            <p class="text-sm text-bark-500 mt-1 ${isFinished1 ? 'ml-7' : ''}">${dog1.owner}</p>
+                            <p class="text-sm ${isFinished1 ? 'text-bark-400' : 'text-bark-500'} mt-1 ${isFinished1 ? 'ml-7' : ''}">${dog1.owner}</p>
                         </button>`;
                 }
 
@@ -989,18 +996,18 @@
                     const isActive2 = dog2Idx === currentDogIndex;
                     const isFinished2 = isDogFinished(dog2Idx);
                     listHtml += `
-                        <button onclick="selectDogFromList(${dog2Idx})"
-                            class="w-full text-left p-3 rounded-xl transition ${isFinished2 ? 'bg-forest-50 border-2 border-forest-300' : isActive2 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
+                        <button ${isFinished2 ? 'disabled' : `onclick="selectDogFromList(${dog2Idx})"`}
+                            class="w-full text-left p-3 rounded-xl transition ${isFinished2 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : isActive2 ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2">
                                     ${isFinished2 ? '<svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' : ''}
-                                    <span class="font-bold text-bark-800">Nr. ${dog2.nr}</span>
-                                    <span class="text-bark-600">${dog2.race}</span>
-                                    <span class="font-medium text-bark-800">${dog2.name}</span>
+                                    <span class="${isFinished2 ? 'text-bark-500' : 'text-bark-800'} font-bold">Nr. ${dog2.nr}</span>
+                                    <span class="${isFinished2 ? 'text-bark-400' : 'text-bark-600'}">${dog2.race}</span>
+                                    <span class="${isFinished2 ? 'text-bark-500' : 'text-bark-800'} font-medium">${dog2.name}</span>
                                 </div>
                                 <span class="text-xs px-2 py-1 rounded ${isFinished2 ? 'bg-forest-100 text-forest-700' : 'bg-bark-100 text-bark-600'}">${isFinished2 ? 'Ferdig' : dog2.klasse}</span>
                             </div>
-                            <p class="text-sm text-bark-500 mt-1 ${isFinished2 ? 'ml-7' : ''}">${dog2.owner}</p>
+                            <p class="text-sm ${isFinished2 ? 'text-bark-400' : 'text-bark-500'} mt-1 ${isFinished2 ? 'ml-7' : ''}">${dog2.owner}</p>
                         </button>`;
                 }
 

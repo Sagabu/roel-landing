@@ -104,18 +104,22 @@
                     <div class="p-4 hover:bg-bark-50 rounded-xl cursor-pointer transition border border-transparent hover:border-bark-200"
                          onclick="viewDogProfile('${dog.id}')">
                         <div class="flex items-start gap-4">
-                            <div class="w-14 h-14 bg-bark-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                <svg class="w-7 h-7 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                                </svg>
-                            </div>
+                            ${dog.bilde ? `
+                                <img src="${dog.bilde}" alt="${dog.navn}" class="w-14 h-14 rounded-xl object-cover flex-shrink-0">
+                            ` : `
+                                <div class="w-14 h-14 bg-bark-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                    <svg class="w-7 h-7 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                                    </svg>
+                                </div>
+                            `}
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-start justify-between gap-2">
                                     <div>
                                         <h4 class="font-bold text-bark-800">${dog.navn}</h4>
                                         <p class="text-sm text-bark-500">${dog.rase || 'Ukjent rase'} • ${dog.kjonn === 'male' ? 'Hannhund' : 'Tispe'}</p>
                                     </div>
-                                    <span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full font-medium">${dog.regnr}</span>
+                                    <span class="text-xs bg-forest-100 text-forest-700 px-2 py-1 rounded-full font-medium">${dog.regnr || ''}</span>
                                 </div>
                                 <div class="mt-2 flex items-center gap-3 text-sm">
                                     <span class="text-bark-500">Eier: ${dog.eier_navn || 'Ukjent'}</span>

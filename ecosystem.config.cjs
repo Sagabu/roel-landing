@@ -2,7 +2,7 @@ module.exports = {
   apps: [{
     name: 'fuglehund',
     script: 'server.js',
-    cwd: '/var/www/fuglehund',
+    cwd: '/var/www/fuglehundprove',
     env: {
       NODE_ENV: 'production',
       PORT: 8889

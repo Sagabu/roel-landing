@@ -41,8 +41,12 @@
 <body class="bg-cream min-h-screen font-sans">
 
     <!-- Test Banner -->
-    <div class="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium">
-        TESTMODUS - UK/AK Dommerkort
+    <div class="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium flex items-center justify-between">
+        <span></span>
+        <span>TESTMODUS - UK/AK Dommerkort</span>
+        <button onclick="resetAllTestData()" class="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs font-bold">
+            Nullstill
+        </button>
     </div>
 
     <!-- Header -->
@@ -1277,6 +1281,46 @@
             console.log('[Dommer] Back online - syncing data...');
             // Data is already in localStorage, which syncs via storage-shim
             // This is a placeholder for future server sync
+        }
+
+        // Reset all test data (only for test mode)
+        function resetAllTestData() {
+            if (!confirm('Er du sikker på at du vil nullstille all testdata?\n\nDette sletter alle bedømmelser på alle hunder.')) {
+                return;
+            }
+
+            // Clear all dog data
+            for (let i = 0; i < testPartyList.length; i++) {
+                localStorage.removeItem(`dommertest_dog_${i}`);
+            }
+
+            // Clear active pair state
+            localStorage.removeItem(`activePair_${partyInfo.id}`);
+
+            // Clear finished dogs
+            localStorage.removeItem(`finishedDogs_${partyInfo.id}`);
+
+            // Clear old general state
+            localStorage.removeItem('dommertest_ukak');
+
+            // Reset state and reload
+            activePair = { left: 0, right: 1 };
+            currentDogIndex = 0;
+            state.currentSlipp = 1;
+            state.data = {
+                fuglebehandling: { presisjon: null, reising: null, godkjentReising: false },
+                comments: {},
+                slipps: {},
+                completedSlipps: [],
+                jaktegenskaper: {},
+                sekundering: {},
+                premie: null,
+                notatTillegg: '',
+                uonsketAdferd: ''
+            };
+
+            // Reload the page to reset everything
+            location.reload();
         }
     </script>
 

@@ -507,8 +507,14 @@
 
         // Get the current pair indices (the two dogs being judged together)
         function getCurrentPairIndices() {
-            const pairStart = Math.floor(currentDogIndex / 2) * 2;
-            return [pairStart, pairStart + 1];
+            return [activePair.left, activePair.right];
+        }
+
+        // Get which position in the pair the current dog is (left or right)
+        function getCurrentPairPosition() {
+            if (currentDogIndex === activePair.left) return 'left';
+            if (currentDogIndex === activePair.right) return 'right';
+            return null;
         }
 
         // Find next available dog for replacement (same class, not in current pair, not finished)
@@ -715,6 +721,15 @@
         // Replace current position with next dog
         function replaceWithNextDog(idx) {
             closeNextDogDialog();
+
+            // Update the active pair - only replace the current dog's position
+            const position = getCurrentPairPosition();
+            if (position === 'left') {
+                activePair.left = idx;
+            } else if (position === 'right') {
+                activePair.right = idx;
+            }
+
             currentDogIndex = idx;
             loadDogData(currentDogIndex);
             updateDogNavigation();
@@ -804,7 +819,14 @@
             { nr: 6, name: 'Skogens Ull', race: 'GS', owner: 'Nilsen, Anders', klasse: 'UK' },
         ];
 
-        let currentDogIndex = 0; // Index in testPartyList
+        let currentDogIndex = 0; // Index in testPartyList (the dog currently being edited)
+
+        // Active pair - the two dogs being judged together
+        // These can be any two dogs, not necessarily sequential
+        let activePair = {
+            left: 0,   // Index of left dog
+            right: 1   // Index of right dog
+        };
 
         // Track finished dogs (stored in localStorage)
         function getFinishedDogs() {
@@ -824,13 +846,13 @@
             return getFinishedDogs().includes(dogIndex);
         }
 
-        // Update navigation buttons based on current dog
+        // Update navigation buttons based on active pair
         function updateDogNavigation() {
-            const currentPairStart = Math.floor(currentDogIndex / 2) * 2;
-            const dog1 = testPartyList[currentPairStart];
-            const dog2 = testPartyList[currentPairStart + 1];
-            const isFinished1 = isDogFinished(currentPairStart);
-            const isFinished2 = isDogFinished(currentPairStart + 1);
+            // Use the active pair instead of calculating from currentDogIndex
+            const dog1 = testPartyList[activePair.left];
+            const dog2 = testPartyList[activePair.right];
+            const isFinished1 = isDogFinished(activePair.left);
+            const isFinished2 = isDogFinished(activePair.right);
 
             // Update left button
             const leftBtn = document.getElementById('dogLeftBtn');
@@ -841,9 +863,9 @@
                 leftName.textContent = `${checkmark}${dog1.race} ${dog1.name.split(' ').pop()}`;
                 leftKlasse.textContent = isFinished1 ? '(Ferdig)' : `(${dog1.klasse})`;
                 leftKlasse.classList.toggle('text-forest-600', isFinished1);
-                leftBtn.classList.toggle('ring-2', currentDogIndex === currentPairStart);
-                leftBtn.classList.toggle('ring-warm-500', currentDogIndex === currentPairStart);
-                leftBtn.classList.toggle('bg-forest-50', isFinished1 && currentDogIndex !== currentPairStart);
+                leftBtn.classList.toggle('ring-2', currentDogIndex === activePair.left);
+                leftBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.left);
+                leftBtn.classList.toggle('bg-forest-50', isFinished1 && currentDogIndex !== activePair.left);
                 leftBtn.classList.toggle('border-forest-300', isFinished1);
             }
 
@@ -856,9 +878,9 @@
                 rightName.textContent = `${checkmark}${dog2.race} ${dog2.name.split(' ').pop()}`;
                 rightKlasse.textContent = isFinished2 ? '(Ferdig)' : `(${dog2.klasse})`;
                 rightKlasse.classList.toggle('text-forest-600', isFinished2);
-                rightBtn.classList.toggle('ring-2', currentDogIndex === currentPairStart + 1);
-                rightBtn.classList.toggle('ring-warm-500', currentDogIndex === currentPairStart + 1);
-                rightBtn.classList.toggle('bg-forest-50', isFinished2 && currentDogIndex !== currentPairStart + 1);
+                rightBtn.classList.toggle('ring-2', currentDogIndex === activePair.right);
+                rightBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.right);
+                rightBtn.classList.toggle('bg-forest-50', isFinished2 && currentDogIndex !== activePair.right);
                 rightBtn.classList.toggle('border-forest-300', isFinished2);
                 rightBtn.disabled = false;
                 rightBtn.classList.remove('opacity-50');
@@ -880,8 +902,8 @@
 
         // Switch to dog 1 or 2 in current pair
         function switchToDog(position) {
-            const currentPairStart = Math.floor(currentDogIndex / 2) * 2;
-            const newIndex = currentPairStart + (position - 1);
+            // Use active pair instead of calculating
+            const newIndex = position === 1 ? activePair.left : activePair.right;
 
             if (testPartyList[newIndex]) {
                 // Save current dog data first
@@ -997,6 +1019,15 @@
 
         function selectDogFromList(idx) {
             saveCurrentDogData();
+
+            // Update active pair - replace the current dog's position
+            const position = getCurrentPairPosition();
+            if (position === 'left') {
+                activePair.left = idx;
+            } else if (position === 'right') {
+                activePair.right = idx;
+            }
+
             currentDogIndex = idx;
             loadDogData(currentDogIndex);
             updateDogNavigation();

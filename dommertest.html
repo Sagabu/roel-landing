@@ -537,25 +537,109 @@
             return -1;
         }
 
+        // Find next available dog from a DIFFERENT class
+        function findNextReplacementDogOtherClass() {
+            const currentPair = getCurrentPairIndices();
+            const currentDog = testPartyList[currentDogIndex];
+            const currentKlasse = currentDog ? currentDog.klasse : null;
+
+            for (let i = 0; i < testPartyList.length; i++) {
+                const dog = testPartyList[i];
+                // Skip dogs in current pair, finished dogs, but ONLY select dogs from OTHER class
+                if (!currentPair.includes(i) && !isDogFinished(i) && dog.klasse !== currentKlasse) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        // Check if the current pair are the last two dogs in their class
+        function isLastTwoInClass() {
+            const currentDog = testPartyList[currentDogIndex];
+            const currentKlasse = currentDog ? currentDog.klasse : null;
+            const currentPair = getCurrentPairIndices();
+
+            // Count unfinished dogs in same class (excluding current pair)
+            let unfinishedSameClass = 0;
+            for (let i = 0; i < testPartyList.length; i++) {
+                const dog = testPartyList[i];
+                if (!currentPair.includes(i) && !isDogFinished(i) && dog.klasse === currentKlasse) {
+                    unfinishedSameClass++;
+                }
+            }
+
+            // If no other unfinished dogs in same class, these are the last two
+            return unfinishedSameClass === 0;
+        }
+
+        // Get the class name for display
+        function getPartnerDog() {
+            const position = getCurrentPairPosition();
+            if (position === 'left') {
+                return testPartyList[activePair.right];
+            } else {
+                return testPartyList[activePair.left];
+            }
+        }
+
         // Show dialog after saving a slipp (not finishing dog)
         function showSlippSavedDialog(dogName) {
             // Find next dog NOT in current pair, not finished, and same class
             const nextSequentialIdx = findNextReplacementDog();
+            const currentDog = testPartyList[currentDogIndex];
+            const currentKlasse = currentDog ? currentDog.klasse : null;
 
             const modal = document.createElement('div');
             modal.id = 'slippSavedModal';
             modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
 
             let buttonsHtml = '';
+            let warningHtml = '';
 
             if (nextSequentialIdx === -1) {
-                // No other dogs available outside current pair
-                buttonsHtml = `
-                    <button onclick="closeSlippSavedDialog();"
-                        class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
-                        OK
-                    </button>
-                `;
+                // No dogs in same class - check if there are dogs in other class
+                const nextOtherClassIdx = findNextReplacementDogOtherClass();
+
+                if (nextOtherClassIdx === -1) {
+                    // No other dogs available at all
+                    buttonsHtml = `
+                        <button onclick="closeSlippSavedDialog();"
+                            class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
+                            OK
+                        </button>
+                    `;
+                } else {
+                    // Only dogs from other class available - show warning
+                    const nextDog = testPartyList[nextOtherClassIdx];
+                    const partnerDog = getPartnerDog();
+                    const partnerFinished = partnerDog ? isDogFinished(activePair.left === currentDogIndex ? activePair.right : activePair.left) : true;
+
+                    warningHtml = `
+                        <div class="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
+                            <div class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                <div>
+                                    <p class="text-sm font-medium text-amber-800">OBS!</p>
+                                    <p class="text-xs text-amber-700">Dette er de to siste gjenværende hundene i klasse ${currentKlasse}.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    buttonsHtml = `
+                        <button onclick="closeSlippSavedDialog(); confirmReplaceWithOtherClass(${nextOtherClassIdx}, '${currentKlasse}', '${nextDog.klasse}');"
+                            class="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
+                            <span class="block text-sm opacity-80">Erstatt med hund fra ${nextDog.klasse}:</span>
+                            <span class="block">Nr. ${nextDog.nr} - ${nextDog.race} ${nextDog.name}</span>
+                        </button>
+                        <button onclick="closeSlippSavedDialog();"
+                            class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
+                            Fortsett uten å bytte
+                        </button>
+                    `;
+                }
             } else {
                 const nextDog = testPartyList[nextSequentialIdx];
                 buttonsHtml = `
@@ -580,12 +664,20 @@
                         <h2 class="font-bold font-serif">Slipp lagret!</h2>
                     </div>
                     <div class="p-4">
+                        ${warningHtml}
                         ${buttonsHtml}
                     </div>
                 </div>
             `;
 
             document.body.appendChild(modal);
+        }
+
+        // Confirm replacement with dog from another class
+        function confirmReplaceWithOtherClass(idx, fromClass, toClass) {
+            if (confirm(`Er du sikker på at du vil bytte hunden med en hund fra klasse ${toClass}?\n\nDette er de siste to hundene i klasse ${fromClass}.`)) {
+                replaceWithNextDog(idx);
+            }
         }
 
         function closeSlippSavedDialog() {
@@ -663,6 +755,8 @@
         function showNextDogDialog(finishedDogName, isReplace = false) {
             // Find next dog NOT in current pair, not finished, and same class
             const nextSequentialIdx = findNextReplacementDog();
+            const currentDog = testPartyList[currentDogIndex];
+            const currentKlasse = currentDog ? currentDog.klasse : null;
 
             const modal = document.createElement('div');
             modal.id = 'nextDogModal';
@@ -670,17 +764,52 @@
 
             const finishedCount = getFinishedDogs().length;
             const totalCount = testPartyList.length;
-            const allFinished = nextSequentialIdx === -1;
 
             let buttonsHtml = '';
+            let warningHtml = '';
 
-            if (allFinished) {
-                buttonsHtml = `
-                    <button onclick="closeNextDogDialog(); showPartyList();"
-                        class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
-                        Se partiliste (alle ferdige)
-                    </button>
-                `;
+            if (nextSequentialIdx === -1) {
+                // No dogs in same class - check other class
+                const nextOtherClassIdx = findNextReplacementDogOtherClass();
+
+                if (nextOtherClassIdx === -1) {
+                    // All dogs finished
+                    buttonsHtml = `
+                        <button onclick="closeNextDogDialog(); showPartyList();"
+                            class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
+                            Se partiliste (alle ferdige)
+                        </button>
+                    `;
+                } else {
+                    // Only dogs from other class available
+                    const nextDog = testPartyList[nextOtherClassIdx];
+
+                    warningHtml = `
+                        <div class="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
+                            <div class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                <div>
+                                    <p class="text-sm font-medium text-amber-800">OBS!</p>
+                                    <p class="text-xs text-amber-700">Dette er de to siste gjenværende hundene i klasse ${currentKlasse}.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    buttonsHtml = `
+                        <button onclick="closeNextDogDialog(); confirmReplaceWithOtherClass(${nextOtherClassIdx}, '${currentKlasse}', '${nextDog.klasse}');"
+                            class="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
+                            <span class="block text-sm opacity-80">Erstatt med hund fra ${nextDog.klasse}:</span>
+                            <span class="block">Nr. ${nextDog.nr} - ${nextDog.race} ${nextDog.name}</span>
+                        </button>
+                        <button onclick="closeNextDogDialog(); showPartyListForReplace();"
+                            class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
+                            Velg hund fra listen
+                        </button>
+                    `;
+                }
             } else {
                 const nextDog = testPartyList[nextSequentialIdx];
                 buttonsHtml = `
@@ -709,6 +838,7 @@
                         <p class="text-center text-bark-600 mb-4">
                             <span class="font-medium">${finishedCount} av ${totalCount}</span> hunder bedømt
                         </p>
+                        ${warningHtml}
                         ${buttonsHtml}
                     </div>
                 </div>

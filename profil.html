@@ -622,11 +622,17 @@
             showToast('Profilen er oppdatert');
         }
 
-        function handlePhotoUpload(event) {
+        async function handlePhotoUpload(event) {
             const file = event.target.files[0];
             if (file) {
+                // Sjekk filstørrelse (maks 5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast('Bildet er for stort. Maks 5MB.');
+                    return;
+                }
+
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = async function(e) {
                     const imageData = e.target.result;
 
                     // Update display
@@ -634,11 +640,29 @@
                     document.getElementById('profileImage').classList.remove('hidden');
                     document.getElementById('profileInitials').classList.add('hidden');
 
-                    // Save to profile
+                    // Save to profile locally
                     userProfile.profileImage = imageData;
                     localStorage.setItem('userProfile', JSON.stringify(userProfile));
 
-                    showToast('Profilbilde oppdatert');
+                    // Lagre til database umiddelbart
+                    try {
+                        const resp = await fetch(`/api/brukere/${userPhone}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                profilbilde: imageData
+                            })
+                        });
+
+                        if (resp.ok) {
+                            showToast('Profilbilde lagret');
+                        } else {
+                            showToast('Kunne ikke lagre profilbilde');
+                        }
+                    } catch (err) {
+                        console.error('Feil ved lagring av profilbilde:', err);
+                        showToast('Feil ved lagring av profilbilde');
+                    }
                 };
                 reader.readAsDataURL(file);
             }

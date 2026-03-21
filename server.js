@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import Database from "better-sqlite3";
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
@@ -55,6 +55,52 @@ if (ADMIN_PIN) {
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+
+// --- Automatisk backup-system ---
+const BACKUP_DIR = join(__dirname, "backups");
+const MAX_AUTO_BACKUPS = 50; // Maks antall automatiske backups å beholde
+let lastBackupTime = 0;
+const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // Minimum 5 minutter mellom auto-backups
+
+// Opprett backup-mappe om den ikke finnes
+if (!existsSync(BACKUP_DIR)) {
+  mkdirSync(BACKUP_DIR, { recursive: true });
+}
+
+function autoBackup(reason = "auto") {
+  const now = Date.now();
+  // Begrens backup-frekvens
+  if (now - lastBackupTime < BACKUP_INTERVAL_MS) {
+    return;
+  }
+
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const backupName = `auto_${timestamp}_${reason}.db`;
+    const backupPath = join(BACKUP_DIR, backupName);
+
+    // Checkpoint WAL før backup for konsistent tilstand
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    copyFileSync(DB_PATH, backupPath);
+    lastBackupTime = now;
+
+    // Rydd opp gamle auto-backups (behold kun siste N)
+    const autoBackups = readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith("auto_") && f.endsWith(".db"))
+      .sort()
+      .reverse();
+
+    if (autoBackups.length > MAX_AUTO_BACKUPS) {
+      autoBackups.slice(MAX_AUTO_BACKUPS).forEach(old => {
+        try { unlinkSync(join(BACKUP_DIR, old)); } catch (e) {}
+      });
+    }
+
+    console.log(`📦 Auto-backup: ${backupName}`);
+  } catch (err) {
+    console.error("Backup-feil:", err.message);
+  }
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS kv_store (
@@ -1408,6 +1454,9 @@ app.post("/api/auth/register/verify", async (c) => {
       INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(telefon, fornavn, etternavn, epost, passordHash, now, now, now);
+
+    // Auto-backup ved ny brukerregistrering
+    autoBackup("ny_bruker");
   }
 
   let bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
@@ -5405,6 +5454,9 @@ app.delete("/api/superadmin/brukere/:telefon", (c) => {
       return c.json({ error: "Bruker ikke funnet" }, 404);
     }
 
+    // Auto-backup FØR sletting
+    autoBackup("bruker_slettet");
+
     db.prepare("DELETE FROM brukere WHERE telefon = ?").run(telefon);
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "bruker_slettet", `Bruker slettet: ${bruker.fornavn} ${bruker.etternavn} (${bruker.telefon})`
@@ -5421,10 +5473,17 @@ app.use("/*", serveStatic({ root: __dirname }));
 // Rydd opp utløpte OTP-koder hver time
 setInterval(cleanExpired, 60 * 60 * 1000);
 
+// Automatisk backup hver 30. minutt
+setInterval(() => autoBackup("scheduled"), 30 * 60 * 1000);
+
+// Backup ved oppstart
+autoBackup("startup");
+
 serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, () => {
   console.log(`🐕 Fuglehundprøve running on http://0.0.0.0:${PORT}`);
   console.log(`   Admin: http://localhost:${PORT}/admin-panel.html`);
   console.log(`   Backup: http://localhost:${PORT}/api/backup`);
+  console.log(`   Auto-backup: Hver 30. minutt + ved endringer`);
   const smsStatus = smsProvider === "twilio" ? "Twilio" : (smsProvider === "sveve" ? "Sveve" : "Dev mode (codes logged to console)");
   console.log(`   SMS: ${smsStatus}`);
 });

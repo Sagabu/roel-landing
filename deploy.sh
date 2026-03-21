@@ -23,7 +23,12 @@ rsync -avz \
     --exclude 'backups/' \
     ./ ${SERVER}:${REMOTE_DIR}/
 
-echo "=== Files synced, restarting server ==="
+echo "=== Files synced, checkpointing database ==="
+
+# Checkpoint WAL før restart for å sikre at alle data er skrevet til hoveddatabasen
+ssh ${SERVER} "cd ${REMOTE_DIR} && sqlite3 fuglehund.db 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true"
+
+echo "=== Restarting server ==="
 
 # Restart PM2
 ssh ${SERVER} "cd ${REMOTE_DIR} && pm2 restart fuglehund"

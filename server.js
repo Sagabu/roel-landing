@@ -55,6 +55,31 @@ if (ADMIN_PIN) {
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+db.pragma("synchronous = NORMAL"); // Sørg for at data skrives til disk
+
+// Checkpoint WAL regelmessig for å sikre at data er permanent lagret
+setInterval(() => {
+  try {
+    db.pragma("wal_checkpoint(PASSIVE)");
+  } catch (e) {
+    console.error("WAL checkpoint error:", e.message);
+  }
+}, 30000); // Hver 30. sekund
+
+// Graceful shutdown - checkpoint WAL og lukk database
+const gracefulShutdown = () => {
+  console.log("Graceful shutdown - checkpointing WAL...");
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+    console.log("Database closed successfully");
+  } catch (e) {
+    console.error("Shutdown error:", e.message);
+  }
+  process.exit(0);
+};
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
 
 // --- Automatisk backup-system ---
 const BACKUP_DIR = join(__dirname, "backups");
@@ -1450,16 +1475,18 @@ app.post("/api/auth/register/verify", async (c) => {
       WHERE telefon = ?
     `).run(fornavn, etternavn, epost, passordHash, now, now, telefon);
   } else {
-    db.prepare(`
+    const insertResult = db.prepare(`
       INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
     `).run(telefon, fornavn, etternavn, epost, passordHash, now, now, now);
+    console.log(`[Register] Ny bruker opprettet: ${telefon} (changes: ${insertResult.changes})`);
 
     // Auto-backup ved ny brukerregistrering
     autoBackup("ny_bruker");
   }
 
   let bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  console.log(`[Register] Bruker fra DB: ${bruker ? bruker.telefon : 'IKKE FUNNET'}`);
 
   // Sjekk om dette er en FKF-godkjent dommer
   const normalized = normalizePhone(telefon);

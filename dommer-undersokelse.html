@@ -438,11 +438,12 @@
       data.submitted_at = new Date().toISOString();
 
       try {
-        // Lagre til server
-        const response = await fetch('/api/storage/survey_' + Date.now(), {
-          method: 'PUT',
+        // Lagre til dedikert undersøkelses-API
+        data.source = 'dommer-undersokelse';
+        const response = await fetch('/api/undersokelse', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value: data })
+          body: JSON.stringify(data)
         });
 
         if (response.ok) {
@@ -453,6 +454,7 @@
           throw new Error('Kunne ikke lagre');
         }
       } catch (err) {
+        console.error('Feil ved lagring:', err);
         // Fallback til localStorage
         const surveys = JSON.parse(localStorage.getItem('dommer_surveys') || '[]');
         surveys.push(data);

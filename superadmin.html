@@ -233,6 +233,104 @@
             </div>
         </div>
 
+        <!-- Spørreundersøkelser -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">Spørreundersøkelser</h2>
+                    <p class="text-sm text-bark-500">Svar fra dommerundersøkelsen</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="undersokelseCount" class="px-3 py-1 bg-warm-100 text-warm-700 rounded-full text-sm font-medium">0 svar</span>
+                    <button onclick="eksporterUndersokelser()" class="text-sm text-warm-600 hover:text-warm-700 font-medium">
+                        Eksporter CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sammendrag-kort -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Totalt svar</p>
+                    <p class="text-2xl font-bold text-warm-600" id="surveyTotalt">0</p>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Vil teste</p>
+                    <p class="text-2xl font-bold text-green-600" id="surveyVilTeste">0</p>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Gjennomsnitt erfaring</p>
+                    <p class="text-2xl font-bold text-bark-700" id="surveyErfaring">-</p>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Vanligste alder</p>
+                    <p class="text-2xl font-bold text-blue-600" id="surveyAlder">-</p>
+                </div>
+            </div>
+
+            <!-- Grafer -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Aldersfordeling</h3>
+                    <div class="h-48">
+                        <canvas id="alderChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Års erfaring som dommer</h3>
+                    <div class="h-48">
+                        <canvas id="erfaringChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Utfordringer med papir (topp 5)</h3>
+                    <div class="h-48">
+                        <canvas id="utfordringerChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Foretrukket input-metode</h3>
+                    <div class="h-48">
+                        <canvas id="inputChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Når skrives kritikken ferdig?</h3>
+                    <div class="h-48">
+                        <canvas id="kritikkTidChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Prioriteringer for digital løsning</h3>
+                    <div class="h-48">
+                        <canvas id="prioritetChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fritekst-svar -->
+            <div class="bg-bark-50 rounded-xl p-4 border border-bark-100 mb-6">
+                <h3 class="font-medium text-bark-700 mb-4">Fritekst-svar (hva fungerer / ønsker / tips)</h3>
+                <div id="fritekstsvar" class="space-y-3 max-h-64 overflow-y-auto">
+                    <p class="text-bark-400 text-sm">Laster...</p>
+                </div>
+            </div>
+
+            <!-- Testdeltagere -->
+            <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                <h3 class="font-medium text-bark-700 mb-4">Vil delta i testing</h3>
+                <div id="testdeltagere" class="space-y-2 max-h-48 overflow-y-auto">
+                    <p class="text-bark-400 text-sm">Laster...</p>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <script>
@@ -695,10 +793,362 @@
         }
     }
 
+    // ============================================
+    // UNDERSØKELSER
+    // ============================================
+    let alderChart = null, erfaringChart = null, utfordringerChart = null, inputChart = null, kritikkTidChart = null, prioritetChart = null;
+
+    async function loadUndersokelser() {
+        try {
+            const resp = await fetch('/api/undersokelser');
+            const { items, count } = await resp.json();
+
+            document.getElementById('undersokelseCount').textContent = `${count} svar`;
+            document.getElementById('surveyTotalt').textContent = count;
+
+            if (count === 0) {
+                document.getElementById('surveyVilTeste').textContent = '0';
+                document.getElementById('surveyErfaring').textContent = '-';
+                document.getElementById('surveyAlder').textContent = '-';
+                document.getElementById('fritekstsvar').innerHTML = '<p class="text-bark-400 text-sm">Ingen svar ennå</p>';
+                document.getElementById('testdeltagere').innerHTML = '<p class="text-bark-400 text-sm">Ingen har meldt seg til testing</p>';
+                return;
+            }
+
+            // Analyser data
+            const alderData = { 'under_30': 0, '30-45': 0, '46-60': 0, 'over_60': 0 };
+            const erfaringData = { '0-2': 0, '3-5': 0, '6-10': 0, '10+': 0 };
+            const utfordringerData = {};
+            const inputData = {};
+            const kritikkTidData = {};
+            const prioriteter = { enkelhet: [], hurtigtaster: [], fritekst: [], offline: [], oversikt: [] };
+            const fritekst = [];
+            const testere = [];
+
+            items.forEach(item => {
+                const d = item.data;
+
+                // Alder
+                if (d.alder && alderData[d.alder] !== undefined) alderData[d.alder]++;
+
+                // Erfaring
+                if (d.erfaring && erfaringData[d.erfaring] !== undefined) erfaringData[d.erfaring]++;
+
+                // Utfordringer (kan være array eller string)
+                const utfordringer = Array.isArray(d.papir_utfordringer) ? d.papir_utfordringer : (d.papir_utfordringer ? [d.papir_utfordringer] : []);
+                utfordringer.forEach(u => {
+                    utfordringerData[u] = (utfordringerData[u] || 0) + 1;
+                });
+
+                // Input-preferanse
+                if (d.input_preferanse) {
+                    inputData[d.input_preferanse] = (inputData[d.input_preferanse] || 0) + 1;
+                }
+
+                // Kritikk tidspunkt
+                if (d.kritikk_tidspunkt) {
+                    kritikkTidData[d.kritikk_tidspunkt] = (kritikkTidData[d.kritikk_tidspunkt] || 0) + 1;
+                }
+
+                // Prioriteringer
+                ['enkelhet', 'hurtigtaster', 'fritekst', 'offline', 'oversikt'].forEach(p => {
+                    const val = d[`prioritet_${p}`];
+                    if (val) prioriteter[p].push(parseInt(val));
+                });
+
+                // Fritekst
+                if (d.fungerer_bra || d.onske_annerledes || d.andre_tips) {
+                    fritekst.push({
+                        navn: d.navn || d.kontakt_navn || 'Anonym',
+                        dato: item.created_at,
+                        fungerer: d.fungerer_bra || '',
+                        onske: d.onske_annerledes || '',
+                        tips: d.andre_tips || ''
+                    });
+                }
+
+                // Testere
+                if (d.kontakt_navn || d.kontakt_info) {
+                    testere.push({
+                        navn: d.kontakt_navn || d.navn || 'Ukjent',
+                        kontakt: d.kontakt_info || '',
+                        dato: item.created_at
+                    });
+                }
+            });
+
+            // Oppdater sammendrag
+            document.getElementById('surveyVilTeste').textContent = testere.length;
+
+            // Finn vanligste alder
+            const maxAlder = Object.entries(alderData).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('surveyAlder').textContent = maxAlder[1] > 0 ? formatAlder(maxAlder[0]) : '-';
+
+            // Finn gjennomsnittlig erfaring
+            const erfaringLabels = { '0-2': 1, '3-5': 4, '6-10': 8, '10+': 12 };
+            let erfSum = 0, erfCount = 0;
+            Object.entries(erfaringData).forEach(([k, v]) => {
+                erfSum += erfaringLabels[k] * v;
+                erfCount += v;
+            });
+            document.getElementById('surveyErfaring').textContent = erfCount > 0 ? `~${Math.round(erfSum / erfCount)} år` : '-';
+
+            // Tegn grafer
+            drawAlderChart(alderData);
+            drawErfaringChart(erfaringData);
+            drawUtfordringerChart(utfordringerData);
+            drawInputChart(inputData);
+            drawKritikkTidChart(kritikkTidData);
+            drawPrioritetChart(prioriteter);
+
+            // Vis fritekst
+            renderFritekst(fritekst);
+
+            // Vis testere
+            renderTestere(testere);
+
+        } catch (err) {
+            console.error('Feil ved lasting av undersøkelser:', err);
+        }
+    }
+
+    function formatAlder(key) {
+        const labels = { 'under_30': 'Under 30', '30-45': '30-45', '46-60': '46-60', 'over_60': 'Over 60' };
+        return labels[key] || key;
+    }
+
+    function drawAlderChart(data) {
+        const ctx = document.getElementById('alderChart').getContext('2d');
+        if (alderChart) alderChart.destroy();
+        alderChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Under 30', '30-45', '46-60', 'Over 60'],
+                datasets: [{
+                    data: [data['under_30'], data['30-45'], data['46-60'], data['over_60']],
+                    backgroundColor: ['#FD8536', '#22C55E', '#3B82F6', '#A855F7']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function drawErfaringChart(data) {
+        const ctx = document.getElementById('erfaringChart').getContext('2d');
+        if (erfaringChart) erfaringChart.destroy();
+        erfaringChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['0-2 år', '3-5 år', '6-10 år', '10+ år'],
+                datasets: [{
+                    label: 'Antall',
+                    data: [data['0-2'], data['3-5'], data['6-10'], data['10+']],
+                    backgroundColor: '#FD8536'
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        });
+    }
+
+    function drawUtfordringerChart(data) {
+        const ctx = document.getElementById('utfordringerChart').getContext('2d');
+        if (utfordringerChart) utfordringerChart.destroy();
+
+        const utfordringLabels = {
+            'vaer_regn': 'Regn/fuktighet',
+            'vaer_kulde': 'Kulde',
+            'vind': 'Vind',
+            'hansker': 'Må ta av hansker',
+            'lesbarhet': 'Lesbarhet',
+            'plass': 'For lite plass',
+            'mister': 'Mister papirer',
+            'huske_detaljer': 'Huske detaljer'
+        };
+
+        const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        utfordringerChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: sorted.map(([k]) => utfordringLabels[k] || k),
+                datasets: [{
+                    label: 'Antall',
+                    data: sorted.map(([, v]) => v),
+                    backgroundColor: '#EF4444'
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }
+        });
+    }
+
+    function drawInputChart(data) {
+        const ctx = document.getElementById('inputChart').getContext('2d');
+        if (inputChart) inputChart.destroy();
+
+        const inputLabels = {
+            'knapper': 'Ferdige knapper',
+            'fritekst': 'Hovedsakelig fritekst',
+            'kombinasjon': 'Kombinasjon',
+            'tale': 'Taleopptak'
+        };
+
+        inputChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(data).map(k => inputLabels[k] || k),
+                datasets: [{
+                    data: Object.values(data),
+                    backgroundColor: ['#FD8536', '#22C55E', '#3B82F6', '#A855F7']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function drawKritikkTidChart(data) {
+        const ctx = document.getElementById('kritikkTidChart').getContext('2d');
+        if (kritikkTidChart) kritikkTidChart.destroy();
+
+        const tidLabels = {
+            'etter_slipp': 'Rett etter slipp',
+            'etter_parti': 'Etter partiet',
+            'samme_kveld': 'Samme kveld',
+            'neste_dag': 'Neste dag'
+        };
+
+        kritikkTidChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: Object.keys(data).map(k => tidLabels[k] || k),
+                datasets: [{
+                    data: Object.values(data),
+                    backgroundColor: ['#22C55E', '#3B82F6', '#F59E0B', '#EF4444']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function drawPrioritetChart(prioriteter) {
+        const ctx = document.getElementById('prioritetChart').getContext('2d');
+        if (prioritetChart) prioritetChart.destroy();
+
+        // Beregn gjennomsnittlig prioritet (lavere = viktigere)
+        const labels = ['Enkelhet', 'Hurtigtaster', 'Fritekst', 'Offline', 'Oversikt'];
+        const keys = ['enkelhet', 'hurtigtaster', 'fritekst', 'offline', 'oversikt'];
+        const averages = keys.map(k => {
+            const vals = prioriteter[k];
+            return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+        });
+
+        // Inverter slik at høyere = viktigere (5 - gjennomsnitt)
+        const inverted = averages.map(v => v > 0 ? 6 - v : 0);
+
+        prioritetChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Viktighet (5=høyest)',
+                    data: inverted,
+                    backgroundColor: 'rgba(253, 133, 54, 0.2)',
+                    borderColor: '#FD8536',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { r: { beginAtZero: true, max: 5 } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    function renderFritekst(fritekst) {
+        const container = document.getElementById('fritekstsvar');
+        if (fritekst.length === 0) {
+            container.innerHTML = '<p class="text-bark-400 text-sm">Ingen fritekst-svar</p>';
+            return;
+        }
+
+        container.innerHTML = fritekst.map(f => `
+            <div class="border-b border-bark-200 pb-3 last:border-0">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="font-medium text-bark-700">${f.navn}</span>
+                    <span class="text-xs text-bark-400">${new Date(f.dato).toLocaleDateString('no-NO')}</span>
+                </div>
+                ${f.fungerer ? `<p class="text-sm text-bark-600"><span class="text-green-600 font-medium">Fungerer bra:</span> ${f.fungerer}</p>` : ''}
+                ${f.onske ? `<p class="text-sm text-bark-600"><span class="text-amber-600 font-medium">Ønsker:</span> ${f.onske}</p>` : ''}
+                ${f.tips ? `<p class="text-sm text-bark-600"><span class="text-blue-600 font-medium">Tips:</span> ${f.tips}</p>` : ''}
+            </div>
+        `).join('');
+    }
+
+    function renderTestere(testere) {
+        const container = document.getElementById('testdeltagere');
+        if (testere.length === 0) {
+            container.innerHTML = '<p class="text-bark-400 text-sm">Ingen har meldt seg til testing ennå</p>';
+            return;
+        }
+
+        container.innerHTML = testere.map(t => `
+            <div class="flex items-center justify-between py-2 border-b border-bark-100 last:border-0">
+                <div>
+                    <span class="font-medium text-bark-700">${t.navn}</span>
+                    <span class="text-sm text-bark-500 ml-2">${t.kontakt}</span>
+                </div>
+                <span class="text-xs text-bark-400">${new Date(t.dato).toLocaleDateString('no-NO')}</span>
+            </div>
+        `).join('');
+    }
+
+    async function eksporterUndersokelser() {
+        try {
+            const resp = await fetch('/api/undersokelser');
+            const { items } = await resp.json();
+
+            if (items.length === 0) {
+                alert('Ingen svar å eksportere');
+                return;
+            }
+
+            // Lag CSV
+            const headers = ['Dato', 'Navn', 'Alder', 'Erfaring', 'Prøver per år', 'Input-preferanse', 'Kritikk tidspunkt', 'Fungerer bra', 'Ønsker', 'Tips', 'Kontakt'];
+            const rows = items.map(item => {
+                const d = item.data;
+                return [
+                    new Date(item.created_at).toLocaleDateString('no-NO'),
+                    d.navn || d.kontakt_navn || 'Anonym',
+                    d.alder || '',
+                    d.erfaring || '',
+                    d.prover_per_ar || '',
+                    d.input_preferanse || '',
+                    d.kritikk_tidspunkt || '',
+                    (d.fungerer_bra || '').replace(/"/g, '""'),
+                    (d.onske_annerledes || '').replace(/"/g, '""'),
+                    (d.andre_tips || '').replace(/"/g, '""'),
+                    d.kontakt_info || ''
+                ].map(v => `"${v}"`).join(',');
+            });
+
+            const csv = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `undersokelse-svar-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Feil ved eksport: ' + err.message);
+        }
+    }
+
     // Initialiser
     async function initAll() {
         await checkAuth();
-        await Promise.all([loadSmsStats(), loadSmsKlubber(), loadKlubbForesporsel(), loadBrukere(), loadKlubber()]);
+        await Promise.all([loadSmsStats(), loadSmsKlubber(), loadKlubbForesporsel(), loadBrukere(), loadKlubber(), loadUndersokelser()]);
     }
     initAll().finally(() => document.body.classList.remove('auth-loading'));
     </script>

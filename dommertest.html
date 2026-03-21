@@ -731,6 +731,7 @@
             }
 
             currentDogIndex = idx;
+            saveActivePairState(); // Save state for browser refresh
             loadDogData(currentDogIndex);
             updateDogNavigation();
         }
@@ -828,6 +829,31 @@
             right: 1   // Index of right dog
         };
 
+        // Load active pair and current dog from localStorage (survives browser refresh)
+        function loadActivePairState() {
+            const saved = localStorage.getItem(`activePair_${partyInfo.id}`);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    activePair.left = parsed.left ?? 0;
+                    activePair.right = parsed.right ?? 1;
+                    currentDogIndex = parsed.currentDogIndex ?? 0;
+                } catch (e) {
+                    console.error('Failed to load active pair state:', e);
+                }
+            }
+        }
+
+        // Save active pair and current dog to localStorage
+        function saveActivePairState() {
+            const state = {
+                left: activePair.left,
+                right: activePair.right,
+                currentDogIndex: currentDogIndex
+            };
+            localStorage.setItem(`activePair_${partyInfo.id}`, JSON.stringify(state));
+        }
+
         // Track finished dogs (stored in localStorage)
         function getFinishedDogs() {
             const saved = localStorage.getItem(`finishedDogs_${partyInfo.id}`);
@@ -910,6 +936,7 @@
                 saveCurrentDogData();
 
                 currentDogIndex = newIndex;
+                saveActivePairState(); // Save state for browser refresh
                 loadDogData(currentDogIndex);
                 updateDogNavigation();
             }
@@ -1029,6 +1056,7 @@
             }
 
             currentDogIndex = idx;
+            saveActivePairState(); // Save state for browser refresh
             loadDogData(currentDogIndex);
             updateDogNavigation();
             closePartyList();
@@ -1191,7 +1219,11 @@
 
         // Initialize on load
         document.addEventListener('DOMContentLoaded', () => {
+            // Load saved pair state first (before init)
+            loadActivePairState();
+
             init();
+            loadDogData(currentDogIndex); // Load the current dog's data
             updateDogNavigation();
             initOfflineSupport();
         });

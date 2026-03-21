@@ -511,18 +511,26 @@
             return [pairStart, pairStart + 1];
         }
 
-        // Show dialog after saving a slipp (not finishing dog)
-        function showSlippSavedDialog(dogName) {
-            // Find next dog NOT in current pair and not finished
+        // Find next available dog for replacement (same class, not in current pair, not finished)
+        function findNextReplacementDog() {
             const currentPair = getCurrentPairIndices();
-            let nextSequentialIdx = -1;
+            const currentDog = testPartyList[currentDogIndex];
+            const currentKlasse = currentDog ? currentDog.klasse : null;
+
             for (let i = 0; i < testPartyList.length; i++) {
-                // Skip dogs in current pair and finished dogs
-                if (!currentPair.includes(i) && !isDogFinished(i)) {
-                    nextSequentialIdx = i;
-                    break;
+                const dog = testPartyList[i];
+                // Skip dogs in current pair, finished dogs, and dogs not in same class
+                if (!currentPair.includes(i) && !isDogFinished(i) && dog.klasse === currentKlasse) {
+                    return i;
                 }
             }
+            return -1;
+        }
+
+        // Show dialog after saving a slipp (not finishing dog)
+        function showSlippSavedDialog(dogName) {
+            // Find next dog NOT in current pair, not finished, and same class
+            const nextSequentialIdx = findNextReplacementDog();
 
             const modal = document.createElement('div');
             modal.id = 'slippSavedModal';
@@ -643,16 +651,8 @@
 
         // Show dialog to choose next action after finishing a dog
         function showNextDogDialog(finishedDogName, isReplace = false) {
-            // Find next dog NOT in current pair and not finished
-            const currentPair = getCurrentPairIndices();
-            let nextSequentialIdx = -1;
-            for (let i = 0; i < testPartyList.length; i++) {
-                // Skip dogs in current pair and finished dogs
-                if (!currentPair.includes(i) && !isDogFinished(i)) {
-                    nextSequentialIdx = i;
-                    break;
-                }
-            }
+            // Find next dog NOT in current pair, not finished, and same class
+            const nextSequentialIdx = findNextReplacementDog();
 
             const modal = document.createElement('div');
             modal.id = 'nextDogModal';

@@ -113,15 +113,23 @@
             </div>
             <!-- Filtre -->
             <div class="flex flex-wrap gap-3 mb-4">
-                <div class="flex-1 min-w-[180px]">
-                    <label class="block text-xs text-bark-500 mb-1">Avsender</label>
+                <div class="flex-1 min-w-[160px]">
+                    <label class="block text-xs text-bark-500 mb-1">Avsender/Klubb</label>
                     <select id="smsKlubbFilter" onchange="loadSmsStats()" class="w-full px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
                         <option value="">Alle</option>
                         <option value="fuglehundprove.no">Fuglehundprove.no (verifisering)</option>
                         <!-- Klubber legges til dynamisk -->
                     </select>
                 </div>
-                <div class="flex-1 min-w-[180px]">
+                <div class="flex-1 min-w-[140px]">
+                    <label class="block text-xs text-bark-500 mb-1">Retning</label>
+                    <select id="smsRetningFilter" onchange="loadSmsStats()" class="w-full px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
+                        <option value="">Alle</option>
+                        <option value="ut">Utgående</option>
+                        <option value="inn">Innkommende</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[160px]">
                     <label class="block text-xs text-bark-500 mb-1">Tidsperiode</label>
                     <select id="smsPeriodFilter" onchange="loadSmsStats()" class="w-full px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
                         <option value="all">Alt</option>
@@ -1223,9 +1231,10 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
     async function loadSmsStats() {
         try {
             const klubbFilter = document.getElementById('smsKlubbFilter')?.value || '';
+            const retningFilter = document.getElementById('smsRetningFilter')?.value || '';
             const periodeFilter = document.getElementById('smsPeriodFilter')?.value || 'month';
 
-            const resp = await fetch(`/api/sms/stats?klubb=${encodeURIComponent(klubbFilter)}&periode=${encodeURIComponent(periodeFilter)}`);
+            const resp = await fetch(`/api/sms/stats?klubb=${encodeURIComponent(klubbFilter)}&retning=${encodeURIComponent(retningFilter)}&periode=${encodeURIComponent(periodeFilter)}`);
             const stats = await resp.json();
 
             document.getElementById('statSms').textContent = stats.totalt || '0';
@@ -1252,10 +1261,13 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
             if (stats.siste && stats.siste.length > 0) {
                 loggContainer.innerHTML = stats.siste.map(s => `
                     <div class="flex justify-between items-center py-2 border-b border-bark-100 last:border-0">
-                        <div>
-                            <span class="font-medium text-bark-700">${s.til || s.telefon || '-'}</span>
-                            <span class="text-xs text-bark-400 ml-2">${s.type || 'verifisering'}</span>
-                            ${s.klubb_id ? `<span class="text-xs bg-bark-100 text-bark-500 px-1.5 py-0.5 rounded ml-1">${s.klubb_id}</span>` : ''}
+                        <div class="flex items-center gap-2">
+                            <span class="${s.retning === 'ut' ? 'text-blue-500' : 'text-green-500'} text-sm" title="${s.retning === 'ut' ? 'Utgående' : 'Innkommende'}">
+                                ${s.retning === 'ut' ? '↑' : '↓'}
+                            </span>
+                            <span class="font-medium text-bark-700">${s.retning === 'ut' ? s.til : s.fra}</span>
+                            <span class="text-xs text-bark-400">${s.type || 'verifisering'}</span>
+                            ${s.klubb_id ? `<span class="text-xs bg-bark-100 text-bark-500 px-1.5 py-0.5 rounded">${s.klubb_id}</span>` : ''}
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="${s.status === 'sent' ? 'text-green-600' : 'text-red-600'} text-xs">

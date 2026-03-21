@@ -5207,6 +5207,7 @@ app.get("/api/sms/stats", (c) => {
   try {
     const klubbId = c.req.query("klubb") || "";
     const periode = c.req.query("periode") || "all";
+    const retning = c.req.query("retning") || ""; // ut, inn, eller tom for alle
 
     // Sjekk om sms_log-tabellen eksisterer
     const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sms_log'").get();
@@ -5225,6 +5226,13 @@ app.get("/api/sms/stats", (c) => {
     } else if (klubbId) {
       whereConditions.push("klubb_id = ?");
       params.push(klubbId);
+    }
+
+    // Retning-filter (utgående/innkommende)
+    if (retning === "ut") {
+      whereConditions.push("retning = 'ut'");
+    } else if (retning === "inn") {
+      whereConditions.push("retning = 'inn'");
     }
 
     // Periode-filter
@@ -5259,21 +5267,19 @@ app.get("/api/sms/stats", (c) => {
     const vellykket = db.prepare(`SELECT COUNT(*) as n FROM sms_log ${whereClause} ${whereClause ? "AND" : "WHERE"} status = 'sent'`).get(...params)?.n || 0;
     const feilet = totalt - vellykket;
 
-    // Estimert kostnad (ca 0.50 kr per SMS)
-    const kostnad = (vellykket * 0.5).toFixed(0);
+    // Estimert kostnad (ca 0.50 kr per utgående SMS)
+    const utgaende = db.prepare(`SELECT COUNT(*) as n FROM sms_log ${whereClause} ${whereClause ? "AND" : "WHERE"} retning = 'ut' AND status = 'sent'`).get(...params)?.n || 0;
+    const kostnad = (utgaende * 0.5).toFixed(0);
 
     // Siste 20 SMS med filter
     const siste = db.prepare(`SELECT * FROM sms_log ${whereClause} ORDER BY created_at DESC LIMIT 20`).all(...params);
 
-    // Hent liste over klubber som har sendt SMS
+    // Hent ALLE klubber (ikke bare de med SMS)
     const klubber = db.prepare(`
-      SELECT DISTINCT k.id, k.navn
-      FROM klubber k
-      INNER JOIN sms_log s ON s.klubb_id = k.id
-      ORDER BY k.navn
+      SELECT id, navn FROM klubber ORDER BY navn
     `).all();
 
-    return c.json({ totalt, vellykket, feilet, kostnad, siste, klubber });
+    return c.json({ totalt, vellykket, feilet, kostnad, utgaende, siste, klubber });
   } catch (err) {
     return c.json({ totalt: 0, vellykket: 0, feilet: 0, kostnad: null, siste: [], klubber: [], error: err.message });
   }

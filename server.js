@@ -5411,6 +5411,9 @@ app.get("/dommertest", (c) => serveWithShim(join(__dirname, "dommertest.html"), 
 // Clean URL for VK dommer-testside
 app.get("/dommertestvk", (c) => serveWithShim(join(__dirname, "dommer-vk-test.html"), c));
 
+// Clean URL for UK/AK todelt dommer-testside
+app.get("/dommertestukak", (c) => serveWithShim(join(__dirname, "dommer-ukak-dual.html"), c));
+
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");
   const isAdmin = ADMIN_PAGES.includes(page);

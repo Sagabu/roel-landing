@@ -577,6 +577,28 @@
             renderPartyLists();
         }
 
+        // Hent tilbake en hund med tid til gode - sett den som aktiv hund på angitt posisjon
+        function hentTilbakeTTG(dogNr, position) {
+            // Lagre nåværende data først
+            saveDogData(position);
+
+            // Fjern tid til gode status
+            delete state.tidTilGode[dogNr];
+
+            // Sett denne hunden som aktiv på angitt posisjon
+            state.selectedDogs[position] = dogNr;
+
+            // Oppdater dropdown
+            document.getElementById(`dog${position}Select`).value = dogNr;
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadDogData(position);
+            renderRankings();
+            renderPartyLists();
+            saveToStorage();
+        }
+
         function renderPartyLists() {
             [1, 2].forEach(pos => {
                 const container = document.getElementById(`dog${pos}_partyList`);
@@ -636,11 +658,13 @@
                     ).join('');
                 }
 
-                // Tid til gode
+                // Tid til gode - klikkbare for å hente tilbake hund
                 if (tidTilGodeDogs.length > 0) {
                     tidTilGodeSection.classList.remove('hidden');
                     tidTilGodeList.innerHTML = tidTilGodeDogs.map(dog =>
-                        `<div>${dog.race} ${dog.name}</div>`
+                        `<div class="cursor-pointer hover:bg-amber-100 px-1 rounded flex items-center gap-1" onclick="hentTilbakeTTG(${dog.nr}, ${pos})">
+                            <span class="text-amber-600">↩</span> ${dog.race} ${dog.name}
+                        </div>`
                     ).join('');
                 } else {
                     tidTilGodeSection.classList.add('hidden');

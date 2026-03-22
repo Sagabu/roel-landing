@@ -358,6 +358,7 @@
             updateDogDisplays();
             updateSlippLabels();
             loadSlippComment();
+            updatePlacementDropdowns();
             renderPartyLists();
             renderRankings();
             setupDictation();
@@ -519,6 +520,53 @@
             loadDogData(2);
         }
 
+        // Beregn gyldige plasseringer basert på nåværende liste
+        function getValidPlacements(excludeDogNr = null) {
+            // Finn alle plasserte hunder (unntatt excludeDogNr)
+            const currentPlacements = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && parseInt(nr) !== excludeDogNr)
+                .map(([_, p]) => parseInt(p))
+                .sort((a, b) => a - b);
+
+            // Antall plasserte hunder
+            const count = currentPlacements.length;
+
+            // Gyldige plasseringer: 1 til (count + 2) for de to hundene som bedømmes
+            // Men maks 20
+            const maxPlacement = Math.min(count + 2, 20);
+
+            return Array.from({ length: maxPlacement }, (_, i) => i + 1);
+        }
+
+        // Oppdater plassering-dropdown med gyldige valg
+        function updatePlacementDropdowns() {
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const select = document.getElementById(`dog${pos}_plassering`);
+                const currentValue = state.plasseringer[dogNr];
+
+                // Beregn gyldige plasseringer (ekskluder denne hunden fra beregningen)
+                const validPlacements = getValidPlacements(dogNr);
+
+                // Bygg dropdown options
+                let options = '<option value="">-- Velg --</option>';
+                validPlacements.forEach(p => {
+                    options += `<option value="${p}">${p}. plass</option>`;
+                });
+                options += '<option value="tid_til_gode" class="text-amber-600">Tid til gode</option>';
+                options += '<option value="avsluttet" class="text-red-600">Avslutt</option>';
+
+                select.innerHTML = options;
+
+                // Sett tilbake verdien hvis den fortsatt er gyldig
+                if (currentValue && currentValue !== 'avsluttet') {
+                    select.value = currentValue;
+                } else if (currentValue === 'avsluttet') {
+                    select.value = 'avsluttet';
+                }
+            });
+        }
+
         function setPlassering(position) {
             const dogNr = state.selectedDogs[position];
             const select = document.getElementById(`dog${position}_plassering`);
@@ -534,16 +582,18 @@
                 const checkbox = document.getElementById(`dog${position}_tidtilgode`);
                 if (checkbox) checkbox.checked = true;
             } else if (value !== 'avsluttet') {
-                // Check if already taken
-                const existing = Object.entries(state.plasseringer).find(
-                    ([nr, plass]) => plass === value && parseInt(nr) !== dogNr
-                );
-                if (existing) {
-                    const dog = partyList.find(d => d.nr === parseInt(existing[0]));
-                    alert(`${value}. plass er allerede tildelt ${dog?.race} ${dog?.name}`);
-                    select.value = state.plasseringer[dogNr] || '';
-                    return;
-                }
+                const newPlass = parseInt(value);
+
+                // Skyv ned alle hunder som er på denne plassen eller lavere
+                const toShift = Object.entries(state.plasseringer)
+                    .filter(([nr, p]) => p !== 'avsluttet' && parseInt(p) >= newPlass && parseInt(nr) !== dogNr)
+                    .sort((a, b) => parseInt(b[1]) - parseInt(a[1])); // Sorter synkende for å unngå konflikter
+
+                toShift.forEach(([nr, p]) => {
+                    state.plasseringer[parseInt(nr)] = String(parseInt(p) + 1);
+                });
+
+                // Sett ny plassering
                 state.plasseringer[dogNr] = value;
                 // Fjern fra tid til gode hvis plassert
                 delete state.tidTilGode[dogNr];
@@ -557,6 +607,7 @@
             renderRankings();
             renderPartyLists();
             updateDogDisplays();
+            updatePlacementDropdowns();
         }
 
         function setTidTilGode(position) {
@@ -573,6 +624,7 @@
             }
 
             saveToStorage();
+            updatePlacementDropdowns();
             renderRankings();
             renderPartyLists();
         }
@@ -594,6 +646,7 @@
             // Oppdater visning
             updateDogDisplays();
             loadDogData(position);
+            updatePlacementDropdowns();
             renderRankings();
             renderPartyLists();
             saveToStorage();

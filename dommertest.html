@@ -13,7 +13,6 @@
                     colors: {
                         warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
                         cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
-                        earth: { 50: '#faf6f2', 100: '#f3ebe0', 200: '#e6d5c0', 300: '#d5b899', 400: '#c49a72', 500: '#b88255', 600: '#aa6e48', 700: '#8e583d', 800: '#734837', 900: '#5e3c2f', 950: '#321e17' },
                         bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' },
                         forest: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' }
                     },
@@ -30,1535 +29,729 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         .score-input:focus { transform: scale(1.02); }
-        input[type="number"] { font-size: 16px; }
+        input[type="number"] { font-size: 14px; }
         input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
-        .slipp-input { min-width: 36px; }
-        .previous-comment { color: #9CA3AF; font-style: italic; }
-        .slipp-completed { background-color: #E5E7EB !important; color: #9CA3AF !important; pointer-events: none; }
-        .slipp-header-completed { background-color: #E5E7EB !important; color: #9CA3AF !important; }
+        .dog-card { overflow-y: auto; }
+        .compact-input { height: 28px; font-size: 12px; }
+        .section-title { font-size: 9px; }
     </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
 
-    <!-- Test Banner -->
-    <div class="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium flex items-center justify-between">
-        <span></span>
-        <span>TESTMODUS - UK/AK Dommerkort</span>
-        <button onclick="resetAllTestData()" class="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs font-bold">
-            Nullstill
-        </button>
-    </div>
-
     <!-- Header -->
     <header class="bg-gradient-to-r from-bark-700 to-bark-800 text-white sticky top-0 z-50 shadow-lg">
-        <div class="px-4 py-3">
+        <div class="px-3 py-2">
             <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <a href="/" class="p-2 -ml-2 hover:bg-white/20 rounded-xl transition">
-                        <img src="images/logo.png" alt="Logo" class="w-8 h-8">
+                <div class="flex items-center gap-2">
+                    <a href="/" class="p-1 hover:bg-white/20 rounded-lg transition">
+                        <img src="images/logo.png" alt="Logo" class="w-6 h-6">
                     </a>
                     <div>
-                        <p class="font-bold font-serif" id="dogName">Neadalens Zlatan</p>
-                        <p class="text-white/70 text-xs" id="dogInfo">ES • Roel, Aleksander • UK</p>
+                        <p class="font-bold font-serif text-sm">UK/AK Dommerkort</p>
+                        <p class="text-white/70 text-xs">Slipp <span id="currentSlipp">1</span></p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <span class="bg-white/20 px-2 py-1 rounded text-sm font-bold" id="dogNr">Nr. 1</span>
+                    <button onclick="resetAll()" class="bg-red-500/80 hover:bg-red-600 px-2 py-1 rounded-lg text-xs font-medium transition" title="Nullstill alt">
+                        ↺
+                    </button>
+                    <span class="bg-white/20 px-2 py-1 rounded-full text-xs font-bold">UK/AK</span>
+                    <button onclick="nextSlipp()" class="bg-warm-500 hover:bg-warm-600 px-2 py-1 rounded-lg text-xs font-medium transition">
+                        Neste →
+                    </button>
                 </div>
             </div>
         </div>
     </header>
 
-    <!-- Dog Navigation Bar -->
-    <div class="bg-bark-100 border-b border-bark-200 px-2 py-2">
-        <div class="flex items-center justify-between gap-2">
-            <!-- Left dog (current pair partner) -->
-            <button onclick="switchToDog(1)" id="dogLeftBtn" class="flex-1 bg-white hover:bg-bark-50 border border-bark-300 rounded-xl px-3 py-2 text-left transition shadow-sm">
-                <span class="text-xs text-bark-500 block">Hund 1</span>
-                <span class="text-sm font-semibold text-bark-800 truncate block" id="dogLeftName">ES Zlatan</span>
-                <span class="text-xs text-bark-500 block" id="dogLeftKlasse">(UK)</span>
-            </button>
-
-            <!-- Party list button -->
-            <button onclick="showPartyList()" class="bg-bark-700 hover:bg-bark-600 text-white rounded-xl px-4 py-2 font-medium transition shadow-sm">
-                Partiliste
-            </button>
-
-            <!-- Right dog (current pair partner) -->
-            <button onclick="switchToDog(2)" id="dogRightBtn" class="flex-1 bg-white hover:bg-bark-50 border border-bark-300 rounded-xl px-3 py-2 text-right transition shadow-sm">
-                <span class="text-xs text-bark-500 block">Hund 2</span>
-                <span class="text-sm font-semibold text-bark-800 truncate block" id="dogRightName">IS Braut</span>
-                <span class="text-xs text-bark-500 block" id="dogRightKlasse">(UK)</span>
-            </button>
+    <!-- Felles kommentarfelt -->
+    <div class="bg-white border-b border-bark-200 px-3 py-2">
+        <div class="flex gap-2 items-center">
+            <label class="text-[10px] font-bold text-bark-700 uppercase whitespace-nowrap">
+                Kommentar <span id="slippLabel">1</span>.slipp:
+            </label>
+            <div class="flex-1 flex gap-1 items-center">
+                <textarea id="slippComment" rows="1"
+                    class="flex-1 px-2 py-1 rounded-lg border border-bark-200 focus:border-bark-500 outline-none text-xs resize-none"
+                    placeholder="Kommentar for dette slippet..."></textarea>
+                <button type="button" id="dictationBtn"
+                    class="w-8 h-8 bg-warm-500 hover:bg-warm-600 text-white rounded-full flex items-center justify-center shadow transition flex-shrink-0"
+                    title="Trykk for å diktere">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                </button>
+            </div>
         </div>
     </div>
 
-    <!-- Main Content -->
-    <main class="p-4 pb-24">
-        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+    <!-- Two-column layout -->
+    <main class="flex pb-14" style="height: calc(100vh - 120px);">
 
-            <!-- FUGLEBEHANDLING -->
-            <div class="bg-warm-50 p-4 border-b border-warm-200">
-                <h3 class="text-sm font-bold text-warm-800 uppercase tracking-wider mb-3">Fuglebehandling</h3>
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="text-center">
-                        <label class="block text-xs font-medium text-bark-600 mb-1">Presisjon</label>
-                        <input type="number" min="1" max="4" id="presisjon"
-                            class="score-input w-full h-12 text-center text-xl font-bold rounded-xl border-2 border-warm-200 focus:border-warm-500 outline-none bg-white"
-                            placeholder="1-4">
+        <!-- HUND 1 (Venstre) -->
+        <div class="w-1/2 border-r border-bark-300 dog-card p-1.5">
+            <div class="bg-white rounded-xl shadow overflow-hidden">
+
+                <!-- Dog selector -->
+                <div class="bg-bark-100 p-1.5 border-b border-bark-200">
+                    <select id="dog1Select" onchange="selectDog(1, this.value)" class="w-full h-8 px-2 rounded-lg border border-bark-300 bg-white text-xs font-medium">
+                    </select>
+                </div>
+
+                <!-- Dog info header -->
+                <div class="bg-bark-700 text-white px-2 py-1.5">
+                    <p class="font-bold font-serif text-xs" id="dog1Name">Hund 1</p>
+                    <p class="text-white/70 text-[10px]" id="dog1Info">-</p>
+                </div>
+
+                <!-- STATISTIKK (dette slippet) -->
+                <div class="p-1.5 bg-bark-50 border-b border-bark-200">
+                    <h4 class="section-title font-bold text-bark-700 uppercase tracking-wider mb-1">Statistikk (slipp <span class="dog1SlippNr">1</span>)</h4>
+                    <div class="grid grid-cols-3 gap-1 mb-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-amber-700">Slipptid</label>
+                            <input type="number" min="0" id="dog1_slipptid" class="compact-input w-full text-center font-bold rounded border border-amber-200 focus:border-amber-500 outline-none bg-amber-50">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Stand m/</label>
+                            <input type="number" min="0" id="dog1_stand_m" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Stand u/</label>
+                            <input type="number" min="0" id="dog1_stand_u" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
                     </div>
-                    <div class="text-center">
-                        <label class="block text-xs font-medium text-bark-600 mb-1">Reising</label>
-                        <input type="number" min="1" max="6" id="reising"
-                            class="score-input w-full h-12 text-center text-xl font-bold rounded-xl border-2 border-warm-200 focus:border-warm-500 outline-none bg-white"
-                            placeholder="1-6">
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Tomstand</label>
+                            <input type="number" min="0" id="dog1_tomstand" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Makker st.</label>
+                            <input type="number" min="0" id="dog1_makker_stand" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Sjanse</label>
+                            <input type="number" min="0" id="dog1_sjanse" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
                     </div>
-                    <div class="flex flex-col items-center justify-end">
-                        <label class="flex items-center gap-2 cursor-pointer h-12">
-                            <input type="checkbox" id="godkjentReising"
-                                class="w-6 h-6 rounded border-2 border-warm-300 text-warm-600 focus:ring-warm-500">
-                            <span class="text-xs font-medium text-bark-600">Godkj. reis</span>
+                    <!-- Totaler -->
+                    <div class="mt-1 pt-1 border-t border-bark-200">
+                        <div class="grid grid-cols-6 gap-0.5 text-[8px]">
+                            <div class="text-center"><span class="text-bark-400">Tid:</span> <span id="dog1_total_slipptid" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">St.m:</span> <span id="dog1_total_stand_m" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">St.u:</span> <span id="dog1_total_stand_u" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">Tom:</span> <span id="dog1_total_tomstand" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">Mak:</span> <span id="dog1_total_makker_stand" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">Sj:</span> <span id="dog1_total_sjanse" class="font-bold">0</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FUGLEBEHANDLING -->
+                <div class="p-1.5 bg-warm-50 border-b border-warm-200">
+                    <h4 class="section-title font-bold text-warm-700 uppercase tracking-wider mb-1">Fuglebehandling</h4>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-warm-600">Presisjon</label>
+                            <input type="number" min="1" max="4" id="dog1_presisjon" class="compact-input w-full text-center font-bold rounded border border-warm-200 focus:border-warm-500 outline-none" placeholder="1-4">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-warm-600">Reising</label>
+                            <input type="number" min="1" max="6" id="dog1_reising" class="compact-input w-full text-center font-bold rounded border border-warm-200 focus:border-warm-500 outline-none" placeholder="1-6">
+                        </div>
+                        <div class="flex items-center justify-center">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="dog1_godkjent_reis" class="w-4 h-4 rounded border-warm-300 text-warm-600">
+                                <span class="text-[8px] font-medium text-warm-700">Godkj.</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JAKTEGENSKAPER -->
+                <div class="p-1.5 border-b border-bark-200">
+                    <h4 class="section-title font-bold text-bark-700 uppercase tracking-wider mb-1">Jaktegenskaper</h4>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog1_jaktlyst" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Jaktlyst</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog1_fart" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Fart</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog1_selvstendighet" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Selvst.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog1_soksbredde" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Søksb.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog1_reviering" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Revier.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog1_samarbeid" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Samarb.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEKUNDERING -->
+                <div class="p-1.5 border-b border-bark-200">
+                    <h4 class="section-title font-bold text-bark-700 uppercase tracking-wider mb-1">Sekundering</h4>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="0" id="dog1_sek_antall" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Antall</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="0" id="dog1_spontan" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Spont.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="0" id="dog1_gar_forbi" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Går forbi</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="2" id="dog1_apport" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none" placeholder="1/2">
+                            <span class="text-[8px] text-bark-600">Apport</span>
+                        </div>
+                        <div class="flex items-center gap-1 col-span-2">
+                            <input type="number" min="0" id="dog1_rapport_spontan" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Rapp. spont.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PREMIE -->
+                <div class="p-1.5 border-b border-bark-200">
+                    <div class="flex items-center gap-2">
+                        <select id="dog1_premie" class="h-7 px-2 rounded border border-warm-300 bg-warm-50 text-xs font-bold">
+                            <option value="">Premie</option>
+                            <option value="0">0</option>
+                            <option value="1">1. pr</option>
+                            <option value="2">2. pr</option>
+                            <option value="3">3. pr</option>
+                        </select>
+                        <input type="text" id="dog1_notat" class="flex-1 h-7 px-2 text-[10px] rounded border border-bark-200 focus:border-bark-500 outline-none" placeholder="Notat...">
+                        <label class="flex items-center gap-1">
+                            <input type="checkbox" id="dog1_ferdig" onchange="setFerdig(1)" class="w-4 h-4 rounded border-red-300 text-red-500">
+                            <span class="text-[9px] font-bold text-red-600">Ferdig</span>
                         </label>
                     </div>
                 </div>
-            </div>
 
-            <!-- KOMMENTARFELT -->
-            <div class="p-4 border-b border-bark-100">
-                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wider mb-2">Dommerens kommentar</h3>
-
-                <!-- Tidligere kommentarer (grå, kursiv, ikke redigerbare) -->
-                <div id="previousComments" class="space-y-2 mb-3">
-                    <!-- Fylles dynamisk -->
+                <!-- UØNSKET ADFERD -->
+                <div class="p-1.5 bg-red-50">
+                    <label class="block text-[8px] font-bold text-red-700 uppercase mb-0.5">Uønsket adferd</label>
+                    <input type="text" id="dog1_uonsket" class="w-full h-6 px-2 text-[10px] rounded border border-red-200 focus:border-red-500 outline-none bg-white" placeholder="Eventuell uønsket adferd...">
                 </div>
 
-                <!-- Nåværende slipp kommentar -->
-                <div>
-                    <label class="block text-xs text-bark-500 mb-1" id="currentSlippLabel">Slipp 1:</label>
-                    <textarea id="currentComment" rows="3"
-                        class="w-full px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none text-sm resize-none"
-                        placeholder="Skriv kommentar for dette slippet..."></textarea>
-                </div>
             </div>
-
-            <!-- STATISTIKK-TABELL -->
-            <div class="p-4">
-                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wider mb-3">Statistikk per slipp</h3>
-
-                <!-- Scrollbar container for mobil -->
-                <div class="overflow-x-auto -mx-4 px-4">
-                    <table class="w-full text-sm" style="min-width: 600px;">
-                        <thead>
-                            <tr class="border-b-2 border-bark-200">
-                                <th class="text-left py-2 px-1 font-semibold text-bark-600 w-28"></th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S1</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S2</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S3</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S4</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S5</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S6</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S7</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S8</th>
-                                <th class="text-center py-2 px-1 font-medium text-bark-500 w-10">S9</th>
-                                <th class="text-center py-2 px-1 font-bold text-bark-700 w-12 bg-bark-50">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Slipptid -->
-                            <tr class="border-b border-bark-100 bg-amber-50">
-                                <td class="py-2 px-1 font-medium text-amber-700">Slipptid (min)</td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="1" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="2" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="3" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="4" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="5" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="6" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="7" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="8" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="slipptid" data-slipp="9" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-amber-200 focus:border-amber-500 outline-none"></td>
-                                <td class="py-1 px-0.5 bg-bark-50"><span data-total="slipptid" class="block w-full h-8 leading-8 text-center text-sm font-bold text-bark-800">0</span></td>
-                            </tr>
-                            <!-- Stand m/makker -->
-                            <tr class="border-b border-bark-100">
-                                <td class="py-2 px-1 font-medium text-bark-600">Stand m/makker</td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="1" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="2" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="3" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="4" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="5" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="6" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="7" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="8" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_m" data-slipp="9" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5 bg-bark-50"><span data-total="stand_m" class="block w-full h-8 leading-8 text-center text-sm font-bold text-bark-800">0</span></td>
-                            </tr>
-                            <!-- Stand u/makker -->
-                            <tr class="border-b border-bark-100">
-                                <td class="py-2 px-1 font-medium text-bark-600">Stand u/makker</td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="1" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="2" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="3" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="4" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="5" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="6" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="7" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="8" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="stand_u" data-slipp="9" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5 bg-bark-50"><span data-total="stand_u" class="block w-full h-8 leading-8 text-center text-sm font-bold text-bark-800">0</span></td>
-                            </tr>
-                            <!-- Tomstand -->
-                            <tr class="border-b border-bark-100">
-                                <td class="py-2 px-1 font-medium text-bark-600">Tomstand</td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="1" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="2" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="3" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="4" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="5" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="6" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="7" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="8" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="tomstand" data-slipp="9" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5 bg-bark-50"><span data-total="tomstand" class="block w-full h-8 leading-8 text-center text-sm font-bold text-bark-800">0</span></td>
-                            </tr>
-                            <!-- Makkers stand -->
-                            <tr class="border-b border-bark-100">
-                                <td class="py-2 px-1 font-medium text-bark-600">Makkers stand</td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="1" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="2" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="3" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="4" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="5" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="6" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="7" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="8" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="makker_stand" data-slipp="9" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5 bg-bark-50"><span data-total="makker_stand" class="block w-full h-8 leading-8 text-center text-sm font-bold text-bark-800">0</span></td>
-                            </tr>
-                            <!-- Sjanse på fugl -->
-                            <tr class="border-b border-bark-100">
-                                <td class="py-2 px-1 font-medium text-bark-600">Sjanse på fugl</td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="1" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="2" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="3" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="4" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="5" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="6" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="7" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="8" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5"><input type="number" min="0" data-field="sjanse" data-slipp="9" class="slipp-input w-full h-8 text-center text-sm font-medium rounded border border-bark-200 focus:border-warm-500 outline-none"></td>
-                                <td class="py-1 px-0.5 bg-bark-50"><span data-total="sjanse" class="block w-full h-8 leading-8 text-center text-sm font-bold text-bark-800">0</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- JAKTEGENSKAPER -->
-            <div class="p-4 border-t border-bark-200">
-                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wider mb-3">Jaktegenskaper</h3>
-                <div class="space-y-2">
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="6" id="jaktlyst" data-jakt="jaktlyst"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            oninput="if(this.value>6)this.value=6;if(this.value<1&&this.value!=='')this.value=1">
-                        <label class="text-sm font-medium text-bark-600">Jaktlyst</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="6" id="fart" data-jakt="fart"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            oninput="if(this.value>6)this.value=6;if(this.value<1&&this.value!=='')this.value=1">
-                        <label class="text-sm font-medium text-bark-600">Fart</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="6" id="selvstendighet" data-jakt="selvstendighet"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            oninput="if(this.value>6)this.value=6;if(this.value<1&&this.value!=='')this.value=1">
-                        <label class="text-sm font-medium text-bark-600">Selvstendighet</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="6" id="soksbredde" data-jakt="soksbredde"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            oninput="if(this.value>6)this.value=6;if(this.value<1&&this.value!=='')this.value=1">
-                        <label class="text-sm font-medium text-bark-600">Søksbredde</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="6" id="reviering" data-jakt="reviering"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            oninput="if(this.value>6)this.value=6;if(this.value<1&&this.value!=='')this.value=1">
-                        <label class="text-sm font-medium text-bark-600">Reviering</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="6" id="samarbeid" data-jakt="samarbeid"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            oninput="if(this.value>6)this.value=6;if(this.value<1&&this.value!=='')this.value=1">
-                        <label class="text-sm font-medium text-bark-600">Samarbeid</label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SEKUNDERING -->
-            <div class="p-4 border-t border-bark-200">
-                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wider mb-3">Sekundering</h3>
-                <div class="space-y-2">
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="0" id="sekundering_antall" data-sek="sekundering_antall"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none">
-                        <label class="text-sm font-medium text-bark-600">Sekundering (antall)</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="0" id="spontan" data-sek="spontan"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none">
-                        <label class="text-sm font-medium text-bark-600">Spontan</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="0" id="gar_forbi" data-sek="gar_forbi"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none">
-                        <label class="text-sm font-medium text-bark-600">Går forbi</label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="1" max="2" id="apport" data-sek="apport"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none"
-                            placeholder="1/2">
-                        <label class="text-sm font-medium text-bark-600">Apport <span class="text-xs text-bark-400">(1=Godkj. 2=Ikke)</span></label>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <input type="number" min="0" id="rapport_spontan" data-sek="rapport_spontan"
-                            class="w-12 h-8 text-center text-sm font-bold rounded border-2 border-bark-200 focus:border-warm-500 outline-none">
-                        <label class="text-sm font-medium text-bark-600">Rapport spontan</label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- PREMIE OG NOTAT -->
-            <div class="p-4 border-t border-bark-200">
-                <div class="flex items-center gap-3 mb-3">
-                    <input type="number" min="0" max="3" id="premie" data-result="premie"
-                        class="w-14 h-10 text-center text-xl font-bold rounded-xl border-2 border-warm-300 focus:border-warm-500 outline-none bg-warm-50"
-                        placeholder="0-3">
-                    <label class="text-sm font-bold text-bark-700 uppercase tracking-wider">Premie</label>
-                    <input type="text" id="notatTillegg"
-                        class="flex-1 h-10 px-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none text-sm"
-                        placeholder="Notat/tilleggsinfo...">
-                </div>
-            </div>
-
-            <!-- UØNSKET ADFERD -->
-            <div class="p-4 border-t-2 border-red-200 bg-red-50">
-                <label class="block text-sm font-bold text-red-700 uppercase tracking-wider mb-2">Uønsket adferd (valgfritt)</label>
-                <textarea id="uonsketAdferd" rows="2"
-                    class="w-full px-3 py-2 rounded-xl border-2 border-red-300 focus:border-red-500 outline-none text-sm resize-none bg-white"
-                    placeholder="Beskriv eventuell uønsket adferd..."></textarea>
-            </div>
-
         </div>
+
+        <!-- HUND 2 (Høyre) -->
+        <div class="w-1/2 dog-card p-1.5">
+            <div class="bg-white rounded-xl shadow overflow-hidden">
+
+                <!-- Dog selector -->
+                <div class="bg-bark-100 p-1.5 border-b border-bark-200">
+                    <select id="dog2Select" onchange="selectDog(2, this.value)" class="w-full h-8 px-2 rounded-lg border border-bark-300 bg-white text-xs font-medium">
+                    </select>
+                </div>
+
+                <!-- Dog info header -->
+                <div class="bg-bark-700 text-white px-2 py-1.5">
+                    <p class="font-bold font-serif text-xs" id="dog2Name">Hund 2</p>
+                    <p class="text-white/70 text-[10px]" id="dog2Info">-</p>
+                </div>
+
+                <!-- STATISTIKK (dette slippet) -->
+                <div class="p-1.5 bg-bark-50 border-b border-bark-200">
+                    <h4 class="section-title font-bold text-bark-700 uppercase tracking-wider mb-1">Statistikk (slipp <span class="dog2SlippNr">1</span>)</h4>
+                    <div class="grid grid-cols-3 gap-1 mb-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-amber-700">Slipptid</label>
+                            <input type="number" min="0" id="dog2_slipptid" class="compact-input w-full text-center font-bold rounded border border-amber-200 focus:border-amber-500 outline-none bg-amber-50">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Stand m/</label>
+                            <input type="number" min="0" id="dog2_stand_m" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Stand u/</label>
+                            <input type="number" min="0" id="dog2_stand_u" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Tomstand</label>
+                            <input type="number" min="0" id="dog2_tomstand" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Makker st.</label>
+                            <input type="number" min="0" id="dog2_makker_stand" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-bark-600">Sjanse</label>
+                            <input type="number" min="0" id="dog2_sjanse" class="compact-input w-full text-center font-bold rounded border border-bark-200 focus:border-bark-500 outline-none">
+                        </div>
+                    </div>
+                    <!-- Totaler -->
+                    <div class="mt-1 pt-1 border-t border-bark-200">
+                        <div class="grid grid-cols-6 gap-0.5 text-[8px]">
+                            <div class="text-center"><span class="text-bark-400">Tid:</span> <span id="dog2_total_slipptid" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">St.m:</span> <span id="dog2_total_stand_m" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">St.u:</span> <span id="dog2_total_stand_u" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">Tom:</span> <span id="dog2_total_tomstand" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">Mak:</span> <span id="dog2_total_makker_stand" class="font-bold">0</span></div>
+                            <div class="text-center"><span class="text-bark-400">Sj:</span> <span id="dog2_total_sjanse" class="font-bold">0</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FUGLEBEHANDLING -->
+                <div class="p-1.5 bg-warm-50 border-b border-warm-200">
+                    <h4 class="section-title font-bold text-warm-700 uppercase tracking-wider mb-1">Fuglebehandling</h4>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-warm-600">Presisjon</label>
+                            <input type="number" min="1" max="4" id="dog2_presisjon" class="compact-input w-full text-center font-bold rounded border border-warm-200 focus:border-warm-500 outline-none" placeholder="1-4">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[8px] font-bold text-warm-600">Reising</label>
+                            <input type="number" min="1" max="6" id="dog2_reising" class="compact-input w-full text-center font-bold rounded border border-warm-200 focus:border-warm-500 outline-none" placeholder="1-6">
+                        </div>
+                        <div class="flex items-center justify-center">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="dog2_godkjent_reis" class="w-4 h-4 rounded border-warm-300 text-warm-600">
+                                <span class="text-[8px] font-medium text-warm-700">Godkj.</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JAKTEGENSKAPER -->
+                <div class="p-1.5 border-b border-bark-200">
+                    <h4 class="section-title font-bold text-bark-700 uppercase tracking-wider mb-1">Jaktegenskaper</h4>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog2_jaktlyst" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Jaktlyst</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog2_fart" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Fart</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog2_selvstendighet" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Selvst.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog2_soksbredde" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Søksb.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog2_reviering" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Revier.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="6" id="dog2_samarbeid" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Samarb.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEKUNDERING -->
+                <div class="p-1.5 border-b border-bark-200">
+                    <h4 class="section-title font-bold text-bark-700 uppercase tracking-wider mb-1">Sekundering</h4>
+                    <div class="grid grid-cols-3 gap-1">
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="0" id="dog2_sek_antall" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Antall</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="0" id="dog2_spontan" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Spont.</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="0" id="dog2_gar_forbi" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Går forbi</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="2" id="dog2_apport" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none" placeholder="1/2">
+                            <span class="text-[8px] text-bark-600">Apport</span>
+                        </div>
+                        <div class="flex items-center gap-1 col-span-2">
+                            <input type="number" min="0" id="dog2_rapport_spontan" class="w-8 h-6 text-center text-[10px] font-bold rounded border border-bark-200 focus:border-warm-500 outline-none">
+                            <span class="text-[8px] text-bark-600">Rapp. spont.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PREMIE -->
+                <div class="p-1.5 border-b border-bark-200">
+                    <div class="flex items-center gap-2">
+                        <select id="dog2_premie" class="h-7 px-2 rounded border border-warm-300 bg-warm-50 text-xs font-bold">
+                            <option value="">Premie</option>
+                            <option value="0">0</option>
+                            <option value="1">1. pr</option>
+                            <option value="2">2. pr</option>
+                            <option value="3">3. pr</option>
+                        </select>
+                        <input type="text" id="dog2_notat" class="flex-1 h-7 px-2 text-[10px] rounded border border-bark-200 focus:border-bark-500 outline-none" placeholder="Notat...">
+                        <label class="flex items-center gap-1">
+                            <input type="checkbox" id="dog2_ferdig" onchange="setFerdig(2)" class="w-4 h-4 rounded border-red-300 text-red-500">
+                            <span class="text-[9px] font-bold text-red-600">Ferdig</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- UØNSKET ADFERD -->
+                <div class="p-1.5 bg-red-50">
+                    <label class="block text-[8px] font-bold text-red-700 uppercase mb-0.5">Uønsket adferd</label>
+                    <input type="text" id="dog2_uonsket" class="w-full h-6 px-2 text-[10px] rounded border border-red-200 focus:border-red-500 outline-none bg-white" placeholder="Eventuell uønsket adferd...">
+                </div>
+
+            </div>
+        </div>
+
     </main>
 
-    <!-- Bottom action bar -->
-    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 shadow-lg z-40 p-4">
-        <div class="flex gap-3">
-            <button onclick="saveData()" id="saveBtn" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white py-3 rounded-xl font-semibold transition">
-                Lagre slipp 1
-            </button>
-            <button onclick="finishDog()" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white py-3 rounded-xl font-semibold transition">
-                Lagre slipp og avslutt hund
-            </button>
-        </div>
-    </nav>
+    <!-- Lagre-knapp -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 p-2 z-40">
+        <button onclick="saveAll()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
+            Lagre begge hunder
+        </button>
+    </div>
 
     <script>
+        // Felt-definisjoner
+        const STAT_FIELDS = ['slipptid', 'stand_m', 'stand_u', 'tomstand', 'makker_stand', 'sjanse'];
+        const JAKT_FIELDS = ['jaktlyst', 'fart', 'selvstendighet', 'soksbredde', 'reviering', 'samarbeid'];
+        const SEK_FIELDS = ['sek_antall', 'spontan', 'gar_forbi', 'apport', 'rapport_spontan'];
+
         // State
         const state = {
             currentSlipp: 1,
-            maxSlipp: 9,
-            data: {
-                fuglebehandling: {
-                    presisjon: null,
-                    reising: null,
-                    godkjentReising: false
-                },
-                comments: {}, // { 1: "kommentar slipp 1", 2: "...", etc }
-                slipps: {}, // { field: { 1: value, 2: value, ... } }
-                jaktegenskaper: {},
-                sekundering: {},
-                premie: null,
-                notatTillegg: '',
-                uonsketAdferd: ''
-            }
+            selectedDogs: { 1: 1, 2: 2 },
+            ferdigeDogs: {},
+            dogData: {},
+            slippComments: {},
         };
 
-        const FIELDS = ['slipptid', 'stand_m', 'stand_u', 'tomstand', 'makker_stand', 'sjanse'];
-        const JAKT_FIELDS = ['jaktlyst', 'fart', 'selvstendighet', 'soksbredde', 'reviering', 'samarbeid'];
-        const SEK_FIELDS = ['sekundering_antall', 'spontan', 'gar_forbi', 'apport', 'rapport_spontan'];
-
-        // Initialize
-        function init() {
-            loadFromStorage();
-            renderPreviousComments();
-            updateTotals();
-            setupEventListeners();
-            updateCompletedSlipps();
-            updateSaveButtonText();
-            document.getElementById('currentSlippLabel').textContent = `Slipp ${state.currentSlipp}:`;
-        }
-
-        // Load from localStorage
-        function loadFromStorage() {
-            const saved = localStorage.getItem('dommertest_ukak');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    state.data = { ...state.data, ...parsed };
-                    state.currentSlipp = parsed.currentSlipp || 1;
-
-                    // Populate fuglebehandling
-                    if (parsed.fuglebehandling) {
-                        document.getElementById('presisjon').value = parsed.fuglebehandling.presisjon || '';
-                        document.getElementById('reising').value = parsed.fuglebehandling.reising || '';
-                        document.getElementById('godkjentReising').checked = parsed.fuglebehandling.godkjentReising || false;
-                    }
-
-                    // Populate slipp inputs
-                    FIELDS.forEach(field => {
-                        if (parsed.slipps && parsed.slipps[field]) {
-                            for (let s = 1; s <= 9; s++) {
-                                const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                                if (input && parsed.slipps[field][s] !== undefined) {
-                                    input.value = parsed.slipps[field][s];
-                                }
-                            }
-                        }
-                    });
-
-                    // Current comment
-                    if (parsed.comments && parsed.comments[state.currentSlipp]) {
-                        document.getElementById('currentComment').value = parsed.comments[state.currentSlipp];
-                    }
-                } catch (e) {
-                    console.error('Failed to load saved data:', e);
-                }
-            }
-        }
-
-        // Save to localStorage and move to next slipp
-        function saveData() {
-            // Check if slipptid is filled for current slipp
-            const slipptidInput = document.querySelector(`input[data-field="slipptid"][data-slipp="${state.currentSlipp}"]`);
-            if (!slipptidInput || !slipptidInput.value) {
-                alert(`Du må fylle ut slipptid for slipp ${state.currentSlipp} før du kan lagre.`);
-                slipptidInput?.focus();
-                return;
-            }
-
-            // Gather fuglebehandling
-            state.data.fuglebehandling = {
-                presisjon: document.getElementById('presisjon').value || null,
-                reising: document.getElementById('reising').value || null,
-                godkjentReising: document.getElementById('godkjentReising').checked
-            };
-
-            // Gather slipp data
-            if (!state.data.slipps) state.data.slipps = {};
-            FIELDS.forEach(field => {
-                if (!state.data.slipps[field]) state.data.slipps[field] = {};
-                for (let s = 1; s <= 9; s++) {
-                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                    if (input && input.value) {
-                        state.data.slipps[field][s] = parseInt(input.value) || 0;
-                    }
-                }
-            });
-
-            // Save current comment
-            if (!state.data.comments) state.data.comments = {};
-            state.data.comments[state.currentSlipp] = document.getElementById('currentComment').value;
-
-            // Mark this slipp as completed
-            if (!state.data.completedSlipps) state.data.completedSlipps = [];
-            if (!state.data.completedSlipps.includes(state.currentSlipp)) {
-                state.data.completedSlipps.push(state.currentSlipp);
-            }
-
-            // Move to next slipp if not at max
-            if (state.currentSlipp < state.maxSlipp) {
-                state.currentSlipp++;
-            }
-            state.data.currentSlipp = state.currentSlipp;
-
-            localStorage.setItem('dommertest_ukak', JSON.stringify(state.data));
-            saveCurrentDogData();
-
-            // Update UI
-            updateCompletedSlipps();
-            renderPreviousComments();
-            document.getElementById('currentComment').value = state.data.comments?.[state.currentSlipp] || '';
-            document.getElementById('currentSlippLabel').textContent = `Slipp ${state.currentSlipp}:`;
-            updateSaveButtonText();
-
-            // Visual feedback
-            const btn = document.getElementById('saveBtn');
-            btn.textContent = 'Lagret!';
-            btn.classList.replace('bg-forest-600', 'bg-green-500');
-            setTimeout(() => {
-                updateSaveButtonText();
-                btn.classList.replace('bg-green-500', 'bg-forest-600');
-            }, 1000);
-
-            // Show replacement dialog after saving
-            const currentDog = testPartyList[currentDogIndex];
-            const dogName = currentDog ? currentDog.name : 'denne hunden';
-            showSlippSavedDialog(dogName);
-        }
-
-        // Get the current pair indices (the two dogs being judged together)
-        function getCurrentPairIndices() {
-            return [activePair.left, activePair.right];
-        }
-
-        // Get which position in the pair the current dog is (left or right)
-        function getCurrentPairPosition() {
-            if (currentDogIndex === activePair.left) return 'left';
-            if (currentDogIndex === activePair.right) return 'right';
-            return null;
-        }
-
-        // Find next available dog for replacement (same class, not in current pair, not finished)
-        // Searches sequentially from the current dog's position in the list
-        function findNextReplacementDog() {
-            const currentPair = getCurrentPairIndices();
-            const currentDog = testPartyList[currentDogIndex];
-            const currentKlasse = currentDog ? currentDog.klasse : null;
-
-            // Start searching from after the current dog's index, then wrap around
-            for (let offset = 1; offset < testPartyList.length; offset++) {
-                const i = (currentDogIndex + offset) % testPartyList.length;
-                const dog = testPartyList[i];
-                // Skip dogs in current pair, finished dogs, and dogs not in same class
-                if (!currentPair.includes(i) && !isDogFinished(i) && dog.klasse === currentKlasse) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        // Find next available dog from a DIFFERENT class
-        function findNextReplacementDogOtherClass() {
-            const currentPair = getCurrentPairIndices();
-            const currentDog = testPartyList[currentDogIndex];
-            const currentKlasse = currentDog ? currentDog.klasse : null;
-
-            // Start searching from after the current dog's index, then wrap around
-            for (let offset = 1; offset < testPartyList.length; offset++) {
-                const i = (currentDogIndex + offset) % testPartyList.length;
-                const dog = testPartyList[i];
-                // Skip dogs in current pair, finished dogs, but ONLY select dogs from OTHER class
-                if (!currentPair.includes(i) && !isDogFinished(i) && dog.klasse !== currentKlasse) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        // Check if the current pair are the last two dogs in their class
-        function isLastTwoInClass() {
-            const currentDog = testPartyList[currentDogIndex];
-            const currentKlasse = currentDog ? currentDog.klasse : null;
-            const currentPair = getCurrentPairIndices();
-
-            // Count unfinished dogs in same class (excluding current pair)
-            let unfinishedSameClass = 0;
-            for (let i = 0; i < testPartyList.length; i++) {
-                const dog = testPartyList[i];
-                if (!currentPair.includes(i) && !isDogFinished(i) && dog.klasse === currentKlasse) {
-                    unfinishedSameClass++;
-                }
-            }
-
-            // If no other unfinished dogs in same class, these are the last two
-            return unfinishedSameClass === 0;
-        }
-
-        // Get the class name for display
-        function getPartnerDog() {
-            const position = getCurrentPairPosition();
-            if (position === 'left') {
-                return testPartyList[activePair.right];
-            } else {
-                return testPartyList[activePair.left];
-            }
-        }
-
-        // Show dialog after saving a slipp (not finishing dog)
-        function showSlippSavedDialog(dogName) {
-            // Find next dog NOT in current pair, not finished, and same class
-            const nextSequentialIdx = findNextReplacementDog();
-            const currentDog = testPartyList[currentDogIndex];
-            const currentKlasse = currentDog ? currentDog.klasse : null;
-
-            const modal = document.createElement('div');
-            modal.id = 'slippSavedModal';
-            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
-
-            let buttonsHtml = '';
-            let warningHtml = '';
-
-            if (nextSequentialIdx === -1) {
-                // No dogs in same class - check if there are dogs in other class
-                const nextOtherClassIdx = findNextReplacementDogOtherClass();
-
-                if (nextOtherClassIdx === -1) {
-                    // No other dogs available at all
-                    buttonsHtml = `
-                        <button onclick="closeSlippSavedDialog();"
-                            class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition">
-                            OK
-                        </button>
-                    `;
-                } else {
-                    // Only dogs from other class available - show warning
-                    const nextDog = testPartyList[nextOtherClassIdx];
-                    const partnerDog = getPartnerDog();
-                    const partnerFinished = partnerDog ? isDogFinished(activePair.left === currentDogIndex ? activePair.right : activePair.left) : true;
-
-                    warningHtml = `
-                        <div class="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
-                            <div class="flex items-start gap-2">
-                                <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                                </svg>
-                                <div>
-                                    <p class="text-sm font-medium text-amber-800">OBS!</p>
-                                    <p class="text-xs text-amber-700">Du velger nå en hund i klasse ${nextDog.klasse}.</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    buttonsHtml = `
-                        <button onclick="closeSlippSavedDialog(); confirmReplaceWithOtherClass(${nextOtherClassIdx}, '${currentKlasse}', '${nextDog.klasse}');"
-                            class="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
-                            <span class="block text-sm opacity-80">Erstatt med hund fra ${nextDog.klasse}:</span>
-                            <span class="block">Nr. ${nextDog.nr} - ${nextDog.race} ${nextDog.name}</span>
-                        </button>
-                        <button onclick="closeSlippSavedDialog();"
-                            class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
-                            Fortsett uten å bytte
-                        </button>
-                    `;
-                }
-            } else {
-                const nextDog = testPartyList[nextSequentialIdx];
-                buttonsHtml = `
-                    <button onclick="closeSlippSavedDialog(); replaceWithNextDog(${nextSequentialIdx});"
-                        class="w-full bg-warm-500 hover:bg-warm-600 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
-                        <span class="block text-sm opacity-80">Erstatt med neste hund på listen:</span>
-                        <span class="block">Nr. ${nextDog.nr} - ${nextDog.race} ${nextDog.name} (${nextDog.klasse})</span>
-                    </button>
-                    <button onclick="closeSlippSavedDialog(); showPartyListForReplace();"
-                        class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
-                        Velg hund fra listen
-                    </button>
-                `;
-            }
-
-            modal.innerHTML = `
-                <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden">
-                    <div class="bg-warm-500 text-white px-4 py-3 text-center">
-                        <svg class="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                        </svg>
-                        <h2 class="font-bold font-serif">Slipp lagret!</h2>
-                    </div>
-                    <div class="p-4">
-                        ${warningHtml}
-                        ${buttonsHtml}
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(modal);
-        }
-
-        // Confirm replacement with dog from another class
-        function confirmReplaceWithOtherClass(idx, fromClass, toClass) {
-            if (confirm(`Er du sikker på at du vil bytte hunden med en hund fra klasse ${toClass}?\n\nDette er de siste to hundene i klasse ${fromClass}.`)) {
-                replaceWithNextDog(idx);
-            }
-        }
-
-        function closeSlippSavedDialog() {
-            document.getElementById('slippSavedModal')?.remove();
-        }
-
-        // Gray out completed slipp columns
-        function updateCompletedSlipps() {
-            const completedSlipps = state.data.completedSlipps || [];
-
-            // Update header cells
-            for (let s = 1; s <= 9; s++) {
-                const headerCell = document.querySelector(`th:nth-child(${s + 1})`);
-                if (completedSlipps.includes(s)) {
-                    headerCell?.classList.add('slipp-header-completed');
-                } else {
-                    headerCell?.classList.remove('slipp-header-completed');
-                }
-            }
-
-            // Update input cells
-            FIELDS.forEach(field => {
-                for (let s = 1; s <= 9; s++) {
-                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                    if (input) {
-                        if (completedSlipps.includes(s)) {
-                            input.classList.add('slipp-completed');
-                            input.disabled = true;
-                        } else {
-                            input.classList.remove('slipp-completed');
-                            input.disabled = false;
-                        }
-                    }
-                }
-            });
-        }
-
-        // Save and finish dog
-        function finishDog() {
-            // Save current slipp data first
-            state.data.fuglebehandling = {
-                presisjon: document.getElementById('presisjon').value || null,
-                reising: document.getElementById('reising').value || null,
-                godkjentReising: document.getElementById('godkjentReising').checked
-            };
-
-            if (!state.data.slipps) state.data.slipps = {};
-            FIELDS.forEach(field => {
-                if (!state.data.slipps[field]) state.data.slipps[field] = {};
-                for (let s = 1; s <= 9; s++) {
-                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                    if (input && input.value) {
-                        state.data.slipps[field][s] = parseInt(input.value) || 0;
-                    }
-                }
-            });
-
-            if (!state.data.comments) state.data.comments = {};
-            state.data.comments[state.currentSlipp] = document.getElementById('currentComment').value;
-
-            const currentDog = testPartyList[currentDogIndex];
-            const dogName = currentDog ? currentDog.name : 'denne hunden';
-
-            if (confirm(`Er du sikker på at du vil avslutte bedømmelsen av ${dogName}?`)) {
-                // Mark dog as finished
-                setDogFinished(currentDogIndex);
-                saveCurrentDogData();
-
-                // Show choice dialog
-                showNextDogDialog(dogName);
-            }
-        }
-
-        // Show dialog to choose next action after finishing a dog
-        function showNextDogDialog(finishedDogName, isReplace = false) {
-            // Find next dog NOT in current pair, not finished, and same class
-            const nextSequentialIdx = findNextReplacementDog();
-            const currentDog = testPartyList[currentDogIndex];
-            const currentKlasse = currentDog ? currentDog.klasse : null;
-
-            const modal = document.createElement('div');
-            modal.id = 'nextDogModal';
-            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
-
-            const finishedCount = getFinishedDogs().length;
-            const totalCount = testPartyList.length;
-
-            let buttonsHtml = '';
-            let warningHtml = '';
-
-            if (nextSequentialIdx === -1) {
-                // No dogs in same class - check other class
-                const nextOtherClassIdx = findNextReplacementDogOtherClass();
-
-                if (nextOtherClassIdx === -1) {
-                    // ALL dogs in the party are finished! Show completion screen
-                    showPartyCompletedDialog();
-                    return;
-                } else {
-                    // Only dogs from other class available
-                    const nextDog = testPartyList[nextOtherClassIdx];
-
-                    warningHtml = `
-                        <div class="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3">
-                            <div class="flex items-start gap-2">
-                                <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                                </svg>
-                                <div>
-                                    <p class="text-sm font-medium text-amber-800">OBS!</p>
-                                    <p class="text-xs text-amber-700">Du velger nå en hund i klasse ${nextDog.klasse}.</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    buttonsHtml = `
-                        <button onclick="closeNextDogDialog(); confirmReplaceWithOtherClass(${nextOtherClassIdx}, '${currentKlasse}', '${nextDog.klasse}');"
-                            class="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
-                            <span class="block text-sm opacity-80">Erstatt med hund fra ${nextDog.klasse}:</span>
-                            <span class="block">Nr. ${nextDog.nr} - ${nextDog.race} ${nextDog.name}</span>
-                        </button>
-                        <button onclick="closeNextDogDialog(); showPartyListForReplace();"
-                            class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
-                            Velg hund fra listen
-                        </button>
-                    `;
-                }
-            } else {
-                const nextDog = testPartyList[nextSequentialIdx];
-                buttonsHtml = `
-                    <button onclick="replaceWithNextDog(${nextSequentialIdx})"
-                        class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 px-4 rounded-xl font-semibold transition mb-2">
-                        <span class="block text-sm opacity-80">Erstatt med neste hund på listen:</span>
-                        <span class="block">Nr. ${nextDog.nr} - ${nextDog.race} ${nextDog.name} (${nextDog.klasse})</span>
-                    </button>
-                    <button onclick="closeNextDogDialog(); showPartyListForReplace();"
-                        class="w-full bg-bark-600 hover:bg-bark-500 text-white py-3 px-4 rounded-xl font-semibold transition">
-                        Velg hund fra listen
-                    </button>
-                `;
-            }
-
-            modal.innerHTML = `
-                <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden">
-                    <div class="bg-forest-600 text-white px-4 py-3 text-center">
-                        <svg class="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                        </svg>
-                        <h2 class="font-bold font-serif text-lg">${finishedDogName}</h2>
-                        <p class="text-forest-100 text-sm">Bedømmelse avsluttet</p>
-                    </div>
-                    <div class="p-4">
-                        <p class="text-center text-bark-600 mb-4">
-                            <span class="font-medium">${finishedCount} av ${totalCount}</span> hunder bedømt
-                        </p>
-                        ${warningHtml}
-                        ${buttonsHtml}
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(modal);
-            updateDogNavigation();
-        }
-
-        function closeNextDogDialog() {
-            document.getElementById('nextDogModal')?.remove();
-        }
-
-        // Replace current position with next dog
-        function replaceWithNextDog(idx) {
-            closeNextDogDialog();
-
-            // Update the active pair - only replace the current dog's position
-            const position = getCurrentPairPosition();
-            if (position === 'left') {
-                activePair.left = idx;
-            } else if (position === 'right') {
-                activePair.right = idx;
-            }
-
-            currentDogIndex = idx;
-            saveActivePairState(); // Save state for browser refresh
-            loadDogData(currentDogIndex);
-            updateDogNavigation();
-        }
-
-        // Show party list specifically for replacing a dog
-        function showPartyListForReplace() {
-            showPartyList();
-        }
-
-        function selectNextDog(idx) {
-            closeNextDogDialog();
-            currentDogIndex = idx;
-            loadDogData(currentDogIndex);
-            updateDogNavigation();
-        }
-
-        // Show completion dialog when ALL dogs in party are finished
-        function showPartyCompletedDialog() {
-            closeNextDogDialog();
-
-            const totalDogs = testPartyList.length;
-
-            const modal = document.createElement('div');
-            modal.id = 'partyCompletedModal';
-            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
-
-            modal.innerHTML = `
-                <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden">
-                    <div class="bg-gradient-to-r from-forest-600 to-forest-700 text-white px-6 py-6 text-center">
-                        <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-2xl font-bold font-serif">Alle hunder bedømt!</h2>
-                        <p class="text-forest-100 mt-1">${totalDogs} hunder i ${partyInfo.name}</p>
-                    </div>
-
-                    <div class="p-6">
-                        <p class="text-center text-bark-600 mb-6">
-                            Ønsker du å fylle ut de endelige kritikkene nå?
-                        </p>
-
-                        <div class="space-y-3">
-                            <button onclick="closePartyCompletedDialog(); alert('Kritikk-siden er ikke implementert i testmodus');"
-                                class="w-full bg-warm-500 hover:bg-warm-600 text-white py-4 px-4 rounded-xl font-semibold transition flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                                </svg>
-                                Ja, skriv kritikker nå
-                            </button>
-                            <button onclick="closePartyCompletedDialog();"
-                                class="w-full bg-bark-100 hover:bg-bark-200 text-bark-700 py-4 px-4 rounded-xl font-semibold transition">
-                                Nei, gjør det senere
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(modal);
-        }
-
-        function closePartyCompletedDialog() {
-            document.getElementById('partyCompletedModal')?.remove();
-        }
-
-        // Update save button text with current slipp number
-        function updateSaveButtonText() {
-            const btn = document.getElementById('saveBtn');
-            if (btn) {
-                btn.textContent = `Lagre slipp ${state.currentSlipp}`;
-            }
-        }
-
-        // Render previous comments (grå, kursiv, ikke redigerbare)
-        function renderPreviousComments() {
-            const container = document.getElementById('previousComments');
-            let html = '';
-
-            for (let s = 1; s < state.currentSlipp; s++) {
-                const comment = state.data.comments?.[s];
-                if (comment && comment.trim()) {
-                    html += `
-                        <div class="bg-bark-50 rounded-lg p-2 previous-comment">
-                            <span class="text-xs font-medium text-bark-400">Slipp ${s}:</span>
-                            <p class="text-sm">${comment}</p>
-                        </div>
-                    `;
-                }
-            }
-
-            container.innerHTML = html;
-        }
-
-        // Update totals
-        function updateTotals() {
-            FIELDS.forEach(field => {
-                let total = 0;
-                for (let s = 1; s <= 9; s++) {
-                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                    if (input && input.value) {
-                        total += parseInt(input.value) || 0;
-                    }
-                }
-                const totalSpan = document.querySelector(`span[data-total="${field}"]`);
-                if (totalSpan) {
-                    totalSpan.textContent = total;
-                }
-            });
-        }
-
-        // Setup event listeners
-        function setupEventListeners() {
-            // All slipp inputs should update totals
-            document.querySelectorAll('input[data-field]').forEach(input => {
-                input.addEventListener('input', updateTotals);
-                input.addEventListener('change', updateTotals);
-            });
-        }
-
-        // Parti-info (will come from backend based on judge assignment)
-        const partyInfo = {
-            id: 'parti-neadalen-2026',
-            name: 'Neadalen',
-            date: '2026-03-21',
-            judge: 'Testbruker'
-        };
-
-        // Test data for party list (will come from backend in production)
-        const testPartyList = [
-            { nr: 1, name: 'Neadalens Zlatan', race: 'ES', owner: 'Roel, Aleksander', klasse: 'UK' },
-            { nr: 2, name: 'Heggelunds Bransen', race: 'IS', owner: 'Hansen, Erik', klasse: 'UK' },
-            { nr: 3, name: 'Skogstjernas Luna', race: 'ES', owner: 'Berg, Kari', klasse: 'AK' },
-            { nr: 4, name: 'Fjellheimens Storm', race: 'GS', owner: 'Olsen, Per', klasse: 'AK' },
-            { nr: 5, name: 'Vindens Pil', race: 'VP', owner: 'Johansen, Lise', klasse: 'UK' },
-            { nr: 6, name: 'Skogens Ull', race: 'GS', owner: 'Nilsen, Anders', klasse: 'UK' },
+        // Demo partiliste
+        const partyList = [
+            { nr: 1, race: 'ES', name: 'Neadalens Zlatan', owner: 'Roel, Aleksander', klasse: 'UK' },
+            { nr: 2, race: 'IS', name: 'Braut', owner: 'Hansen, Per', klasse: 'UK' },
+            { nr: 3, race: 'ES', name: 'Fjellheimens Tara', owner: 'Olsen, Kari', klasse: 'AK' },
+            { nr: 4, race: 'GS', name: 'Storm av Høgfjellet', owner: 'Berg, Ole', klasse: 'AK' },
+            { nr: 5, race: 'IS', name: 'Vinterens Håp', owner: 'Dahl, Lisa', klasse: 'UK' },
+            { nr: 6, race: 'ES', name: 'Sølvrevens Balder', owner: 'Vik, Thomas', klasse: 'AK' }
         ];
 
-        let currentDogIndex = 0; // Index in testPartyList (the dog currently being edited)
-
-        // Active pair - the two dogs being judged together
-        // These can be any two dogs, not necessarily sequential
-        let activePair = {
-            left: 0,   // Index of left dog
-            right: 1   // Index of right dog
-        };
-
-        // Load active pair and current dog from localStorage (survives browser refresh)
-        function loadActivePairState() {
-            const saved = localStorage.getItem(`activePair_${partyInfo.id}`);
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    activePair.left = parsed.left ?? 0;
-                    activePair.right = parsed.right ?? 1;
-                    currentDogIndex = parsed.currentDogIndex ?? 0;
-                } catch (e) {
-                    console.error('Failed to load active pair state:', e);
-                }
-            }
-        }
-
-        // Save active pair and current dog to localStorage
-        function saveActivePairState() {
-            const state = {
-                left: activePair.left,
-                right: activePair.right,
-                currentDogIndex: currentDogIndex
-            };
-            localStorage.setItem(`activePair_${partyInfo.id}`, JSON.stringify(state));
-        }
-
-        // Track finished dogs (stored in localStorage)
-        function getFinishedDogs() {
-            const saved = localStorage.getItem(`finishedDogs_${partyInfo.id}`);
-            return saved ? JSON.parse(saved) : [];
-        }
-
-        function setDogFinished(dogIndex) {
-            const finished = getFinishedDogs();
-            if (!finished.includes(dogIndex)) {
-                finished.push(dogIndex);
-                localStorage.setItem(`finishedDogs_${partyInfo.id}`, JSON.stringify(finished));
-            }
-        }
-
-        function isDogFinished(dogIndex) {
-            return getFinishedDogs().includes(dogIndex);
-        }
-
-        // Get dog status for display in party list
-        function getDogStatus(dogIndex) {
-            const isFinished = isDogFinished(dogIndex);
-            const isInActivePair = dogIndex === activePair.left || dogIndex === activePair.right;
-
-            // Get completed slipps count from saved data
-            const dogKey = `dommertest_dog_${dogIndex}`;
-            const saved = localStorage.getItem(dogKey);
-            let completedSlipps = 0;
-
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    completedSlipps = (parsed.completedSlipps || []).length;
-                } catch (e) {}
-            }
-
-            if (isFinished) {
-                return { text: 'Ferdig', class: 'bg-forest-100 text-forest-700', icon: 'check' };
-            } else if (isInActivePair) {
-                return { text: 'Bedømmes nå', class: 'bg-warm-100 text-warm-700 animate-pulse', icon: 'active' };
-            } else if (completedSlipps > 0) {
-                return { text: `${completedSlipps} slipp utført`, class: 'bg-blue-100 text-blue-700', icon: 'progress' };
-            } else {
-                return { text: 'Venter', class: 'bg-bark-100 text-bark-600', icon: 'waiting' };
-            }
-        }
-
-        // Update navigation buttons based on active pair
-        function updateDogNavigation() {
-            // Use the active pair instead of calculating from currentDogIndex
-            const dog1 = testPartyList[activePair.left];
-            const dog2 = testPartyList[activePair.right];
-            const isFinished1 = isDogFinished(activePair.left);
-            const isFinished2 = isDogFinished(activePair.right);
-
-            // Update left button
-            const leftBtn = document.getElementById('dogLeftBtn');
-            const leftName = document.getElementById('dogLeftName');
-            const leftKlasse = document.getElementById('dogLeftKlasse');
-            if (dog1) {
-                const checkmark = isFinished1 ? '✓ ' : '';
-                leftName.textContent = `${checkmark}${dog1.race} ${dog1.name.split(' ').pop()}`;
-                leftKlasse.textContent = isFinished1 ? '(Ferdig)' : `(${dog1.klasse})`;
-                leftKlasse.classList.toggle('text-forest-600', isFinished1);
-                leftBtn.classList.toggle('ring-2', currentDogIndex === activePair.left && !isFinished1);
-                leftBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.left && !isFinished1);
-                leftBtn.classList.toggle('bg-bark-100', isFinished1);
-                leftBtn.classList.toggle('opacity-60', isFinished1);
-                leftBtn.classList.toggle('cursor-not-allowed', isFinished1);
-                leftBtn.disabled = isFinished1;
-            }
-
-            // Update right button
-            const rightBtn = document.getElementById('dogRightBtn');
-            const rightName = document.getElementById('dogRightName');
-            const rightKlasse = document.getElementById('dogRightKlasse');
-            if (dog2) {
-                const checkmark = isFinished2 ? '✓ ' : '';
-                rightName.textContent = `${checkmark}${dog2.race} ${dog2.name.split(' ').pop()}`;
-                rightKlasse.textContent = isFinished2 ? '(Ferdig)' : `(${dog2.klasse})`;
-                rightKlasse.classList.toggle('text-forest-600', isFinished2);
-                rightBtn.classList.toggle('ring-2', currentDogIndex === activePair.right && !isFinished2);
-                rightBtn.classList.toggle('ring-warm-500', currentDogIndex === activePair.right && !isFinished2);
-                rightBtn.classList.toggle('bg-bark-100', isFinished2);
-                rightBtn.classList.toggle('opacity-60', isFinished2);
-                rightBtn.classList.toggle('cursor-not-allowed', isFinished2);
-                rightBtn.disabled = isFinished2;
-            } else {
-                rightName.textContent = '—';
-                rightKlasse.textContent = '';
-                rightBtn.disabled = true;
-                rightBtn.classList.add('opacity-50');
-            }
-
-            // Update header with current dog
-            const currentDog = testPartyList[currentDogIndex];
-            if (currentDog) {
-                document.getElementById('dogName').textContent = currentDog.name;
-                document.getElementById('dogInfo').textContent = `${currentDog.race} • ${currentDog.owner} • ${currentDog.klasse}`;
-                document.getElementById('dogNr').textContent = `Nr. ${currentDog.nr}`;
-            }
-        }
-
-        // Switch to dog 1 or 2 in current pair
-        function switchToDog(position) {
-            // Use active pair instead of calculating
-            const newIndex = position === 1 ? activePair.left : activePair.right;
-
-            // Don't allow switching to finished dogs
-            if (isDogFinished(newIndex)) {
-                return;
-            }
-
-            if (testPartyList[newIndex]) {
-                // Save current dog data first
-                saveCurrentDogData();
-
-                currentDogIndex = newIndex;
-                saveActivePairState(); // Save state for browser refresh
-                loadDogData(currentDogIndex);
-                updateDogNavigation();
-            }
-        }
-
-        // Show party list modal
-        function showPartyList() {
-            const modal = document.createElement('div');
-            modal.id = 'partyListModal';
-            modal.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4';
-
-            const finishedCount = getFinishedDogs().length;
-            const totalCount = testPartyList.length;
-
-            let listHtml = '';
-
-            // Group dogs by pairs
-            for (let pairIdx = 0; pairIdx < Math.ceil(testPartyList.length / 2); pairIdx++) {
-                const dog1Idx = pairIdx * 2;
-                const dog2Idx = pairIdx * 2 + 1;
-                const dog1 = testPartyList[dog1Idx];
-                const dog2 = testPartyList[dog2Idx];
-
-                listHtml += `<div class="mb-3">
-                    <p class="text-xs font-medium text-bark-500 mb-1 px-1">Par ${pairIdx + 1}</p>
-                    <div class="space-y-1">`;
-
-                // Dog 1
-                if (dog1) {
-                    const isFinished1 = isDogFinished(dog1Idx);
-                    const status1 = getDogStatus(dog1Idx);
-                    const statusIcon1 = status1.icon === 'check'
-                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
-                        : status1.icon === 'active'
-                        ? '<span class="w-2 h-2 bg-warm-500 rounded-full"></span>'
-                        : status1.icon === 'progress'
-                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
-                        : '';
-
-                    listHtml += `
-                        <button ${isFinished1 ? 'disabled' : `onclick="selectDogFromList(${dog1Idx})"`}
-                            class="w-full text-left p-3 rounded-xl transition ${isFinished1 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : status1.icon === 'active' ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-2">
-                                    <span class="${isFinished1 ? 'text-bark-500' : 'text-bark-800'} font-bold">Nr. ${dog1.nr}</span>
-                                    <span class="${isFinished1 ? 'text-bark-400' : 'text-bark-600'}">${dog1.race}</span>
-                                    <span class="${isFinished1 ? 'text-bark-500' : 'text-bark-800'} font-medium">${dog1.name}</span>
-                                    <span class="text-xs text-bark-400">(${dog1.klasse})</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center justify-between mt-1">
-                                <p class="text-sm ${isFinished1 ? 'text-bark-400' : 'text-bark-500'}">${dog1.owner}</p>
-                                <span class="text-xs px-2 py-1 rounded flex items-center gap-1 ${status1.class}">
-                                    ${statusIcon1}
-                                    ${status1.text}
-                                </span>
-                            </div>
-                        </button>`;
-                }
-
-                // Dog 2
-                if (dog2) {
-                    const isFinished2 = isDogFinished(dog2Idx);
-                    const status2 = getDogStatus(dog2Idx);
-                    const statusIcon2 = status2.icon === 'check'
-                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
-                        : status2.icon === 'active'
-                        ? '<span class="w-2 h-2 bg-warm-500 rounded-full"></span>'
-                        : status2.icon === 'progress'
-                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
-                        : '';
-
-                    listHtml += `
-                        <button ${isFinished2 ? 'disabled' : `onclick="selectDogFromList(${dog2Idx})"`}
-                            class="w-full text-left p-3 rounded-xl transition ${isFinished2 ? 'bg-bark-100 border border-bark-200 opacity-60 cursor-not-allowed' : status2.icon === 'active' ? 'bg-warm-100 border-2 border-warm-500' : 'bg-white hover:bg-bark-50 border border-bark-200'}">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-2">
-                                    <span class="${isFinished2 ? 'text-bark-500' : 'text-bark-800'} font-bold">Nr. ${dog2.nr}</span>
-                                    <span class="${isFinished2 ? 'text-bark-400' : 'text-bark-600'}">${dog2.race}</span>
-                                    <span class="${isFinished2 ? 'text-bark-500' : 'text-bark-800'} font-medium">${dog2.name}</span>
-                                    <span class="text-xs text-bark-400">(${dog2.klasse})</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center justify-between mt-1">
-                                <p class="text-sm ${isFinished2 ? 'text-bark-400' : 'text-bark-500'}">${dog2.owner}</p>
-                                <span class="text-xs px-2 py-1 rounded flex items-center gap-1 ${status2.class}">
-                                    ${statusIcon2}
-                                    ${status2.text}
-                                </span>
-                            </div>
-                        </button>`;
-                }
-
-                listHtml += `</div></div>`;
-            }
-
-            modal.innerHTML = `
-                <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
-                    <div class="bg-bark-700 text-white px-4 py-3">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h2 class="font-bold font-serif">${partyInfo.name}</h2>
-                                <p class="text-xs text-white/70">${partyInfo.date} • Dommer: ${partyInfo.judge}</p>
-                            </div>
-                            <button onclick="closePartyList()" class="p-1 hover:bg-white/20 rounded-lg transition">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="mt-2 flex items-center gap-2">
-                            <div class="flex-1 bg-white/20 rounded-full h-2">
-                                <div class="bg-forest-400 h-2 rounded-full transition-all" style="width: ${(finishedCount / totalCount) * 100}%"></div>
-                            </div>
-                            <span class="text-xs font-medium">${finishedCount}/${totalCount}</span>
-                        </div>
-                    </div>
-                    <div class="p-4 overflow-y-auto max-h-[60vh]">
-                        ${listHtml}
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(modal);
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) closePartyList();
-            });
-        }
-
-        function closePartyList() {
-            document.getElementById('partyListModal')?.remove();
-        }
-
-        function selectDogFromList(idx) {
-            saveCurrentDogData();
-
-            // Update active pair - replace the current dog's position
-            const position = getCurrentPairPosition();
-            if (position === 'left') {
-                activePair.left = idx;
-            } else if (position === 'right') {
-                activePair.right = idx;
-            }
-
-            currentDogIndex = idx;
-            saveActivePairState(); // Save state for browser refresh
-            loadDogData(currentDogIndex);
-            updateDogNavigation();
-            closePartyList();
-        }
-
-        // Save current dog's data to localStorage
-        function saveCurrentDogData() {
-            const dogKey = `dommertest_dog_${currentDogIndex}`;
-            const data = {
-                fuglebehandling: {
-                    presisjon: document.getElementById('presisjon').value || null,
-                    reising: document.getElementById('reising').value || null,
-                    godkjentReising: document.getElementById('godkjentReising').checked
-                },
-                comments: state.data.comments,
-                slipps: {},
-                completedSlipps: state.data.completedSlipps || [],
-                currentSlipp: state.currentSlipp,
-                jaktegenskaper: {},
-                sekundering: {},
-                premie: document.getElementById('premie').value || null,
-                notatTillegg: document.getElementById('notatTillegg').value || '',
-                uonsketAdferd: document.getElementById('uonsketAdferd').value || ''
-            };
-
-            FIELDS.forEach(field => {
-                data.slipps[field] = {};
-                for (let s = 1; s <= 9; s++) {
-                    const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                    if (input && input.value) {
-                        data.slipps[field][s] = parseInt(input.value) || 0;
-                    }
-                }
-            });
-
-            // Save jaktegenskaper
-            JAKT_FIELDS.forEach(field => {
-                const input = document.querySelector(`input[data-jakt="${field}"]`);
-                if (input && input.value) {
-                    data.jaktegenskaper[field] = parseInt(input.value) || 0;
-                }
-            });
-
-            // Save sekundering
-            SEK_FIELDS.forEach(field => {
-                const input = document.querySelector(`input[data-sek="${field}"]`);
-                if (input && input.value) {
-                    data.sekundering[field] = parseInt(input.value) || 0;
-                }
-            });
-
-            localStorage.setItem(dogKey, JSON.stringify(data));
-        }
-
-        // Load dog data from localStorage
-        function loadDogData(idx) {
-            const dogKey = `dommertest_dog_${idx}`;
-            const saved = localStorage.getItem(dogKey);
-
-            // Reset state
-            state.currentSlipp = 1;
-            state.data = {
-                fuglebehandling: { presisjon: null, reising: null, godkjentReising: false },
-                comments: {},
-                slipps: {},
-                completedSlipps: [],
-                jaktegenskaper: {},
-                sekundering: {},
-                premie: null,
-                notatTillegg: '',
-                uonsketAdferd: ''
-            };
-
-            // Clear all inputs
-            document.getElementById('presisjon').value = '';
-            document.getElementById('reising').value = '';
-            document.getElementById('godkjentReising').checked = false;
-            document.getElementById('currentComment').value = '';
-            document.querySelectorAll('input[data-field]').forEach(input => {
-                input.value = '';
-            });
-            // Clear jaktegenskaper
-            document.querySelectorAll('input[data-jakt]').forEach(input => {
-                input.value = '';
-            });
-            // Clear sekundering
-            document.querySelectorAll('input[data-sek]').forEach(input => {
-                input.value = '';
-            });
-            document.getElementById('premie').value = '';
-            document.getElementById('notatTillegg').value = '';
-            document.getElementById('uonsketAdferd').value = '';
-
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    state.data = { ...state.data, ...parsed };
-                    state.currentSlipp = parsed.currentSlipp || 1;
-
-                    // Populate fuglebehandling
-                    if (parsed.fuglebehandling) {
-                        document.getElementById('presisjon').value = parsed.fuglebehandling.presisjon || '';
-                        document.getElementById('reising').value = parsed.fuglebehandling.reising || '';
-                        document.getElementById('godkjentReising').checked = parsed.fuglebehandling.godkjentReising || false;
-                    }
-
-                    // Populate slipp inputs
-                    FIELDS.forEach(field => {
-                        if (parsed.slipps && parsed.slipps[field]) {
-                            for (let s = 1; s <= 9; s++) {
-                                const input = document.querySelector(`input[data-field="${field}"][data-slipp="${s}"]`);
-                                if (input && parsed.slipps[field][s] !== undefined) {
-                                    input.value = parsed.slipps[field][s];
-                                }
-                            }
-                        }
-                    });
-
-                    // Populate jaktegenskaper
-                    if (parsed.jaktegenskaper) {
-                        JAKT_FIELDS.forEach(field => {
-                            const input = document.querySelector(`input[data-jakt="${field}"]`);
-                            if (input && parsed.jaktegenskaper[field] !== undefined) {
-                                input.value = parsed.jaktegenskaper[field];
-                            }
-                        });
-                    }
-
-                    // Populate sekundering
-                    if (parsed.sekundering) {
-                        SEK_FIELDS.forEach(field => {
-                            const input = document.querySelector(`input[data-sek="${field}"]`);
-                            if (input && parsed.sekundering[field] !== undefined) {
-                                input.value = parsed.sekundering[field];
-                            }
-                        });
-                    }
-
-                    // Populate premie, notat and uønsket adferd
-                    document.getElementById('premie').value = parsed.premie || '';
-                    document.getElementById('notatTillegg').value = parsed.notatTillegg || '';
-                    document.getElementById('uonsketAdferd').value = parsed.uonsketAdferd || '';
-
-                    // Current comment
-                    if (parsed.comments && parsed.comments[state.currentSlipp]) {
-                        document.getElementById('currentComment').value = parsed.comments[state.currentSlipp];
-                    }
-                } catch (e) {
-                    console.error('Failed to load dog data:', e);
-                }
-            }
-
-            // Update UI
-            updateCompletedSlipps();
-            renderPreviousComments();
+        function init() {
+            loadFromStorage();
+            populateDogSelectors();
+            updateDogDisplays();
+            updateSlippLabels();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
             updateTotals();
-            updateSaveButtonText();
-            document.getElementById('currentSlippLabel').textContent = `Slipp ${state.currentSlipp}:`;
+            setupDictation();
         }
 
-        // Initialize on load
-        document.addEventListener('DOMContentLoaded', () => {
-            // Load saved pair state first (before init)
-            loadActivePairState();
+        function loadSlippComment() {
+            document.getElementById('slippComment').value = state.slippComments[state.currentSlipp] || '';
+        }
 
-            init();
-            loadDogData(currentDogIndex); // Load the current dog's data
-            updateDogNavigation();
-            initOfflineSupport();
-        });
+        function saveSlippComment() {
+            state.slippComments[state.currentSlipp] = document.getElementById('slippComment').value;
+        }
 
-        // Offline support
-        function initOfflineSupport() {
-            // Register Service Worker
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => {
-                        console.log('[Dommer] Service Worker registered');
-                    })
-                    .catch(err => {
-                        console.warn('[Dommer] Service Worker registration failed:', err);
-                    });
-            }
-
-            // Create offline indicator
-            const indicator = document.createElement('div');
-            indicator.id = 'offlineIndicator';
-            indicator.className = 'fixed top-12 left-1/2 transform -translate-x-1/2 bg-amber-500 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg z-50 transition-all duration-300';
-            indicator.style.display = 'none';
-            indicator.innerHTML = '<span class="inline-block w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>Offline-modus';
-            document.body.appendChild(indicator);
-
-            // Update online/offline status
-            function updateOnlineStatus() {
-                const isOnline = navigator.onLine;
-                indicator.style.display = isOnline ? 'none' : 'block';
-
-                if (isOnline) {
-                    // Try to sync data when back online
-                    syncOfflineData();
+        function loadFromStorage() {
+            const saved = localStorage.getItem('dommertest_ukak_v2');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    state.currentSlipp = parsed.currentSlipp || 1;
+                    state.selectedDogs = parsed.selectedDogs || { 1: 1, 2: 2 };
+                    state.ferdigeDogs = parsed.ferdigeDogs || {};
+                    state.dogData = parsed.dogData || {};
+                    state.slippComments = parsed.slippComments || {};
+                } catch (e) {
+                    console.error('Failed to load:', e);
                 }
             }
-
-            window.addEventListener('online', updateOnlineStatus);
-            window.addEventListener('offline', updateOnlineStatus);
-            updateOnlineStatus();
+            document.getElementById('currentSlipp').textContent = state.currentSlipp;
         }
 
-        // Sync offline data when back online
-        function syncOfflineData() {
-            console.log('[Dommer] Back online - syncing data...');
-            // Data is already in localStorage, which syncs via storage-shim
-            // This is a placeholder for future server sync
+        function saveToStorage() {
+            localStorage.setItem('dommertest_ukak_v2', JSON.stringify({
+                currentSlipp: state.currentSlipp,
+                selectedDogs: state.selectedDogs,
+                ferdigeDogs: state.ferdigeDogs,
+                dogData: state.dogData,
+                slippComments: state.slippComments
+            }));
         }
 
-        // Reset all test data (only for test mode)
-        function resetAllTestData() {
-            if (!confirm('Er du sikker på at du vil nullstille all testdata?\n\nDette sletter alle bedømmelser på alle hunder.')) {
-                return;
-            }
-
-            // Clear all dog data
-            for (let i = 0; i < testPartyList.length; i++) {
-                localStorage.removeItem(`dommertest_dog_${i}`);
-            }
-
-            // Clear active pair state
-            localStorage.removeItem(`activePair_${partyInfo.id}`);
-
-            // Clear finished dogs
-            localStorage.removeItem(`finishedDogs_${partyInfo.id}`);
-
-            // Clear old general state
-            localStorage.removeItem('dommertest_ukak');
-
-            // Reset state and reload
-            activePair = { left: 0, right: 1 };
-            currentDogIndex = 0;
-            state.currentSlipp = 1;
-            state.data = {
-                fuglebehandling: { presisjon: null, reising: null, godkjentReising: false },
-                comments: {},
-                slipps: {},
-                completedSlipps: [],
-                jaktegenskaper: {},
-                sekundering: {},
-                premie: null,
-                notatTillegg: '',
-                uonsketAdferd: ''
-            };
-
-            // Reload the page to reset everything
+        function resetAll() {
+            if (!confirm('Er du sikker på at du vil nullstille all bedømmelse?')) return;
+            localStorage.removeItem('dommertest_ukak_v2');
             location.reload();
         }
-    </script>
 
+        function populateDogSelectors() {
+            const options = partyList.map(dog => {
+                const ferdig = state.ferdigeDogs[dog.nr] ? ' ✓' : '';
+                return `<option value="${dog.nr}">${dog.nr}. ${dog.race} ${dog.name} (${dog.klasse})${ferdig}</option>`;
+            }).join('');
+
+            document.getElementById('dog1Select').innerHTML = options;
+            document.getElementById('dog2Select').innerHTML = options;
+            document.getElementById('dog1Select').value = state.selectedDogs[1];
+            document.getElementById('dog2Select').value = state.selectedDogs[2];
+        }
+
+        function selectDog(position, dogNr) {
+            saveDogData(position);
+            state.selectedDogs[position] = parseInt(dogNr);
+            updateDogDisplays();
+            loadDogData(position);
+            updateTotals();
+        }
+
+        function updateDogDisplays() {
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const dog = partyList.find(d => d.nr === dogNr);
+                if (dog) {
+                    document.getElementById(`dog${pos}Name`).textContent = `${dog.race} ${dog.name}`;
+                    document.getElementById(`dog${pos}Info`).textContent = `${dog.klasse} • ${dog.owner}`;
+                    document.getElementById(`dog${pos}_ferdig`).checked = !!state.ferdigeDogs[dogNr];
+                }
+            });
+        }
+
+        function updateSlippLabels() {
+            document.getElementById('slippLabel').textContent = state.currentSlipp;
+            document.getElementById('currentSlipp').textContent = state.currentSlipp;
+            document.querySelectorAll('.dog1SlippNr, .dog2SlippNr').forEach(el => {
+                el.textContent = state.currentSlipp;
+            });
+        }
+
+        function loadDogData(position) {
+            const dogNr = state.selectedDogs[position];
+            const data = state.dogData[dogNr] || {};
+            const slippData = data.slipps?.[state.currentSlipp] || {};
+
+            // Statistikk
+            STAT_FIELDS.forEach(field => {
+                const el = document.getElementById(`dog${position}_${field}`);
+                if (el) el.value = slippData[field] ?? '';
+            });
+
+            // Fuglebehandling
+            const fugl = data.fuglebehandling || {};
+            document.getElementById(`dog${position}_presisjon`).value = fugl.presisjon ?? '';
+            document.getElementById(`dog${position}_reising`).value = fugl.reising ?? '';
+            document.getElementById(`dog${position}_godkjent_reis`).checked = fugl.godkjentReising ?? false;
+
+            // Jaktegenskaper
+            const jakt = data.jaktegenskaper || {};
+            JAKT_FIELDS.forEach(field => {
+                const el = document.getElementById(`dog${position}_${field}`);
+                if (el) el.value = jakt[field] ?? '';
+            });
+
+            // Sekundering
+            const sek = data.sekundering || {};
+            SEK_FIELDS.forEach(field => {
+                const el = document.getElementById(`dog${position}_${field}`);
+                if (el) el.value = sek[field] ?? '';
+            });
+
+            // Premie, notat, uønsket adferd
+            document.getElementById(`dog${position}_premie`).value = data.premie ?? '';
+            document.getElementById(`dog${position}_notat`).value = data.notat ?? '';
+            document.getElementById(`dog${position}_uonsket`).value = data.uonsketAdferd ?? '';
+            document.getElementById(`dog${position}_ferdig`).checked = !!state.ferdigeDogs[dogNr];
+        }
+
+        function saveDogData(position) {
+            const dogNr = state.selectedDogs[position];
+            if (!state.dogData[dogNr]) {
+                state.dogData[dogNr] = { slipps: {}, fuglebehandling: {}, jaktegenskaper: {}, sekundering: {} };
+            }
+            if (!state.dogData[dogNr].slipps) state.dogData[dogNr].slipps = {};
+
+            // Statistikk
+            const slippData = {};
+            STAT_FIELDS.forEach(field => {
+                const el = document.getElementById(`dog${position}_${field}`);
+                if (el && el.value) slippData[field] = parseInt(el.value);
+            });
+            state.dogData[dogNr].slipps[state.currentSlipp] = slippData;
+
+            // Fuglebehandling
+            state.dogData[dogNr].fuglebehandling = {
+                presisjon: document.getElementById(`dog${position}_presisjon`).value || null,
+                reising: document.getElementById(`dog${position}_reising`).value || null,
+                godkjentReising: document.getElementById(`dog${position}_godkjent_reis`).checked
+            };
+
+            // Jaktegenskaper
+            state.dogData[dogNr].jaktegenskaper = {};
+            JAKT_FIELDS.forEach(field => {
+                const el = document.getElementById(`dog${position}_${field}`);
+                if (el && el.value) state.dogData[dogNr].jaktegenskaper[field] = parseInt(el.value);
+            });
+
+            // Sekundering
+            state.dogData[dogNr].sekundering = {};
+            SEK_FIELDS.forEach(field => {
+                const el = document.getElementById(`dog${position}_${field}`);
+                if (el && el.value) state.dogData[dogNr].sekundering[field] = parseInt(el.value);
+            });
+
+            // Premie, notat, uønsket adferd
+            state.dogData[dogNr].premie = document.getElementById(`dog${position}_premie`).value || null;
+            state.dogData[dogNr].notat = document.getElementById(`dog${position}_notat`).value || '';
+            state.dogData[dogNr].uonsketAdferd = document.getElementById(`dog${position}_uonsket`).value || '';
+        }
+
+        function updateTotals() {
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const data = state.dogData[dogNr];
+
+                STAT_FIELDS.forEach(field => {
+                    let total = 0;
+                    if (data?.slipps) {
+                        Object.values(data.slipps).forEach(slipp => {
+                            if (slipp[field]) total += slipp[field];
+                        });
+                    }
+                    document.getElementById(`dog${pos}_total_${field}`).textContent = total;
+                });
+            });
+        }
+
+        function saveAll() {
+            saveSlippComment();
+            saveDogData(1);
+            saveDogData(2);
+            saveToStorage();
+            updateTotals();
+
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Lagret!';
+            btn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
+            btn.classList.add('bg-green-600');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+                btn.classList.add('bg-forest-600', 'hover:bg-forest-700');
+            }, 1500);
+        }
+
+        function nextSlipp() {
+            saveSlippComment();
+            saveDogData(1);
+            saveDogData(2);
+            saveToStorage();
+
+            state.currentSlipp++;
+            updateSlippLabels();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updateTotals();
+        }
+
+        function setFerdig(position) {
+            const dogNr = state.selectedDogs[position];
+            const checkbox = document.getElementById(`dog${position}_ferdig`);
+            if (checkbox.checked) {
+                state.ferdigeDogs[dogNr] = true;
+            } else {
+                delete state.ferdigeDogs[dogNr];
+            }
+            saveToStorage();
+            populateDogSelectors();
+        }
+
+        // Diktering
+        let recognition = null;
+        function setupDictation() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const btn = document.getElementById('dictationBtn');
+            const textarea = document.getElementById('slippComment');
+
+            if (!SpeechRecognition) {
+                if (btn) btn.classList.add('opacity-50');
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.lang = 'nb-NO';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            let isRecording = false;
+            let finalTranscript = '';
+
+            btn.addEventListener('click', () => {
+                if (isRecording) {
+                    recognition.stop();
+                } else {
+                    finalTranscript = textarea.value;
+                    recognition.start();
+                }
+            });
+
+            recognition.onstart = () => {
+                isRecording = true;
+                btn.classList.remove('bg-warm-500');
+                btn.classList.add('bg-red-500', 'animate-pulse');
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                btn.classList.remove('bg-red-500', 'animate-pulse');
+                btn.classList.add('bg-warm-500');
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                textarea.value = finalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
+            };
+        }
+
+        document.addEventListener('input', (e) => {
+            if (e.target.matches('[id^="dog1_"], [id^="dog2_"]')) {
+                updateTotals();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
 </body>
 </html>

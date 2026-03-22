@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dommerkort VK (Test)</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' },
+                        forest: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' },
+                        vk: { 50: '#faf5ff', 100: '#f3e8ff', 200: '#e9d5ff', 300: '#d8b4fe', 400: '#c084fc', 500: '#a855f7', 600: '#9333ea', 700: '#7c3aed', 800: '#6b21a8', 900: '#581c87' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .score-input:focus { transform: scale(1.02); }
+        input[type="number"] { font-size: 16px; }
+        input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans">
+
+    <!-- Header med lilla VK-farge -->
+    <header class="bg-gradient-to-r from-vk-700 to-vk-800 text-white sticky top-0 z-50 shadow-lg">
+        <div class="px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="/" class="p-2 -ml-2 hover:bg-white/20 rounded-xl transition">
+                        <img src="images/logo.png" alt="Logo" class="w-8 h-8">
+                    </a>
+                    <div>
+                        <p class="font-bold font-serif" id="dogName">ES Neadalens Zlatan</p>
+                        <p class="text-white/70 text-xs" id="dogInfo">Fører: Roel, Aleksander</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="bg-white/20 px-3 py-1 rounded-full text-sm font-bold">VK</span>
+                    <span class="bg-white/20 px-2 py-1 rounded text-sm font-bold" id="dogNr">Nr. 1</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Dog Navigation Bar -->
+    <div class="bg-vk-100 border-b border-vk-200 px-2 py-2">
+        <div class="flex items-center justify-between gap-2">
+            <!-- Left dog -->
+            <button onclick="switchToDog(1)" id="dogLeftBtn" class="flex-1 bg-white hover:bg-vk-50 border-2 border-vk-300 rounded-xl px-3 py-2 text-left transition shadow-sm">
+                <span class="text-xs text-vk-600 block">Hund 1</span>
+                <span class="text-sm font-semibold text-bark-800 truncate block" id="dogLeftName">ES Zlatan</span>
+            </button>
+
+            <!-- Party list button -->
+            <button onclick="showPartyList()" class="bg-vk-700 hover:bg-vk-600 text-white rounded-xl px-4 py-2 font-medium transition shadow-sm">
+                Partiliste
+            </button>
+
+            <!-- Right dog -->
+            <button onclick="switchToDog(2)" id="dogRightBtn" class="flex-1 bg-white hover:bg-vk-50 border border-vk-200 rounded-xl px-3 py-2 text-right transition shadow-sm">
+                <span class="text-xs text-vk-600 block">Hund 2</span>
+                <span class="text-sm font-semibold text-bark-800 truncate block" id="dogRightName">IS Braut</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="p-4 pb-24">
+        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+
+            <!-- NOTATFELT ØVERST -->
+            <div class="p-4 border-b border-bark-100">
+                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wider mb-2">Dommerens notat</h3>
+                <div class="flex gap-2 items-end">
+                    <textarea id="dommerNotat" rows="3"
+                        class="flex-1 px-3 py-2 rounded-xl border-2 border-bark-200 focus:border-vk-500 outline-none text-sm resize-none"
+                        placeholder="Skriv notat om hundens prestasjon..."></textarea>
+                    <!-- Dikteringsknapp -->
+                    <button type="button" id="dictationBtn"
+                        class="w-10 h-10 bg-warm-500 hover:bg-warm-600 active:bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg transition-all duration-200 flex-shrink-0"
+                        title="Trykk for å diktere">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/>
+                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATISTIKK-FELTER -->
+            <div class="p-4 bg-vk-50">
+                <h3 class="text-sm font-bold text-vk-800 uppercase tracking-wider mb-4">Statistikk</h3>
+
+                <!-- 7 kolonner med bokser -->
+                <div class="grid grid-cols-7 gap-2">
+                    <!-- FMR -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1">FMR</label>
+                        <input type="number" min="0" id="fmr" data-field="fmr"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+
+                    <!-- FUR -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1">FUR</label>
+                        <input type="number" min="0" id="fur" data-field="fur"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+
+                    <!-- Slåt i fugl -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1 whitespace-nowrap">Slåt</label>
+                        <input type="number" min="0" id="slat" data-field="slat"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+
+                    <!-- Sjansen på fugl -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1">Sjanse</label>
+                        <input type="number" min="0" id="sjanse" data-field="sjanse"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+
+                    <!-- Apport -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1">Apport</label>
+                        <input type="number" min="0" id="apport" data-field="apport"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+
+                    <!-- TS (Tomstand) -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1">TS</label>
+                        <input type="number" min="0" id="ts" data-field="ts"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+
+                    <!-- DIV -->
+                    <div class="text-center">
+                        <label class="block text-xs font-bold text-vk-700 mb-1">DIV</label>
+                        <input type="number" min="0" id="div" data-field="div"
+                            class="score-input w-full h-12 text-center text-lg font-bold rounded-xl border-2 border-vk-200 focus:border-vk-500 outline-none bg-white"
+                            placeholder="-">
+                    </div>
+                </div>
+
+                <!-- Forklaring -->
+                <div class="mt-3 text-[10px] text-vk-600 grid grid-cols-7 gap-2 text-center">
+                    <span>Fugl m/reis</span>
+                    <span>Fugl u/reis</span>
+                    <span>Slåt i fugl</span>
+                    <span>Sjanse</span>
+                    <span>Apport</span>
+                    <span>Tomstand</span>
+                    <span>Diverse</span>
+                </div>
+            </div>
+
+            <!-- PREMIE-VELGER -->
+            <div class="p-4 border-t border-bark-100">
+                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wider mb-3">Plassering</h3>
+                <div class="grid grid-cols-6 gap-2">
+                    <button onclick="setPremie(1)" data-premie="1" class="premie-btn h-14 rounded-xl border-2 border-bark-200 font-bold text-lg hover:bg-vk-100 hover:border-vk-400 transition flex items-center justify-center">
+                        1.
+                    </button>
+                    <button onclick="setPremie(2)" data-premie="2" class="premie-btn h-14 rounded-xl border-2 border-bark-200 font-bold text-lg hover:bg-vk-100 hover:border-vk-400 transition flex items-center justify-center">
+                        2.
+                    </button>
+                    <button onclick="setPremie(3)" data-premie="3" class="premie-btn h-14 rounded-xl border-2 border-bark-200 font-bold text-lg hover:bg-vk-100 hover:border-vk-400 transition flex items-center justify-center">
+                        3.
+                    </button>
+                    <button onclick="setPremie(4)" data-premie="4" class="premie-btn h-14 rounded-xl border-2 border-bark-200 font-bold text-lg hover:bg-vk-100 hover:border-vk-400 transition flex items-center justify-center">
+                        4.
+                    </button>
+                    <button onclick="setPremie(5)" data-premie="5" class="premie-btn h-14 rounded-xl border-2 border-bark-200 font-bold text-lg hover:bg-vk-100 hover:border-vk-400 transition flex items-center justify-center">
+                        5.
+                    </button>
+                    <button onclick="setPremie(6)" data-premie="6" class="premie-btn h-14 rounded-xl border-2 border-bark-200 font-bold text-lg hover:bg-vk-100 hover:border-vk-400 transition flex items-center justify-center">
+                        6.
+                    </button>
+                </div>
+                <p class="text-xs text-bark-500 mt-2 text-center">Velg plassering 1-6 for denne hunden</p>
+            </div>
+
+        </div>
+
+        <!-- Lagre-knapp -->
+        <div class="mt-4">
+            <button onclick="saveData()" class="w-full bg-vk-600 hover:bg-vk-700 text-white font-bold py-4 rounded-2xl shadow-lg transition text-lg">
+                Lagre vurdering
+            </button>
+        </div>
+    </main>
+
+    <!-- Bottom navigation -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 px-4 py-2 safe-area-pb">
+        <div class="flex justify-around">
+            <a href="dommer-hjem.html" class="flex flex-col items-center py-2 px-4 text-bark-400 hover:text-bark-700">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+                <span class="text-xs mt-1">Hjem</span>
+            </a>
+            <button class="flex flex-col items-center py-2 px-4 text-vk-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
+                <span class="text-xs mt-1 font-medium">VK-kort</span>
+            </button>
+            <button onclick="showPartyList()" class="flex flex-col items-center py-2 px-4 text-bark-400 hover:text-bark-700">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+                <span class="text-xs mt-1">Parti</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Partiliste Modal -->
+    <div id="partyModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
+            <div class="bg-vk-700 text-white p-4 flex items-center justify-between">
+                <h2 class="font-bold">VK Partiliste</h2>
+                <button onclick="hidePartyList()" class="p-2 hover:bg-white/20 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[60vh]" id="partyListContent">
+                <!-- Fylles dynamisk -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        const state = {
+            currentDog: 1,
+            premie: null,
+            data: {
+                notat: '',
+                fmr: null,
+                fur: null,
+                slat: null,
+                sjanse: null,
+                apport: null,
+                ts: null,
+                div: null
+            }
+        };
+
+        // Demo partiliste for VK
+        let partyList = [
+            { nr: 1, race: 'ES', name: 'Neadalens Zlatan', owner: 'Roel, Aleksander' },
+            { nr: 2, race: 'IS', name: 'Braut', owner: 'Hansen, Per' },
+            { nr: 3, race: 'ES', name: 'Fjellheimens Tara', owner: 'Olsen, Kari' },
+            { nr: 4, race: 'GS', name: 'Storm av Høgfjellet', owner: 'Berg, Ole' },
+            { nr: 5, race: 'IS', name: 'Vinterens Håp', owner: 'Dahl, Lisa' },
+            { nr: 6, race: 'ES', name: 'Sølvrevens Balder', owner: 'Vik, Thomas' }
+        ];
+
+        // Initialize
+        function init() {
+            loadFromStorage();
+            setupDictation();
+            renderPartyList();
+            updateDogDisplay();
+        }
+
+        // Load from localStorage
+        function loadFromStorage() {
+            const saved = localStorage.getItem('dommertest_vk_dog' + state.currentDog);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    state.data = { ...state.data, ...parsed };
+                    state.premie = parsed.premie || null;
+
+                    // Populate fields
+                    document.getElementById('dommerNotat').value = parsed.notat || '';
+                    ['fmr', 'fur', 'slat', 'sjanse', 'apport', 'ts', 'div'].forEach(field => {
+                        const input = document.getElementById(field);
+                        if (input && parsed[field] !== null && parsed[field] !== undefined) {
+                            input.value = parsed[field];
+                        }
+                    });
+
+                    // Update premie buttons
+                    updatePremieButtons();
+                } catch (e) {
+                    console.error('Failed to load:', e);
+                }
+            }
+        }
+
+        // Save to localStorage
+        function saveData() {
+            state.data.notat = document.getElementById('dommerNotat').value;
+
+            ['fmr', 'fur', 'slat', 'sjanse', 'apport', 'ts', 'div'].forEach(field => {
+                const input = document.getElementById(field);
+                state.data[field] = input.value ? parseInt(input.value) : null;
+            });
+
+            state.data.premie = state.premie;
+
+            localStorage.setItem('dommertest_vk_dog' + state.currentDog, JSON.stringify(state.data));
+
+            // Show confirmation
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Lagret!';
+            btn.classList.remove('bg-vk-600', 'hover:bg-vk-700');
+            btn.classList.add('bg-green-600');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+                btn.classList.add('bg-vk-600', 'hover:bg-vk-700');
+            }, 1500);
+        }
+
+        // Set premie
+        function setPremie(num) {
+            state.premie = num;
+            updatePremieButtons();
+        }
+
+        function updatePremieButtons() {
+            document.querySelectorAll('.premie-btn').forEach(btn => {
+                const premie = parseInt(btn.dataset.premie);
+                if (premie === state.premie) {
+                    btn.classList.add('bg-vk-500', 'text-white', 'border-vk-500');
+                    btn.classList.remove('border-bark-200');
+                } else {
+                    btn.classList.remove('bg-vk-500', 'text-white', 'border-vk-500');
+                    btn.classList.add('border-bark-200');
+                }
+            });
+        }
+
+        // Switch dog
+        function switchToDog(dogNr) {
+            // Save current first
+            saveData();
+
+            state.currentDog = dogNr;
+            state.data = { notat: '', fmr: null, fur: null, slat: null, sjanse: null, apport: null, ts: null, div: null };
+            state.premie = null;
+
+            // Clear inputs
+            document.getElementById('dommerNotat').value = '';
+            ['fmr', 'fur', 'slat', 'sjanse', 'apport', 'ts', 'div'].forEach(field => {
+                document.getElementById(field).value = '';
+            });
+
+            loadFromStorage();
+            updateDogDisplay();
+        }
+
+        function updateDogDisplay() {
+            const dog = partyList[state.currentDog - 1] || partyList[0];
+            document.getElementById('dogName').textContent = `${dog.race} ${dog.name}`;
+            document.getElementById('dogInfo').textContent = `Fører: ${dog.owner}`;
+            document.getElementById('dogNr').textContent = `Nr. ${dog.nr}`;
+
+            // Update nav buttons
+            const leftDog = partyList[0];
+            const rightDog = partyList[1];
+
+            if (leftDog) {
+                document.getElementById('dogLeftName').textContent = `${leftDog.race} ${leftDog.name}`;
+            }
+            if (rightDog) {
+                document.getElementById('dogRightName').textContent = `${rightDog.race} ${rightDog.name}`;
+            }
+
+            // Highlight current dog button
+            document.getElementById('dogLeftBtn').classList.toggle('border-vk-500', state.currentDog === 1);
+            document.getElementById('dogLeftBtn').classList.toggle('bg-vk-100', state.currentDog === 1);
+            document.getElementById('dogRightBtn').classList.toggle('border-vk-500', state.currentDog === 2);
+            document.getElementById('dogRightBtn').classList.toggle('bg-vk-100', state.currentDog === 2);
+        }
+
+        // Party list modal
+        function showPartyList() {
+            document.getElementById('partyModal').classList.remove('hidden');
+            document.getElementById('partyModal').classList.add('flex');
+        }
+
+        function hidePartyList() {
+            document.getElementById('partyModal').classList.add('hidden');
+            document.getElementById('partyModal').classList.remove('flex');
+        }
+
+        function renderPartyList() {
+            const content = document.getElementById('partyListContent');
+            content.innerHTML = partyList.map((dog, idx) => `
+                <button onclick="selectDog(${idx + 1})" class="w-full text-left p-3 rounded-xl hover:bg-vk-50 transition mb-2 border ${state.currentDog === idx + 1 ? 'border-vk-500 bg-vk-50' : 'border-bark-200'}">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="font-bold text-bark-800">${dog.nr}. ${dog.race} ${dog.name}</span>
+                            <p class="text-sm text-bark-500">${dog.owner}</p>
+                        </div>
+                        ${state.currentDog === idx + 1 ? '<span class="bg-vk-500 text-white text-xs px-2 py-1 rounded">Aktiv</span>' : ''}
+                    </div>
+                </button>
+            `).join('');
+        }
+
+        function selectDog(dogNr) {
+            hidePartyList();
+            switchToDog(dogNr);
+        }
+
+        // Diktering
+        function setupDictation() {
+            const btn = document.getElementById('dictationBtn');
+            const textarea = document.getElementById('dommerNotat');
+            if (!btn || !textarea) return;
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                btn.title = 'Diktering støttes ikke i denne nettleseren';
+                btn.classList.add('opacity-50');
+                btn.addEventListener('click', () => {
+                    alert('Diktering støttes ikke i denne nettleseren. Prøv Chrome, Safari eller Edge.');
+                });
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'nb-NO';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            let isRecording = false;
+            let finalTranscript = '';
+
+            btn.addEventListener('click', () => {
+                if (isRecording) {
+                    recognition.stop();
+                } else {
+                    finalTranscript = textarea.value;
+                    recognition.start();
+                }
+            });
+
+            recognition.onstart = () => {
+                isRecording = true;
+                btn.classList.remove('bg-warm-500', 'hover:bg-warm-600');
+                btn.classList.add('bg-red-500', 'animate-pulse');
+                btn.title = 'Lytter... Trykk for å stoppe';
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                btn.classList.remove('bg-red-500', 'animate-pulse');
+                btn.classList.add('bg-warm-500', 'hover:bg-warm-600');
+                btn.title = 'Trykk for å diktere';
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                textarea.value = finalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                if (event.error === 'not-allowed') {
+                    alert('Mikrofontilgang ble nektet. Gi nettleseren tilgang til mikrofonen for å bruke diktering.');
+                }
+            };
+        }
+
+        // Init on load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

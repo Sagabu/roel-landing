@@ -530,11 +530,112 @@
             btn.textContent = '✓ Lagret!';
             btn.classList.remove('bg-vk-600', 'hover:bg-vk-700');
             btn.classList.add('bg-green-600');
+
             setTimeout(() => {
                 btn.textContent = originalText;
                 btn.classList.remove('bg-green-600');
                 btn.classList.add('bg-vk-600', 'hover:bg-vk-700');
-            }, 1500);
+
+                // Automatisk gå til neste par
+                goToNextPair();
+            }, 800);
+        }
+
+        // Finn neste ledige par (hunder som ikke er plassert eller avsluttet)
+        function getNextAvailablePair() {
+            // Finn hunder som ikke er plassert, ikke har tid til gode, og ikke er avsluttet
+            const availableDogs = partyList.filter(dog => {
+                const plass = state.plasseringer[dog.nr];
+                const hasTidTilGode = state.tidTilGode[dog.nr];
+                const isCurrentlySelected = dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2];
+
+                // Hund er tilgjengelig hvis den ikke er plassert, ikke har tid til gode, og ikke er valgt nå
+                return !plass && !hasTidTilGode && !isCurrentlySelected;
+            });
+
+            // Returner de to første ledige hundene
+            if (availableDogs.length >= 2) {
+                return [availableDogs[0].nr, availableDogs[1].nr];
+            } else if (availableDogs.length === 1) {
+                // Bare én hund igjen - sjekk om det er hunder med tid til gode
+                const ttgDogs = Object.entries(state.tidTilGode)
+                    .filter(([_, has]) => has)
+                    .map(([nr]) => parseInt(nr));
+                if (ttgDogs.length > 0) {
+                    return [availableDogs[0].nr, ttgDogs[0]];
+                }
+                return [availableDogs[0].nr, null];
+            }
+
+            // Ingen vanlige hunder igjen - sjekk tid til gode
+            const ttgDogs = Object.entries(state.tidTilGode)
+                .filter(([_, has]) => has)
+                .map(([nr]) => parseInt(nr));
+
+            if (ttgDogs.length >= 2) {
+                return [ttgDogs[0], ttgDogs[1]];
+            } else if (ttgDogs.length === 1) {
+                return [ttgDogs[0], null];
+            }
+
+            return [null, null];
+        }
+
+        function goToNextPair() {
+            const [nextDog1, nextDog2] = getNextAvailablePair();
+
+            if (nextDog1 === null && nextDog2 === null) {
+                // Ingen flere hunder - vis melding
+                alert('Alle hunder er bedømt eller avsluttet!');
+                return;
+            }
+
+            // Øk slipp-nummer
+            state.currentSlipp++;
+            updateSlippLabels();
+
+            // Sett nye hunder
+            if (nextDog1 !== null) {
+                state.selectedDogs[1] = nextDog1;
+                document.getElementById('dog1Select').value = nextDog1;
+                // Fjern fra tid til gode hvis den var der
+                delete state.tidTilGode[nextDog1];
+            }
+
+            if (nextDog2 !== null) {
+                state.selectedDogs[2] = nextDog2;
+                document.getElementById('dog2Select').value = nextDog2;
+                // Fjern fra tid til gode hvis den var der
+                delete state.tidTilGode[nextDog2];
+            }
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+
+            // Nullstill input-feltene for nye hunder
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const data = state.dogData[dogNr];
+                const slippData = data?.slipps?.[state.currentSlipp];
+
+                // Hvis ingen data for dette slippet, tøm feltene
+                if (!slippData) {
+                    document.getElementById(`dog${pos}_fmr`).value = '';
+                    document.getElementById(`dog${pos}_fur`).value = '';
+                    document.getElementById(`dog${pos}_slat`).value = '';
+                    document.getElementById(`dog${pos}_sjanse`).value = '';
+                    document.getElementById(`dog${pos}_ts`).value = '';
+                    document.getElementById(`dog${pos}_apport`).value = '';
+                }
+            });
+
+            saveToStorage();
         }
 
         function nextSlipp() {
@@ -544,16 +645,8 @@
             saveDogData(2);
             saveToStorage();
 
-            // Increment slipp
-            state.currentSlipp++;
-            updateSlippLabels();
-
-            // Load comment for new slipp (or clear if none)
-            loadSlippComment();
-
-            // Load any existing data for new slipp
-            loadDogData(1);
-            loadDogData(2);
+            // Gå til neste par (samme logikk som "Lagre begge hunder")
+            goToNextPair();
         }
 
         // Beregn gyldige plasseringer basert på nåværende liste

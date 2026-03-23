@@ -104,6 +104,22 @@
                     <p class="text-white/70 text-xs" id="dog1Info">Fører: Roel, Aleksander</p>
                 </div>
 
+                <!-- Slipptid -->
+                <div class="p-2 bg-forest-50 border-b border-forest-200">
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <label class="text-[10px] font-bold text-forest-700 uppercase whitespace-nowrap">Slipptid:</label>
+                                <input type="number" min="0" max="120" id="dog1_slipptid" onchange="updateSlipptidDisplay(1)" class="w-16 h-8 text-center text-sm font-bold rounded-lg border border-forest-300 focus:border-forest-500 outline-none bg-white" placeholder="min">
+                                <span class="text-xs text-forest-600">min</span>
+                            </div>
+                        </div>
+                        <div id="dog1_slipptid_info" class="text-right text-[10px] text-forest-600">
+                            <!-- Fylles dynamisk med tidligere slipptider og total -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Statistikk -->
                 <div class="p-2 bg-vk-50">
                     <h4 class="text-[10px] font-bold text-vk-700 uppercase tracking-wider mb-2">Statistikk</h4>
@@ -221,6 +237,22 @@
                 <div class="bg-vk-700 text-white px-3 py-2">
                     <p class="font-bold font-serif text-sm" id="dog2Name">IS Braut</p>
                     <p class="text-white/70 text-xs" id="dog2Info">Fører: Hansen, Per</p>
+                </div>
+
+                <!-- Slipptid -->
+                <div class="p-2 bg-forest-50 border-b border-forest-200">
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <label class="text-[10px] font-bold text-forest-700 uppercase whitespace-nowrap">Slipptid:</label>
+                                <input type="number" min="0" max="120" id="dog2_slipptid" onchange="updateSlipptidDisplay(2)" class="w-16 h-8 text-center text-sm font-bold rounded-lg border border-forest-300 focus:border-forest-500 outline-none bg-white" placeholder="min">
+                                <span class="text-xs text-forest-600">min</span>
+                            </div>
+                        </div>
+                        <div id="dog2_slipptid_info" class="text-right text-[10px] text-forest-600">
+                            <!-- Fylles dynamisk med tidligere slipptider og total -->
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Statistikk -->
@@ -361,6 +393,8 @@
             updateDogDisplays();
             updateSlippLabels();
             loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
             updatePlacementDropdowns();
             renderPartyLists();
             renderRankings();
@@ -432,7 +466,9 @@
                 document.getElementById(`dog${pos}_sjanse`).value = '';
                 document.getElementById(`dog${pos}_ts`).value = '';
                 document.getElementById(`dog${pos}_apport`).value = '';
+                document.getElementById(`dog${pos}_slipptid`).value = '';
                 document.getElementById(`dog${pos}_notater`).value = '';
+                document.getElementById(`dog${pos}_slipptid_info`).innerHTML = '';
             });
             document.getElementById('slippComment').value = '';
         }
@@ -495,7 +531,11 @@
             document.getElementById(`dog${position}_sjanse`).value = slippData.sjanse ?? '';
             document.getElementById(`dog${position}_apport`).value = slippData.apport ?? '';
             document.getElementById(`dog${position}_ts`).value = slippData.ts ?? '';
+            document.getElementById(`dog${position}_slipptid`).value = slippData.slipptid ?? '';
             document.getElementById(`dog${position}_notater`).value = data?.notater || '';
+
+            // Oppdater slipptid-visning
+            updateSlipptidDisplay(position);
         }
 
         function saveDogData(position) {
@@ -513,9 +553,73 @@
                 slat: document.getElementById(`dog${position}_slat`).value ? parseInt(document.getElementById(`dog${position}_slat`).value) : null,
                 sjanse: document.getElementById(`dog${position}_sjanse`).value ? parseInt(document.getElementById(`dog${position}_sjanse`).value) : null,
                 apport: document.getElementById(`dog${position}_apport`).value ? parseInt(document.getElementById(`dog${position}_apport`).value) : null,
-                ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null
+                ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
+                slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : null
             };
             state.dogData[dogNr].notater = document.getElementById(`dog${position}_notater`).value;
+        }
+
+        // Beregn total slipptid for en hund (sum av alle slipp)
+        function getTotalSlipptid(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return 0;
+
+            let total = 0;
+            Object.values(data.slipps).forEach(slipp => {
+                if (slipp.slipptid) total += slipp.slipptid;
+            });
+            return total;
+        }
+
+        // Hent slipptid-historikk for en hund (array med { slippNr, tid })
+        function getSlipptidHistory(dogNr, excludeCurrentSlipp = false) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return [];
+
+            const history = [];
+            Object.entries(data.slipps).forEach(([slippNr, slipp]) => {
+                if (excludeCurrentSlipp && parseInt(slippNr) === state.currentSlipp) return;
+                if (slipp.slipptid) {
+                    history.push({ slippNr: parseInt(slippNr), tid: slipp.slipptid });
+                }
+            });
+
+            // Sorter etter slipp-nummer
+            return history.sort((a, b) => a.slippNr - b.slippNr);
+        }
+
+        // Oppdater slipptid-visning for en posisjon
+        function updateSlipptidDisplay(position) {
+            const dogNr = state.selectedDogs[position];
+            const infoEl = document.getElementById(`dog${position}_slipptid_info`);
+            if (!infoEl) return;
+
+            // Hent historikk (ekskluder nåværende slipp)
+            const history = getSlipptidHistory(dogNr, true);
+
+            // Hent nåværende verdi fra input
+            const currentSlipptid = document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : 0;
+
+            // Beregn total (tidligere + nåværende)
+            const previousTotal = history.reduce((sum, h) => sum + h.tid, 0);
+            const total = previousTotal + currentSlipptid;
+
+            // Bygg visning
+            let html = '';
+
+            if (history.length > 0) {
+                // Vis tidligere slipp
+                const historyStr = history.map(h => `${h.slippNr}.slipp: ${h.tid}'`).join(', ');
+                html += `<div class="text-forest-500">${historyStr}</div>`;
+            }
+
+            if (total > 0 || history.length > 0) {
+                // Vis total - fremhev hvis ≥60 min
+                const totalClass = total >= 60 ? 'text-green-600 font-bold' : 'font-semibold';
+                html += `<div class="${totalClass}">Total: ${total} min</div>`;
+            }
+
+            infoEl.innerHTML = html;
         }
 
         function saveAll() {
@@ -632,7 +736,11 @@
                     document.getElementById(`dog${pos}_sjanse`).value = '';
                     document.getElementById(`dog${pos}_ts`).value = '';
                     document.getElementById(`dog${pos}_apport`).value = '';
+                    document.getElementById(`dog${pos}_slipptid`).value = '';
                 }
+
+                // Oppdater slipptid-visning (viser historikk fra tidligere slipp)
+                updateSlipptidDisplay(pos);
             });
 
             saveToStorage();
@@ -821,17 +929,26 @@
             return stats;
         }
 
-        // Formater statistikk som kort tekst (f.eks. "2xFMR FUR" - kun "2x" hvis mer enn 1)
+        // Formater statistikk som kort tekst (f.eks. "2xFMR FUR 65'" - kun "2x" hvis mer enn 1)
         function formatDogStats(dogNr) {
             const stats = getDogStats(dogNr);
-            if (!stats) return '';
+            const totalSlipptid = getTotalSlipptid(dogNr);
 
             const parts = [];
-            if (stats.fmr > 0) parts.push(stats.fmr > 1 ? `${stats.fmr}xFMR` : 'FMR');
-            if (stats.fur > 0) parts.push(stats.fur > 1 ? `${stats.fur}xFUR` : 'FUR');
-            if (stats.slatt > 0) parts.push(stats.slatt > 1 ? `${stats.slatt}xSlått` : 'Slått');
-            if (stats.sjanse > 0) parts.push(stats.sjanse > 1 ? `${stats.sjanse}xSj` : 'Sj');
-            if (stats.ts > 0) parts.push(stats.ts > 1 ? `${stats.ts}xTS` : 'TS');
+
+            // Vis slipptid først (viktig for VK)
+            if (totalSlipptid > 0) {
+                const slipptidClass = totalSlipptid >= 60 ? 'text-green-600' : '';
+                parts.push(`<span class="${slipptidClass}">${totalSlipptid}'</span>`);
+            }
+
+            if (stats) {
+                if (stats.fmr > 0) parts.push(stats.fmr > 1 ? `${stats.fmr}xFMR` : 'FMR');
+                if (stats.fur > 0) parts.push(stats.fur > 1 ? `${stats.fur}xFUR` : 'FUR');
+                if (stats.slatt > 0) parts.push(stats.slatt > 1 ? `${stats.slatt}xSlått` : 'Slått');
+                if (stats.sjanse > 0) parts.push(stats.sjanse > 1 ? `${stats.sjanse}xSj` : 'Sj');
+                if (stats.ts > 0) parts.push(stats.ts > 1 ? `${stats.ts}xTS` : 'TS');
+            }
 
             return parts.join(' ');
         }

@@ -75,15 +75,29 @@
                 <div id="step1" class="space-y-6">
                     <div>
                         <label class="block text-sm font-medium text-bark-700 mb-2">Organisasjonsnummer *</label>
-                        <input type="text" id="orgNumber" placeholder="9 siffer" maxlength="11"
-                               class="w-full px-4 py-3 border border-bark-300 rounded-xl focus:ring-2 focus:ring-warm-500 focus:border-warm-500 transition">
-                        <p class="text-xs text-bark-500 mt-1">Finn organisasjonsnummeret i Brønnøysundregistrene</p>
+                        <div class="relative">
+                            <input type="text" id="orgNumber" placeholder="9 siffer" maxlength="11"
+                                   class="w-full px-4 py-3 border border-bark-300 rounded-xl focus:ring-2 focus:ring-warm-500 focus:border-warm-500 transition pr-10">
+                            <div id="orgLookupSpinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2">
+                                <svg class="w-5 h-5 animate-spin text-warm-500" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                            <div id="orgLookupSuccess" class="hidden absolute right-3 top-1/2 -translate-y-1/2">
+                                <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <p id="orgLookupStatus" class="text-xs text-bark-500 mt-1">Klubbnavn hentes automatisk fra Brønnøysundregistrene</p>
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium text-bark-700 mb-2">Klubbnavn *</label>
-                        <input type="text" id="clubName" placeholder="F.eks. Trøndelag Fuglehundklubb"
+                        <input type="text" id="clubName" placeholder="Fylles inn automatisk fra Brønnøysund"
                                class="w-full px-4 py-3 border border-bark-300 rounded-xl focus:ring-2 focus:ring-warm-500 focus:border-warm-500 transition">
+                        <p id="clubNameNote" class="text-xs text-bark-400 mt-1 hidden">Fra Brønnøysundregistrene – kan endres manuelt</p>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -314,7 +328,8 @@
         let currentStep = 1;
         let additionalAdmins = [];
 
-        // Format org number
+        // Format org number og slå opp i Brønnøysund
+        let orgLookupTimeout = null;
         document.getElementById('orgNumber').addEventListener('input', function(e) {
             let value = e.target.value.replace(/\D/g, '');
             if (value.length > 9) value = value.slice(0, 9);
@@ -324,7 +339,70 @@
                 value = value.slice(0, 3) + ' ' + value.slice(3);
             }
             e.target.value = value;
+
+            // Skjul suksess-ikon ved endring
+            document.getElementById('orgLookupSuccess').classList.add('hidden');
+
+            // Debounce oppslag - vent til bruker er ferdig med å skrive
+            clearTimeout(orgLookupTimeout);
+            const cleanOrg = value.replace(/\D/g, '');
+
+            if (cleanOrg.length === 9) {
+                orgLookupTimeout = setTimeout(() => lookupOrganization(cleanOrg), 300);
+            } else {
+                document.getElementById('orgLookupStatus').textContent = 'Klubbnavn hentes automatisk fra Brønnøysundregistrene';
+                document.getElementById('orgLookupStatus').className = 'text-xs text-bark-500 mt-1';
+            }
         });
+
+        async function lookupOrganization(orgnr) {
+            const spinner = document.getElementById('orgLookupSpinner');
+            const successIcon = document.getElementById('orgLookupSuccess');
+            const status = document.getElementById('orgLookupStatus');
+            const clubNameInput = document.getElementById('clubName');
+            const clubNameNote = document.getElementById('clubNameNote');
+            const zipInput = document.getElementById('zipCode');
+            const cityInput = document.getElementById('city');
+            const addressInput = document.getElementById('address');
+
+            spinner.classList.remove('hidden');
+            successIcon.classList.add('hidden');
+            status.textContent = 'Søker i Brønnøysundregistrene...';
+            status.className = 'text-xs text-bark-500 mt-1';
+
+            try {
+                const resp = await fetch(`/api/brreg/${orgnr}`);
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Fant ikke organisasjonen');
+                }
+
+                // Fyll inn klubbnavn
+                clubNameInput.value = data.navn;
+                clubNameNote.classList.remove('hidden');
+
+                // Fyll inn adresse hvis tilgjengelig
+                const adr = data.forretningsadresse || data.postadresse;
+                if (adr) {
+                    if (adr.postnummer) zipInput.value = adr.postnummer;
+                    if (adr.poststed) cityInput.value = adr.poststed;
+                    if (adr.adresse) addressInput.value = adr.adresse;
+                }
+
+                // Vis suksess
+                status.textContent = `Funnet: ${data.organisasjonsform || 'Organisasjon'}`;
+                status.className = 'text-xs text-green-600 mt-1';
+                successIcon.classList.remove('hidden');
+
+            } catch (err) {
+                status.textContent = err.message || 'Kunne ikke finne organisasjonen';
+                status.className = 'text-xs text-red-500 mt-1';
+                clubNameNote.classList.add('hidden');
+            } finally {
+                spinner.classList.add('hidden');
+            }
+        }
 
         // Format phone number
         document.getElementById('leaderPhone').addEventListener('input', function(e) {

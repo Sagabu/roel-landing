@@ -2739,6 +2739,59 @@ app.get("/api/hunder/:id", (c) => {
 });
 
 // ============================================
+// BRØNNØYSUND OPPSLAG (organisasjonsnummer)
+// ============================================
+
+// Slå opp organisasjon i Brønnøysundregistrene (offisiell API)
+app.get("/api/brreg/:orgnr", async (c) => {
+  const orgnr = c.req.param("orgnr").replace(/\D/g, '');
+
+  if (orgnr.length !== 9) {
+    return c.json({ error: "Organisasjonsnummer må være 9 siffer" }, 400);
+  }
+
+  try {
+    // Brønnøysundregistrenes offisielle API (gratis, ingen API-nøkkel)
+    const resp = await fetch(`https://data.brreg.no/enhetsregisteret/api/enheter/${orgnr}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!resp.ok) {
+      if (resp.status === 404) {
+        return c.json({ error: "Organisasjonsnummer ikke funnet" }, 404);
+      }
+      throw new Error(`Brønnøysund API feil: ${resp.status}`);
+    }
+
+    const data = await resp.json();
+
+    // Returner relevant info
+    return c.json({
+      orgnr: data.organisasjonsnummer,
+      navn: data.navn,
+      organisasjonsform: data.organisasjonsform?.beskrivelse || null,
+      forretningsadresse: data.forretningsadresse ? {
+        adresse: data.forretningsadresse.adresse?.join(', ') || '',
+        postnummer: data.forretningsadresse.postnummer || '',
+        poststed: data.forretningsadresse.poststed || '',
+        kommune: data.forretningsadresse.kommune || ''
+      } : null,
+      postadresse: data.postadresse ? {
+        adresse: data.postadresse.adresse?.join(', ') || '',
+        postnummer: data.postadresse.postnummer || '',
+        poststed: data.postadresse.poststed || ''
+      } : null,
+      stiftelsesdato: data.stiftelsesdato || null,
+      registreringsdatoEnhetsregisteret: data.registreringsdatoEnhetsregisteret || null
+    });
+
+  } catch (err) {
+    console.error('[BRREG] Feil ved oppslag:', err);
+    return c.json({ error: "Kunne ikke slå opp organisasjonsnummer" }, 500);
+  }
+});
+
+// ============================================
 // KLUBBER API
 // ============================================
 

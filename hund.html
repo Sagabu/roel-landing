@@ -556,64 +556,64 @@
 
             // 3. Fallback: Sjekk gammel id-parameter (uten party)
             if (!dog && dogId && !partyId) {
-                // Først sjekk demo-database
-                if (dogDatabase[dogId]) {
-                    dog = dogDatabase[dogId];
-                } else {
-                    // Prøv API med ID
-                    try {
-                        const resp = await fetch(`/api/hunder/${dogId}`);
-                        if (resp.ok) {
-                            const apiDog = await resp.json();
-                            // Hent kritikker fra API
-                            const kritikkerResp = await fetch(`/api/hunder/${dogId}/kritikker`);
-                            const kritikker = kritikkerResp.ok ? await kritikkerResp.json() : [];
+                // Prøv API med ID FØRST (demo-database kun som fallback)
+                try {
+                    const resp = await fetch(`/api/hunder/${dogId}`);
+                    if (resp.ok) {
+                        const apiDog = await resp.json();
+                        // Hent kritikker fra API
+                        const kritikkerResp = await fetch(`/api/hunder/${dogId}/kritikker`);
+                        const kritikker = kritikkerResp.ok ? await kritikkerResp.json() : [];
 
-                            dog = {
-                                id: apiDog.id,
-                                name: apiDog.navn,
-                                regNumber: apiDog.regnr,
-                                breed: apiDog.rase || 'Ukjent rase',
-                                gender: apiDog.kjonn || 'male',
-                                owner: apiDog.eier_navn || 'Ukjent',
-                                critiques: kritikker.map(k => ({
-                                    id: `db-${k.id}`,
-                                    trial: k.prove_navn || 'Ukjent prøve',
-                                    date: k.dato,
-                                    location: k.sted || k.prove_sted || '',
-                                    class: k.klasse,
-                                    party: k.parti || k.klasse,
-                                    judge: k.dommer_navn || 'Ukjent',
-                                    prize: k.premie || '',
-                                    scores: {
-                                        PRESISJON: k.presisjon,
-                                        REISING: k.reising,
-                                        GODKJENT_REISING: k.godkjent_reising === 1,
-                                        STAND_M: k.stand_m,
-                                        STAND_U: k.stand_u,
-                                        TOMSTAND: k.tomstand,
-                                        MAKKER_STAND: k.makker_stand,
-                                        SJANSE: k.sjanse,
-                                        SLIPPTID: k.slipptid,
-                                        JAKTLYST: k.jaktlyst,
-                                        FART: k.fart,
-                                        SELVSTENDIGHET: k.selvstendighet,
-                                        SOKSBREDDE: k.soksbredde,
-                                        REVIERING: k.reviering,
-                                        SAMARBEID: k.samarbeid,
-                                        SEK_SPONTAN: k.sek_spontan,
-                                        SEK_FORBI: k.sek_forbi,
-                                        APPORT: k.apport,
-                                        RAPPORT_SPONTAN: k.rapport_spontan === 1,
-                                        ADFERD: k.adferd || ''
-                                    },
-                                    critique: k.kritikk_tekst || ''
-                                }))
-                            };
-                        }
-                    } catch (e) {
-                        console.error('Feil ved henting fra API:', e);
+                        dog = {
+                            id: apiDog.id,
+                            name: apiDog.navn,
+                            regNumber: apiDog.regnr,
+                            breed: apiDog.rase || 'Ukjent rase',
+                            gender: apiDog.kjonn || 'male',
+                            owner: apiDog.eier_navn || 'Ukjent',
+                            critiques: kritikker.map(k => ({
+                                id: `db-${k.id}`,
+                                trial: k.prove_navn || 'Ukjent prøve',
+                                date: k.dato,
+                                location: k.sted || k.prove_sted || '',
+                                class: k.klasse,
+                                party: k.parti || k.klasse,
+                                judge: k.dommer_navn || 'Ukjent',
+                                prize: k.premie || '',
+                                scores: {
+                                    PRESISJON: k.presisjon,
+                                    REISING: k.reising,
+                                    GODKJENT_REISING: k.godkjent_reising === 1,
+                                    STAND_M: k.stand_m,
+                                    STAND_U: k.stand_u,
+                                    TOMSTAND: k.tomstand,
+                                    MAKKER_STAND: k.makker_stand,
+                                    SJANSE: k.sjanse,
+                                    SLIPPTID: k.slipptid,
+                                    JAKTLYST: k.jaktlyst,
+                                    FART: k.fart,
+                                    SELVSTENDIGHET: k.selvstendighet,
+                                    SOKSBREDDE: k.soksbredde,
+                                    REVIERING: k.reviering,
+                                    SAMARBEID: k.samarbeid,
+                                    SEK_SPONTAN: k.sek_spontan,
+                                    SEK_FORBI: k.sek_forbi,
+                                    APPORT: k.apport,
+                                    RAPPORT_SPONTAN: k.rapport_spontan === 1,
+                                    ADFERD: k.adferd || ''
+                                },
+                                critique: k.kritikk_tekst || ''
+                            }))
+                        };
                     }
+                } catch (e) {
+                    console.error('Feil ved henting fra API:', e);
+                }
+
+                // Fallback til demo-database (kun for utvikling)
+                if (!dog && dogDatabase[dogId]) {
+                    dog = dogDatabase[dogId];
                 }
             }
 

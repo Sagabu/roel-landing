@@ -2430,6 +2430,23 @@ app.get("/api/brukere", (c) => {
   return c.json(rows);
 });
 
+// Søk etter brukere (for autocomplete)
+app.get("/api/brukere/sok", (c) => {
+  const q = c.req.query("q") || "";
+  if (q.length < 2) {
+    return c.json([]);
+  }
+  const searchTerm = `%${q}%`;
+  const rows = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, rolle
+    FROM brukere
+    WHERE fornavn LIKE ? OR etternavn LIKE ? OR telefon LIKE ?
+    ORDER BY etternavn, fornavn
+    LIMIT 10
+  `).all(searchTerm, searchTerm, searchTerm);
+  return c.json(rows);
+});
+
 // Hent én bruker på telefon
 app.get("/api/brukere/:telefon", (c) => {
   const telefon = c.req.param("telefon");

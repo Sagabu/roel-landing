@@ -3136,7 +3136,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
   }[lederRolle] || lederRolle;
 
   try {
-    await sendSMS(superadminTelefon, `Ny klubbforespørsel: ${navn.trim()} (${orgnummer.replace(/\s/g, '')})\n\nSøker: ${lederNavn.trim()} (${rolleNavn})\nTlf: ${normalizedPhone}\n\nLogg inn på fuglehundprove.no/superadmin for å behandle.`, { type: 'klubb_foresporsel' });
+    await sendSMS(superadminTelefon, `Ny klubbforespørsel: ${navn.trim()} (${orgnummer.replace(/\s/g, '')})\n\nSøker: ${lederNavn.trim()} (${rolleNavn})\nTlf: ${normalizedPhone}\n\nLogg inn på fuglehundprove.no/superadmin.html for å behandle.`, { type: 'klubb_foresporsel' });
     console.log(`📱 SMS sendt til superadmin om ny klubbforespørsel: ${navn}`);
   } catch (err) {
     console.error('Feil ved sending av SMS til superadmin:', err);

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Dommerportal - Fuglehundprøve</title>
+    <title>Dommerkort VK - Fuglehundprøve</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -13,9 +13,9 @@
                     colors: {
                         warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
                         cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
-                        sky: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#FD8536', 400: '#E5721F', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14' },
-                        earth: { 50: '#faf6f2', 100: '#f3ebe0', 200: '#e6d5c0', 300: '#d5b899', 400: '#c49a72', 500: '#b88255', 600: '#aa6e48', 700: '#8e583d', 800: '#734837', 900: '#5e3c2f', 950: '#321e17' },
-                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' },
+                        forest: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' },
+                        vk: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a' }
                     },
                     fontFamily: {
                         'serif': ['Playfair Display', 'Georgia', 'serif'],
@@ -27,2392 +27,1117 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        .score-input:focus { transform: scale(1.05); }
-        .card-active { box-shadow: 0 0 0 3px #f59e0b; }
-        .live-pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-        input[type="number"] { font-size: 16px; }
-        .touch-target { min-height: 48px; min-width: 48px; }
-        .nav-arrow { transition: all 0.15s; }
-        .nav-arrow:active { transform: scale(0.95); }
-        .recording { animation: recording-pulse 1s infinite; }
-        @keyframes recording-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } }
-        .ranking-item { cursor: grab; }
-        .ranking-item:active { cursor: grabbing; }
-        .ranking-item.dragging { opacity: 0.5; transform: scale(1.02); }
-        .ranking-item.drag-over { border-top: 3px solid #f59e0b; }
-        /* Skjul innhold til auth-sjekk er ferdig */
-        .auth-loading #mainInterface { visibility: hidden; }
+        .score-input:focus { transform: scale(1.02); }
+        input[type="number"] { font-size: 14px; }
+        input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+        .dog-card { min-height: calc(100vh - 60px); }
     </style>
-    <script src="auth.js"></script>
 </head>
-<body class="bg-cream min-h-screen font-sans auth-loading">
+<body class="bg-cream min-h-screen font-sans">
 
-    <!-- Main Judge Interface -->
-    <div id="mainInterface">
-        <!-- Sticky Header -->
-        <header id="mainHeader" class="bg-gradient-to-r from-warm-500 to-warm-600 text-white sticky top-0 z-50 shadow-lg">
-            <div class="px-4 py-3">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <a href="dommer-hjem.html" class="p-2 -ml-2 hover:bg-white/20 rounded-xl transition" title="Tilbake til partivalg">
-                            <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-8 h-8">
-                        </a>
-                        <div>
-                            <p class="font-bold font-serif" id="headerPartyName">UK/AK Parti 1</p>
-                            <p class="text-sky-100 text-xs" id="headerJudgeName">Dommer: Kari Nordmann</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <a href="profil.html" class="bg-warm-500 hover:bg-warm-600 p-2 rounded-xl transition" title="Min profil">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                            </svg>
-                        </a>
-                        <div id="liveRankingControls" class="flex items-center gap-2">
-                            <span class="w-2 h-2 bg-green-300 rounded-full live-pulse"></span>
-                            <span class="text-xs">Live</span>
-                            <button onclick="showRanking()" class="ml-3 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-xl text-sm font-medium transition">
-                                Rangering
-                            </button>
-                        </div>
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-vk-700 to-vk-800 text-white sticky top-0 z-50 shadow-lg">
+        <div class="px-4 py-2">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="/" class="p-1 hover:bg-white/20 rounded-lg transition">
+                        <img src="images/logo.png" alt="Logo" class="w-7 h-7">
+                    </a>
+                    <div>
+                        <p class="font-bold font-serif text-sm">VK Dommerkort</p>
+                        <p class="text-white/70 text-xs">Slipp <span id="currentSlipp">1</span></p>
                     </div>
                 </div>
-            </div>
-        </header>
-
-        <!-- View Toggle -->
-        <div class="bg-white border-b border-bark-100 px-4 py-2 flex gap-2">
-            <button onclick="setView('single')" id="viewSingle" class="flex-1 py-2 rounded-xl text-sm font-medium bg-warm-100 text-warm-800">
-                Ett kort
-            </button>
-            <button onclick="setView('dual')" id="viewDual" class="flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600">
-                To kort
-            </button>
-        </div>
-
-        <!-- Dog Cards Container -->
-        <main id="cardsContainer" class="p-4 space-y-4">
-            <!-- Cards will be inserted here -->
-        </main>
-
-        <!-- Bottom Navigation - Dog Selector -->
-        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-100 shadow-lg z-40">
-            <div class="px-4 py-2">
-                <p class="text-xs text-bark-500 mb-2">Velg hund(er):</p>
-                <div id="dogSelector" class="flex gap-2 overflow-x-auto pb-2">
-                    <!-- Dog buttons inserted here -->
-                </div>
-            </div>
-        </nav>
-    </div>
-
-    <!-- Ranking Modal -->
-    <div id="rankingModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
-        <div class="bg-white w-full sm:max-w-lg sm:rounded-xl rounded-t-xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div id="rankingHeader" class="px-4 py-3 bg-gradient-to-r from-warm-500 to-warm-600 text-white flex items-center justify-between">
-                <h2 class="font-bold font-serif">Rangering</h2>
-                <button onclick="hideRanking()" class="p-2 hover:bg-white/20 rounded-xl transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto p-4">
-                <div class="space-y-2" id="rankingList"></div>
-                <div class="mt-6">
-                    <h3 class="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                        Utslått
-                    </h3>
-                    <div id="knockedOutList" class="space-y-2"></div>
-                </div>
-            </div>
-
-            <div class="p-4 border-t border-bark-100 space-y-2">
-                <button onclick="publishRanking()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    Publiser rangering
-                </button>
-                <p class="text-xs text-bark-500 text-center">Rangeringen blir synlig for alle på partilister-siden</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Score Field Legend Modal -->
-    <div id="legendModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="px-6 py-4 border-b border-bark-100">
-                <h3 class="font-bold font-serif text-bark-800">Kritikkskjema - Feltoversikt</h3>
-            </div>
-            <div class="flex-1 overflow-y-auto p-6 space-y-4">
-                <!-- Fuglebehandling -->
-                <div>
-                    <h4 class="text-xs font-bold text-warm-800 uppercase tracking-wider mb-2">Fuglebehandling</h4>
-                    <div class="space-y-2 text-sm">
-                        <div class="flex justify-between"><span class="font-medium">Presisjon</span><span class="text-bark-500">1-4 (1=Meget upresis, 4=Presis)</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Reising</span><span class="text-bark-500">1-6 (1=Nekter, 6=Djerv)</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Godkj. reising</span><span class="text-bark-500">Avkryssing</span></div>
-                    </div>
-                </div>
-                <!-- Stand/Arbeid -->
-                <div>
-                    <h4 class="text-xs font-bold text-warm-800 uppercase tracking-wider mb-2">Stand og arbeid</h4>
-                    <div class="space-y-2 text-sm">
-                        <div class="flex justify-between"><span class="font-medium">Stand m/makker</span><span class="text-bark-500">Antall stand i konkurranse</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Stand u/makker</span><span class="text-bark-500">Antall stand uten konkurranse</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Tomstand</span><span class="text-bark-500">Antall tomstand</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Makkers stand</span><span class="text-bark-500">Antall sekundert</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Sjanse på fugl</span><span class="text-bark-500">Antall sjanser</span></div>
-                        <div class="flex justify-between"><span class="font-medium bg-amber-100 px-2 rounded">Slipptid</span><span class="text-bark-500">Minutter</span></div>
-                    </div>
-                </div>
-                <!-- Egenskaper (Sum) -->
-                <div>
-                    <h4 class="text-xs font-bold text-earth-700 uppercase tracking-wider mb-2">Egenskaper (1-6 skala)</h4>
-                    <div class="space-y-2 text-sm">
-                        <div><span class="font-medium">Jaktlyst:</span> <span class="text-bark-500">1=Mangler intensitet, 6=Særdeles høy intensitet</span></div>
-                        <div><span class="font-medium">Fart:</span> <span class="text-bark-500">1=Lav fart, 6=Særdeles stor fart</span></div>
-                        <div><span class="font-medium">Selvstendighet:</span> <span class="text-bark-500">1=Helt avhengig av makker, 6=Helt selvstendig</span></div>
-                        <div><span class="font-medium">Søksbredde:</span> <span class="text-bark-500">1=Liten søksbredde, 6=Alt for stor søksbredde</span></div>
-                        <div><span class="font-medium">Reviering:</span> <span class="text-bark-500">1=Planløst uten framdrift, 6=Alt for åpen reviering</span></div>
-                        <div><span class="font-medium">Samarbeid:</span> <span class="text-bark-500">1=Totalt førerfiksert, 6=Samarbeider ikke</span></div>
-                    </div>
-                </div>
-                <!-- Annet -->
-                <div>
-                    <h4 class="text-xs font-bold text-bark-600 uppercase tracking-wider mb-2">Andre felt</h4>
-                    <div class="space-y-2 text-sm">
-                        <div class="flex justify-between"><span class="font-medium">Sekundering spontan</span><span class="text-bark-500">Antall</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Sekundering går forbi</span><span class="text-bark-500">Antall</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Apport</span><span class="text-bark-500">1=Godkjent, 2=Ikke godkjent</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Rapport spontan</span><span class="text-bark-500">Avkryssing</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Adferd</span><span class="text-bark-500">Beskriv uønsket adferd</span></div>
-                    </div>
-                </div>
-                <!-- Premie -->
-                <div>
-                    <h4 class="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2">Premie</h4>
-                    <div class="space-y-1 text-sm text-bark-600">
-                        <p>CACIT, ResCacit, CK, Finale, Semifinale, ÅP</p>
-                    </div>
-                </div>
-            </div>
-            <div class="p-4 border-t border-bark-100">
-                <button onclick="hideLegend()" class="w-full py-3 bg-bark-100 hover:bg-bark-200 rounded-xl font-medium transition">
-                    Lukk
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Critique Form Modal -->
-    <div id="critiqueModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
-        <div class="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-xl max-h-[95vh] overflow-hidden flex flex-col">
-            <div id="critiqueHeader" class="px-4 py-3 bg-gradient-to-r from-warm-500 to-warm-600 text-white flex items-center justify-between">
-                <div>
-                    <h2 class="font-bold font-serif">Ferdigstill kritikk</h2>
-                    <p class="text-white/70 text-sm" id="critiqueDogName">Hund: -</p>
-                </div>
-                <button onclick="hideCritique()" class="p-2 hover:bg-white/20 rounded-xl transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto p-4 space-y-4">
-                <!-- Dog Info Summary -->
-                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 bg-warm-100 rounded-xl flex items-center justify-center">
-                            <span class="text-xl font-bold text-warm-800" id="critiqueDogNr">1</span>
-                        </div>
-                        <div class="flex-1">
-                            <p class="font-bold text-bark-800" id="critiqueDogFullName">-</p>
-                            <p class="text-sm text-bark-500" id="critiqueDogDetails">-</p>
-                        </div>
-                    </div>
-                    <!-- Scores Summary -->
-                    <div class="mt-3 pt-3 border-t border-bark-100">
-                        <p class="text-xs text-bark-500 mb-2">Kritikk fra bedømmelse:</p>
-                        <div id="critiqueScores" class="space-y-2"></div>
-                    </div>
-                </div>
-
-                <!-- Notes from Field (auto-populated) -->
-                <div>
-                    <label class="block text-sm font-semibold text-bark-700 mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                        Notater fra fjellet
-                    </label>
-                    <div id="critiqueFieldNotes" class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-3 text-sm text-bark-700 min-h-[60px] italic">
-                        Ingen notater registrert
-                    </div>
-                    <p class="text-xs text-bark-400 mt-1">Disse notatene ble registrert under bedømming i fjellet</p>
-                </div>
-
-                <!-- Prize Selection -->
-                <div>
-                    <label class="block text-sm font-semibold text-bark-700 mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
-                        </svg>
-                        Premie
-                    </label>
-                    <div id="prizeSelector" class="grid grid-cols-4 gap-2">
-                        <!-- Prizes will be inserted dynamically based on party type -->
-                    </div>
-                    <p class="text-xs text-bark-400 mt-2" id="prizeHint">Velg premierad om hunden har oppnådd premie</p>
-                </div>
-            </div>
-
-            <div class="p-4 border-t border-bark-100 space-y-2">
-                <button onclick="saveAndFinishDog()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    Lagre og avslutt hund
-                </button>
-                <p class="text-xs text-bark-500 text-center">Endelig kritikk skrives eller leses inn etter alle hunder er ferdig bedømt</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- PDF Preview Modal -->
-    <div id="pdfPreviewModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div class="px-4 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    <h2 class="font-bold font-serif">Kritikk lagret!</h2>
-                </div>
-                <button onclick="hidePdfPreview()" class="p-2 hover:bg-white/20 rounded-xl transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto p-4">
-                <!-- PDF Preview -->
-                <div id="pdfPreviewContent" class="bg-white border-2 border-bark-100 rounded-xl p-6 shadow-inner">
-                    <!-- Generated critique document preview -->
+                    <button onclick="resetAll()" class="bg-red-500/80 hover:bg-red-600 px-2 py-1 rounded-lg text-xs font-medium transition" title="Nullstill alt">
+                        ↺
+                    </button>
+                    <span class="bg-white/20 px-3 py-1 rounded-full text-sm font-bold">VK</span>
+                    <button onclick="nextSlipp()" class="bg-warm-500 hover:bg-warm-600 px-3 py-1 rounded-lg text-sm font-medium transition">
+                        Neste slipp →
+                    </button>
                 </div>
             </div>
+        </div>
+    </header>
 
-            <div class="p-4 border-t border-bark-100 flex gap-2">
-                <button onclick="downloadCritiquePdf()" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+    <!-- Felles kommentarfelt for slippet -->
+    <div class="bg-white border-b border-vk-200 px-4 py-2">
+        <div class="flex gap-2 items-center">
+            <label class="text-xs font-bold text-vk-700 uppercase tracking-wider whitespace-nowrap">
+                Kommentar <span id="slippLabel">1</span>.slipp:
+            </label>
+            <div class="flex-1 flex gap-2 items-center">
+                <textarea id="slippComment" rows="1"
+                    class="flex-1 px-3 py-1.5 rounded-lg border border-vk-200 focus:border-vk-500 outline-none text-sm resize-none"
+                    placeholder="Kommentar for dette slippet..."></textarea>
+                <button type="button" id="dictationBtn"
+                    class="w-9 h-9 bg-warm-500 hover:bg-warm-600 text-white rounded-full flex items-center justify-center shadow transition flex-shrink-0"
+                    title="Trykk for å diktere">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                     </svg>
-                    Last ned PDF
-                </button>
-                <button onclick="hidePdfPreview()" class="px-6 py-3 bg-bark-100 hover:bg-bark-200 text-bark-700 font-medium rounded-xl transition">
-                    Lukk
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- All Dogs Complete Modal -->
-    <div id="allDogsCompleteModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div class="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4 text-white">
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h2 class="font-bold font-serif text-xl">Alle hunder bedømt!</h2>
-                        <p class="text-white/80 text-sm">Dommerkortene er lagret</p>
-                    </div>
-                </div>
-            </div>
-            <div class="p-6 space-y-4">
-                <p class="text-bark-600">Hva vil du gjøre nå?</p>
+    <!-- Two-column layout -->
+    <main class="flex">
+        <!-- LEFT DOG (Hund 1) -->
+        <div class="w-1/2 border-r border-vk-300 dog-card overflow-y-auto p-2">
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
 
-                <!-- Step 1: Sign party list -->
-                <div class="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
-                    <div class="flex items-start gap-3">
-                        <div class="w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm">1</div>
+                <!-- Dog selector dropdown -->
+                <div class="bg-vk-100 p-2 border-b border-vk-200">
+                    <select id="dog1Select" onchange="selectDog(1, this.value)" class="w-full h-10 px-2 rounded-lg border border-vk-300 bg-white text-sm font-medium">
+                        <!-- Fylles dynamisk -->
+                    </select>
+                </div>
+
+                <!-- Dog info header -->
+                <div class="bg-vk-700 text-white px-3 py-2">
+                    <p class="font-bold font-serif text-sm" id="dog1Name">ES Neadalens Zlatan</p>
+                    <p class="text-white/70 text-xs" id="dog1Info">Fører: Roel, Aleksander</p>
+                </div>
+
+                <!-- Slipptid -->
+                <div class="p-2 bg-forest-50 border-b border-forest-200">
+                    <div class="flex items-center gap-2">
                         <div class="flex-1">
-                            <h3 class="font-semibold text-purple-800">Signer partilisten</h3>
-                            <p class="text-sm text-purple-600 mb-3">Bekreft at alle kritikker er korrekte</p>
-                            <button onclick="hideAllDogsCompleteModal(); showSignPartyModal();" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                                </svg>
-                                Signer partiliste
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <label class="text-[10px] font-bold text-forest-700 uppercase whitespace-nowrap">Slipptid:</label>
+                                <input type="number" min="0" max="120" id="dog1_slipptid" onchange="updateSlipptidDisplay(1)" class="w-16 h-8 text-center text-sm font-bold rounded-lg border border-forest-300 focus:border-forest-500 outline-none bg-white" placeholder="min">
+                                <span class="text-xs text-forest-600">min</span>
+                            </div>
+                        </div>
+                        <div id="dog1_slipptid_info" class="text-right text-[10px] text-forest-600">
+                            <!-- Fylles dynamisk med tidligere slipptider og total -->
                         </div>
                     </div>
                 </div>
 
-                <!-- Step 2: Write final critique -->
-                <button onclick="goToFinalCritique()" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 px-6 rounded-xl transition flex items-center justify-center gap-3 shadow-lg">
-                    <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm">2</div>
+                <!-- Statistikk -->
+                <div class="p-2 bg-vk-50">
+                    <h4 class="text-[10px] font-bold text-vk-700 uppercase tracking-wider mb-2">Statistikk</h4>
+                    <div class="grid grid-cols-6 gap-1">
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FMR</label>
+                            <input type="number" min="0" id="dog1_fmr" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FUR</label>
+                            <input type="number" min="0" id="dog1_fur" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Slått</label>
+                            <input type="number" min="0" id="dog1_slat" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Sjanse</label>
+                            <input type="number" min="0" id="dog1_sjanse" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">TS</label>
+                            <input type="number" min="0" id="dog1_ts" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Apport</label>
+                            <input type="number" min="0" id="dog1_apport" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                    </div>
+                    <!-- Notater (erstatter DIV) -->
+                    <div class="mt-2">
+                        <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Notater</label>
+                        <input type="text" id="dog1_notater" class="w-full h-8 px-2 text-xs rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="Diverse notater...">
+                    </div>
+                </div>
+
+                <!-- Plassering og Tid til gode -->
+                <div class="p-2 border-t border-bark-100">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Plassering</h4>
+                            <select id="dog1_plassering" onchange="setPlassering(1)" class="w-full h-9 px-2 rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white text-sm">
+                                <option value="">-- Velg --</option>
+                                <option value="1">1. plass</option>
+                                <option value="2">2. plass</option>
+                                <option value="3">3. plass</option>
+                                <option value="4">4. plass</option>
+                                <option value="5">5. plass</option>
+                                <option value="6">6. plass</option>
+                                <option value="7">7. plass</option>
+                                <option value="8">8. plass</option>
+                                <option value="9">9. plass</option>
+                                <option value="10">10. plass</option>
+                                <option value="11">11. plass</option>
+                                <option value="12">12. plass</option>
+                                <option value="13">13. plass</option>
+                                <option value="14">14. plass</option>
+                                <option value="15">15. plass</option>
+                                <option value="16">16. plass</option>
+                                <option value="17">17. plass</option>
+                                <option value="18">18. plass</option>
+                                <option value="19">19. plass</option>
+                                <option value="20">20. plass</option>
+                                <option value="tid_til_gode" class="text-amber-600">Tid til gode</option>
+                                <option value="avsluttet" class="text-red-600">Avslutt</option>
+                            </select>
+                        </div>
+                        <div>
+                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Tid til gode</h4>
+                            <div class="flex items-center gap-1">
+                                <input type="checkbox" id="dog1_tidtilgode" onchange="setTidTilGode(1)" class="w-5 h-5 rounded border-amber-300 text-amber-500 focus:ring-amber-500">
+                                <label for="dog1_tidtilgode" class="text-xs text-bark-600">Har tid til gode</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Partiliste og rangering -->
+                <div class="p-2 border-t border-bark-100 bg-bark-50">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <h4 class="text-[9px] font-bold text-bark-500 uppercase mb-1">Parti</h4>
+                            <div id="dog1_partyList" class="space-y-0.5 text-[10px]"></div>
+                        </div>
+                        <div>
+                            <h4 class="text-[9px] font-bold text-bark-500 uppercase mb-1">Rangering</h4>
+                            <div id="dog1_ranking" class="space-y-0.5 text-[10px]"></div>
+                            <div id="dog1_tidtilgode_section" class="mt-1 hidden">
+                                <h5 class="text-[9px] font-bold text-amber-600 uppercase">Tid til gode</h5>
+                                <div id="dog1_tidtilgodeList" class="text-[10px] text-amber-700"></div>
+                            </div>
+                            <div id="dog1_finished" class="mt-1 hidden">
+                                <h5 class="text-[9px] font-bold text-red-600 uppercase">Avsluttet</h5>
+                                <div id="dog1_finishedList" class="text-[10px] text-red-700"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- RIGHT DOG (Hund 2) -->
+        <div class="w-1/2 dog-card overflow-y-auto p-2">
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+
+                <!-- Dog selector dropdown -->
+                <div class="bg-vk-100 p-2 border-b border-vk-200">
+                    <select id="dog2Select" onchange="selectDog(2, this.value)" class="w-full h-10 px-2 rounded-lg border border-vk-300 bg-white text-sm font-medium">
+                        <!-- Fylles dynamisk -->
+                    </select>
+                </div>
+
+                <!-- Dog info header -->
+                <div class="bg-vk-700 text-white px-3 py-2">
+                    <p class="font-bold font-serif text-sm" id="dog2Name">IS Braut</p>
+                    <p class="text-white/70 text-xs" id="dog2Info">Fører: Hansen, Per</p>
+                </div>
+
+                <!-- Slipptid -->
+                <div class="p-2 bg-forest-50 border-b border-forest-200">
                     <div class="flex items-center gap-2">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                        Skriv endelig kritikk
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <label class="text-[10px] font-bold text-forest-700 uppercase whitespace-nowrap">Slipptid:</label>
+                                <input type="number" min="0" max="120" id="dog2_slipptid" onchange="updateSlipptidDisplay(2)" class="w-16 h-8 text-center text-sm font-bold rounded-lg border border-forest-300 focus:border-forest-500 outline-none bg-white" placeholder="min">
+                                <span class="text-xs text-forest-600">min</span>
+                            </div>
+                        </div>
+                        <div id="dog2_slipptid_info" class="text-right text-[10px] text-forest-600">
+                            <!-- Fylles dynamisk med tidligere slipptider og total -->
+                        </div>
                     </div>
-                </button>
+                </div>
 
-                <button onclick="saveAndFinishLater()" class="w-full bg-bark-100 hover:bg-bark-200 text-bark-700 font-medium py-3 px-6 rounded-xl transition flex items-center justify-center gap-2 text-sm">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Lagre og fullfør senere
-                </button>
+                <!-- Statistikk -->
+                <div class="p-2 bg-vk-50">
+                    <h4 class="text-[10px] font-bold text-vk-700 uppercase tracking-wider mb-2">Statistikk</h4>
+                    <div class="grid grid-cols-6 gap-1">
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FMR</label>
+                            <input type="number" min="0" id="dog2_fmr" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FUR</label>
+                            <input type="number" min="0" id="dog2_fur" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Slått</label>
+                            <input type="number" min="0" id="dog2_slat" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Sjanse</label>
+                            <input type="number" min="0" id="dog2_sjanse" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">TS</label>
+                            <input type="number" min="0" id="dog2_ts" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Apport</label>
+                            <input type="number" min="0" id="dog2_apport" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
+                        </div>
+                    </div>
+                    <!-- Notater (erstatter DIV) -->
+                    <div class="mt-2">
+                        <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Notater</label>
+                        <input type="text" id="dog2_notater" class="w-full h-8 px-2 text-xs rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="Diverse notater...">
+                    </div>
+                </div>
 
-                <p class="text-xs text-bark-400 text-center">
-                    Dommerkortene er allerede lagret. Partilisten må signeres før NKK-rapporten kan sendes.
-                </p>
+                <!-- Plassering og Tid til gode -->
+                <div class="p-2 border-t border-bark-100">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Plassering</h4>
+                            <select id="dog2_plassering" onchange="setPlassering(2)" class="w-full h-9 px-2 rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white text-sm">
+                                <option value="">-- Velg --</option>
+                                <option value="1">1. plass</option>
+                                <option value="2">2. plass</option>
+                                <option value="3">3. plass</option>
+                                <option value="4">4. plass</option>
+                                <option value="5">5. plass</option>
+                                <option value="6">6. plass</option>
+                                <option value="7">7. plass</option>
+                                <option value="8">8. plass</option>
+                                <option value="9">9. plass</option>
+                                <option value="10">10. plass</option>
+                                <option value="11">11. plass</option>
+                                <option value="12">12. plass</option>
+                                <option value="13">13. plass</option>
+                                <option value="14">14. plass</option>
+                                <option value="15">15. plass</option>
+                                <option value="16">16. plass</option>
+                                <option value="17">17. plass</option>
+                                <option value="18">18. plass</option>
+                                <option value="19">19. plass</option>
+                                <option value="20">20. plass</option>
+                                <option value="tid_til_gode" class="text-amber-600">Tid til gode</option>
+                                <option value="avsluttet" class="text-red-600">Avslutt</option>
+                            </select>
+                        </div>
+                        <div>
+                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Tid til gode</h4>
+                            <div class="flex items-center gap-1">
+                                <input type="checkbox" id="dog2_tidtilgode" onchange="setTidTilGode(2)" class="w-5 h-5 rounded border-amber-300 text-amber-500 focus:ring-amber-500">
+                                <label for="dog2_tidtilgode" class="text-xs text-bark-600">Har tid til gode</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Partiliste og rangering -->
+                <div class="p-2 border-t border-bark-100 bg-bark-50">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <h4 class="text-[9px] font-bold text-bark-500 uppercase mb-1">Parti</h4>
+                            <div id="dog2_partyList" class="space-y-0.5 text-[10px]"></div>
+                        </div>
+                        <div>
+                            <h4 class="text-[9px] font-bold text-bark-500 uppercase mb-1">Rangering</h4>
+                            <div id="dog2_ranking" class="space-y-0.5 text-[10px]"></div>
+                            <div id="dog2_tidtilgode_section" class="mt-1 hidden">
+                                <h5 class="text-[9px] font-bold text-amber-600 uppercase">Tid til gode</h5>
+                                <div id="dog2_tidtilgodeList" class="text-[10px] text-amber-700"></div>
+                            </div>
+                            <div id="dog2_finished" class="mt-1 hidden">
+                                <h5 class="text-[9px] font-bold text-red-600 uppercase">Avsluttet</h5>
+                                <div id="dog2_finishedList" class="text-[10px] text-red-700"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
-    </div>
+    </main>
 
-    <!-- Sign Party List Modal -->
-    <div id="signPartyListModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div class="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4 text-white">
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h2 class="font-bold font-serif text-xl">Signer partiliste</h2>
-                        <p class="text-white/80 text-sm">Bekreft at alle kritikker er godkjent</p>
-                    </div>
-                </div>
-            </div>
-            <div class="p-6 space-y-4">
-                <div class="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                    <p class="text-purple-800 text-sm">
-                        Ved å signere bekrefter du at alle kritikker i dette partiet er ferdig bedømt og korrekte.
-                        Partilisten sendes til NKK-representant for endelig godkjenning.
-                    </p>
-                </div>
-
-                <div id="signatureStatus" class="text-sm text-bark-600">
-                    <!-- Populated dynamically -->
-                </div>
-
-                <button onclick="signPartyList()" id="signPartyBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 px-6 rounded-xl transition flex items-center justify-center gap-3 shadow-lg">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                    </svg>
-                    Signer partiliste
-                </button>
-
-                <button onclick="hideSignPartyModal()" class="w-full text-bark-500 hover:text-bark-700 py-2 text-sm transition">
-                    Lukk
-                </button>
-            </div>
-        </div>
+    <!-- Lagre-knapp (fast nederst) -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-vk-200 p-2 z-40">
+        <button onclick="saveAll()" class="w-full bg-vk-600 hover:bg-vk-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
+            Lagre begge hunder
+        </button>
     </div>
 
     <script>
-        // Score field definitions based on official FKF critique form
-
-        // Main evaluation fields - shown in score input grid
-        const SCORE_FIELDS = [
-            // Fuglebehandling
-            { key: 'PRESISJON', label: 'Pres', title: 'Presisjon (1-4)', max: 4, category: 'fuglebehandling' },
-            { key: 'REISING', label: 'Reis', title: 'Reising (1-6)', max: 6, category: 'fuglebehandling' },
-            // Stand fields
-            { key: 'STAND_M', label: 'StM', title: 'Stand m/makker (antall)', max: 99, category: 'stand' },
-            { key: 'STAND_U', label: 'StU', title: 'Stand u/makker (antall)', max: 99, category: 'stand' },
-            { key: 'TOMSTAND', label: 'TS', title: 'Tomstand (antall)', max: 99, category: 'stand' },
-            { key: 'MAKKER_STAND', label: 'MS', title: 'Makkers stand (antall)', max: 99, category: 'stand' },
-            { key: 'SJANSE', label: 'SJ', title: 'Sjanse på fugl (antall)', max: 99, category: 'stand' },
-            { key: 'SLIPPTID', label: 'SL', title: 'Slipptid (min)', max: 99, category: 'stand', wide: true }
-        ];
-
-        // Character/behavior scores (Sum section) - 1-6 scale
-        const CHARACTER_FIELDS = [
-            { key: 'JAKTLYST', label: 'JL', title: 'Jaktlyst', max: 6, description: '1=Mangler intensitet, 6=Særdeles høy intensitet' },
-            { key: 'FART', label: 'FA', title: 'Fart', max: 6, description: '1=Lav fart, 6=Særdeles stor fart' },
-            { key: 'SELVSTENDIGHET', label: 'SE', title: 'Selvstendighet', max: 6, description: '1=Helt avhengig av makker, 6=Helt selvstendig' },
-            { key: 'SOKSBREDDE', label: 'SB', title: 'Søksbredde', max: 6, description: '1=Liten søksbredde, 6=Alt for stor søksbredde' },
-            { key: 'REVIERING', label: 'RE', title: 'Reviering', max: 6, description: '1=Planløst uten framdrift, 6=Alt for åpen reviering' },
-            { key: 'SAMARBEID', label: 'SA', title: 'Samarbeid', max: 6, description: '1=Totalt førerfiksert, 6=Samarbeider ikke' }
-        ];
-
-        // Additional fields
-        const EXTRA_FIELDS = [
-            { key: 'SEK_SPONTAN', label: 'SekS', title: 'Sekundering spontan (antall)', max: 99, category: 'sekundering' },
-            { key: 'SEK_FORBI', label: 'SekF', title: 'Sekundering går forbi (antall)', max: 99, category: 'sekundering' },
-            { key: 'APPORT', label: 'App', title: 'Apport', max: 2, category: 'apport', description: '1=Godkjent, 2=Ikke godkjent' },
-            { key: 'RAPPORT_SPONTAN', label: 'RapS', title: 'Rapport spontan', max: 1, category: 'rapport', isCheckbox: true }
-        ];
-
-        // Prize options based on official form
-        const PRIZE_OPTIONS = [
-            { value: 'CACIT', label: 'CACIT', color: 'amber' },
-            { value: 'ResCacit', label: 'ResCacit', color: 'amber' },
-            { value: 'CK', label: 'CK', color: 'green' },
-            { value: 'Finale', label: 'Finale', color: 'blue' },
-            { value: 'Semifinale', label: 'Semifinale', color: 'blue' },
-            { value: 'AP', label: 'ÅP', color: 'earth' }
-        ];
-
-        // Godkjent reising checkbox
-        const GODKJENT_REISING = { key: 'GODKJENT_REISING', label: 'Godkj. reising', title: 'Godkjent reising', isCheckbox: true };
-
-        // Party configurations
-        // UK/AK: Maks 14 hunder per parti
-        // VK: Maks 20 hunder per parti
-        const PARTIES = {
-            demo1: { name: 'Demo-parti (Chris Niebel)', color: 'sky', dogCount: 3, judges: 1, maxDogs: 14 },
-            ukak1: { name: 'UK/AK Parti 1', color: 'sky', dogCount: 14, judges: 1, maxDogs: 14 },
-            ukak2: { name: 'UK/AK Parti 2', color: 'sky', dogCount: 14, judges: 1, maxDogs: 14 },
-            ukak3: { name: 'UK/AK Parti 3', color: 'sky', dogCount: 14, judges: 1, maxDogs: 14 },
-            ukak4: { name: 'UK/AK Parti 4', color: 'sky', dogCount: 14, judges: 1, maxDogs: 14 },
-            vk1: { name: 'VK Kval Parti 1', color: 'earth', dogCount: 20, judges: 2, maxDogs: 20 },
-            vk2: { name: 'VK Kval Parti 2', color: 'earth', dogCount: 20, judges: 2, maxDogs: 20 },
-            vkfinale: { name: 'VK Finale', color: 'amber', dogCount: 12, judges: 2, maxDogs: 20 }
+        // State
+        const state = {
+            currentSlipp: 1,
+            selectedDogs: { 1: 1, 2: 2 }, // { position: dogNr }
+            plasseringer: {}, // { dogNr: plassering }
+            tidTilGode: {}, // { dogNr: true/false } - hunder som har tid til gode
+            dogData: {}, // { dogNr: { slipps: { 1: { fmr, ... }, 2: {...} }, notater } }
+            slippComments: {}, // { slippNr: "kommentar" } - felles kommentar per slipp
         };
 
-        // Sample dogs data (would come from server in production)
-        const SAMPLE_DOGS = {
-            demo1: [
-                { id: 1, nr: 1, name: "Dovre's Flammen", breed: 'IS', handler: 'Hansen, Lars', owner: 'Hansen, Lars', regnr: 'NO58432/23' },
-                { id: 2, nr: 2, name: 'Highland Chief', breed: 'ES', handler: 'Pettersen, Anne', owner: 'Pettersen, Anne', regnr: 'NO47832/22' },
-                { id: 3, nr: 3, name: 'Fjellstorm Rex', breed: 'KV', handler: 'Sveen, Trond', owner: 'Sveen, Trond', regnr: 'NO49832/22' }
-            ],
-            vkfinale: [
-                { id: 1, nr: 1, name: 'Champion Dovre', breed: 'ES', handler: 'Fjell, S.', owner: 'Fjell, S.' },
-                { id: 2, nr: 2, name: 'NJCh Nordstjernen', breed: 'GS', handler: 'Skog, E.', owner: 'Skog, E.' },
-                { id: 3, nr: 3, name: 'FTCh Villmarksjansen', breed: 'PT', handler: 'Elvrum, D.', owner: 'Elvrum, D.' },
-                { id: 4, nr: 4, name: 'NJCh Kongeørnen', breed: 'IS', handler: 'Sørensen, L.', owner: 'Brekken, M.' },
-                { id: 5, nr: 5, name: 'Champion Rypedrotten', breed: 'ES', handler: 'Vang, K.', owner: 'Vang, K.' },
-                { id: 6, nr: 6, name: 'FTCh Fjelldansen', breed: 'GS', handler: 'Aune, B.', owner: 'Aune, B.' },
-                { id: 7, nr: 7, name: 'NJCh Stormvinden', breed: 'PT', handler: 'Dahl, R.', owner: 'Dahl, R.' },
-                { id: 8, nr: 8, name: 'Champion Seterkongen', breed: 'IS', handler: 'Nes, S.', owner: 'Nes, S.' },
-                { id: 9, nr: 9, name: 'FTCh Nordlyskongen', breed: 'ES', handler: 'Lund, I.', owner: 'Lund, I.' },
-                { id: 10, nr: 10, name: 'NJCh Viddejansen', breed: 'GS', handler: 'Berg, T.', owner: 'Berg, T.' },
-                { id: 11, nr: 11, name: 'Champion Høgfjellsjansen', breed: 'PT', handler: 'Mo, B.', owner: 'Mo, B.' },
-                { id: 12, nr: 12, name: 'FTCh Tundradansen', breed: 'IS', handler: 'Lie, J.', owner: 'Lie, J.' },
-            ],
-            ukak1: [
-                { id: 1, nr: 1, name: "Fjelljeger's Storm", breed: 'ES', handler: 'Hansen, O.', owner: 'Hansen, O.' },
-                { id: 2, nr: 2, name: "Nordfjord's Troll", breed: 'GS', handler: 'Olsen, M.', owner: 'Olsen, M.' },
-                { id: 3, nr: 3, name: "Høyfjell's Balder", breed: 'ES', handler: 'Haugen, T.', owner: 'Haugen, T.' },
-                { id: 4, nr: 4, name: "Fjordglimt's Embla", breed: 'PT', handler: 'Dahl, A.', owner: 'Dahl, A.' },
-                { id: 5, nr: 5, name: 'Fjelltussen', breed: 'ES', handler: 'Moe, S.', owner: 'Moe, S.' },
-                { id: 6, nr: 6, name: 'Nordlys', breed: 'IS', handler: 'Holm, I.', owner: 'Holm, I.' },
-                { id: 7, nr: 7, name: 'Skogvokteren', breed: 'ES', handler: 'Berg, T.', owner: 'Lund, K.' },
-                { id: 8, nr: 8, name: 'Stormfugl', breed: 'PT', handler: 'Solberg, H.', owner: 'Solberg, H.' },
-                { id: 9, nr: 9, name: 'Villmarkens Viggo', breed: 'PT', handler: 'Svendsen, E.', owner: 'Svendsen, E.' },
-                { id: 10, nr: 10, name: 'Setterprins', breed: 'IS', handler: 'Berg, L.', owner: 'Berg, L.' },
-                { id: 11, nr: 11, name: 'Skogens Prins', breed: 'BR', handler: 'Nilsen, A.', owner: 'Eriksen, K.' },
-                { id: 12, nr: 12, name: "Vinterland's Frost", breed: 'GS', handler: 'Nilsen, P.', owner: 'Nilsen, P.' },
-                { id: 13, nr: 13, name: "Bjørnefjellets Ull", breed: 'PT', handler: 'Berg, M.', owner: 'Berg, M.' },
-                { id: 14, nr: 14, name: 'Fjellkongen', breed: 'GS', handler: 'Vik, A.', owner: 'Vik, A.' },
-                { id: 15, nr: 15, name: 'Tundraens Dronning', breed: 'IS', handler: 'Haug, B.', owner: 'Haug, B.' },
-            ]
-        };
+        // Demo partiliste for VK
+        const partyList = [
+            { nr: 1, race: 'ES', name: 'Neadalens Zlatan', owner: 'Roel, Aleksander' },
+            { nr: 2, race: 'IS', name: 'Braut', owner: 'Hansen, Per' },
+            { nr: 3, race: 'ES', name: 'Fjellheimens Tara', owner: 'Olsen, Kari' },
+            { nr: 4, race: 'GS', name: 'Storm av Høgfjellet', owner: 'Berg, Ole' },
+            { nr: 5, race: 'IS', name: 'Vinterens Håp', owner: 'Dahl, Lisa' },
+            { nr: 6, race: 'ES', name: 'Sølvrevens Balder', owner: 'Vik, Thomas' }
+        ];
 
-        // Generate sample dogs for parties without explicit data
-        function generateSampleDogs(partyId, count) {
-            if (SAMPLE_DOGS[partyId]) return SAMPLE_DOGS[partyId];
-            const breeds = ['ES', 'GS', 'PT', 'IS', 'BR'];
-            const names = ['Fjelltopp', 'Stormvind', 'Nordlys', 'Vidda', 'Skogjansen', 'Rypejansen', 'Trollungen', 'Snøfnugg'];
-            const handlers = ['Hansen', 'Olsen', 'Berg', 'Dahl', 'Nilsen', 'Lie', 'Mo', 'Vik'];
-            return Array.from({ length: count }, (_, i) => ({
-                id: i + 1,
-                nr: i + 1,
-                name: names[i % names.length] + ' ' + (i + 1),
-                breed: breeds[i % breeds.length],
-                handler: handlers[i % handlers.length] + ', ' + String.fromCharCode(65 + (i % 26)) + '.',
-                owner: handlers[(i + 3) % handlers.length] + ', ' + String.fromCharCode(65 + ((i + 5) % 26)) + '.'
-            }));
+        // Initialize
+        async function init() {
+            await loadFromStorage();
+            populateDogSelectors();
+            updateDogDisplays();
+            updateSlippLabels();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+            setupDictation();
         }
 
-        // App State
-        let state = {
-            loggedIn: false,
-            party: null,
-            partyConfig: null,
-            judgeName: 'Dommer',
-            judgeRole: null,
-            viewMode: 'single',
-            selectedDogs: [1],
-            cardDogIndex: [0, 1], // Which dog index each card shows (for dual view navigation)
-            dogs: []
-        };
-
-        // Initialize dog with rounds support
-        function initDog(baseDog) {
-            return {
-                ...baseDog,
-                status: 'waiting',
-                knocked: false,
-                notes: '', // Private notes for judge
-                rounds: [createEmptyRound(1)] // Start with one round
-            };
+        function loadSlippComment() {
+            document.getElementById('slippComment').value = state.slippComments[state.currentSlipp] || '';
         }
 
-        // Create empty round with all official fields
-        function createEmptyRound(roundNum) {
-            return {
-                roundNum,
-                notes: '', // Notes for this specific round/slip
-                scores: {
-                    // Fuglebehandling
-                    PRESISJON: null,
-                    REISING: null,
-                    GODKJENT_REISING: false,
-                    // Stand fields
-                    STAND_M: null,
-                    STAND_U: null,
-                    TOMSTAND: null,
-                    MAKKER_STAND: null,
-                    SJANSE: null,
-                    SLIPPTID: null,
-                    // Character fields (Sum)
-                    JAKTLYST: null,
-                    FART: null,
-                    SELVSTENDIGHET: null,
-                    SOKSBREDDE: null,
-                    REVIERING: null,
-                    SAMARBEID: null,
-                    // Extra fields
-                    SEK_SPONTAN: null,
-                    SEK_FORBI: null,
-                    APPORT: null,
-                    RAPPORT_SPONTAN: false,
-                    // Behavior note
-                    ADFERD: ''
-                },
-                completed: false
-            };
+        function saveSlippComment() {
+            state.slippComments[state.currentSlipp] = document.getElementById('slippComment').value;
         }
 
-        // Check session and initialize on page load
-        (function initFromSession() {
-            const session = localStorage.getItem('judgeSession');
-            if (!session) {
-                window.location.href = 'dommer.html';
-                return;
-            }
-
-            const sessionData = JSON.parse(session);
-
-            // Get party from URL or session
+        async function loadFromStorage() {
             const urlParams = new URLSearchParams(window.location.search);
-            const partyFromUrl = urlParams.get('party');
-            const party = partyFromUrl || sessionData.selectedParty;
+            const partyId = urlParams.get('party') || 'vk_default';
+            const storageKey = 'dommerkort_vk_' + partyId;
 
-            if (!party || !PARTIES[party]) {
-                window.location.href = 'dommer-hjem.html';
-                return;
+            // Prøv å laste fra server først
+            try {
+                const resp = await fetch('/api/storage/' + storageKey);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        const parsed = data.value;
+                        state.currentSlipp = parsed.currentSlipp || 1;
+                        state.selectedDogs = parsed.selectedDogs || { 1: 1, 2: 2 };
+                        state.plasseringer = parsed.plasseringer || {};
+                        state.tidTilGode = parsed.tidTilGode || {};
+                        state.dogData = parsed.dogData || {};
+                        state.slippComments = parsed.slippComments || {};
+                        // Oppdater localStorage med server-data
+                        localStorage.setItem(storageKey, JSON.stringify(parsed));
+                        document.getElementById('currentSlipp').textContent = state.currentSlipp;
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste fra server, bruker localStorage:', e);
             }
 
-            // Set state from session
-            state.judgeName = sessionData.name || 'Dommer';
-            state.judgeRole = sessionData.judgeRole;
-            state.party = party;
-            state.partyConfig = PARTIES[party];
-            state.loggedIn = true;
-
-            // Load dogs for this party
-            const baseDogs = SAMPLE_DOGS[party] || generateSampleDogs(party, state.partyConfig.dogCount);
-            state.dogs = baseDogs.map(initDog);
-
-            // Load saved data if exists
-            const saved = localStorage.getItem('judgeData_' + party);
+            // Fallback til localStorage
+            const saved = localStorage.getItem(storageKey);
             if (saved) {
                 try {
-                    const savedDogs = JSON.parse(saved);
-                    state.dogs = savedDogs;
-                } catch (e) {}
+                    const parsed = JSON.parse(saved);
+                    state.currentSlipp = parsed.currentSlipp || 1;
+                    state.selectedDogs = parsed.selectedDogs || { 1: 1, 2: 2 };
+                    state.plasseringer = parsed.plasseringer || {};
+                    state.tidTilGode = parsed.tidTilGode || {};
+                    state.dogData = parsed.dogData || {};
+                    state.slippComments = parsed.slippComments || {};
+                } catch (e) {
+                    console.error('Failed to load from localStorage:', e);
+                }
             }
+            document.getElementById('currentSlipp').textContent = state.currentSlipp;
+        }
 
-            // Update UI
-            updateUIColors();
-            document.getElementById('headerPartyName').textContent = state.partyConfig.name;
+        function saveToStorage() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const partyId = urlParams.get('party') || 'vk_default';
+            const storageKey = 'dommerkort_vk_' + partyId;
 
-            const isVK = state.party.startsWith('vk');
-            if (isVK && state.judgeRole) {
-                document.getElementById('headerJudgeName').textContent = `Dommer ${state.judgeRole}: ${state.judgeName}`;
-            } else {
-                document.getElementById('headerJudgeName').textContent = `Dommer: ${state.judgeName}`;
-            }
-
-            renderDogSelector();
-            renderCards();
-            document.body.classList.remove('auth-loading');
-        })();
-
-        // Update UI colors based on party type
-        function updateUIColors() {
-            const color = state.partyConfig.color;
-            const header = document.getElementById('mainHeader');
-            const rankingHeader = document.getElementById('rankingHeader');
-            const viewSingle = document.getElementById('viewSingle');
-            const liveRankingControls = document.getElementById('liveRankingControls');
-
-            const colorClasses = {
-                forest: 'from-warm-500 to-warm-600',
-                sky: 'from-warm-500 to-warm-600',
-                earth: 'from-earth-600 to-earth-700',
-                amber: 'from-amber-500 to-amber-600'
+            const dataToSave = {
+                currentSlipp: state.currentSlipp,
+                selectedDogs: state.selectedDogs,
+                plasseringer: state.plasseringer,
+                tidTilGode: state.tidTilGode,
+                dogData: state.dogData,
+                slippComments: state.slippComments,
+                lastSaved: new Date().toISOString()
             };
 
-            header.className = `bg-gradient-to-r ${colorClasses[color] || colorClasses.sky} text-white sticky top-0 z-50 shadow-lg`;
-            rankingHeader.className = `px-4 py-3 bg-gradient-to-r ${colorClasses[color] || colorClasses.sky} text-white flex items-center justify-between`;
+            // Lagre lokalt først (for offline-støtte)
+            localStorage.setItem(storageKey, JSON.stringify(dataToSave));
 
-            // Hide live indicator and ranking button for UK/AK parties
-            const isUKAK = state.party.startsWith('ukak');
-            if (liveRankingControls) {
-                liveRankingControls.style.display = isUKAK ? 'none' : 'flex';
-            }
+            // Synkroniser til server (fire and forget)
+            fetch('/api/storage/' + storageKey, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: dataToSave })
+            }).catch(err => console.warn('Kunne ikke lagre til server:', err));
         }
 
-        // View Mode
-        function setView(mode) {
-            state.viewMode = mode;
-            const activeClass = state.partyConfig.color === 'amber' ? 'bg-amber-100 text-amber-700'
-                : state.partyConfig.color === 'earth' ? 'bg-earth-100 text-earth-700'
-                : 'bg-warm-100 text-warm-800';
+        function resetAll() {
+            if (!confirm('Er du sikker på at du vil nullstille all bedømmelse?')) return;
 
-            document.getElementById('viewSingle').className = mode === 'single'
-                ? `flex-1 py-2 rounded-xl text-sm font-medium ${activeClass}`
-                : 'flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600';
-            document.getElementById('viewDual').className = mode === 'dual'
-                ? `flex-1 py-2 rounded-xl text-sm font-medium ${activeClass}`
-                : 'flex-1 py-2 rounded-xl text-sm font-medium bg-bark-100 text-bark-600';
+            const urlParams = new URLSearchParams(window.location.search);
+            const partyId = urlParams.get('party') || 'vk_default';
+            const storageKey = 'dommerkort_vk_' + partyId;
+            localStorage.removeItem(storageKey);
+            // Slett også fra server
+            fetch('/api/storage/' + storageKey, { method: 'DELETE' }).catch(() => {});
+            state.currentSlipp = 1;
+            state.selectedDogs = { 1: 1, 2: 2 };
+            state.plasseringer = {};
+            state.tidTilGode = {};
+            state.dogData = {};
+            state.slippComments = {};
 
-            if (mode === 'single') {
-                state.selectedDogs = [state.selectedDogs[0]];
-                state.cardDogIndex = [state.dogs.findIndex(d => d.id === state.selectedDogs[0])];
-            } else {
-                // Add second dog if only one selected
-                if (state.selectedDogs.length === 1) {
-                    const currentIdx = state.dogs.findIndex(d => d.id === state.selectedDogs[0]);
-                    const nextIdx = (currentIdx + 1) % state.dogs.length;
-                    state.selectedDogs.push(state.dogs[nextIdx].id);
-                    state.cardDogIndex = [currentIdx, nextIdx];
-                }
-            }
-            renderCards();
-            renderDogSelector();
+            // Oppdater UI
+            populateDogSelectors();
+            updateDogDisplays();
+            updateSlippLabels();
+            loadSlippComment();
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+
+            // Nullstill input-feltene
+            [1, 2].forEach(pos => {
+                document.getElementById(`dog${pos}_fmr`).value = '';
+                document.getElementById(`dog${pos}_fur`).value = '';
+                document.getElementById(`dog${pos}_slat`).value = '';
+                document.getElementById(`dog${pos}_sjanse`).value = '';
+                document.getElementById(`dog${pos}_ts`).value = '';
+                document.getElementById(`dog${pos}_apport`).value = '';
+                document.getElementById(`dog${pos}_slipptid`).value = '';
+                document.getElementById(`dog${pos}_notater`).value = '';
+                document.getElementById(`dog${pos}_slipptid_info`).innerHTML = '';
+            });
+            document.getElementById('slippComment').value = '';
         }
 
-        // Navigate dog on specific card (prev/next)
-        function navigateCard(cardIndex, direction) {
-            const currentDogIdx = state.cardDogIndex[cardIndex];
-            let newIdx = currentDogIdx + direction;
+        function populateDogSelectors() {
+            const options = partyList.map(dog =>
+                `<option value="${dog.nr}">${dog.nr}. ${dog.race} ${dog.name}</option>`
+            ).join('');
 
-            // Wrap around
-            if (newIdx < 0) newIdx = state.dogs.length - 1;
-            if (newIdx >= state.dogs.length) newIdx = 0;
+            document.getElementById('dog1Select').innerHTML = options;
+            document.getElementById('dog2Select').innerHTML = options;
 
-            // In dual mode, don't select same dog on both cards
-            if (state.viewMode === 'dual') {
-                const otherCardIdx = cardIndex === 0 ? 1 : 0;
-                if (newIdx === state.cardDogIndex[otherCardIdx]) {
-                    newIdx = newIdx + direction;
-                    if (newIdx < 0) newIdx = state.dogs.length - 1;
-                    if (newIdx >= state.dogs.length) newIdx = 0;
-                }
-            }
-
-            state.cardDogIndex[cardIndex] = newIdx;
-            state.selectedDogs[cardIndex] = state.dogs[newIdx].id;
-
-            renderCards();
-            renderDogSelector();
+            document.getElementById('dog1Select').value = state.selectedDogs[1];
+            document.getElementById('dog2Select').value = state.selectedDogs[2];
         }
 
-        // Select Dog from bottom nav
-        function selectDog(dogId) {
-            const dogIdx = state.dogs.findIndex(d => d.id === dogId);
+        function selectDog(position, dogNr) {
+            // Save current data first
+            saveDogData(position);
 
-            if (state.viewMode === 'single') {
-                state.selectedDogs = [dogId];
-                state.cardDogIndex = [dogIdx];
-            } else {
-                const idx = state.selectedDogs.indexOf(dogId);
-                if (idx > -1) {
-                    if (state.selectedDogs.length > 1) {
-                        state.selectedDogs.splice(idx, 1);
-                        state.cardDogIndex.splice(idx, 1);
-                    }
-                } else {
-                    if (state.selectedDogs.length >= 2) {
-                        state.selectedDogs.shift();
-                        state.cardDogIndex.shift();
-                    }
-                    state.selectedDogs.push(dogId);
-                    state.cardDogIndex.push(dogIdx);
-                }
-            }
-            renderDogSelector();
-            renderCards();
+            state.selectedDogs[position] = parseInt(dogNr);
+            updateDogDisplays();
+            loadDogData(position);
         }
 
-        // Render Dog Selector
-        function renderDogSelector() {
-            const container = document.getElementById('dogSelector');
-            const activeColor = state.partyConfig.color === 'amber' ? 'bg-amber-500'
-                : state.partyConfig.color === 'earth' ? 'bg-earth-500'
-                : 'bg-warm-500';
+        function updateDogDisplays() {
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const dog = partyList.find(d => d.nr === dogNr);
+                if (dog) {
+                    document.getElementById(`dog${pos}Name`).textContent = `${dog.race} ${dog.name}`;
+                    document.getElementById(`dog${pos}Info`).textContent = `Fører: ${dog.owner}`;
 
-            if (!state.dogs || state.dogs.length === 0) {
-                container.innerHTML = '<p class="text-bark-500 text-sm py-2">Ingen hunder i dette partiet ennå</p>';
-                return;
-            }
+                    // Update plassering dropdown
+                    const plass = state.plasseringer[dogNr];
+                    document.getElementById(`dog${pos}_plassering`).value = plass || '';
 
-            container.innerHTML = state.dogs.map(dog => {
-                const isSelected = state.selectedDogs.includes(dog.id);
-                const hasScores = dog.rounds.some(r => Object.values(r.scores).some(v => v !== null));
-                const statusClass = dog.knocked ? 'bg-red-100 text-red-600 border-red-300'
-                    : dog.status === 'done' ? 'bg-green-100 text-green-700 border-green-300'
-                    : isSelected ? `${activeColor} text-white border-transparent`
-                    : hasScores ? 'bg-blue-50 text-blue-700 border-blue-300'
-                    : 'bg-white text-bark-700 border-bark-300';
-
-                return `
-                    <button onclick="selectDog(${dog.id})"
-                        class="flex-shrink-0 w-12 h-12 rounded-xl border-2 font-bold transition ${statusClass} touch-target">
-                        ${dog.nr}
-                    </button>
-                `;
-            }).join('');
-        }
-
-        // Render Cards
-        function renderCards() {
-            const container = document.getElementById('cardsContainer');
-
-            if (!state.dogs || state.dogs.length === 0) {
-                container.innerHTML = `
-                    <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
-                        <svg class="w-16 h-16 text-bark-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        <h3 class="text-xl font-serif font-semibold text-bark-700 mb-2">Ingen hunder i dette partiet</h3>
-                        <p class="text-bark-500">Prøveleder må først tildele hunder til dette partiet før bedømming kan starte.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            const selectedDogs = state.cardDogIndex.map(idx => state.dogs[idx]).filter(Boolean);
-
-            if (state.viewMode === 'single') {
-                selectedDogs.length = 1;
-            }
-
-            if (selectedDogs.length === 0) {
-                container.innerHTML = '<p class="text-bark-500 p-4">Velg en hund fra listen ovenfor</p>';
-                return;
-            }
-
-            const cardColor = state.partyConfig.color === 'amber' ? 'from-amber-600 to-amber-700'
-                : state.partyConfig.color === 'earth' ? 'from-earth-600 to-earth-700'
-                : 'from-bark-700 to-bark-800';
-
-            container.innerHTML = selectedDogs.map((dog, cardIdx) => {
-                // Check if we need to create a new round (previous was completed)
-                let currentRound = dog.rounds[dog.rounds.length - 1];
-                if (currentRound.completed && dog.rounds.length < 6) {
-                    // Create new round
-                    const newRound = {
-                        roundNum: dog.rounds.length + 1,
-                        scores: {
-                            PRESISJON: null, REISING: null, GODKJENT_REISING: false,
-                            STAND_M: null, STAND_U: null, TOMSTAND: null, MAKKER_STAND: null, SJANSE: null,
-                            SLIPPTID: null, JAKTLYST: null, FART: null, SELVSTENDIGHET: null,
-                            SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
-                            SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
-                        },
-                        notes: '',
-                        completed: false
-                    };
-                    dog.rounds.push(newRound);
-                    currentRound = newRound;
-                    saveLive();
-                }
-                const roundNum = currentRound.roundNum;
-
-                return `
-                <div class="bg-white rounded-2xl shadow-lg overflow-hidden ${selectedDogs.length > 1 && cardIdx === 0 ? 'ring-2 ring-amber-400' : ''}">
-                    <!-- Card Header with Navigation -->
-                    <div class="bg-gradient-to-r ${cardColor} text-white px-4 py-3">
-                        <div class="flex items-center justify-between">
-                            <!-- Left Arrow -->
-                            <button onclick="navigateCard(${cardIdx}, -1)" class="nav-arrow p-2 -ml-2 hover:bg-white/20 rounded-lg transition touch-target">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                                </svg>
-                            </button>
-
-                            <!-- Dog Info -->
-                            <div class="flex-1 text-center px-2">
-                                <div class="flex items-center justify-center gap-2">
-                                    <span class="bg-white/20 px-2 py-0.5 rounded text-sm font-bold">${dog.nr}</span>
-                                    <span class="font-bold font-serif truncate">${dog.name}</span>
-                                </div>
-                                <p class="text-white/70 text-sm mt-1">${dog.breed} • ${dog.handler}</p>
-                            </div>
-
-                            <!-- Right Arrow -->
-                            <button onclick="navigateCard(${cardIdx}, 1)" class="nav-arrow p-2 -mr-2 hover:bg-white/20 rounded-lg transition touch-target">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                </svg>
-                            </button>
-                        </div>
-
-                        <!-- Round selector & Knockout -->
-                        <div class="flex items-center justify-between mt-3 pt-3 border-t border-white/20">
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs text-white/70">Slipp:</span>
-                                ${dog.rounds.map((r, rIdx) => `
-                                    <button onclick="selectRound(${dog.id}, ${rIdx})"
-                                        class="w-8 h-8 rounded-lg text-sm font-bold transition ${rIdx === dog.rounds.length - 1 ? 'bg-white text-bark-800' : 'bg-white/20 hover:bg-white/30'}">
-                                        ${r.roundNum}
-                                    </button>
-                                `).join('')}
-                                <button onclick="addRound(${dog.id})" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white text-lg transition" title="Legg til nytt slipp">
-                                    +
-                                </button>
-                            </div>
-                            <button onclick="toggleKnockout(${dog.id})"
-                                class="px-3 py-1.5 rounded-lg text-xs font-medium transition ${dog.knocked ? 'bg-red-500 text-white' : 'bg-white/20 hover:bg-red-500/80 text-white'}">
-                                ${dog.knocked ? 'Utslått ✓' : 'Slå ut'}
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Score Inputs - Official FKF Critique Form -->
-                    <div class="p-4 ${dog.knocked ? 'opacity-50 pointer-events-none' : ''}">
-                        <!-- Header with legend button -->
-                        <div class="flex items-center justify-between mb-3">
-                            <div>
-                                <span class="text-xs font-semibold text-bark-600 uppercase tracking-wide">Slipp ${roundNum} - Kritikkskjema</span>
-                                ${roundNum > 1 ? `
-                                    <div class="text-xs text-bark-500 mt-1">
-                                        <span class="font-medium">Forrige slipp:</span>
-                                        ${(() => {
-                                            const prevRound = dog.rounds[dog.rounds.length - 2];
-                                            if (prevRound && prevRound.scores) {
-                                                const prevSlipp = prevRound.scores.SLIPPTID || 0;
-                                                const totalSlipp = dog.rounds.slice(0, -1).reduce((sum, r) => sum + (r.scores?.SLIPPTID || 0), 0);
-                                                return `${prevSlipp} min (totalt: ${totalSlipp} min)`;
-                                            }
-                                            return 'Ikke registrert';
-                                        })()}
-                                    </div>
-                                ` : ''}
-                            </div>
-                            <button onclick="showLegend()" class="flex items-center gap-1 text-bark-400 hover:text-bark-600 text-xs">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Hjelp
-                            </button>
-                        </div>
-
-                        <!-- FUGLEBEHANDLING Section -->
-                        <div class="bg-warm-50 rounded-xl p-3 mb-3">
-                            <h4 class="text-xs font-bold text-warm-800 uppercase tracking-wider mb-2">Fuglebehandling</h4>
-                            <div class="grid grid-cols-3 gap-2">
-                                <div class="text-center">
-                                    <label class="block text-xs font-medium text-bark-500 mb-1" title="Presisjon (1-4)">Presisjon</label>
-                                    <input type="number" min="1" max="4"
-                                        value="${currentRound.scores.PRESISJON !== null ? currentRound.scores.PRESISJON : ''}"
-                                        onchange="updateScore(${dog.id}, 'PRESISJON', this.value)"
-                                        placeholder="1-4"
-                                        class="score-input w-full h-12 text-center text-xl font-bold rounded-xl border-2 border-warm-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-xs font-medium text-bark-500 mb-1" title="Reising (1-6)">Reising</label>
-                                    <input type="number" min="1" max="6"
-                                        value="${currentRound.scores.REISING !== null ? currentRound.scores.REISING : ''}"
-                                        onchange="updateScore(${dog.id}, 'REISING', this.value)"
-                                        placeholder="1-6"
-                                        class="score-input w-full h-12 text-center text-xl font-bold rounded-xl border-2 border-warm-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="flex items-end justify-center pb-1">
-                                    <label class="flex items-center gap-2 cursor-pointer">
-                                        <input type="checkbox"
-                                            ${currentRound.scores.GODKJENT_REISING ? 'checked' : ''}
-                                            onchange="updateScore(${dog.id}, 'GODKJENT_REISING', this.checked)"
-                                            class="w-5 h-5 rounded border-2 border-warm-300 text-warm-800 focus:ring-warm-500">
-                                        <span class="text-xs font-medium text-bark-600">Godkj.</span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- STAND/ARBEID Section -->
-                        <div class="bg-bark-50 rounded-xl p-3 mb-3">
-                            <h4 class="text-xs font-bold text-bark-600 uppercase tracking-wider mb-2">Stand og arbeid</h4>
-                            <div class="grid grid-cols-4 gap-2 mb-2">
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Stand m/makker">St.M</label>
-                                    <span class="block text-[9px] italic text-bark-400 mb-1">Stand m/makker</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.STAND_M !== null ? currentRound.scores.STAND_M : ''}"
-                                        onchange="updateScore(${dog.id}, 'STAND_M', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Stand u/makker">St.U</label>
-                                    <span class="block text-[9px] italic text-bark-400 mb-1">Stand u/makker</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.STAND_U !== null ? currentRound.scores.STAND_U : ''}"
-                                        onchange="updateScore(${dog.id}, 'STAND_U', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Tomstand">TS</label>
-                                    <span class="block text-[9px] italic text-bark-400 mb-1">Tomstand</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.TOMSTAND !== null ? currentRound.scores.TOMSTAND : ''}"
-                                        onchange="updateScore(${dog.id}, 'TOMSTAND', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Makkers stand">MS</label>
-                                    <span class="block text-[9px] italic text-bark-400 mb-1">Makkerstand</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.MAKKER_STAND !== null ? currentRound.scores.MAKKER_STAND : ''}"
-                                        onchange="updateScore(${dog.id}, 'MAKKER_STAND', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-bark-600 mb-0" title="Sjanse på fugl">SJ</label>
-                                    <span class="block text-[9px] italic text-bark-400 mb-1">Sjanse</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.SJANSE !== null ? currentRound.scores.SJANSE : ''}"
-                                        onchange="updateScore(${dog.id}, 'SJANSE', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-amber-600 mb-0" title="Slipptid (min)">SL</label>
-                                    <span class="block text-[9px] italic text-amber-500 mb-1">Slipptid (min)</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.SLIPPTID !== null ? currentRound.scores.SLIPPTID : ''}"
-                                        onchange="updateScore(${dog.id}, 'SLIPPTID', this.value)"
-                                        placeholder="min"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-amber-300 focus:border-amber-500 focus:ring-0 outline-none bg-amber-50">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- NOTATER Section (under Stand og arbeid) -->
-                        <div class="bg-yellow-50 rounded-xl p-3 mb-3 border border-yellow-200">
-                            <div class="flex items-center justify-between mb-2">
-                                <h4 class="text-xs font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                                    </svg>
-                                    Notater (slipp ${roundNum})
-                                </h4>
-                                <button onclick="toggleVoiceRecording(${dog.id})" id="voiceBtn-${dog.id}"
-                                    class="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium transition">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-                                    </svg>
-                                    <span id="voiceBtnText-${dog.id}">Dikter</span>
-                                </button>
-                            </div>
-
-                            <!-- Previous slips notes (read-only) -->
-                            ${dog.rounds.length > 1 ? `
-                                <div class="mb-2 space-y-1">
-                                    ${dog.rounds.slice(0, -1).map(r => r.notes ? `
-                                        <div class="bg-yellow-100/50 rounded-lg px-3 py-2 border border-yellow-200">
-                                            <span class="text-[10px] font-semibold text-yellow-600 uppercase">Slipp ${r.roundNum}:</span>
-                                            <p class="text-sm text-bark-600 italic">${r.notes}</p>
-                                        </div>
-                                    ` : '').join('')}
-                                </div>
-                            ` : ''}
-
-                            <div class="relative">
-                                <textarea
-                                    id="notes-${dog.id}"
-                                    rows="2"
-                                    onchange="updateCurrentRoundNotes(${dog.id}, this.value)"
-                                    placeholder="Skriv eller dikter notater for slipp ${roundNum}..."
-                                    class="w-full px-3 py-2 rounded-lg border border-yellow-300 focus:border-yellow-500 focus:ring-0 outline-none text-sm resize-none bg-white">${currentRound.notes || ''}</textarea>
-                                <div id="voiceStatus-${dog.id}" class="hidden absolute right-2 top-2 text-xs text-red-600 flex items-center gap-1">
-                                    <span class="w-2 h-2 bg-red-500 rounded-full recording"></span>
-                                    Lytter...
-                                </div>
-                            </div>
-                            <p class="text-[10px] text-yellow-600 mt-1 flex items-center gap-1">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                                </svg>
-                                Kun synlig for deg - publiseres ikke
-                            </p>
-                        </div>
-
-                        <!-- ADFERD Section -->
-                        <div class="bg-red-50 rounded-xl p-3 mb-3">
-                            <h4 class="text-[10px] font-bold text-red-600 uppercase mb-2">Adferd (beskriv uønsket)</h4>
-                            <input type="text"
-                                value="${currentRound.scores.ADFERD || ''}"
-                                onchange="updateScore(${dog.id}, 'ADFERD', this.value)"
-                                placeholder="Ingen uønsket adferd"
-                                class="w-full px-3 py-2 rounded-lg border border-red-200 focus:border-red-400 outline-none text-sm bg-white">
-                        </div>
-
-                        <!-- SEKUNDERING & APPORT Section -->
-                        <div class="bg-purple-50 rounded-xl p-3 mb-3">
-                            <h4 class="text-xs font-bold text-purple-700 uppercase tracking-wider mb-2">Sekundering & Apport</h4>
-                            <div class="grid grid-cols-4 gap-2">
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Sekundering spontan">SekS</label>
-                                    <span class="block text-[9px] italic text-purple-500 mb-1">Sek. spont.</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.SEK_SPONTAN !== null ? currentRound.scores.SEK_SPONTAN : ''}"
-                                        onchange="updateScore(${dog.id}, 'SEK_SPONTAN', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Sekundering går forbi">SekF</label>
-                                    <span class="block text-[9px] italic text-purple-500 mb-1">Sek. forbi</span>
-                                    <input type="number" min="0" max="99"
-                                        value="${currentRound.scores.SEK_FORBI !== null ? currentRound.scores.SEK_FORBI : ''}"
-                                        onchange="updateScore(${dog.id}, 'SEK_FORBI', this.value)"
-                                        placeholder="-"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="text-center">
-                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Apport (1=Godkjent, 2=Ikke godkjent)">App</label>
-                                    <span class="block text-[9px] italic text-purple-500 mb-1">Apport</span>
-                                    <input type="number" min="1" max="2"
-                                        value="${currentRound.scores.APPORT !== null ? currentRound.scores.APPORT : ''}"
-                                        onchange="updateScore(${dog.id}, 'APPORT', this.value)"
-                                        placeholder="1-2"
-                                        class="score-input w-full h-10 text-center text-lg font-bold rounded-lg border-2 border-purple-200 focus:border-purple-500 focus:ring-0 outline-none bg-white">
-                                </div>
-                                <div class="flex flex-col items-center">
-                                    <label class="block text-sm font-bold text-purple-600 mb-0" title="Rapport spontan">RapS</label>
-                                    <span class="block text-[9px] italic text-purple-500 mb-1">Rapp. spont.</span>
-                                    <label class="flex items-center justify-center h-10 cursor-pointer">
-                                        <input type="checkbox"
-                                            ${currentRound.scores.RAPPORT_SPONTAN ? 'checked' : ''}
-                                            onchange="updateScore(${dog.id}, 'RAPPORT_SPONTAN', this.checked)"
-                                            class="w-6 h-6 rounded border-2 border-purple-300 text-purple-600 focus:ring-purple-500">
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- EGENSKAPER (SUM) Section - flyttet til nederst -->
-                        <div class="bg-earth-50 rounded-xl p-3 mb-3">
-                            <h4 class="text-xs font-bold text-earth-700 uppercase tracking-wider mb-2">Egenskaper (1-6)</h4>
-                            <div class="grid grid-cols-6 gap-1">
-                                ${CHARACTER_FIELDS.map(field => `
-                                    <div class="text-center">
-                                        <label class="block text-sm font-bold text-earth-600 mb-0" title="${field.title}: ${field.description}">${field.label}</label>
-                                        <span class="block text-[8px] italic text-earth-500 mb-1">${field.title}</span>
-                                        <input type="number" min="1" max="6"
-                                            value="${currentRound.scores[field.key] !== null ? currentRound.scores[field.key] : ''}"
-                                            onchange="updateScore(${dog.id}, '${field.key}', this.value)"
-                                            placeholder="-"
-                                            class="score-input w-full h-9 text-center text-base font-bold rounded-lg border-2 border-earth-200 focus:border-earth-500 focus:ring-0 outline-none bg-white">
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <!-- Quick Actions -->
-                        <div class="flex gap-2 mt-4">
-                            <button onclick="saveSlipAndContinue(${dog.id})"
-                                class="flex-1 py-3 rounded-xl font-medium transition bg-blue-100 text-blue-700 hover:bg-blue-200">
-                                Lagre ${roundNum}.slipp
-                            </button>
-                            <button onclick="markDone(${dog.id})"
-                                class="flex-1 py-3 rounded-xl font-medium transition ${dog.status === 'done' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
-                                ${dog.status === 'done' ? '✓ Avsluttet' : 'Lagre slipp og avslutt hund'}
-                            </button>
-                        </div>
-                        <div class="flex gap-2 mt-2">
-                            <button onclick="clearRound(${dog.id})"
-                                class="flex-1 py-2 rounded-xl bg-bark-100 text-bark-600 hover:bg-bark-200 text-sm font-medium transition">
-                                Nullstill slipp
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `}).join('');
-
-            container.innerHTML += '<div class="h-24"></div>';
-        }
-
-        // Update Score
-        function updateScore(dogId, field, value) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                const currentRound = dog.rounds[dog.rounds.length - 1];
-                // Handle boolean fields (checkboxes) differently from numeric fields
-                if (typeof value === 'boolean') {
-                    currentRound.scores[field] = value;
-                } else {
-                    currentRound.scores[field] = value === '' ? null : parseInt(value);
-                }
-                saveLive();
-            }
-        }
-
-        // Update Notes (legacy - for global dog notes)
-        function updateNotes(dogId, value) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                dog.notes = value;
-                saveLive();
-            }
-        }
-
-        // Update notes for current round/slip
-        function updateCurrentRoundNotes(dogId, value) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                const currentRound = dog.rounds[dog.rounds.length - 1];
-                currentRound.notes = value;
-                saveLive();
-            }
-        }
-
-        // Save current slip and move to next dog (without marking as done)
-        function saveSlipAndContinue(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                // Save current notes from textarea before marking as completed
-                const textarea = document.getElementById('notes-' + dogId);
-                const currentRound = dog.rounds[dog.rounds.length - 1];
-                if (textarea) {
-                    currentRound.notes = textarea.value;
-                }
-
-                // Mark current round as completed
-                currentRound.completed = true;
-
-                // Save
-                saveLive();
-
-                // Move to next dog in the list
-                const currentIdx = state.dogs.findIndex(d => d.id === dogId);
-                let nextIdx = -1;
-
-                // First, search forward from current position
-                for (let i = currentIdx + 1; i < state.dogs.length; i++) {
-                    if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
-                        nextIdx = i;
-                        break;
+                    // Update tid til gode checkbox
+                    const checkbox = document.getElementById(`dog${pos}_tidtilgode`);
+                    if (checkbox) {
+                        checkbox.checked = !!state.tidTilGode[dogNr];
                     }
                 }
+            });
+        }
 
-                // If not found, wrap around and search from beginning (excluding current dog)
-                if (nextIdx === -1) {
-                    for (let i = 0; i < currentIdx; i++) {
-                        if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
-                            nextIdx = i;
-                            break;
-                        }
-                    }
+        function updateSlippLabels() {
+            document.getElementById('slippLabel').textContent = state.currentSlipp;
+            document.getElementById('currentSlipp').textContent = state.currentSlipp;
+        }
+
+        function loadDogData(position) {
+            const dogNr = state.selectedDogs[position];
+            const data = state.dogData[dogNr];
+            const slippData = data?.slipps?.[state.currentSlipp] || {};
+
+            document.getElementById(`dog${position}_fmr`).value = slippData.fmr ?? '';
+            document.getElementById(`dog${position}_fur`).value = slippData.fur ?? '';
+            document.getElementById(`dog${position}_slat`).value = slippData.slat ?? '';
+            document.getElementById(`dog${position}_sjanse`).value = slippData.sjanse ?? '';
+            document.getElementById(`dog${position}_apport`).value = slippData.apport ?? '';
+            document.getElementById(`dog${position}_ts`).value = slippData.ts ?? '';
+            document.getElementById(`dog${position}_slipptid`).value = slippData.slipptid ?? '';
+            document.getElementById(`dog${position}_notater`).value = data?.notater || '';
+
+            // Oppdater slipptid-visning
+            updateSlipptidDisplay(position);
+        }
+
+        function saveDogData(position) {
+            const dogNr = state.selectedDogs[position];
+            if (!state.dogData[dogNr]) {
+                state.dogData[dogNr] = { slipps: {}, notater: '' };
+            }
+            if (!state.dogData[dogNr].slipps) {
+                state.dogData[dogNr].slipps = {};
+            }
+
+            state.dogData[dogNr].slipps[state.currentSlipp] = {
+                fmr: document.getElementById(`dog${position}_fmr`).value ? parseInt(document.getElementById(`dog${position}_fmr`).value) : null,
+                fur: document.getElementById(`dog${position}_fur`).value ? parseInt(document.getElementById(`dog${position}_fur`).value) : null,
+                slat: document.getElementById(`dog${position}_slat`).value ? parseInt(document.getElementById(`dog${position}_slat`).value) : null,
+                sjanse: document.getElementById(`dog${position}_sjanse`).value ? parseInt(document.getElementById(`dog${position}_sjanse`).value) : null,
+                apport: document.getElementById(`dog${position}_apport`).value ? parseInt(document.getElementById(`dog${position}_apport`).value) : null,
+                ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
+                slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : null
+            };
+            state.dogData[dogNr].notater = document.getElementById(`dog${position}_notater`).value;
+        }
+
+        // Beregn total slipptid for en hund (sum av alle slipp)
+        function getTotalSlipptid(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return 0;
+
+            let total = 0;
+            Object.values(data.slipps).forEach(slipp => {
+                if (slipp.slipptid) total += slipp.slipptid;
+            });
+            return total;
+        }
+
+        // Hent slipptid-historikk for en hund (array med { slippNr, tid })
+        function getSlipptidHistory(dogNr, excludeCurrentSlipp = false) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return [];
+
+            const history = [];
+            Object.entries(data.slipps).forEach(([slippNr, slipp]) => {
+                if (excludeCurrentSlipp && parseInt(slippNr) === state.currentSlipp) return;
+                if (slipp.slipptid) {
+                    history.push({ slippNr: parseInt(slippNr), tid: slipp.slipptid });
                 }
-
-                // If found a next dog, navigate to it
-                if (nextIdx !== -1) {
-                    state.selectedDogs = [state.dogs[nextIdx].id];
-                    state.cardDogIndex = [nextIdx];
-                    renderCards();
-                    renderDogSelector();
-                } else {
-                    // All dogs have been assessed in this round, show message
-                    alert('Slipp ' + currentRound.roundNum + ' lagret for ' + dog.name + '.\n\nAlle hunder har vært gjennom dette slippet.');
-                    renderCards();
-                    renderDogSelector();
-                }
-            }
-        }
-
-        // Add Round
-        function addRound(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                const nextRoundNum = dog.rounds.length + 1;
-                dog.rounds.push(createEmptyRound(nextRoundNum));
-                renderCards();
-                saveLive();
-            }
-        }
-
-        // Select Round (for viewing/editing previous rounds)
-        function selectRound(dogId, roundIdx) {
-            // For now, we always work with the latest round
-            // Could implement round switching if needed
-            alert('Viser slipp ' + (roundIdx + 1) + '. Redigering av tidligere slipp kommer snart.');
-        }
-
-        // Clear current round
-        function clearRound(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog && confirm('Nullstille poeng for dette slippet?')) {
-                const currentRound = dog.rounds[dog.rounds.length - 1];
-                currentRound.scores = {
-                    PRESISJON: null, REISING: null, GODKJENT_REISING: false,
-                    STAND_M: null, STAND_U: null, TOMSTAND: null, MAKKER_STAND: null, SJANSE: null, SLIPPTID: null,
-                    JAKTLYST: null, FART: null, SELVSTENDIGHET: null, SOKSBREDDE: null, REVIERING: null, SAMARBEID: null,
-                    SEK_SPONTAN: null, SEK_FORBI: null, APPORT: null, RAPPORT_SPONTAN: false, ADFERD: ''
-                };
-                renderCards();
-                saveLive();
-            }
-        }
-
-        // Mark Done - Opens critique form
-        function markDone(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                if (dog.status === 'done') {
-                    // Already done, toggle back
-                    dog.status = 'active';
-                    renderCards();
-                    renderDogSelector();
-                    saveLive();
-                } else {
-                    // Save current notes from textarea before opening modal
-                    const textarea = document.getElementById('notes-' + dogId);
-                    if (textarea && dog.rounds && dog.rounds.length > 0) {
-                        const currentRound = dog.rounds[dog.rounds.length - 1];
-                        currentRound.notes = textarea.value;
-                        saveLive();
-                    }
-                    // Open critique form modal
-                    openCritiqueForm(dogId);
-                }
-            }
-        }
-
-        // Toggle Knockout
-        function toggleKnockout(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (dog) {
-                dog.knocked = !dog.knocked;
-                renderCards();
-                renderDogSelector();
-                saveLive();
-            }
-        }
-
-        // Save Live
-        function saveLive() {
-            localStorage.setItem('judgeData_' + state.party, JSON.stringify(state.dogs));
-            console.log('Saved:', state.dogs);
-        }
-
-        // Show/Hide Legend
-        function showLegend() {
-            document.getElementById('legendModal').classList.remove('hidden');
-        }
-        function hideLegend() {
-            document.getElementById('legendModal').classList.add('hidden');
-        }
-
-        // Show/Hide Ranking
-        function showRanking() {
-            document.getElementById('rankingModal').classList.remove('hidden');
-            renderRankingList();
-        }
-        function hideRanking() {
-            document.getElementById('rankingModal').classList.add('hidden');
-        }
-
-        // Render Ranking List
-        function renderRankingList() {
-            const activeDogs = state.dogs.filter(d => !d.knocked);
-            const knockedDogs = state.dogs.filter(d => d.knocked);
-
-            // Sort by total score across all rounds
-            activeDogs.sort((a, b) => {
-                const totalA = a.rounds.reduce((sum, r) => sum + Object.values(r.scores).reduce((s, v) => s + (v || 0), 0), 0);
-                const totalB = b.rounds.reduce((sum, r) => sum + Object.values(r.scores).reduce((s, v) => s + (v || 0), 0), 0);
-                return totalB - totalA;
             });
 
-            // Store ranking order
-            if (!state.rankingOrder || state.rankingOrder.length !== activeDogs.length) {
-                state.rankingOrder = activeDogs.map(d => d.id);
+            // Sorter etter slipp-nummer
+            return history.sort((a, b) => a.slippNr - b.slippNr);
+        }
+
+        // Oppdater slipptid-visning for en posisjon
+        function updateSlipptidDisplay(position) {
+            const dogNr = state.selectedDogs[position];
+            const infoEl = document.getElementById(`dog${position}_slipptid_info`);
+            if (!infoEl) return;
+
+            // Hent historikk (ekskluder nåværende slipp)
+            const history = getSlipptidHistory(dogNr, true);
+
+            // Hent nåværende verdi fra input
+            const currentSlipptid = document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : 0;
+
+            // Beregn total (tidligere + nåværende)
+            const previousTotal = history.reduce((sum, h) => sum + h.tid, 0);
+            const total = previousTotal + currentSlipptid;
+
+            // Bygg visning
+            let html = '';
+
+            if (history.length > 0) {
+                // Vis tidligere slipp
+                const historyStr = history.map(h => `${h.slippNr}.slipp: ${h.tid}'`).join(', ');
+                html += `<div class="text-forest-500">${historyStr}</div>`;
             }
 
-            // Sort by manual ranking order
-            activeDogs.sort((a, b) => {
-                const idxA = state.rankingOrder.indexOf(a.id);
-                const idxB = state.rankingOrder.indexOf(b.id);
-                return idxA - idxB;
+            if (total > 0 || history.length > 0) {
+                // Vis total - fremhev hvis ≥60 min
+                const totalClass = total >= 60 ? 'text-green-600 font-bold' : 'font-semibold';
+                html += `<div class="${totalClass}">Total: ${total} min</div>`;
+            }
+
+            infoEl.innerHTML = html;
+        }
+
+        function saveAll() {
+            saveSlippComment();
+            saveDogData(1);
+            saveDogData(2);
+            saveToStorage();
+
+            // Oppdater rangeringen umiddelbart etter lagring
+            renderRankings();
+            renderPartyLists();
+
+            // Visual feedback
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Lagret!';
+            btn.classList.remove('bg-vk-600', 'hover:bg-vk-700');
+            btn.classList.add('bg-green-600');
+
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+                btn.classList.add('bg-vk-600', 'hover:bg-vk-700');
+
+                // Automatisk gå til neste par
+                goToNextPair();
+            }, 800);
+        }
+
+        // Finn neste ledige par (hunder som ikke er plassert eller avsluttet)
+        function getNextAvailablePair() {
+            // Finn hunder som ikke er plassert, ikke har tid til gode, og ikke er avsluttet
+            const availableDogs = partyList.filter(dog => {
+                const plass = state.plasseringer[dog.nr];
+                const hasTidTilGode = state.tidTilGode[dog.nr];
+                const isCurrentlySelected = dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2];
+
+                // Hund er tilgjengelig hvis den ikke er plassert, ikke har tid til gode, og ikke er valgt nå
+                return !plass && !hasTidTilGode && !isCurrentlySelected;
             });
 
-            const rankingContainer = document.getElementById('rankingList');
-            rankingContainer.innerHTML = activeDogs.map((dog, idx) => {
-                const rank = idx + 1;
-                const medalClass = rank === 1 ? 'bg-amber-500' : rank === 2 ? 'bg-gray-400' : rank === 3 ? 'bg-amber-700' : 'bg-bark-300';
-                const latestRound = dog.rounds[dog.rounds.length - 1];
-
-                return `
-                    <div class="ranking-item flex items-center gap-2 bg-bark-50 rounded-xl p-3 transition-all"
-                         draggable="true"
-                         data-dog-id="${dog.id}"
-                         ondragstart="handleDragStart(event, ${dog.id})"
-                         ondragover="handleDragOver(event)"
-                         ondragenter="handleDragEnter(event)"
-                         ondragleave="handleDragLeave(event)"
-                         ondrop="handleDrop(event, ${dog.id})"
-                         ondragend="handleDragEnd(event)">
-                        <!-- Move buttons -->
-                        <div class="flex flex-col gap-1">
-                            <button onclick="moveRanking(${dog.id}, -1)" class="p-1 rounded hover:bg-bark-200 text-bark-400 hover:text-bark-700 transition ${idx === 0 ? 'opacity-30 pointer-events-none' : ''}">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                                </svg>
-                            </button>
-                            <button onclick="moveRanking(${dog.id}, 1)" class="p-1 rounded hover:bg-bark-200 text-bark-400 hover:text-bark-700 transition ${idx === activeDogs.length - 1 ? 'opacity-30 pointer-events-none' : ''}">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="w-8 h-8 ${medalClass} text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
-                            ${rank}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p class="font-semibold text-bark-800 truncate">${dog.name}</p>
-                            <p class="text-xs text-bark-500">${dog.breed} • ${dog.handler} • ${dog.rounds.length} slipp</p>
-                        </div>
-                        <div class="text-right text-xs text-bark-500">
-                            <div class="grid grid-cols-6 gap-0.5">
-                                ${SCORE_FIELDS.map(f => `
-                                    <span class="w-5 h-5 ${f.wide ? 'w-7' : ''} bg-white border border-bark-200 rounded flex items-center justify-center text-xs">
-                                        ${latestRound.scores[f.key] !== null ? latestRound.scores[f.key] : '-'}
-                                    </span>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="text-bark-300 cursor-grab">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
-                            </svg>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            if (activeDogs.length === 0) {
-                rankingContainer.innerHTML = '<p class="text-center text-bark-500 py-4">Ingen hunder registrert ennå</p>';
+            // Returner de to første ledige hundene
+            if (availableDogs.length >= 2) {
+                return [availableDogs[0].nr, availableDogs[1].nr];
+            } else if (availableDogs.length === 1) {
+                // Bare én hund igjen - sjekk om det er hunder med tid til gode
+                const ttgDogs = Object.entries(state.tidTilGode)
+                    .filter(([_, has]) => has)
+                    .map(([nr]) => parseInt(nr));
+                if (ttgDogs.length > 0) {
+                    return [availableDogs[0].nr, ttgDogs[0]];
+                }
+                return [availableDogs[0].nr, null];
             }
 
-            const knockedContainer = document.getElementById('knockedOutList');
-            knockedContainer.innerHTML = knockedDogs.map(dog => `
-                <div class="flex items-center gap-3 bg-red-50 rounded-xl p-3">
-                    <div class="w-8 h-8 bg-red-200 text-red-600 rounded-full flex items-center justify-center">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </div>
-                    <div class="flex-1">
-                        <p class="font-medium text-red-800">${dog.name}</p>
-                        <p class="text-xs text-red-600">${dog.breed} • ${dog.handler}</p>
-                    </div>
-                    <button onclick="toggleKnockout(${dog.id}); renderRankingList();"
-                        class="text-xs text-red-600 hover:text-red-800 underline">
-                        Angre
-                    </button>
-                </div>
-            `).join('');
+            // Ingen vanlige hunder igjen - sjekk tid til gode
+            const ttgDogs = Object.entries(state.tidTilGode)
+                .filter(([_, has]) => has)
+                .map(([nr]) => parseInt(nr));
 
-            if (knockedDogs.length === 0) {
-                knockedContainer.innerHTML = '<p class="text-center text-bark-400 text-sm py-2">Ingen utslåtte hunder</p>';
+            if (ttgDogs.length >= 2) {
+                return [ttgDogs[0], ttgDogs[1]];
+            } else if (ttgDogs.length === 1) {
+                return [ttgDogs[0], null];
             }
+
+            return [null, null];
         }
 
-        // Publish Ranking
-        function publishRanking() {
-            if (confirm('Publiser rangeringen?\n\nDette blir synlig for alle.')) {
-                saveLive();
-                alert('Rangering publisert!');
-                hideRanking();
+        function goToNextPair() {
+            const [nextDog1, nextDog2] = getNextAvailablePair();
+
+            if (nextDog1 === null && nextDog2 === null) {
+                // Ingen flere hunder - vis melding
+                alert('Alle hunder er bedømt eller avsluttet!');
+                return;
             }
-        }
 
-        // ===== RANKING DRAG AND DROP =====
-        let draggedDogId = null;
+            // Øk slipp-nummer
+            state.currentSlipp++;
+            updateSlippLabels();
 
-        function handleDragStart(e, dogId) {
-            draggedDogId = dogId;
-            e.target.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-        }
-
-        function handleDragOver(e) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-        }
-
-        function handleDragEnter(e) {
-            e.preventDefault();
-            const item = e.target.closest('.ranking-item');
-            if (item) item.classList.add('drag-over');
-        }
-
-        function handleDragLeave(e) {
-            const item = e.target.closest('.ranking-item');
-            if (item) item.classList.remove('drag-over');
-        }
-
-        function handleDrop(e, targetDogId) {
-            e.preventDefault();
-            const item = e.target.closest('.ranking-item');
-            if (item) item.classList.remove('drag-over');
-
-            if (draggedDogId && draggedDogId !== targetDogId) {
-                const fromIdx = state.rankingOrder.indexOf(draggedDogId);
-                const toIdx = state.rankingOrder.indexOf(targetDogId);
-
-                // Remove from old position and insert at new
-                state.rankingOrder.splice(fromIdx, 1);
-                state.rankingOrder.splice(toIdx, 0, draggedDogId);
-
-                renderRankingList();
-                saveLive();
+            // Sett nye hunder
+            if (nextDog1 !== null) {
+                state.selectedDogs[1] = nextDog1;
+                document.getElementById('dog1Select').value = nextDog1;
+                // Fjern fra tid til gode hvis den var der
+                delete state.tidTilGode[nextDog1];
             }
-        }
 
-        function handleDragEnd(e) {
-            e.target.classList.remove('dragging');
-            document.querySelectorAll('.ranking-item').forEach(el => el.classList.remove('drag-over'));
-            draggedDogId = null;
-        }
-
-        function moveRanking(dogId, direction) {
-            const idx = state.rankingOrder.indexOf(dogId);
-            const newIdx = idx + direction;
-
-            if (newIdx >= 0 && newIdx < state.rankingOrder.length) {
-                // Swap
-                [state.rankingOrder[idx], state.rankingOrder[newIdx]] = [state.rankingOrder[newIdx], state.rankingOrder[idx]];
-                renderRankingList();
-                saveLive();
+            if (nextDog2 !== null) {
+                state.selectedDogs[2] = nextDog2;
+                document.getElementById('dog2Select').value = nextDog2;
+                // Fjern fra tid til gode hvis den var der
+                delete state.tidTilGode[nextDog2];
             }
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+
+            // Nullstill input-feltene for nye hunder
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const data = state.dogData[dogNr];
+                const slippData = data?.slipps?.[state.currentSlipp];
+
+                // Hvis ingen data for dette slippet, tøm feltene
+                if (!slippData) {
+                    document.getElementById(`dog${pos}_fmr`).value = '';
+                    document.getElementById(`dog${pos}_fur`).value = '';
+                    document.getElementById(`dog${pos}_slat`).value = '';
+                    document.getElementById(`dog${pos}_sjanse`).value = '';
+                    document.getElementById(`dog${pos}_ts`).value = '';
+                    document.getElementById(`dog${pos}_apport`).value = '';
+                    document.getElementById(`dog${pos}_slipptid`).value = '';
+                }
+
+                // Oppdater slipptid-visning (viser historikk fra tidligere slipp)
+                updateSlipptidDisplay(pos);
+            });
+
+            saveToStorage();
         }
 
-        // ===== VOICE RECORDING =====
+        function nextSlipp() {
+            // Save current slipp data
+            saveSlippComment();
+            saveDogData(1);
+            saveDogData(2);
+            saveToStorage();
+
+            // Gå til neste par (samme logikk som "Lagre begge hunder")
+            goToNextPair();
+        }
+
+        // Beregn gyldige plasseringer basert på nåværende liste
+        function getValidPlacements(excludeDogNr = null) {
+            // Finn alle plasserte hunder (unntatt excludeDogNr)
+            const currentPlacements = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && parseInt(nr) !== excludeDogNr)
+                .map(([_, p]) => parseInt(p))
+                .sort((a, b) => a - b);
+
+            // Antall plasserte hunder
+            const count = currentPlacements.length;
+
+            // Gyldige plasseringer: 1 til (count + 2) for de to hundene som bedømmes
+            // Men maks 20
+            const maxPlacement = Math.min(count + 2, 20);
+
+            return Array.from({ length: maxPlacement }, (_, i) => i + 1);
+        }
+
+        // Oppdater plassering-dropdown med gyldige valg
+        function updatePlacementDropdowns() {
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const select = document.getElementById(`dog${pos}_plassering`);
+                const currentValue = state.plasseringer[dogNr];
+
+                // Beregn gyldige plasseringer (ekskluder denne hunden fra beregningen)
+                const validPlacements = getValidPlacements(dogNr);
+
+                // Bygg dropdown options
+                let options = '<option value="">-- Velg --</option>';
+                validPlacements.forEach(p => {
+                    options += `<option value="${p}">${p}. plass</option>`;
+                });
+                options += '<option value="tid_til_gode" class="text-amber-600">Tid til gode</option>';
+                options += '<option value="avsluttet" class="text-red-600">Avslutt</option>';
+
+                select.innerHTML = options;
+
+                // Sett tilbake verdien hvis den fortsatt er gyldig
+                if (currentValue && currentValue !== 'avsluttet') {
+                    select.value = currentValue;
+                } else if (currentValue === 'avsluttet') {
+                    select.value = 'avsluttet';
+                }
+            });
+        }
+
+        function setPlassering(position) {
+            const dogNr = state.selectedDogs[position];
+            const select = document.getElementById(`dog${position}_plassering`);
+            const value = select.value;
+
+            if (!value) {
+                delete state.plasseringer[dogNr];
+            } else if (value === 'tid_til_gode') {
+                // Merk som tid til gode
+                state.tidTilGode[dogNr] = true;
+                delete state.plasseringer[dogNr];
+                // Oppdater checkbox
+                const checkbox = document.getElementById(`dog${position}_tidtilgode`);
+                if (checkbox) checkbox.checked = true;
+            } else if (value !== 'avsluttet') {
+                const newPlass = parseInt(value);
+
+                // Skyv ned alle hunder som er på denne plassen eller lavere
+                const toShift = Object.entries(state.plasseringer)
+                    .filter(([nr, p]) => p !== 'avsluttet' && parseInt(p) >= newPlass && parseInt(nr) !== dogNr)
+                    .sort((a, b) => parseInt(b[1]) - parseInt(a[1])); // Sorter synkende for å unngå konflikter
+
+                toShift.forEach(([nr, p]) => {
+                    state.plasseringer[parseInt(nr)] = String(parseInt(p) + 1);
+                });
+
+                // Sett ny plassering
+                state.plasseringer[dogNr] = value;
+                // Fjern fra tid til gode hvis plassert
+                delete state.tidTilGode[dogNr];
+            } else {
+                state.plasseringer[dogNr] = 'avsluttet';
+                // Fjern fra tid til gode hvis avsluttet
+                delete state.tidTilGode[dogNr];
+            }
+
+            saveToStorage();
+            renderRankings();
+            renderPartyLists();
+            updateDogDisplays();
+            updatePlacementDropdowns();
+        }
+
+        function setTidTilGode(position) {
+            const dogNr = state.selectedDogs[position];
+            const checkbox = document.getElementById(`dog${position}_tidtilgode`);
+
+            if (checkbox.checked) {
+                state.tidTilGode[dogNr] = true;
+                // Fjern plassering hvis den hadde en
+                delete state.plasseringer[dogNr];
+                document.getElementById(`dog${position}_plassering`).value = '';
+            } else {
+                delete state.tidTilGode[dogNr];
+            }
+
+            saveToStorage();
+            updatePlacementDropdowns();
+            renderRankings();
+            renderPartyLists();
+        }
+
+        // Hent tilbake en hund med tid til gode - sett den som aktiv hund på angitt posisjon
+        function hentTilbakeTTG(dogNr, position) {
+            // Lagre nåværende data først
+            saveDogData(position);
+
+            // Fjern tid til gode status
+            delete state.tidTilGode[dogNr];
+
+            // Sett denne hunden som aktiv på angitt posisjon
+            state.selectedDogs[position] = dogNr;
+
+            // Oppdater dropdown
+            document.getElementById(`dog${position}Select`).value = dogNr;
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadDogData(position);
+            updatePlacementDropdowns();
+            renderRankings();
+            renderPartyLists();
+            saveToStorage();
+        }
+
+        function renderPartyLists() {
+            [1, 2].forEach(pos => {
+                const container = document.getElementById(`dog${pos}_partyList`);
+                container.innerHTML = partyList.map(dog => {
+                    const plass = state.plasseringer[dog.nr];
+                    const hasTidTilGode = state.tidTilGode[dog.nr];
+                    const isSelected = dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2];
+                    const isFinished = plass === 'avsluttet';
+
+                    let status = '';
+                    if (plass && plass !== 'avsluttet') status = `<span class="text-vk-600 font-bold">${plass}.</span>`;
+                    else if (hasTidTilGode) status = '<span class="text-amber-500 font-bold">TTG</span>';
+                    else if (isFinished) status = '<span class="text-red-500">×</span>';
+
+                    return `<div class="flex justify-between ${isSelected ? 'font-semibold text-vk-700' : ''} ${isFinished ? 'opacity-50 line-through' : ''}"}>
+                        <span>${dog.nr}. ${dog.race} ${dog.name}</span>
+                        ${status}
+                    </div>`;
+                }).join('');
+            });
+        }
+
+        // Hent samlet statistikk for en hund (summert over alle slipp)
+        function getDogStats(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return null;
+
+            const stats = { fmr: 0, fur: 0, slatt: 0, sjanse: 0, ts: 0 };
+
+            Object.values(data.slipps).forEach(slipp => {
+                if (slipp.fmr) stats.fmr += slipp.fmr;
+                if (slipp.fur) stats.fur += slipp.fur;
+                if (slipp.slat) stats.slatt += slipp.slat;
+                if (slipp.sjanse) stats.sjanse += slipp.sjanse;
+                if (slipp.ts) stats.ts += slipp.ts;
+            });
+
+            return stats;
+        }
+
+        // Formater statistikk som kort tekst (f.eks. "2xFMR FUR 65'" - kun "2x" hvis mer enn 1)
+        function formatDogStats(dogNr) {
+            const stats = getDogStats(dogNr);
+            const totalSlipptid = getTotalSlipptid(dogNr);
+
+            const parts = [];
+
+            // Vis slipptid først (viktig for VK)
+            if (totalSlipptid > 0) {
+                const slipptidClass = totalSlipptid >= 60 ? 'text-green-600' : '';
+                parts.push(`<span class="${slipptidClass}">${totalSlipptid}'</span>`);
+            }
+
+            if (stats) {
+                if (stats.fmr > 0) parts.push(stats.fmr > 1 ? `${stats.fmr}xFMR` : 'FMR');
+                if (stats.fur > 0) parts.push(stats.fur > 1 ? `${stats.fur}xFUR` : 'FUR');
+                if (stats.slatt > 0) parts.push(stats.slatt > 1 ? `${stats.slatt}xSlått` : 'Slått');
+                if (stats.sjanse > 0) parts.push(stats.sjanse > 1 ? `${stats.sjanse}xSj` : 'Sj');
+                if (stats.ts > 0) parts.push(stats.ts > 1 ? `${stats.ts}xTS` : 'TS');
+            }
+
+            return parts.join(' ');
+        }
+
+        function renderRankings() {
+            // Plasserte hunder (sortert etter plassering)
+            const placed = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
+                });
+
+            // Hunder med tid til gode (ikke plassert, ikke avsluttet)
+            const tidTilGodeDogs = Object.entries(state.tidTilGode)
+                .filter(([_, hasTid]) => hasTid)
+                .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }))
+                .filter(item => item.dog); // Fjern undefined
+
+            // Avsluttede hunder
+            const finished = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p === 'avsluttet')
+                .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }));
+
+            [1, 2].forEach(pos => {
+                const rankContainer = document.getElementById(`dog${pos}_ranking`);
+                const tidTilGodeSection = document.getElementById(`dog${pos}_tidtilgode_section`);
+                const tidTilGodeList = document.getElementById(`dog${pos}_tidtilgodeList`);
+                const finishedSection = document.getElementById(`dog${pos}_finished`);
+                const finishedList = document.getElementById(`dog${pos}_finishedList`);
+
+                // Rangerte hunder
+                if (placed.length === 0) {
+                    rankContainer.innerHTML = '<span class="text-bark-400 italic">Ingen ennå</span>';
+                } else {
+                    rankContainer.innerHTML = placed.map(({ dog, plass, dogNr }) => {
+                        const stats = formatDogStats(dogNr);
+                        const statsHtml = stats ? `<span class="text-vk-500 ml-1">${stats}</span>` : '';
+                        return `<div><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dog.name}${statsHtml}</div>`;
+                    }).join('');
+                }
+
+                // Tid til gode - klikkbare for å hente tilbake hund
+                if (tidTilGodeDogs.length > 0) {
+                    tidTilGodeSection.classList.remove('hidden');
+                    tidTilGodeList.innerHTML = tidTilGodeDogs.map(({ dog, dogNr }) => {
+                        const stats = formatDogStats(dogNr);
+                        const statsHtml = stats ? `<span class="text-amber-500 ml-1">${stats}</span>` : '';
+                        return `<div class="cursor-pointer hover:bg-amber-100 px-1 rounded flex items-center gap-1" onclick="hentTilbakeTTG(${dog.nr}, ${pos})">
+                            <span class="text-amber-600">↩</span> ${dog.race} ${dog.name}${statsHtml}
+                        </div>`;
+                    }).join('');
+                } else {
+                    tidTilGodeSection.classList.add('hidden');
+                }
+
+                // Avsluttede
+                if (finished.length > 0) {
+                    finishedSection.classList.remove('hidden');
+                    finishedList.innerHTML = finished.map(({ dog, dogNr }) => {
+                        const stats = formatDogStats(dogNr);
+                        const statsHtml = stats ? `<span class="text-red-400 ml-1">${stats}</span>` : '';
+                        return `<div>${dog.race} ${dog.name}${statsHtml}</div>`;
+                    }).join('');
+                } else {
+                    finishedSection.classList.add('hidden');
+                }
+            });
+        }
+
+        // Dictation
         let recognition = null;
-        let activeRecordingDogId = null;
+        let activeTextarea = null;
 
-        // Initialize Speech Recognition
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        function setupDictation() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const btn = document.getElementById('dictationBtn');
+            const textarea = document.getElementById('slippComment');
+
+            if (!SpeechRecognition) {
+                if (btn) {
+                    btn.classList.add('opacity-50');
+                    btn.title = 'Diktering støttes ikke';
+                }
+                return;
+            }
+
             recognition = new SpeechRecognition();
+            recognition.lang = 'nb-NO';
             recognition.continuous = true;
             recognition.interimResults = true;
-            recognition.lang = 'nb-NO';
 
-            recognition.onresult = function(event) {
-                if (!activeRecordingDogId) return;
-
-                let finalTranscript = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript + ' ';
-                    }
+            recognition.onresult = (event) => {
+                if (!activeTextarea) return;
+                let transcript = '';
+                for (let i = 0; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
                 }
-
-                if (finalTranscript) {
-                    const textarea = document.getElementById('notes-' + activeRecordingDogId);
-                    if (textarea) {
-                        textarea.value += finalTranscript;
-                        updateNotes(activeRecordingDogId, textarea.value);
-                    }
-                }
+                activeTextarea.value = transcript;
             };
 
-            recognition.onerror = function(event) {
-                console.error('Speech recognition error:', event.error);
-                stopVoiceRecording();
-            };
-
-            recognition.onend = function() {
-                if (activeRecordingDogId) {
-                    // Restart if still recording
-                    try { recognition.start(); } catch (e) {}
-                }
-            };
-        }
-
-        function toggleVoiceRecording(dogId) {
-            if (activeRecordingDogId === dogId) {
-                stopVoiceRecording();
-            } else {
-                startVoiceRecording(dogId);
-            }
-        }
-
-        function startVoiceRecording(dogId) {
-            if (!recognition) {
-                alert('Talegjenkjenning støttes ikke i denne nettleseren. Prøv Chrome, Edge eller Safari.');
-                return;
-            }
-
-            // Stop any existing recording
-            if (activeRecordingDogId) {
-                stopVoiceRecording();
-            }
-
-            activeRecordingDogId = dogId;
-            try {
-                recognition.start();
-            } catch (e) {}
-
-            // Update UI
-            const btn = document.getElementById('voiceBtn-' + dogId);
-            const btnText = document.getElementById('voiceBtnText-' + dogId);
-            const status = document.getElementById('voiceStatus-' + dogId);
-
-            if (btn) {
-                btn.classList.remove('bg-red-100', 'hover:bg-red-200', 'text-red-700');
-                btn.classList.add('bg-red-500', 'text-white', 'recording');
-            }
-            if (btnText) btnText.textContent = 'Stopp';
-            if (status) status.classList.remove('hidden');
-        }
-
-        function stopVoiceRecording() {
-            const dogId = activeRecordingDogId;
-            activeRecordingDogId = null;
-
-            if (recognition) {
-                try { recognition.stop(); } catch (e) {}
-            }
-
-            if (dogId) {
-                const btn = document.getElementById('voiceBtn-' + dogId);
-                const btnText = document.getElementById('voiceBtnText-' + dogId);
-                const status = document.getElementById('voiceStatus-' + dogId);
-
+            recognition.onend = () => {
                 if (btn) {
-                    btn.classList.add('bg-red-100', 'hover:bg-red-200', 'text-red-700');
-                    btn.classList.remove('bg-red-500', 'text-white', 'recording');
+                    btn.classList.remove('bg-red-500', 'animate-pulse');
+                    btn.classList.add('bg-warm-500');
                 }
-                if (btnText) btnText.textContent = 'Dikter';
-                if (status) status.classList.add('hidden');
-            }
-        }
-
-        // ===== CRITIQUE FORM =====
-        let currentCritiqueDogId = null;
-        let selectedPrize = null;
-        let critiqueVoiceRecording = false;
-
-        function openCritiqueForm(dogId) {
-            const dog = state.dogs.find(d => d.id === dogId);
-            if (!dog) return;
-
-            currentCritiqueDogId = dogId;
-            selectedPrize = dog.prize || null;
-
-            // Update critique header color based on party
-            const critiqueHeader = document.getElementById('critiqueHeader');
-            const colorClasses = {
-                forest: 'from-warm-500 to-warm-600',
-                sky: 'from-warm-500 to-warm-600',
-                earth: 'from-earth-600 to-earth-700',
-                amber: 'from-amber-500 to-amber-600'
+                activeTextarea = null;
             };
-            critiqueHeader.className = `px-4 py-3 bg-gradient-to-r ${colorClasses[state.partyConfig.color] || colorClasses.sky} text-white flex items-center justify-between`;
 
-            // Fill in dog info
-            document.getElementById('critiqueDogName').textContent = `${dog.name}`;
-            document.getElementById('critiqueDogNr').textContent = dog.nr;
-            document.getElementById('critiqueDogFullName').textContent = dog.name;
-            document.getElementById('critiqueDogDetails').textContent = `${dog.breed} • Fører: ${dog.handler} • Eier: ${dog.owner}`;
+            // Setup click handler for the single dictation button
+            if (btn && textarea) {
+                btn.addEventListener('click', () => {
+                    if (activeTextarea === textarea) {
+                        recognition.stop();
+                        return;
+                    }
 
-            // Fill in scores - organized by sections
-            const scoresContainer = document.getElementById('critiqueScores');
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
+                    if (activeTextarea) {
+                        recognition.stop();
+                    }
 
-            scoresContainer.innerHTML = `
-                <!-- Fuglebehandling -->
-                <div class="bg-warm-50 rounded-xl p-3">
-                    <span class="text-xs font-bold text-warm-800 uppercase">Fuglebehandling</span>
-                    <div class="flex gap-4 mt-2 text-sm">
-                        <div>
-                            <span class="text-base font-semibold text-bark-700">Pres: <b class="text-lg">${s.PRESISJON ?? '-'}</b></span>
-                            <span class="block text-[10px] italic text-bark-400">Presisjon</span>
-                        </div>
-                        <div>
-                            <span class="text-base font-semibold text-bark-700">Reis: <b class="text-lg">${s.REISING ?? '-'}</b></span>
-                            <span class="block text-[10px] italic text-bark-400">Reising</span>
-                        </div>
-                        <div class="${s.GODKJENT_REISING ? 'text-green-600' : 'text-bark-400'}">
-                            <span class="text-base font-semibold">${s.GODKJENT_REISING ? '✓ Godkj.' : '○ Ikke godkj.'}</span>
-                            <span class="block text-[10px] italic text-bark-400">Godkjent reising</span>
-                        </div>
-                    </div>
-                </div>
-                <!-- Stand/Arbeid -->
-                <div class="bg-bark-50 rounded-xl p-3 border border-bark-100">
-                    <span class="text-xs font-bold text-bark-600 uppercase">Stand & Arbeid</span>
-                    <div class="grid grid-cols-6 gap-2 mt-2 text-center">
-                        <div>
-                            <span class="text-sm font-bold text-bark-600">St.M</span>
-                            <div class="text-xl font-bold text-bark-800">${s.STAND_M ?? '-'}</div>
-                            <span class="text-[9px] italic text-bark-400">Stand m/makker</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-bark-600">St.U</span>
-                            <div class="text-xl font-bold text-bark-800">${s.STAND_U ?? '-'}</div>
-                            <span class="text-[9px] italic text-bark-400">Stand u/makker</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-bark-600">TS</span>
-                            <div class="text-xl font-bold text-bark-800">${s.TOMSTAND ?? '-'}</div>
-                            <span class="text-[9px] italic text-bark-400">Tomstand</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-bark-600">MS</span>
-                            <div class="text-xl font-bold text-bark-800">${s.MAKKER_STAND ?? '-'}</div>
-                            <span class="text-[9px] italic text-bark-400">Makkerstand</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-bark-600">SJ</span>
-                            <div class="text-xl font-bold text-bark-800">${s.SJANSE ?? '-'}</div>
-                            <span class="text-[9px] italic text-bark-400">Sjanse</span>
-                        </div>
-                        <div class="bg-amber-50 rounded-lg p-1">
-                            <span class="text-sm font-bold text-amber-600">SL</span>
-                            <div class="text-xl font-bold text-amber-700">${s.SLIPPTID ?? '-'}</div>
-                            <span class="text-[9px] italic text-amber-500">Slipptid</span>
-                        </div>
-                    </div>
-                </div>
-                <!-- Egenskaper -->
-                <div class="bg-earth-50 rounded-xl p-3">
-                    <span class="text-xs font-bold text-earth-700 uppercase">Egenskaper (1-6)</span>
-                    <div class="grid grid-cols-6 gap-2 mt-2 text-center">
-                        <div>
-                            <span class="text-sm font-bold text-earth-600">JL</span>
-                            <div class="text-xl font-bold text-earth-800">${s.JAKTLYST ?? '-'}</div>
-                            <span class="text-[9px] italic text-earth-500">Jaktlyst</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-earth-600">FA</span>
-                            <div class="text-xl font-bold text-earth-800">${s.FART ?? '-'}</div>
-                            <span class="text-[9px] italic text-earth-500">Fart</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-earth-600">SE</span>
-                            <div class="text-xl font-bold text-earth-800">${s.SELVSTENDIGHET ?? '-'}</div>
-                            <span class="text-[9px] italic text-earth-500">Selvstendighet</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-earth-600">SB</span>
-                            <div class="text-xl font-bold text-earth-800">${s.SOKSBREDDE ?? '-'}</div>
-                            <span class="text-[9px] italic text-earth-500">Søksbredde</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-earth-600">RE</span>
-                            <div class="text-xl font-bold text-earth-800">${s.REVIERING ?? '-'}</div>
-                            <span class="text-[9px] italic text-earth-500">Reviering</span>
-                        </div>
-                        <div>
-                            <span class="text-sm font-bold text-earth-600">SA</span>
-                            <div class="text-xl font-bold text-earth-800">${s.SAMARBEID ?? '-'}</div>
-                            <span class="text-[9px] italic text-earth-500">Samarbeid</span>
-                        </div>
-                    </div>
-                </div>
-${s.ADFERD ? `<div class="bg-red-50 rounded-xl p-3 text-sm text-red-700"><b>Adferd:</b> ${s.ADFERD}</div>` : ''}
-            `;
+                    activeTextarea = textarea;
+                    btn.classList.remove('bg-warm-500');
+                    btn.classList.add('bg-red-500', 'animate-pulse');
 
-            // Fill in field notes from all rounds/slips
-            const fieldNotes = document.getElementById('critiqueFieldNotes');
-            let allNotes = '';
-
-            // Collect notes from all rounds
-            if (dog.rounds && dog.rounds.length > 0) {
-                dog.rounds.forEach((round, idx) => {
-                    if (round.notes && round.notes.trim()) {
-                        if (dog.rounds.length > 1) {
-                            allNotes += `Slipp ${idx + 1}: ${round.notes.trim()}\n`;
-                        } else {
-                            allNotes += round.notes.trim();
-                        }
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.error('Dictation error:', e);
                     }
                 });
             }
-
-            // Also include legacy dog.notes if present
-            if (dog.notes && dog.notes.trim() && !allNotes.includes(dog.notes.trim())) {
-                allNotes += (allNotes ? '\n' : '') + dog.notes.trim();
-            }
-
-            if (allNotes.trim()) {
-                fieldNotes.textContent = allNotes.trim();
-                fieldNotes.classList.remove('text-bark-400');
-                fieldNotes.classList.add('text-bark-700');
-            } else {
-                fieldNotes.textContent = 'Ingen notater registrert under bedømming';
-                fieldNotes.classList.add('text-bark-400');
-                fieldNotes.classList.remove('text-bark-700');
-            }
-
-            // Render prize selector based on party type
-            renderPrizeSelector();
-
-            // Show modal
-            document.getElementById('critiqueModal').classList.remove('hidden');
         }
 
-        function hideCritique() {
-            document.getElementById('critiqueModal').classList.add('hidden');
-            currentCritiqueDogId = null;
-            stopCritiqueVoice();
-        }
-
-        function renderPrizeSelector() {
-            const container = document.getElementById('prizeSelector');
-            const prizeHint = document.getElementById('prizeHint');
-            const isUKAK = state.party.startsWith('ukak');
-
-            let prizes;
-            if (isUKAK) {
-                // UK/AK uses traditional 1-3 prizes + ÅP
-                prizes = [
-                    { value: null, label: 'Ingen', color: 'bark' },
-                    { value: '1', label: '1. premie', color: 'amber' },
-                    { value: '2', label: '2. premie', color: 'gray' },
-                    { value: '3', label: '3. premie', color: 'earth' },
-                    { value: 'AP', label: 'ÅP', color: 'earth' }
-                ];
-                prizeHint.textContent = 'UK/AK: Premiegrader 1-3 + ÅP';
-            } else {
-                // VK uses official FKF prizes from critique form
-                prizes = [
-                    { value: null, label: 'Ingen', color: 'bark' },
-                    { value: 'CACIT', label: 'CACIT', color: 'amber' },
-                    { value: 'ResCacit', label: 'ResCacit', color: 'amber' },
-                    { value: 'CK', label: 'CK', color: 'green' },
-                    { value: 'Finale', label: 'Finale', color: 'blue' },
-                    { value: 'Semifinale', label: 'Semifinale', color: 'blue' },
-                    { value: 'AP', label: 'ÅP', color: 'earth' }
-                ];
-                prizeHint.textContent = 'VK: CACIT, ResCacit, CK, Finale, Semifinale, ÅP';
-            }
-
-            container.innerHTML = prizes.map(p => {
-                const isSelected = selectedPrize === p.value;
-                const bgClass = isSelected
-                    ? (p.color === 'amber' ? 'bg-amber-500 text-white border-amber-500'
-                       : p.color === 'gray' ? 'bg-gray-400 text-white border-gray-400'
-                       : p.color === 'green' ? 'bg-green-500 text-white border-green-500'
-                       : p.color === 'blue' ? 'bg-blue-500 text-white border-blue-500'
-                       : p.color === 'earth' ? 'bg-earth-500 text-white border-earth-500'
-                       : 'bg-bark-500 text-white border-bark-500')
-                    : 'bg-white text-bark-700 border-bark-200 hover:border-bark-400';
-
-                return `
-                    <button onclick="selectPrize(${p.value === null ? 'null' : "'" + p.value + "'"}, this)"
-                        class="py-2 px-3 rounded-xl border-2 text-sm font-medium transition ${bgClass}">
-                        ${p.label}
-                    </button>
-                `;
-            }).join('');
-
-            // Update grid cols based on prize count
-            container.className = isUKAK ? 'grid grid-cols-5 gap-2' : 'grid grid-cols-4 gap-2';
-        }
-
-        function selectPrize(value, btn) {
-            selectedPrize = value;
-            renderPrizeSelector();
-        }
-
-        // Voice recording for critique
-        function toggleCritiqueVoice() {
-            if (critiqueVoiceRecording) {
-                stopCritiqueVoice();
-            } else {
-                startCritiqueVoice();
-            }
-        }
-
-        function startCritiqueVoice() {
-            if (!recognition) {
-                alert('Talegjenkjenning støttes ikke i denne nettleseren.');
-                return;
-            }
-
-            critiqueVoiceRecording = true;
-
-            // Temporarily override recognition result handler
-            recognition.onresult = function(event) {
-                let finalTranscript = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript + ' ';
-                    }
-                }
-                if (finalTranscript) {
-                    const textarea = document.getElementById('critiqueFinalText');
-                    textarea.value += finalTranscript;
-                }
-            };
-
-            recognition.onend = function() {
-                if (critiqueVoiceRecording) {
-                    try { recognition.start(); } catch (e) {}
-                }
-            };
-
-            try { recognition.start(); } catch (e) {}
-
-            const btn = document.getElementById('critiqueVoiceBtn');
-            const btnText = document.getElementById('critiqueVoiceBtnText');
-            btn.classList.remove('bg-red-100', 'hover:bg-red-200', 'text-red-700');
-            btn.classList.add('bg-red-500', 'text-white', 'recording');
-            btnText.textContent = 'Stopp';
-        }
-
-        function stopCritiqueVoice() {
-            critiqueVoiceRecording = false;
-            if (recognition) {
-                try { recognition.stop(); } catch (e) {}
-            }
-
-            const btn = document.getElementById('critiqueVoiceBtn');
-            const btnText = document.getElementById('critiqueVoiceBtnText');
-            if (btn) {
-                btn.classList.add('bg-red-100', 'hover:bg-red-200', 'text-red-700');
-                btn.classList.remove('bg-red-500', 'text-white', 'recording');
-            }
-            if (btnText) btnText.textContent = 'Dikter';
-
-            // Restore original recognition handler
-            if (recognition) {
-                recognition.onresult = function(event) {
-                    if (!activeRecordingDogId) return;
-                    let finalTranscript = '';
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        if (event.results[i].isFinal) {
-                            finalTranscript += event.results[i][0].transcript + ' ';
-                        }
-                    }
-                    if (finalTranscript) {
-                        const textarea = document.getElementById('notes-' + activeRecordingDogId);
-                        if (textarea) {
-                            textarea.value += finalTranscript;
-                            updateNotes(activeRecordingDogId, textarea.value);
-                        }
-                    }
-                };
-                recognition.onend = function() {
-                    if (activeRecordingDogId) {
-                        try { recognition.start(); } catch (e) {}
-                    }
-                };
-            }
-        }
-
-        // Save and finish dog (without final critique - that comes later)
-        function saveAndFinishDog() {
-            const dog = state.dogs.find(d => d.id === currentCritiqueDogId);
-            if (!dog) return;
-
-            // Consolidate all round notes into dog.notes for later critique writing
-            if (dog.rounds && dog.rounds.length > 0) {
-                let allNotes = '';
-                dog.rounds.forEach((round, idx) => {
-                    if (round.notes && round.notes.trim()) {
-                        if (dog.rounds.length > 1) {
-                            allNotes += `Slipp ${idx + 1}: ${round.notes.trim()}\n`;
-                        } else {
-                            allNotes += round.notes.trim();
-                        }
-                    }
-                });
-                if (allNotes.trim()) {
-                    dog.notes = allNotes.trim();
-                }
-            }
-
-            // Save prize selection
-            dog.prize = selectedPrize;
-            dog.status = 'done';
-            dog.finishedDate = new Date().toISOString();
-            dog.finishedBy = state.judgeName;
-
-            saveLive();
-            hideCritique();
-            renderCards();
-            renderDogSelector();
-
-            // Check if all dogs are done
-            const allDone = state.dogs.every(d => d.status === 'done' || d.knocked);
-            console.log('All dogs done check:', allDone, state.dogs.map(d => ({id: d.id, status: d.status, knocked: d.knocked})));
-
-            if (allDone) {
-                // Show modal with options
-                console.log('Showing all dogs complete modal');
-                setTimeout(() => {
-                    showAllDogsCompleteModal();
-                }, 500);
-            } else {
-                // Move to next dog that needs assessment
-                const currentIdx = state.dogs.findIndex(d => d.id === dog.id);
-                let nextIdx = -1;
-
-                // First, search forward from current position
-                for (let i = currentIdx + 1; i < state.dogs.length; i++) {
-                    if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
-                        nextIdx = i;
-                        break;
-                    }
-                }
-
-                // If not found, wrap around and search from beginning
-                if (nextIdx === -1) {
-                    for (let i = 0; i < currentIdx; i++) {
-                        if (!state.dogs[i].knocked && state.dogs[i].status !== 'done') {
-                            nextIdx = i;
-                            break;
-                        }
-                    }
-                }
-
-                console.log('Next dog search result:', nextIdx, 'from current:', currentIdx);
-
-                if (nextIdx !== -1) {
-                    state.selectedDogs = [state.dogs[nextIdx].id];
-                    state.cardDogIndex = [nextIdx];
-                    renderCards();
-                    renderDogSelector();
-                }
-                // If no next dog found but allDone is false, there's an inconsistency
-                // This shouldn't happen, but log it for debugging
-                if (nextIdx === -1) {
-                    console.error('No next dog found but allDone is false - this is unexpected');
-                }
-            }
-        }
-
-        // Legacy function for backward compatibility
-        function finalizeCritique() {
-            saveAndFinishDog();
-        }
-
-        // Show modal when all dogs are complete
-        function showAllDogsCompleteModal() {
-            const modal = document.getElementById('allDogsCompleteModal');
-            if (modal) {
-                modal.classList.remove('hidden');
-                console.log('Modal shown successfully');
-            } else {
-                console.error('allDogsCompleteModal not found!');
-                // Fallback: alert the user
-                alert('Gratulerer! Alle hunder er bedømt.\n\nGå til kritikk-siden for å fullføre.');
-            }
-        }
-
-        function hideAllDogsCompleteModal() {
-            const modal = document.getElementById('allDogsCompleteModal');
-            if (modal) {
-                modal.classList.add('hidden');
-            }
-        }
-
-        function goToFinalCritique() {
-            hideAllDogsCompleteModal();
-            window.location.href = 'dommer-kritikk.html?party=' + state.party;
-        }
-
-        function saveAndFinishLater() {
-            // Mark that critiques are pending for this party
-            state.critiquesStatus = 'pending';
-            saveLive();
-            hideAllDogsCompleteModal();
-
-            // Show confirmation message
-            alert('Dommerkortene er lagret.\n\nDu vil bli påminnet om å fullføre kritikkene neste gang du logger inn.');
-        }
-
-        function generateCritiqueDocument(dog) {
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
-            const isUKAK = state.party.startsWith('ukak');
-            const prizeDisplay = dog.prize || 'Ingen premie';
-
-            const html = `
-                <div style="font-family: Georgia, serif; font-size: 13px; color: #1f2937;">
-                    <!-- Header -->
-                    <div style="text-align: center; margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px solid #166534;">
-                        <h1 style="margin: 0; font-size: 18px; color: #166534;">KRITIKKSKJEMA</h1>
-                        <p style="margin: 4px 0 0; color: #6b7280; font-size: 11px;">Fuglehundprøve • ${state.partyConfig.name}</p>
-                    </div>
-
-                    <!-- Dog Info -->
-                    <div style="background: #f9fafb; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <div style="width: 36px; height: 36px; background: #dcfce7; border-radius: 6px; display: flex; align-items: center; justify-content: center;">
-                                <span style="font-size: 16px; font-weight: bold; color: #166534;">${dog.nr}</span>
-                            </div>
-                            <div>
-                                <p style="margin: 0; font-weight: bold; font-size: 14px;">${dog.name}</p>
-                                <p style="margin: 2px 0 0; font-size: 11px; color: #6b7280;">${dog.breed} • Fører: ${dog.handler} • Eier: ${dog.owner}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- FUGLEBEHANDLING Section -->
-                    <div style="background: #f0fdf4; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;">
-                        <h3 style="font-size: 10px; color: #166534; margin: 0 0 6px; text-transform: uppercase; font-weight: bold;">Fuglebehandling</h3>
-                        <table style="width: 100%; font-size: 12px;">
-                            <tr>
-                                <td style="padding: 2px 0;">Presisjon (1-4)</td>
-                                <td style="text-align: right; font-weight: bold;">${s.PRESISJON ?? '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 2px 0;">Reising (1-6)</td>
-                                <td style="text-align: right; font-weight: bold;">${s.REISING ?? '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 2px 0;">Godkjent reising</td>
-                                <td style="text-align: right; font-weight: bold; color: ${s.GODKJENT_REISING ? '#16a34a' : '#9ca3af'};">${s.GODKJENT_REISING ? 'Ja' : 'Nei'}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- STAND/ARBEID Section -->
-                    <div style="margin-bottom: 10px;">
-                        <h3 style="font-size: 10px; color: #6b7280; margin: 0 0 6px; text-transform: uppercase; font-weight: bold;">Stand og arbeid</h3>
-                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                            <tr style="background: #f9fafb;">
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Stand m/makker</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; width: 40px;">${s.STAND_M ?? '-'}</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Stand u/makker</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; width: 40px;">${s.STAND_U ?? '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Tomstand</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold;">${s.TOMSTAND ?? '-'}</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Makkers stand</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold;">${s.MAKKER_STAND ?? '-'}</td>
-                            </tr>
-                            <tr style="background: #f9fafb;">
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Sjanse på fugl</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold;">${s.SJANSE ?? '-'}</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; background: #fef3c7;">Slipptid (min)</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; background: #fef3c7;">${s.SLIPPTID ?? '-'}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- EGENSKAPER (SUM) Section -->
-                    <div style="background: #faf6f1; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;">
-                        <h3 style="font-size: 10px; color: #865434; margin: 0 0 6px; text-transform: uppercase; font-weight: bold;">Egenskaper (1-6 skala)</h3>
-                        <table style="width: 100%; font-size: 11px;">
-                            <tr>
-                                <td style="padding: 2px 0;">Jaktlyst</td>
-                                <td style="text-align: center; font-weight: bold; width: 30px;">${s.JAKTLYST ?? '-'}</td>
-                                <td style="padding: 2px 0 2px 12px;">Søksbredde</td>
-                                <td style="text-align: center; font-weight: bold; width: 30px;">${s.SOKSBREDDE ?? '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 2px 0;">Fart</td>
-                                <td style="text-align: center; font-weight: bold;">${s.FART ?? '-'}</td>
-                                <td style="padding: 2px 0 2px 12px;">Reviering</td>
-                                <td style="text-align: center; font-weight: bold;">${s.REVIERING ?? '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 2px 0;">Selvstendighet</td>
-                                <td style="text-align: center; font-weight: bold;">${s.SELVSTENDIGHET ?? '-'}</td>
-                                <td style="padding: 2px 0 2px 12px;">Samarbeid</td>
-                                <td style="text-align: center; font-weight: bold;">${s.SAMARBEID ?? '-'}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- EXTRA FIELDS Section -->
-                    <div style="margin-bottom: 10px;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                            <tr style="background: #f9fafb;">
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Sekundering spontan</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; width: 40px;">${s.SEK_SPONTAN ?? '-'}</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Sekundering går forbi</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; width: 40px;">${s.SEK_FORBI ?? '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Apport</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold; color: ${s.APPORT === 1 ? '#16a34a' : s.APPORT === 2 ? '#dc2626' : '#9ca3af'};">
-                                    ${s.APPORT === 1 ? 'Godkjent' : s.APPORT === 2 ? 'Ikke godkj.' : '-'}
-                                </td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb;">Rapport spontan</td>
-                                <td style="padding: 4px 6px; border: 1px solid #e5e7eb; text-align: center; font-weight: bold;">${s.RAPPORT_SPONTAN ? 'Ja' : '-'}</td>
-                            </tr>
-                        </table>
-                    </div>
-
-                    <!-- ADFERD Section -->
-                    ${s.ADFERD ? `
-                    <div style="background: #fef2f2; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px;">
-                        <h3 style="font-size: 10px; color: #dc2626; margin: 0 0 4px; text-transform: uppercase; font-weight: bold;">Adferd (uønsket)</h3>
-                        <p style="margin: 0; font-size: 12px;">${s.ADFERD}</p>
-                    </div>
-                    ` : ''}
-
-                    <!-- Prize -->
-                    <div style="background: ${dog.prize ? '#fef3c7' : '#f3f4f6'}; padding: 10px 12px; border-radius: 6px; margin-bottom: 10px; text-align: center;">
-                        <span style="font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: bold;">Premie</span>
-                        <p style="margin: 4px 0 0; font-size: 16px; font-weight: bold; color: ${dog.prize ? '#b45309' : '#6b7280'};">
-                            ${prizeDisplay}
-                        </p>
-                    </div>
-
-                    <!-- Critique Text -->
-                    <div style="margin-bottom: 12px;">
-                        <h3 style="font-size: 10px; color: #6b7280; margin: 0 0 6px; text-transform: uppercase; font-weight: bold;">Dommerkritikk</h3>
-                        <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; min-height: 50px;">
-                            <p style="margin: 0; white-space: pre-wrap; line-height: 1.5; font-size: 12px;">${dog.critique || 'Ingen kritikk registrert'}</p>
-                        </div>
-                    </div>
-
-                    <!-- Footer -->
-                    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af;">
-                        <div style="display: flex; justify-content: space-between;">
-                            <span>Dommer: ${dog.critiqueDommer}</span>
-                            <span>${new Date(dog.critiqueDate).toLocaleDateString('nb-NO')} ${new Date(dog.critiqueDate).toLocaleTimeString('nb-NO', {hour: '2-digit', minute: '2-digit'})}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            document.getElementById('pdfPreviewContent').innerHTML = html;
-            hideCritique();
-            document.getElementById('pdfPreviewModal').classList.remove('hidden');
-        }
-
-        function hidePdfPreview() {
-            document.getElementById('pdfPreviewModal').classList.add('hidden');
-        }
-
-        function downloadCritiquePdf() {
-            const dog = state.dogs.find(d => d.id === currentCritiqueDogId);
-            if (!dog) return;
-
-            // Create printable version
-            const content = document.getElementById('pdfPreviewContent').innerHTML;
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Kritikk - ${dog.name}</title>
-                    <style>
-                        body { margin: 20px; font-family: Georgia, serif; }
-                        @media print {
-                            body { margin: 0; }
-                        }
-                    </style>
-                    <script src="auth.js"></script>
-</head>
-                <body>
-                    ${content}
-                    <script>
-                        window.onload = function() {
-                            window.print();
-                        };
-                    <\/script>
-                </body>
-                </html>
-            `);
-            printWindow.document.close();
-        }
-
-        // ===== PARTY LIST SIGNING =====
-
-        // Show sign party modal
-        async function showSignPartyModal() {
-            const modal = document.getElementById('signPartyListModal');
-            if (!modal) return;
-
-            // Fetch current signature status
-            const proveId = state.proveId || 'default';
-            const parti = state.party || 'ukak1';
-
-            try {
-                const response = await fetch(`/api/prover/${proveId}/parti/${parti}/signaturer`);
-                const data = await response.json();
-
-                const statusEl = document.getElementById('signatureStatus');
-                const signBtn = document.getElementById('signPartyBtn');
-
-                if (data.dommerSignert) {
-                    statusEl.innerHTML = `
-                        <div class="flex items-center gap-2 text-green-700 bg-green-50 p-3 rounded-xl">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            <span>Partilisten er signert av dommer</span>
-                        </div>
-                        ${data.nkkrepSignert ? `
-                        <div class="flex items-center gap-2 text-green-700 bg-green-50 p-3 rounded-xl mt-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            <span>Godkjent av NKK-representant</span>
-                        </div>
-                        ` : `
-                        <div class="flex items-center gap-2 text-amber-700 bg-amber-50 p-3 rounded-xl mt-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            <span>Venter på godkjenning fra NKK-representant</span>
-                        </div>
-                        `}
-                    `;
-                    signBtn.textContent = 'Allerede signert';
-                    signBtn.disabled = true;
-                    signBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                } else {
-                    statusEl.innerHTML = `
-                        <div class="flex items-center gap-2 text-bark-600">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            <span>Partilisten er ikke signert ennå</span>
-                        </div>
-                    `;
-                    signBtn.innerHTML = `
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                        Signer partiliste
-                    `;
-                    signBtn.disabled = false;
-                    signBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                }
-            } catch (err) {
-                console.error('Feil ved henting av signaturstatus:', err);
-            }
-
-            modal.classList.remove('hidden');
-        }
-
-        function hideSignPartyModal() {
-            const modal = document.getElementById('signPartyListModal');
-            if (modal) {
-                modal.classList.add('hidden');
-            }
-        }
-
-        // Sign the party list
-        async function signPartyList() {
-            const proveId = state.proveId || 'default';
-            const parti = state.party || 'ukak1';
-
-            // Get judge phone from session/state
-            const judgeSession = JSON.parse(localStorage.getItem('judgeSession') || '{}');
-            const dommerTelefon = judgeSession.telefon || state.judgePhone;
-
-            if (!dommerTelefon) {
-                alert('Kunne ikke finne dommerens telefonnummer. Vennligst logg inn på nytt.');
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/prover/${proveId}/parti/${parti}/signer-dommer`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ dommerTelefon })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    // Update state to mark party as signed
-                    state.partySigned = true;
-                    state.partySignedAt = new Date().toISOString();
-                    saveLive();
-
-                    // Update modal status
-                    const statusEl = document.getElementById('signatureStatus');
-                    statusEl.innerHTML = `
-                        <div class="flex items-center gap-2 text-green-700 bg-green-50 p-3 rounded-xl">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            <span>Partilisten er signert!</span>
-                        </div>
-                        <div class="flex items-center gap-2 text-amber-700 bg-amber-50 p-3 rounded-xl mt-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            <span>Venter på godkjenning fra NKK-representant</span>
-                        </div>
-                    `;
-
-                    const signBtn = document.getElementById('signPartyBtn');
-                    signBtn.textContent = 'Signert!';
-                    signBtn.disabled = true;
-                    signBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
-                    // Show success message
-                    setTimeout(() => {
-                        alert('Partilisten er signert!\n\nNKK-representanten vil motta en melding om å godkjenne partilisten.');
-                        hideSignPartyModal();
-                    }, 500);
-                } else {
-                    alert('Kunne ikke signere partilisten: ' + (data.error || 'Ukjent feil'));
-                }
-            } catch (err) {
-                console.error('Feil ved signering:', err);
-                alert('En feil oppstod ved signering av partilisten. Vennligst prøv igjen.');
-            }
-        }
-
-        // Registrer Service Worker for offline-støtte
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js')
-                .then(reg => console.log('[SW] Registered:', reg.scope))
-                .catch(err => console.warn('[SW] Registration failed:', err));
-        }
+        // Init
+        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>

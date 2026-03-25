@@ -1591,19 +1591,54 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
             const klubb = await resp.json();
             const admins = klubb.admins || [];
 
-            let adminListe = admins.length > 0
-                ? admins.map(a => `• ${a.fornavn} ${a.etternavn} (${a.telefon}) - ${a.rolle}`).join('\n')
-                : 'Ingen administratorer registrert';
+            // Bygg admin-liste med nummerering for fjerning
+            let adminListe = 'Ingen administratorer registrert';
+            if (admins.length > 0) {
+                adminListe = admins.map((a, i) => `${i + 1}. ${a.fornavn} ${a.etternavn} (${a.telefon}) - ${a.rolle}`).join('\n');
+            }
 
-            const nyAdmin = prompt(`Administratorer for ${klubbNavn}:\n\n${adminListe}\n\n--- Legg til ny administrator ---\nSkriv inn telefonnummer (8 siffer):`);
+            const valg = prompt(
+                `Administratorer for ${klubbNavn}:\n\n${adminListe}\n\n` +
+                `--- Handlinger ---\n` +
+                `• Skriv telefonnummer (8 siffer) for å LEGGE TIL\n` +
+                `• Skriv "fjern X" (f.eks. "fjern 1") for å FJERNE\n` +
+                `• Trykk Avbryt for å lukke`
+            );
 
-            if (nyAdmin && /^\d{8}$/.test(nyAdmin.trim())) {
+            if (!valg) return;
+
+            // Sjekk om bruker vil fjerne
+            const fjernMatch = valg.trim().toLowerCase().match(/^fjern\s*(\d+)$/);
+            if (fjernMatch) {
+                const idx = parseInt(fjernMatch[1]) - 1;
+                if (idx >= 0 && idx < admins.length) {
+                    const admin = admins[idx];
+                    if (confirm(`Er du sikker på at du vil fjerne ${admin.fornavn} ${admin.etternavn} (${admin.telefon}) fra ${klubbNavn}?`)) {
+                        const delResp = await fetch(`/api/klubber/${klubbId}/admins/${admin.telefon}`, {
+                            method: 'DELETE'
+                        });
+                        if (delResp.ok) {
+                            alert('Administrator fjernet!');
+                            loadKlubber();
+                        } else {
+                            const err = await delResp.json();
+                            alert('Feil: ' + (err.error || 'Kunne ikke fjerne'));
+                        }
+                    }
+                } else {
+                    alert('Ugyldig nummer. Velg et nummer fra listen.');
+                }
+                return;
+            }
+
+            // Legg til ny administrator
+            if (/^\d{8}$/.test(valg.trim())) {
                 const rolle = prompt('Hvilken rolle? (leder/nestleder/proveleder/sekretaer/styremedlem/admin)', 'admin');
                 if (rolle) {
                     const addResp = await fetch(`/api/klubber/${klubbId}/admins`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ telefon: nyAdmin.trim(), rolle: rolle.trim() })
+                        body: JSON.stringify({ telefon: valg.trim(), rolle: rolle.trim() })
                     });
                     if (addResp.ok) {
                         alert('Administrator lagt til!');
@@ -1613,6 +1648,8 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
                         alert('Feil: ' + (err.error || 'Kunne ikke legge til'));
                     }
                 }
+            } else {
+                alert('Ugyldig input. Skriv et 8-sifret telefonnummer for å legge til, eller "fjern X" for å fjerne.');
             }
         } catch (err) {
             alert('Feil: ' + err.message);

@@ -216,7 +216,7 @@
                                 <h2 class="text-xl font-bold font-serif text-bark-900">Terminliste</h2>
                                 <p class="text-bark-500 text-sm mt-1">Klubbens planlagte og gjennomførte prøver</p>
                             </div>
-                            <button onclick="visOpprettProveModal()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                            <button onclick="startNyProve()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                 </svg>
@@ -323,46 +323,6 @@
                         </div>
                     </div>
                 </section>
-
-                <!-- Modal: Opprett ny prøve -->
-                <div id="opprettProveModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
-                    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-                        <div class="p-6 border-b border-bark-100">
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-xl font-bold font-serif text-bark-900">Opprett ny prøve</h3>
-                                <button onclick="skjulOpprettProveModal()" class="text-bark-400 hover:text-bark-600">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="p-6 space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-bark-700 mb-2">Prøvenavn *</label>
-                                <input type="text" id="nyProveNavn" placeholder="F.eks. Høstprøven 2026" class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none">
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-bark-700 mb-2">Fra dato *</label>
-                                    <input type="date" id="nyProveDatoFra" class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none">
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-bark-700 mb-2">Til dato</label>
-                                    <input type="date" id="nyProveDatoTil" class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none">
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-bark-700 mb-2">Sted</label>
-                                <input type="text" id="nyProveSted" placeholder="F.eks. Lierne" class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:ring-2 focus:ring-forest-500 focus:border-forest-500 outline-none">
-                            </div>
-                        </div>
-                        <div class="p-6 border-t border-bark-100 flex justify-end gap-3">
-                            <button onclick="skjulOpprettProveModal()" class="px-4 py-2 text-bark-600 hover:text-bark-800 font-medium">Avbryt</button>
-                            <button onclick="opprettNyProve()" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-xl font-medium transition">Opprett prøve</button>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- File Upload Section -->
                 <section id="opplasting" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 p-6">
@@ -6282,13 +6242,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                             </svg>
                             <p class="text-lg font-medium mb-2">Ingen prøver ennå</p>
-                            <p class="text-sm text-bark-400 mb-4">Opprett din første prøve for å komme i gang</p>
-                            <button onclick="visOpprettProveModal()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-xl font-medium transition inline-flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                </svg>
-                                Opprett prøve
-                            </button>
+                            <p class="text-sm text-bark-400">Klikk på "Ny prøve" for å komme i gang</p>
                         </div>
                     </div>
                 `;
@@ -6422,65 +6376,43 @@
             showSection('oversikt');
         }
 
-        // Vis modal for å opprette prøve
-        function visOpprettProveModal() {
-            document.getElementById('opprettProveModal').classList.remove('hidden');
-            document.getElementById('nyProveNavn').focus();
-        }
+        // Start ny prøve - gå direkte til prøvedetaljer med blanke felter
+        function startNyProve() {
+            // Nullstill valgt prøve
+            valgtProveId = null;
+            localStorage.removeItem('currentTrialId');
 
-        // Skjul modal
-        function skjulOpprettProveModal() {
-            document.getElementById('opprettProveModal').classList.add('hidden');
-            document.getElementById('nyProveNavn').value = '';
-            document.getElementById('nyProveDatoFra').value = '';
-            document.getElementById('nyProveDatoTil').value = '';
-            document.getElementById('nyProveSted').value = '';
-        }
+            // Tøm prøvedetaljer-skjema
+            const trialNameEl = document.getElementById('trialName');
+            if (trialNameEl) trialNameEl.value = '';
 
-        // Opprett ny prøve
-        async function opprettNyProve() {
-            const navn = document.getElementById('nyProveNavn').value.trim();
-            const datoFra = document.getElementById('nyProveDatoFra').value;
-            const datoTil = document.getElementById('nyProveDatoTil').value || datoFra;
-            const sted = document.getElementById('nyProveSted').value.trim();
-            const klubbId = localStorage.getItem('currentKlubbId');
+            const trialDateFromEl = document.getElementById('trialDateFrom');
+            if (trialDateFromEl) trialDateFromEl.value = '';
 
-            if (!navn) {
-                alert('Prøvenavn er påkrevd');
-                return;
-            }
-            if (!datoFra) {
-                alert('Dato er påkrevd');
-                return;
-            }
+            const trialDateToEl = document.getElementById('trialDateTo');
+            if (trialDateToEl) trialDateToEl.value = '';
 
-            try {
-                const resp = await fetch('/api/prover', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        navn,
-                        start_dato: datoFra,
-                        slutt_dato: datoTil,
-                        sted,
-                        klubb_id: klubbId
-                    })
-                });
+            const trialLocationEl = document.getElementById('trialLocation');
+            if (trialLocationEl) trialLocationEl.value = '';
 
-                if (resp.ok) {
-                    const data = await resp.json();
-                    skjulOpprettProveModal();
-                    await lastTerminliste();
-                    // Velg den nye prøven og gå til prøvedetaljer
-                    velgProve(data.id);
-                } else {
-                    const err = await resp.json();
-                    alert(err.error || 'Kunne ikke opprette prøve');
-                }
-            } catch (err) {
-                console.error('Feil ved opprettelse:', err);
-                alert('Kunne ikke opprette prøve');
-            }
+            const organizerEl = document.getElementById('organizerName');
+            if (organizerEl) organizerEl.value = '';
+
+            // Oppdater header
+            document.getElementById('trialHeaderName').textContent = 'Ny prøve';
+            document.getElementById('trialHeaderInfo').textContent = 'Fyll ut prøvedetaljer for å komme i gang';
+
+            // Skjul statistikk
+            document.getElementById('valgtProveStats').classList.add('hidden');
+
+            // Gå til prøvedetaljer
+            showSection('provedetaljer');
+
+            // Fokuser på prøvenavn-feltet
+            setTimeout(() => {
+                const nameInput = document.getElementById('trialName');
+                if (nameInput) nameInput.focus();
+            }, 100);
         }
 
         // Slett prøve

@@ -409,9 +409,9 @@
                         </svg>
                         <p class="text-bark-600 mb-2">Dra og slipp fil her, eller</p>
                         <div class="mt-4">
-                            <input type="file" accept=".csv,.txt" id="fileInput" class="block mx-auto text-sm text-bark-600 file:mr-4 file:py-2 file:px-6 file:rounded-xl file:border-0 file:font-medium file:bg-warm-500 file:text-white hover:file:bg-warm-600 file:cursor-pointer">
+                            <input type="file" accept=".csv,.txt,.xlsx,.xls,.numbers" id="fileInput" class="block mx-auto text-sm text-bark-600 file:mr-4 file:py-2 file:px-6 file:rounded-xl file:border-0 file:font-medium file:bg-warm-500 file:text-white hover:file:bg-warm-600 file:cursor-pointer">
                         </div>
-                        <p class="text-xs text-bark-500 mt-3">Støtter CSV og tekstfiler (.csv, .txt)</p>
+                        <p class="text-xs text-bark-500 mt-3">Støtter Excel (.xlsx, .xls), Numbers og CSV/tekstfiler</p>
                     </div>
 
                     <!-- Debug panel -->
@@ -3495,21 +3495,106 @@
                 const fileName = file.name.toLowerCase();
                 debug('Filnavn (lowercase): ' + fileName);
 
-                // Read file as text
-                const text = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        debug('Fil lest OK, lengde: ' + reader.result.length + ' tegn');
-                        debug('Første 200 tegn: ' + reader.result.substring(0, 200));
-                        resolve(reader.result);
-                    };
-                    reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
-                    reader.readAsText(file);
-                });
-
                 let participants = [];
+                const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.numbers');
 
-                if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+                if (isExcelFile) {
+                    // Parse Excel/Numbers med SheetJS
+                    debug('Leser Excel/Numbers-fil med SheetJS...');
+
+                    const arrayBuffer = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
+                        reader.readAsArrayBuffer(file);
+                    });
+
+                    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    debug('Første ark: ' + firstSheetName);
+
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    debug('Antall rader i Excel: ' + jsonData.length);
+
+                    if (jsonData.length < 2) {
+                        throw new Error('Filen inneholder ikke nok data');
+                    }
+
+                    // Header er første rad
+                    const headerParts = jsonData[0].map(h => String(h || '').trim());
+                    debug('Header-kolonner: ' + JSON.stringify(headerParts));
+
+                    // Find column indices dynamically
+                    let colIndex = {
+                        regnr: 0,
+                        navn: 1,
+                        rase: 2,
+                        eier: 3,
+                        forer: 4,
+                        klasse: 5,
+                        epost: 6
+                    };
+
+                    for (let i = 0; i < headerParts.length; i++) {
+                        const h = headerParts[i].replace(/\*\*/g, '').toLowerCase().trim();
+                        if (h.includes('reg') || h.includes('regnr') || h === 'id') colIndex.regnr = i;
+                        else if (h.includes('hundenavn') || h === 'navn' || h === 'hund') colIndex.navn = i;
+                        else if (h.includes('rase')) colIndex.rase = i;
+                        else if (h.includes('eier')) colIndex.eier = i;
+                        else if (h.includes('fører') || h.includes('forer') || h.includes('handler')) colIndex.forer = i;
+                        else if (h.includes('klasse') || h === 'kl') colIndex.klasse = i;
+                        else if (h.includes('epost') || h.includes('e-post') || h.includes('email') || h.includes('mail')) colIndex.epost = i;
+                    }
+
+                    debug('Kolonneindekser: ' + JSON.stringify(colIndex));
+
+                    // Parse data rows
+                    for (let i = 1; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (!row || row.length === 0) continue;
+
+                        const regnr = String(row[colIndex.regnr] || '').trim();
+                        const navn = String(row[colIndex.navn] || '').trim();
+
+                        if (!regnr && !navn) continue;
+
+                        const klasseRaw = String(row[colIndex.klasse] || '').trim().toUpperCase();
+                        let klasse = 'AK';
+                        if (klasseRaw.includes('UK') || klasseRaw.includes('UNGHUND')) klasse = 'UK';
+                        else if (klasseRaw.includes('VK') || klasseRaw.includes('VINNER')) klasse = 'VK';
+                        else if (klasseRaw.includes('AK') || klasseRaw.includes('ÅPEN')) klasse = 'AK';
+
+                        participants.push({
+                            regnr: regnr,
+                            hundenavn: navn,
+                            rase: String(row[colIndex.rase] || '').trim(),
+                            eier: String(row[colIndex.eier] || '').trim(),
+                            forer: String(row[colIndex.forer] || '').trim() || String(row[colIndex.eier] || '').trim(),
+                            klasseRaw: klasseRaw,
+                            klasse: klasse,
+                            dag: klasseRaw.includes('1') ? 1 : (klasseRaw.includes('2') ? 2 : 1),
+                            epost: String(row[colIndex.epost] || '').trim()
+                        });
+                    }
+
+                    debug('Antall deltakere parset fra Excel: ' + participants.length);
+                    debug('Per klasse: UK=' + participants.filter(p => p.klasse === 'UK').length +
+                          ', AK=' + participants.filter(p => p.klasse === 'AK').length +
+                          ', VK=' + participants.filter(p => p.klasse === 'VK').length);
+
+                } else if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+                    // Read file as text for CSV/TXT
+                    const text = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            debug('Fil lest OK, lengde: ' + reader.result.length + ' tegn');
+                            debug('Første 200 tegn: ' + reader.result.substring(0, 200));
+                            resolve(reader.result);
+                        };
+                        reader.onerror = () => reject(new Error('Kunne ikke lese filen'));
+                        reader.readAsText(file);
+                    });
                     // Parse CSV properly handling quoted fields with newlines
                     function parseCSVWithQuotes(text, sep) {
                         const rows = [];
@@ -3648,13 +3733,8 @@
                     debug('Per klasse: UK=' + participants.filter(p => p.klasse === 'UK').length +
                           ', AK=' + participants.filter(p => p.klasse === 'AK').length +
                           ', VK=' + participants.filter(p => p.klasse === 'VK').length);
-                } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-                    alert('Excel-filer (.xlsx) støttes ikke i nettleseren. Vennligst lagre filen som CSV først:\n\n1. Åpne filen i Excel\n2. Fil → Lagre som\n3. Velg "CSV (kommaseparert)" som format\n4. Last opp CSV-filen her');
-                    dropZone.classList.remove('hidden');
-                    uploadLoading.classList.add('hidden');
-                    return;
                 } else {
-                    alert('Ugyldig filformat. Bruk CSV eller TXT.');
+                    alert('Ugyldig filformat. Bruk Excel (.xlsx, .xls), Numbers eller CSV/TXT.');
                     dropZone.classList.remove('hidden');
                     uploadLoading.classList.add('hidden');
                     return;

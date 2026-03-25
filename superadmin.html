@@ -662,6 +662,16 @@
 
             container.innerHTML = foresporsel.map(f => {
                 const admins = JSON.parse(f.ekstra_admins || '[]');
+                const rolleNavn = {
+                    'leder': 'Leder',
+                    'nestleder': 'Nestleder',
+                    'proveleder': 'Prøveleder',
+                    'sekretar': 'Sekretær',
+                    'styremedlem': 'Styremedlem',
+                    'annet': 'Annet'
+                };
+                const rolle = rolleNavn[f.leder_rolle] || f.leder_rolle || 'Ikke oppgitt';
+                const erLeder = f.leder_rolle === 'leder';
                 return `
                 <div class="border border-bark-200 rounded-xl p-4 bg-bark-50">
                     <div class="flex items-start justify-between">
@@ -673,8 +683,17 @@
                         <span class="text-xs text-bark-400">${new Date(f.created_at).toLocaleDateString('no-NO')}</span>
                     </div>
                     <div class="mt-3 pt-3 border-t border-bark-200">
-                        <p class="text-sm"><strong>Klubbleder:</strong> ${f.leder_navn}</p>
+                        <div class="flex items-center gap-2 mb-1">
+                            <p class="text-sm font-medium text-bark-700">${f.leder_navn}</p>
+                            <span class="px-2 py-0.5 text-xs rounded-full font-medium ${erLeder ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${rolle}</span>
+                        </div>
                         <p class="text-sm text-bark-500">${f.leder_telefon} • ${f.leder_epost || 'Ingen e-post'}</p>
+                        ${!erLeder ? `<p class="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            Søker er ikke klubbleder
+                        </p>` : ''}
                         ${admins.length > 0 ? `<p class="text-xs text-bark-400 mt-1">+ ${admins.length} ekstra admin(er)</p>` : ''}
                     </div>
                     <div class="mt-4 flex gap-2">

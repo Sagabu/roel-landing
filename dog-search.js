@@ -163,14 +163,21 @@
     function init() {
         createSearchModal();
 
-        // Find header nav and insert search button
-        const navContainers = document.querySelectorAll('nav .flex.items-center.gap-3, nav .flex.gap-3.items-center, header .flex.items-center.gap-4, header .flex.items-center.gap-3');
+        // Don't show search button on landing page (index.html) - it has its own navigation
+        const isLandingPage = window.location.pathname === '/' ||
+                              window.location.pathname.endsWith('/index.html') ||
+                              window.location.pathname.endsWith('/');
 
-        if (navContainers.length > 0) {
-            // Insert at beginning of the nav actions
-            const container = navContainers[navContainers.length - 1];
-            const searchBtn = createSearchButton();
-            container.insertBefore(searchBtn, container.firstChild);
+        if (!isLandingPage) {
+            // Find header nav and insert search button
+            const navContainers = document.querySelectorAll('nav .flex.items-center.gap-3, nav .flex.gap-3.items-center, header .flex.items-center.gap-4, header .flex.items-center.gap-3');
+
+            if (navContainers.length > 0) {
+                // Insert at beginning of the nav actions
+                const container = navContainers[navContainers.length - 1];
+                const searchBtn = createSearchButton();
+                container.insertBefore(searchBtn, container.firstChild);
+            }
         }
 
         // Also listen for Ctrl+K / Cmd+K to open search

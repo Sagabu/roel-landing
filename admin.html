@@ -323,28 +323,24 @@
                             Dagfordeling av partier
                         </h4>
 
-                        <!-- UK/AK Partier per dag -->
+                        <!-- Antall prøvedager -->
+                        <div class="bg-white rounded-xl p-3 border border-blue-200 mb-4">
+                            <label class="block text-sm font-medium text-bark-700 mb-2">Antall prøvedager</label>
+                            <div class="flex items-center gap-2">
+                                <select id="antallProvedager" class="px-3 py-2 border border-bark-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-warm-500" onchange="updateDayInputs()">
+                                    <option value="1">1 dag</option>
+                                    <option value="2" selected>2 dager</option>
+                                    <option value="3">3 dager</option>
+                                    <option value="4">4 dager</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- UK/AK Partier per dag - dynamisk -->
                         <div class="space-y-4 mb-4">
-                            <p class="text-sm font-medium text-blue-800">UK/AK Partier</p>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div class="bg-white rounded-xl p-3 border border-blue-200">
-                                    <label class="block text-sm font-medium text-bark-700 mb-2">Dag 1</label>
-                                    <div class="flex items-center gap-2">
-                                        <input type="number" id="ukakPartierDag1" value="1" min="0" max="5"
-                                               class="w-16 px-3 py-2 border border-bark-300 rounded-xl text-center text-sm focus:ring-2 focus:ring-warm-500"
-                                               onchange="updateDayScheduleSummary()">
-                                        <span class="text-sm text-bark-600">UK/AK-parti(er)</span>
-                                    </div>
-                                </div>
-                                <div class="bg-white rounded-xl p-3 border border-blue-200">
-                                    <label class="block text-sm font-medium text-bark-700 mb-2">Dag 2</label>
-                                    <div class="flex items-center gap-2">
-                                        <input type="number" id="ukakPartierDag2" value="1" min="0" max="5"
-                                               class="w-16 px-3 py-2 border border-bark-300 rounded-xl text-center text-sm focus:ring-2 focus:ring-warm-500"
-                                               onchange="updateDayScheduleSummary()">
-                                        <span class="text-sm text-bark-600">UK/AK-parti(er)</span>
-                                    </div>
-                                </div>
+                            <p class="text-sm font-medium text-blue-800">UK/AK Partier per dag</p>
+                            <div id="ukakDagerContainer" class="grid grid-cols-2 gap-4">
+                                <!-- Fylles dynamisk av JavaScript -->
                             </div>
                         </div>
 
@@ -356,7 +352,7 @@
                                 <label class="block text-sm font-medium text-bark-700 mb-2">VK-oppsett</label>
                                 <select id="vkTypeSelect" class="w-full px-3 py-2 rounded border border-bark-300 text-sm bg-white focus:ring-2 focus:ring-warm-500" onchange="updateVKDayOptions()">
                                     <option value="none">Ingen VK</option>
-                                    <option value="1day">1-dags VK (kun finale)</option>
+                                    <option value="1day">1-dags VK</option>
                                     <option value="2day">2-dagers VK (kval + finale)</option>
                                 </select>
                             </div>
@@ -2239,6 +2235,69 @@
             updateDayScheduleSummary();
         }
 
+        // Update UK/AK day inputs based on number of trial days
+        function updateDayInputs() {
+            const antallDager = parseInt(document.getElementById('antallProvedager').value) || 2;
+            const container = document.getElementById('ukakDagerContainer');
+
+            // Lagre eksisterende verdier
+            const existingValues = {};
+            for (let i = 1; i <= 4; i++) {
+                const input = document.getElementById(`ukakPartierDag${i}`);
+                if (input) existingValues[i] = input.value;
+            }
+
+            // Generer nye inputs
+            let html = '';
+            for (let dag = 1; dag <= antallDager; dag++) {
+                const prevValue = existingValues[dag] || (dag <= 2 ? '1' : '0');
+                html += `
+                    <div class="bg-white rounded-xl p-3 border border-blue-200">
+                        <label class="block text-sm font-medium text-bark-700 mb-2">Dag ${dag}</label>
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="ukakPartierDag${dag}" value="${prevValue}" min="0" max="5"
+                                   class="w-16 px-3 py-2 border border-bark-300 rounded-xl text-center text-sm focus:ring-2 focus:ring-warm-500"
+                                   onchange="updateDayScheduleSummary()">
+                            <span class="text-sm text-bark-600">UK/AK-parti(er)</span>
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+
+            // Oppdater VK dag-valgene
+            updateVKDaySelectOptions();
+            updateDayScheduleSummary();
+        }
+
+        // Oppdater VK dag-valg dropdowns basert på antall prøvedager
+        function updateVKDaySelectOptions() {
+            const antallDager = parseInt(document.getElementById('antallProvedager').value) || 2;
+
+            // 1-dags VK finale-valg
+            const vk1DaySelect = document.getElementById('vkFinaleDag1day');
+            const vkKvalSelect = document.getElementById('vkKvalDag');
+
+            let options = '';
+            for (let dag = 1; dag <= antallDager; dag++) {
+                options += `<option value="${dag}">Dag ${dag}</option>`;
+            }
+
+            if (vk1DaySelect) vk1DaySelect.innerHTML = options;
+            if (vkKvalSelect) {
+                // For kval, ikke siste dag (finale må være dagen etter)
+                let kvalOptions = '';
+                for (let dag = 1; dag < antallDager; dag++) {
+                    kvalOptions += `<option value="${dag}">Dag ${dag}</option>`;
+                }
+                if (kvalOptions) {
+                    vkKvalSelect.innerHTML = kvalOptions;
+                } else {
+                    vkKvalSelect.innerHTML = '<option value="1">Dag 1</option>';
+                }
+            }
+        }
+
         // Show/hide VK day options based on type
         function updateVKDayOptions() {
             const vkType = document.getElementById('vkTypeSelect').value;
@@ -2266,34 +2325,30 @@
 
         // Update the day schedule summary (kun kapasitet - venteliste vises etter fordeling)
         function updateDayScheduleSummary() {
-            const dag1Partier = parseInt(document.getElementById('ukakPartierDag1').value) || 0;
-            const dag2Partier = parseInt(document.getElementById('ukakPartierDag2').value) || 0;
+            const antallDager = parseInt(document.getElementById('antallProvedager').value) || 2;
             const vkType = document.getElementById('vkTypeSelect').value;
             const maxPerParty = 14;
 
             const summaryDiv = document.getElementById('dayScheduleText');
             let summaryHtml = '';
 
-            // Beregn kapasitet
-            const dag1Kapasitet = dag1Partier * maxPerParty;
-            const dag2Kapasitet = dag2Partier * maxPerParty;
+            // Vis alle dager
+            for (let dag = 1; dag <= antallDager; dag++) {
+                const input = document.getElementById(`ukakPartierDag${dag}`);
+                const partier = input ? parseInt(input.value) || 0 : 0;
+                const kapasitet = partier * maxPerParty;
 
-            // Dag 1 - vis kun kapasitet
-            if (dag1Partier > 0) {
-                summaryHtml += `<div><strong>Dag 1:</strong> ${dag1Partier} UK/AK-parti${dag1Partier > 1 ? 'er' : ''} (maks ${dag1Kapasitet} hunder)</div>`;
-            }
-
-            // Dag 2 - vis kun kapasitet
-            if (dag2Partier > 0) {
-                summaryHtml += `<div><strong>Dag 2:</strong> ${dag2Partier} UK/AK-parti${dag2Partier > 1 ? 'er' : ''} (maks ${dag2Kapasitet} hunder)</div>`;
+                if (partier > 0) {
+                    summaryHtml += `<div><strong>Dag ${dag}:</strong> ${partier} UK/AK-parti${partier > 1 ? 'er' : ''} (maks ${kapasitet} hunder)</div>`;
+                }
             }
 
             // VK
             if (vkType === '1day') {
-                const vkDag = document.getElementById('vkFinaleDag1day').value;
-                summaryHtml += `<div><strong>Dag ${vkDag}:</strong> VK Finale</div>`;
+                const vkDag = document.getElementById('vkFinaleDag1day')?.value || '1';
+                summaryHtml += `<div><strong>Dag ${vkDag}:</strong> VK</div>`;
             } else if (vkType === '2day') {
-                const kvalDag = document.getElementById('vkKvalDag').value;
+                const kvalDag = document.getElementById('vkKvalDag')?.value || '1';
                 const finaleDag = parseInt(kvalDag) + 1;
                 summaryHtml += `<div><strong>Dag ${kvalDag}:</strong> VK Kval (2 partier)</div>`;
                 summaryHtml += `<div><strong>Dag ${finaleDag}:</strong> VK Finale</div>`;
@@ -2307,6 +2362,7 @@
         }
 
         // Initialize on page load
+        updateDayInputs();
         updateVKDayOptions();
         updateDayScheduleSummary();
 

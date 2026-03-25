@@ -136,7 +136,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS trial_config (
     id INTEGER PRIMARY KEY DEFAULT 1,
-    name TEXT NOT NULL DEFAULT 'Høgkjølprøven 2026',
+    name TEXT NOT NULL DEFAULT '',
     location TEXT DEFAULT '',
     start_date TEXT DEFAULT '',
     end_date TEXT DEFAULT '',
@@ -288,6 +288,8 @@ db.exec(`
     leder_navn TEXT NOT NULL,
     leder_telefon TEXT NOT NULL,
     leder_epost TEXT DEFAULT '',
+    leder_rolle TEXT DEFAULT 'leder',
+    passord_hash TEXT DEFAULT '',
     ekstra_admins TEXT DEFAULT '[]',
     status TEXT DEFAULT 'pending',
     behandlet_av TEXT DEFAULT NULL,
@@ -1253,6 +1255,35 @@ app.post("/api/auth/send-code", async (c) => {
   }
 
   return c.json({ ok: true, message: "Kode sendt på SMS", devMode: smsResult.devMode || false });
+});
+
+// Verifiser OTP kode UTEN å opprette bruker (for klubb-forespørsel)
+app.post("/api/auth/verify-code-only", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const code = (body.code || "").trim();
+
+  if (!telefon || !code) {
+    return c.json({ error: "Telefon og kode er påkrevd" }, 400);
+  }
+
+  // Bypass for testing: telefon 90852833 med kode 1234
+  const isTestBypass = telefon === "90852833" && code === "1234";
+
+  const otp = isTestBypass ? { rowid: -1 } : db.prepare(
+    "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+  ).get(telefon, code);
+
+  if (!otp) {
+    return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
+  }
+
+  // Marker koden som brukt
+  if (otp.rowid !== -1) {
+    db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
+  }
+
+  return c.json({ ok: true, verified: true });
 });
 
 // Verifiser OTP kode og returner JWT
@@ -2911,9 +2942,22 @@ app.delete("/api/klubber/:id/medlemmer", requireAdmin, (c) => {
 // Send inn klubb-forespørsel (offentlig - ingen auth kreves)
 app.post("/api/klubb-foresporsel", async (c) => {
   const body = await c.req.json();
-  const { orgnummer, navn, postnummer, sted, adresse, leder, admins } = body;
+  // Støtt både gammel og ny format
+  const orgnummer = body.orgnummer;
+  const navn = body.navn;
+  const postnummer = body.postnummer || '';
+  const sted = body.sted || '';
+  const adresse = body.adresse || '';
 
-  if (!orgnummer || !navn || !leder?.navn || !leder?.telefon) {
+  // Ny format: leder_* felter direkte
+  const lederNavn = body.leder_navn || body.leder?.navn;
+  const lederTelefon = body.leder_telefon || body.leder?.telefon;
+  const lederEpost = body.leder_epost || body.leder?.email || '';
+  const lederRolle = body.leder_rolle || 'leder';
+  const passord = body.passord || '';
+  const ekstraAdmins = body.ekstra_admins || body.admins || '[]';
+
+  if (!orgnummer || !navn || !lederNavn || !lederTelefon) {
     return c.json({ error: "Mangler påkrevde felt" }, 400);
   }
 
@@ -2929,19 +2973,27 @@ app.post("/api/klubb-foresporsel", async (c) => {
     return c.json({ error: "Det finnes allerede en ventende forespørsel for dette organisasjonsnummeret" }, 400);
   }
 
+  // Hash passord hvis oppgitt
+  let passordHash = '';
+  if (passord) {
+    passordHash = await hashPassword(passord);
+  }
+
   const result = db.prepare(`
-    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, ekstra_admins)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, leder_rolle, passord_hash, ekstra_admins)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     orgnummer.replace(/\s/g, ''),
     navn.trim(),
-    postnummer || '',
-    sted || '',
-    adresse || '',
-    leder.navn.trim(),
-    normalizePhone(leder.telefon),
-    leder.email || '',
-    JSON.stringify(admins || [])
+    postnummer,
+    sted,
+    adresse,
+    lederNavn.trim(),
+    normalizePhone(lederTelefon),
+    lederEpost,
+    lederRolle,
+    passordHash,
+    typeof ekstraAdmins === 'string' ? ekstraAdmins : JSON.stringify(ekstraAdmins)
   );
 
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -2983,35 +3035,51 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     .replace(/\s+/g, '-')
     .substring(0, 30);
 
-  // Opprett klubb
+  // Opprett klubb med passord_hash fra forespørselen
   db.prepare(`
-    INSERT INTO klubber (id, orgnummer, navn, region)
-    VALUES (?, ?, ?, ?)
-  `).run(klubbId, foresporsel.orgnummer, foresporsel.navn, '');
+    INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    klubbId,
+    foresporsel.orgnummer,
+    foresporsel.navn,
+    '',
+    foresporsel.passord_hash || '',
+    foresporsel.leder_telefon,
+    foresporsel.leder_epost
+  );
 
   // Opprett bruker for leder hvis ikke finnes
-  const existingUser = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
+  const existingUser = db.prepare("SELECT telefon, passord_hash FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
   if (!existingUser) {
     const nameParts = foresporsel.leder_navn.split(' ');
     const fornavn = nameParts[0] || '';
     const etternavn = nameParts.slice(1).join(' ') || '';
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
-      VALUES (?, ?, ?, ?, 'deltaker,klubbleder')
-    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost);
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash)
+      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?)
+    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '');
   } else {
-    // Oppdater rolle til å inkludere klubbleder
-    db.prepare(`
-      UPDATE brukere SET rolle = rolle || ',klubbleder'
-      WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
-    `).run(foresporsel.leder_telefon);
+    // Oppdater rolle til å inkludere klubbleder og sett passord hvis mangler
+    if (!existingUser.passord_hash && foresporsel.passord_hash) {
+      db.prepare(`
+        UPDATE brukere SET rolle = rolle || ',klubbleder', passord_hash = ?
+        WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
+      `).run(foresporsel.passord_hash, foresporsel.leder_telefon);
+    } else {
+      db.prepare(`
+        UPDATE brukere SET rolle = rolle || ',klubbleder'
+        WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
+      `).run(foresporsel.leder_telefon);
+    }
   }
 
-  // Legg til leder som klubb-admin
+  // Legg til leder som klubb-admin med rolle fra forespørsel
+  const lederRolle = foresporsel.leder_rolle || 'leder';
   db.prepare(`
     INSERT OR IGNORE INTO klubb_admins (telefon, klubb_id, rolle)
-    VALUES (?, ?, 'leder')
-  `).run(foresporsel.leder_telefon, klubbId);
+    VALUES (?, ?, ?)
+  `).run(foresporsel.leder_telefon, klubbId, lederRolle);
 
   // Behandle ekstra admins
   try {
@@ -3038,6 +3106,17 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     "klubb_godkjent",
     `Godkjent klubb: ${foresporsel.navn} (ID: ${klubbId})`
   );
+
+  // Send SMS til klubbleder om godkjenning
+  try {
+    await sendSms(
+      foresporsel.leder_telefon,
+      `Gratulerer! Din klubb "${foresporsel.navn}" er nå godkjent på fuglehundprove.no. Logg inn med ditt mobilnummer og passord for å komme i gang.`
+    );
+  } catch (smsErr) {
+    console.error("Kunne ikke sende godkjennings-SMS:", smsErr);
+    // Fortsett selv om SMS feiler
+  }
 
   return c.json({ success: true, klubbId });
 });

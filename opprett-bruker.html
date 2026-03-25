@@ -131,6 +131,28 @@
                                 class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
                         </div>
 
+                        <!-- SMS-samtykke (obligatorisk, pre-checked) -->
+                        <div class="bg-bark-50 rounded-xl p-4 border border-bark-200">
+                            <div class="flex items-start gap-3">
+                                <div class="flex-shrink-0 mt-0.5">
+                                    <div class="w-5 h-5 bg-warm-500 rounded flex items-center justify-center">
+                                        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-bark-700 font-medium">SMS-samtykke</p>
+                                    <p class="text-xs text-bark-500 mt-1 leading-relaxed">
+                                        Ved å opprette bruker samtykker du til å motta SMS-varsler om prøver du er påmeldt,
+                                        partilister, tidspunkter og annen relevant informasjon knyttet til fuglehundprøver.
+                                        <a href="personvern.html" target="_blank" class="text-warm-800 hover:underline">Les personvernerklæring</a>
+                                    </p>
+                                </div>
+                            </div>
+                            <input type="hidden" id="smsConsent" value="true">
+                        </div>
+
                         <p id="formError" class="text-red-500 text-sm hidden"></p>
 
                         <button onclick="sendVerificationCode()" id="continueBtn" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
@@ -223,7 +245,9 @@
             lastName: '',
             email: '',
             phone: '',
-            password: ''
+            password: '',
+            smsConsent: true,
+            smsConsentTimestamp: null
         };
 
         function formatPhoneNumber(input) {
@@ -277,7 +301,11 @@
             if (!password) return showError('Vennligst velg et passord');
             if (password !== passwordConfirm) return showError('Passordene stemmer ikke overens');
 
-            userData = { firstName, lastName, email, phone, password };
+            userData = {
+                firstName, lastName, email, phone, password,
+                smsConsent: true,
+                smsConsentTimestamp: new Date().toISOString()
+            };
 
             setLoading(true);
 
@@ -368,7 +396,9 @@
                         passord: userData.password,
                         fornavn: userData.firstName,
                         etternavn: userData.lastName,
-                        epost: userData.email
+                        epost: userData.email,
+                        sms_samtykke: userData.smsConsent,
+                        sms_samtykke_tidspunkt: userData.smsConsentTimestamp
                     })
                 });
 

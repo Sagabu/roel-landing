@@ -506,6 +506,9 @@ const migrations = [
   // Sporing av dommere med brukerprofil
   "ALTER TABLE fkf_godkjente_dommere ADD COLUMN linked_bruker_telefon TEXT DEFAULT NULL",
   "ALTER TABLE fkf_godkjente_dommere ADD COLUMN linked_at TEXT DEFAULT NULL",
+  // SMS-samtykke med tidspunkt
+  "ALTER TABLE brukere ADD COLUMN sms_samtykke INTEGER DEFAULT 0",
+  "ALTER TABLE brukere ADD COLUMN sms_samtykke_tidspunkt TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -1440,6 +1443,8 @@ app.post("/api/auth/register/verify", async (c) => {
   const fornavn = (body.fornavn || "").trim();
   const etternavn = (body.etternavn || "").trim();
   const epost = (body.epost || "").trim();
+  const smsSamtykke = body.sms_samtykke ? 1 : 0;
+  const smsSamtykkeTidspunkt = body.sms_samtykke_tidspunkt || new Date().toISOString();
 
   if (!telefon || !code || !passord) {
     return c.json({ error: "Telefon, kode og passord er påkrevd" }, 400);
@@ -1467,19 +1472,22 @@ app.post("/api/auth/register/verify", async (c) => {
   const existing = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(telefon);
 
   if (existing) {
+    // Oppdater eksisterende bruker - SMS-samtykke oppdateres kun hvis det ikke allerede er satt
     db.prepare(`
       UPDATE brukere SET
         fornavn = ?, etternavn = ?, epost = ?,
         passord_hash = ?, verifisert = 1,
-        siste_innlogging = ?, updated_at = ?
+        siste_innlogging = ?, updated_at = ?,
+        sms_samtykke = CASE WHEN sms_samtykke IS NULL OR sms_samtykke = 0 THEN ? ELSE sms_samtykke END,
+        sms_samtykke_tidspunkt = CASE WHEN sms_samtykke_tidspunkt IS NULL THEN ? ELSE sms_samtykke_tidspunkt END
       WHERE telefon = ?
-    `).run(fornavn, etternavn, epost, passordHash, now, now, telefon);
+    `).run(fornavn, etternavn, epost, passordHash, now, now, smsSamtykke, smsSamtykkeTidspunkt, telefon);
   } else {
     const insertResult = db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-    `).run(telefon, fornavn, etternavn, epost, passordHash, now, now, now);
-    console.log(`[Register] Ny bruker opprettet: ${telefon} (changes: ${insertResult.changes})`);
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, created_at, updated_at, sms_samtykke, sms_samtykke_tidspunkt)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+    `).run(telefon, fornavn, etternavn, epost, passordHash, now, now, now, smsSamtykke, smsSamtykkeTidspunkt);
+    console.log(`[Register] Ny bruker opprettet: ${telefon} (SMS-samtykke: ${smsSamtykke ? 'Ja' : 'Nei'}, tidspunkt: ${smsSamtykkeTidspunkt})`);
 
     // Auto-backup ved ny brukerregistrering
     autoBackup("ny_bruker");
@@ -3064,6 +3072,65 @@ app.put("/api/superadmin/brukere/:telefon/rolle", async (c) => {
   );
 
   return c.json({ success: true });
+});
+
+// ============================================
+// SMS-SAMTYKKE STATISTIKK (SUPERADMIN)
+// ============================================
+
+// Hent SMS-samtykke statistikk
+app.get("/api/superadmin/sms-samtykke", (c) => {
+  const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
+  const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE sms_samtykke = 1").get().n;
+  const utenSamtykke = total - medSamtykke;
+
+  // Hent liste over brukere med samtykke (for eksport)
+  const brukere = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, sms_samtykke, sms_samtykke_tidspunkt, created_at
+    FROM brukere
+    WHERE sms_samtykke = 1
+    ORDER BY sms_samtykke_tidspunkt DESC
+  `).all();
+
+  return c.json({
+    statistikk: {
+      total,
+      medSamtykke,
+      utenSamtykke,
+      prosent: total > 0 ? Math.round((medSamtykke / total) * 100) : 0
+    },
+    brukere
+  });
+});
+
+// Eksporter SMS-samtykke rapport til CSV
+app.get("/api/superadmin/sms-samtykke/export", (c) => {
+  const brukere = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, sms_samtykke, sms_samtykke_tidspunkt, created_at
+    FROM brukere
+    WHERE sms_samtykke = 1
+    ORDER BY sms_samtykke_tidspunkt DESC
+  `).all();
+
+  // Lag CSV-header
+  const header = "Telefon,Fornavn,Etternavn,E-post,SMS-samtykke,Samtykke-tidspunkt,Bruker-opprettet";
+  const rows = brukere.map(b => {
+    return [
+      b.telefon,
+      b.fornavn || '',
+      b.etternavn || '',
+      b.epost || '',
+      b.sms_samtykke ? 'Ja' : 'Nei',
+      b.sms_samtykke_tidspunkt || '',
+      b.created_at || ''
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+  });
+
+  const csv = [header, ...rows].join('\n');
+
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="sms-samtykke-rapport-${new Date().toISOString().split('T')[0]}.csv"`);
+  return c.body('\ufeff' + csv); // BOM for Excel-kompatibilitet
 });
 
 // ============================================

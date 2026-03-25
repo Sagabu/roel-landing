@@ -5381,17 +5381,18 @@ function serveWithShim(filePath, c, isAdmin = false) {
   if (!existsSync(filePath)) return c.text("Not found", 404);
   let html = readFileSync(filePath, "utf-8");
 
-  // Site-lock først, deretter admin-lock (hvis admin-side), deretter auth og storage-shim
-  let scripts = `<script src="/site-lock.js"></script>\n`;
+  // Mobile CSS fix + Site-lock først, deretter admin-lock (hvis admin-side), deretter auth og storage-shim
+  let injected = `<link rel="stylesheet" href="/mobile-fix.css">\n`;
+  injected += `<script src="/site-lock.js"></script>\n`;
   if (isAdmin) {
-    scripts += `<script src="/admin-lock.js"></script>\n`;
+    injected += `<script src="/admin-lock.js"></script>\n`;
   }
-  scripts += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/navbar.js" defer></script>`;
+  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/navbar.js" defer></script>`;
 
   if (html.includes("<head>")) {
-    html = html.replace("<head>", `<head>\n${scripts}`);
+    html = html.replace("<head>", `<head>\n${injected}`);
   } else {
-    html = scripts + "\n" + html;
+    html = injected + "\n" + html;
   }
   c.header("Content-Type", "text/html; charset=utf-8");
   c.header("Cache-Control", "no-cache, no-store, must-revalidate");

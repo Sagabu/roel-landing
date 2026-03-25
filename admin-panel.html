@@ -1057,6 +1057,8 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
     // ========================================
     // BACKUP-ADMINISTRASJON
     // ========================================
+    let showAllBackups = false;
+
     async function loadBackups() {
         try {
             const resp = await fetch('/api/backups');
@@ -1068,7 +1070,11 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
                 return;
             }
 
-            container.innerHTML = backups.map(b => `
+            // Vis kun de 5 siste med mindre "Vis alle" er klikket
+            const displayBackups = showAllBackups ? backups : backups.slice(0, 5);
+            const hasMore = backups.length > 5;
+
+            let html = displayBackups.map(b => `
                 <div class="flex justify-between items-center py-3 px-4 bg-bark-50 rounded-lg">
                     <div>
                         <span class="font-medium text-bark-700">${b.name}</span>
@@ -1081,9 +1087,25 @@ Hansen;Kari;Hundeveien 5;7500;Stjørdal;91 23 45 67;45 67 89 01"
                     </div>
                 </div>
             `).join('');
+
+            // Legg til "Vis alle" / "Vis færre" knapp
+            if (hasMore) {
+                if (showAllBackups) {
+                    html += `<button onclick="toggleShowAllBackups()" class="w-full py-2 text-bark-500 hover:text-bark-700 text-sm font-medium mt-2">▲ Vis færre (5 siste)</button>`;
+                } else {
+                    html += `<button onclick="toggleShowAllBackups()" class="w-full py-2 text-bark-500 hover:text-bark-700 text-sm font-medium mt-2">▼ Vis alle (${backups.length} backups)</button>`;
+                }
+            }
+
+            container.innerHTML = html;
         } catch (err) {
             document.getElementById('backupList').innerHTML = '<p class="text-red-500">Feil ved lasting: ' + err.message + '</p>';
         }
+    }
+
+    function toggleShowAllBackups() {
+        showAllBackups = !showAllBackups;
+        loadBackups();
     }
 
     async function createBackup() {

@@ -5619,6 +5619,16 @@ app.put("/api/kritikker/:id/returner", requireAdmin, async (c) => {
   const body = await c.req.json();
   const bruker = c.get("bruker");
 
+  // Hent kritikk-info for å finne dommers telefon
+  const kritikk = db.prepare(`
+    SELECT k.*, h.navn as hund_navn
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    WHERE k.id = ?
+  `).get(id);
+
+  if (!kritikk) return c.json({ error: "Kritikk ikke funnet" }, 404);
+
   const result = db.prepare(`
     UPDATE kritikker SET status = 'returned', nkk_comment = ?, updated_at = datetime('now')
     WHERE id = ?
@@ -5629,6 +5639,20 @@ app.put("/api/kritikker/:id/returner", requireAdmin, async (c) => {
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
     "kritikk_returnert", `Kritikk ${id} returnert av ${bruker.telefon}: ${body.nkk_comment || ''}`
   );
+
+  // Send SMS til dommer om returnert kritikk
+  if (kritikk.dommer_telefon) {
+    const kommentar = body.nkk_comment ? `\n\nKommentar: ${body.nkk_comment}` : '';
+    const melding = `Kritikken for ${kritikk.hund_navn || 'hunden'} er returnert av NKK-rep og trenger endringer.${kommentar}\n\nLogg inn på fuglehundprove.no for å oppdatere.`;
+
+    try {
+      await sendSMS(kritikk.dommer_telefon, melding, { type: 'kritikk_retur' });
+      console.log(`📱 SMS sendt til dommer ${kritikk.dommer_telefon} om returnert kritikk ${id}`);
+    } catch (err) {
+      console.error('Feil ved sending av SMS til dommer:', err);
+    }
+  }
+
   return c.json({ success: true });
 });
 

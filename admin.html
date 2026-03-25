@@ -149,15 +149,15 @@
                 <div class="space-y-2 text-sm">
                     <div class="flex items-center justify-between">
                         <span class="text-bark-600">Påminnelse 48t</span>
-                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span id="statusPaminnelse" class="w-2 h-2 bg-red-500 rounded-full"></span>
                     </div>
                     <div class="flex items-center justify-between">
                         <span class="text-bark-600">Auto-utkast 24t</span>
-                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span id="statusUtkast" class="w-2 h-2 bg-red-500 rounded-full"></span>
                     </div>
                     <div class="flex items-center justify-between">
                         <span class="text-bark-600">Venteliste-opprykk</span>
-                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span id="statusVenteliste" class="w-2 h-2 bg-red-500 rounded-full"></span>
                     </div>
                 </div>
             </div>
@@ -809,21 +809,21 @@
                         <h3 class="text-lg font-semibold text-bark-800 mb-4">Automatikk</h3>
                         <div class="space-y-3">
                             <label class="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
+                                <input type="checkbox" id="autoPaminnelse" onchange="oppdaterAutomatikkStatus()" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
                                 <span class="text-bark-700">
                                     <strong>Automatisk påminnelse (48 timer)</strong>
                                     <span class="text-bark-500 text-sm block">Send SMS til deltakere som ikke har bekreftet 48 timer før prøvestart</span>
                                 </span>
                             </label>
                             <label class="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
+                                <input type="checkbox" id="autoUtkast" onchange="oppdaterAutomatikkStatus()" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
                                 <span class="text-bark-700">
                                     <strong>Automatisk utkast (24 timer)</strong>
                                     <span class="text-bark-500 text-sm block">Fjern deltakere som ikke har bekreftet 24 timer før prøvestart</span>
                                 </span>
                             </label>
                             <label class="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
+                                <input type="checkbox" id="autoVenteliste" onchange="oppdaterAutomatikkStatus()" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
                                 <span class="text-bark-700">
                                     <strong>Automatisk venteliste-opprykk</strong>
                                     <span class="text-bark-500 text-sm block">Rykk opp fra venteliste når plasser frigjøres (5 timer bekreftelsefrist)</span>
@@ -5983,6 +5983,53 @@
                 trialDetailsWarning.classList.toggle('hidden', isComplete);
             }
         }
+
+        // Oppdater automatikk-status i sidemenyen
+        function oppdaterAutomatikkStatus() {
+            const paminnelse = document.getElementById('autoPaminnelse')?.checked || false;
+            const utkast = document.getElementById('autoUtkast')?.checked || false;
+            const venteliste = document.getElementById('autoVenteliste')?.checked || false;
+
+            // Oppdater status-indikatorer
+            const statusPaminnelse = document.getElementById('statusPaminnelse');
+            const statusUtkast = document.getElementById('statusUtkast');
+            const statusVenteliste = document.getElementById('statusVenteliste');
+
+            if (statusPaminnelse) {
+                statusPaminnelse.className = `w-2 h-2 rounded-full ${paminnelse ? 'bg-green-500' : 'bg-red-500'}`;
+            }
+            if (statusUtkast) {
+                statusUtkast.className = `w-2 h-2 rounded-full ${utkast ? 'bg-green-500' : 'bg-red-500'}`;
+            }
+            if (statusVenteliste) {
+                statusVenteliste.className = `w-2 h-2 rounded-full ${venteliste ? 'bg-green-500' : 'bg-red-500'}`;
+            }
+
+            // Lagre til localStorage
+            localStorage.setItem('automatikkInnstillinger', JSON.stringify({
+                paminnelse,
+                utkast,
+                venteliste
+            }));
+        }
+
+        // Last automatikk-innstillinger ved oppstart
+        function lastAutomatikkInnstillinger() {
+            const lagret = JSON.parse(localStorage.getItem('automatikkInnstillinger') || '{}');
+
+            const paminnelseEl = document.getElementById('autoPaminnelse');
+            const utkastEl = document.getElementById('autoUtkast');
+            const ventelisteEl = document.getElementById('autoVenteliste');
+
+            if (paminnelseEl) paminnelseEl.checked = lagret.paminnelse || false;
+            if (utkastEl) utkastEl.checked = lagret.utkast || false;
+            if (ventelisteEl) ventelisteEl.checked = lagret.venteliste || false;
+
+            oppdaterAutomatikkStatus();
+        }
+
+        // Kjør ved oppstart
+        document.addEventListener('DOMContentLoaded', lastAutomatikkInnstillinger);
 
         // Lagre prøvedetaljer til server
         async function saveTrialDetails() {

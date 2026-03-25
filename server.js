@@ -2849,6 +2849,20 @@ app.get("/api/klubber/:id", (c) => {
   return c.json({ ...row, admins });
 });
 
+// Hent prøver for en klubb
+app.get("/api/klubber/:id/prover", (c) => {
+  const klubbId = c.req.param("id");
+  const prover = db.prepare(`
+    SELECT p.*,
+           (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+    FROM prover p
+    WHERE p.klubb_id = ?
+    ORDER BY p.start_dato DESC
+  `).all(klubbId);
+
+  return c.json({ prover });
+});
+
 // Oppdater klubb (inkl. Vipps-nummer)
 app.put("/api/klubber/:id", async (c) => {
   const id = c.req.param("id");

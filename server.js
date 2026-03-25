@@ -3083,6 +3083,25 @@ app.post("/api/klubb-foresporsel", async (c) => {
     passordHash = await hashPassword(passord);
   }
 
+  const normalizedPhone = normalizePhone(lederTelefon);
+
+  // Opprett brukerprofil umiddelbart (hvis ikke finnes)
+  const existingUser = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(normalizedPhone);
+  if (!existingUser) {
+    const nameParts = lederNavn.trim().split(' ');
+    const fornavn = nameParts[0] || '';
+    const etternavn = nameParts.slice(1).join(' ') || '';
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash)
+      VALUES (?, ?, ?, ?, 'deltaker', ?)
+    `).run(normalizedPhone, fornavn, etternavn, lederEpost, passordHash);
+  } else if (passordHash) {
+    // Oppdater passord hvis bruker finnes men ikke har passord
+    db.prepare(`
+      UPDATE brukere SET passord_hash = ? WHERE telefon = ? AND (passord_hash IS NULL OR passord_hash = '')
+    `).run(passordHash, normalizedPhone);
+  }
+
   const result = db.prepare(`
     INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, leder_rolle, passord_hash, ekstra_admins)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -3093,7 +3112,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
     sted,
     adresse,
     lederNavn.trim(),
-    normalizePhone(lederTelefon),
+    normalizedPhone,
     lederEpost,
     lederRolle,
     passordHash,
@@ -3105,7 +3124,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
     `Ny klubb-forespørsel: ${navn} (org.nr: ${orgnummer})`
   );
 
-  return c.json({ success: true, id: result.lastInsertRowid });
+  return c.json({ success: true, id: result.lastInsertRowid, telefon: normalizedPhone });
 });
 
 // Hent alle klubb-forespørsler (kun superadmin)

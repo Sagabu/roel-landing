@@ -4127,6 +4127,148 @@ app.get("/api/prover/:id", (c) => {
   });
 });
 
+// Opprett ny prøve
+app.post("/api/prover", requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    const bruker = c.get("bruker");
+
+    // Generer unik ID
+    const id = `prove_${Date.now()}_${randomBytes(4).toString('hex')}`;
+
+    const {
+      navn,
+      sted = '',
+      start_dato,
+      slutt_dato,
+      klubb_id = null,
+      proveleder_telefon = null,
+      nkkrep_telefon = null,
+      klasser = { uk: true, ak: true, vk: true },
+      partier = {}
+    } = body;
+
+    if (!navn) {
+      return c.json({ error: "Prøvenavn er påkrevd" }, 400);
+    }
+    if (!start_dato) {
+      return c.json({ error: "Startdato er påkrevd" }, 400);
+    }
+
+    db.prepare(`
+      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, klasser, partier, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt')
+    `).run(
+      id,
+      navn,
+      sted,
+      start_dato,
+      slutt_dato || start_dato,
+      klubb_id,
+      proveleder_telefon,
+      nkkrep_telefon,
+      JSON.stringify(klasser),
+      JSON.stringify(partier)
+    );
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "prove_opprettet",
+      JSON.stringify({ id, navn, opprettet_av: bruker.telefon })
+    );
+
+    autoBackup("prove_opprettet");
+
+    return c.json({ id, navn, message: "Prøve opprettet" });
+  } catch (err) {
+    console.error("Feil ved opprettelse av prøve:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Oppdater prøve
+app.put("/api/prover/:id", requireAdmin, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const bruker = c.get("bruker");
+
+    const existing = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+    if (!existing) {
+      return c.json({ error: "Prøve ikke funnet" }, 404);
+    }
+
+    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "nkkrep_telefon", "status"];
+    const sets = [];
+    const vals = [];
+
+    for (const f of fields) {
+      if (f in body) {
+        sets.push(`${f} = ?`);
+        vals.push(body[f]);
+      }
+    }
+
+    // Håndter JSON-felter separat
+    if ('klasser' in body) {
+      sets.push("klasser = ?");
+      vals.push(JSON.stringify(body.klasser));
+    }
+    if ('partier' in body) {
+      sets.push("partier = ?");
+      vals.push(JSON.stringify(body.partier));
+    }
+
+    if (sets.length > 0) {
+      vals.push(id);
+      db.prepare(`UPDATE prover SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+
+      db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+        "prove_oppdatert",
+        JSON.stringify({ id, endringer: Object.keys(body), endret_av: bruker.telefon })
+      );
+    }
+
+    const updated = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+    return c.json({
+      ...updated,
+      klasser: JSON.parse(updated.klasser || '{}'),
+      partier: JSON.parse(updated.partier || '{}')
+    });
+  } catch (err) {
+    console.error("Feil ved oppdatering av prøve:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett prøve
+app.delete("/api/prover/:id", requireAdmin, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const bruker = c.get("bruker");
+
+    const existing = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+    if (!existing) {
+      return c.json({ error: "Prøve ikke funnet" }, 404);
+    }
+
+    autoBackup("prove_slettet");
+
+    // Slett relaterte data først
+    db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ?").run(id);
+    db.prepare("DELETE FROM prover WHERE id = ?").run(id);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "prove_slettet",
+      JSON.stringify({ id, navn: existing.navn, slettet_av: bruker.telefon })
+    );
+
+    return c.json({ success: true, message: "Prøve slettet" });
+  } catch (err) {
+    console.error("Feil ved sletting av prøve:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // ============================================
 // PÅMELDINGER API
 // ============================================

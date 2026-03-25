@@ -240,6 +240,14 @@
     </footer>
 
     <script>
+        // Get proveId from URL params
+        function getProveIdFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('prove') || params.get('proveId');
+        }
+
+        const proveId = getProveIdFromUrl();
+
         // Load praktisk info
         async function loadPraktiskInfo() {
             let info = null;
@@ -353,8 +361,44 @@
             return `${days[date.getDay()]} ${date.getDate()}.${date.getMonth() + 1}`;
         }
 
-        // Load trial info from API or localStorage
+        // Load trial info from API
         async function loadTrialInfo() {
+            // If we have a specific proveId, load from /api/prover/:id
+            if (proveId) {
+                try {
+                    const response = await fetch(`/api/prover/${proveId}`);
+                    if (response.ok) {
+                        const prove = await response.json();
+                        document.getElementById('trialName').textContent = prove.navn || 'Prøve ikke konfigurert';
+                        document.getElementById('footerTrialName').textContent = prove.navn || 'Fuglehundprøve';
+
+                        if (prove.start_dato && prove.slutt_dato) {
+                            const start = new Date(prove.start_dato);
+                            const end = new Date(prove.slutt_dato);
+                            const startDay = start.getDate();
+                            const endDay = end.getDate();
+                            const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+                            document.getElementById('trialDetails').textContent =
+                                `${startDay}.-${endDay}. ${months[start.getMonth()]} ${start.getFullYear()} • ${prove.sted || ''}`;
+                        } else if (prove.start_dato) {
+                            const start = new Date(prove.start_dato);
+                            const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+                            document.getElementById('trialDetails').textContent =
+                                `${start.getDate()}. ${months[start.getMonth()]} ${start.getFullYear()} • ${prove.sted || ''}`;
+                        }
+
+                        if (prove.klubb_navn) {
+                            document.getElementById('trialOrganizer').textContent = `Arrangør: ${prove.klubb_navn}`;
+                            document.getElementById('footerOrganizer').textContent = `Arrangert av ${prove.klubb_navn}`;
+                        }
+                        return;
+                    }
+                } catch (e) {
+                    console.log('Could not load prove info from API:', e);
+                }
+            }
+
+            // Fallback to /api/trial for legacy support
             try {
                 const response = await fetch('/api/trial');
                 if (response.ok) {
@@ -383,13 +427,58 @@
         }
 
         // Load and render parties
-        function loadParties() {
-            const partiesJson = localStorage.getItem('trialParties');
-            if (!partiesJson) {
-                return;
+        async function loadParties() {
+            let parties = [];
+
+            // If we have a proveId, load from API
+            if (proveId) {
+                try {
+                    const response = await fetch(`/api/prover/${proveId}/partier`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Transform API response to expected format
+                        const partierObj = data.partier || {};
+                        const proveInfo = await fetch(`/api/prover/${proveId}`).then(r => r.json()).catch(() => ({}));
+
+                        for (const [partiNavn, hunder] of Object.entries(partierObj)) {
+                            const isVK = partiNavn.toLowerCase().includes('vk');
+                            const ukCount = hunder.filter(h => h.klasse === 'UK').length;
+                            const akCount = hunder.filter(h => h.klasse === 'AK').length;
+
+                            parties.push({
+                                id: partiNavn,
+                                name: partiNavn,
+                                type: isVK ? 'vk' : 'ukak',
+                                date: proveInfo.start_dato || new Date().toISOString().split('T')[0],
+                                day: hunder[0]?.dag || 1,
+                                ukCount,
+                                akCount,
+                                dogs: hunder.map((h, i) => ({
+                                    hundenavn: h.hund_navn || h.navn,
+                                    regnr: h.regnr,
+                                    rase: h.rase,
+                                    eier: h.eier_navn,
+                                    forer: h.forer_navn,
+                                    klasse: h.klasse,
+                                    premie: h.premie || '',
+                                    cacit: h.cacit || ''
+                                }))
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not load parties from API:', e);
+                }
             }
 
-            const parties = JSON.parse(partiesJson);
+            // Fallback to localStorage for legacy support
+            if (parties.length === 0) {
+                const partiesJson = localStorage.getItem('trialParties');
+                if (partiesJson) {
+                    parties = JSON.parse(partiesJson) || [];
+                }
+            }
+
             if (!parties || parties.length === 0) {
                 return;
             }
@@ -473,29 +562,30 @@
                     }
 
                     partyCard.innerHTML = `
-                        <div class="px-4 py-2 bg-bark-50 border-b border-bark-100">
-                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                <div class="flex items-center gap-2">
-                                    <h3 class="text-base font-serif font-semibold text-bark-900">${party.name}</h3>
-                                    <span class="text-xs text-bark-400">Dag ${party.day || dayIndex + 1}</span>
+                        <div class="px-6 py-4 bg-bark-50 border-b border-bark-100">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <h3 class="text-lg font-serif font-semibold text-bark-900">${party.name}</h3>
+                                    <span class="text-sm text-bark-400">Dag ${party.day || dayIndex + 1}</span>
                                 </div>
-                                <div class="flex items-center gap-1.5 flex-wrap">
-                                    <span class="px-2 py-0.5 ${isVK ? 'bg-amber-100 text-amber-700' : 'bg-warm-100 text-warm-800'} rounded-full text-xs font-medium">${party.dogs?.length || 0} hunder</span>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="px-3 py-1 ${isVK ? 'bg-amber-100 text-amber-700' : 'bg-warm-100 text-warm-800'} rounded-full text-sm font-medium">${party.dogs?.length || 0} hunder</span>
                                     ${classBadges}
                                 </div>
                             </div>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full text-sm">
+                            <table class="w-full">
                                 <thead>
                                     <tr class="border-b border-bark-100 bg-bark-50/50">
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase w-8">Nr</th>
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase w-12">Kl.</th>
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase w-16">Rase</th>
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase">Hund / Regnr</th>
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase">Eier / Fører</th>
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase w-16">Premie</th>
-                                        <th class="text-left py-1.5 px-2 text-xs font-medium text-bark-500 uppercase w-20">Cacit</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider w-12">Nr</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider w-16">Klasse</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Hund</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Rase</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Eier</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Fører</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider w-20">Premie</th>
+                                        <th class="text-left py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider w-24">Cacit</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-bark-100">
@@ -510,19 +600,17 @@
 
                                         return `
                                             <tr class="hover:bg-bark-50 transition">
-                                                <td class="py-1 px-2 font-medium text-bark-600">${i + 1}</td>
-                                                <td class="py-1 px-2"><span class="px-1.5 py-0.5 ${klasseBadgeColor} rounded text-xs font-medium">${klasse}</span></td>
-                                                <td class="py-1 px-2 text-bark-600 text-xs">${dog.rase || ''}</td>
-                                                <td class="py-1 px-2">
-                                                    <div class="font-medium text-bark-900 text-sm">${dog.hundenavn || dog.navn || ''}</div>
+                                                <td class="py-3 px-4 font-medium text-bark-600">${i + 1}</td>
+                                                <td class="py-3 px-4"><span class="px-2 py-1 ${klasseBadgeColor} rounded text-xs font-medium">${klasse}</span></td>
+                                                <td class="py-3 px-4">
+                                                    <div class="font-medium text-bark-900">${dog.hundenavn || dog.navn || ''}</div>
                                                     <div class="text-xs text-bark-400">${dog.regnr || ''}</div>
                                                 </td>
-                                                <td class="py-1 px-2">
-                                                    <div class="text-bark-700 text-sm">${dog.eier || ''}</div>
-                                                    <div class="text-xs text-bark-400">${dog.forer !== dog.eier ? dog.forer || '' : ''}</div>
-                                                </td>
-                                                <td class="py-1 px-2 text-bark-600">${dog.premie || ''}</td>
-                                                <td class="py-1 px-2 text-bark-600 text-xs">${dog.cacit || ''}</td>
+                                                <td class="py-3 px-4 text-bark-600">${dog.rase || ''}</td>
+                                                <td class="py-3 px-4 text-bark-700">${dog.eier || ''}</td>
+                                                <td class="py-3 px-4 text-bark-600">${dog.forer && dog.forer !== dog.eier ? dog.forer : ''}</td>
+                                                <td class="py-3 px-4 text-bark-600 font-medium">${dog.premie || ''}</td>
+                                                <td class="py-3 px-4 text-bark-600">${dog.cacit || ''}</td>
                                             </tr>
                                         `;
                                     }).join('')}
@@ -626,12 +714,11 @@
             const container = document.getElementById(`signature-${partyId}`);
             if (!container) return;
 
-            // Get proveId from localStorage or use default
-            const trialConfig = JSON.parse(localStorage.getItem('trialConfig') || '{}');
-            const proveId = trialConfig.proveId || 'default';
+            // Get proveId from URL or fallback to localStorage
+            const currentProveId = proveId || JSON.parse(localStorage.getItem('trialConfig') || '{}').proveId || 'default';
 
             try {
-                const response = await fetch(`/api/prover/${proveId}/parti/${partyId}/signaturer`);
+                const response = await fetch(`/api/prover/${currentProveId}/parti/${partyId}/signaturer`);
                 const data = await response.json();
 
                 if (data.dommerSignert && data.nkkrepSignert) {

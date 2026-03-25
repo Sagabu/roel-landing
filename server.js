@@ -2878,6 +2878,11 @@ app.put("/api/klubber/:id", async (c) => {
   if (body.region !== undefined) { updates.push("region = ?"); params.push(body.region); }
   if (body.orgnummer !== undefined) { updates.push("orgnummer = ?"); params.push(body.orgnummer); }
   if (body.vipps_nummer !== undefined) { updates.push("vipps_nummer = ?"); params.push(body.vipps_nummer); }
+  if (body.epost !== undefined) { updates.push("epost = ?"); params.push(body.epost); }
+  if (body.telefon !== undefined) { updates.push("telefon = ?"); params.push(body.telefon); }
+  if (body.nettside !== undefined) { updates.push("nettside = ?"); params.push(body.nettside); }
+  if (body.adresse !== undefined) { updates.push("adresse = ?"); params.push(body.adresse); }
+  if (body.sted !== undefined) { updates.push("sted = ?"); params.push(body.sted); }
 
   if (updates.length === 0) return c.json({ error: "Ingen felt å oppdatere" }, 400);
 

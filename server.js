@@ -3401,33 +3401,38 @@ app.get("/api/superadmin/samtykker", (c) => {
   });
 });
 
-// GDPR Innsyn - hent all data for en bruker
+// GDPR Innsyn - hent all data for en bruker (GDPR Art. 15)
 app.get("/api/superadmin/innsyn/:telefon", (c) => {
   const telefon = c.req.param("telefon");
 
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  // Hent relaterte data
+  // Hent relaterte data - bruk riktige kolonnenavn fra databaseskjema
   const hunder = db.prepare("SELECT * FROM hunder WHERE eier_telefon = ?").all(telefon);
-  const pameldinger = db.prepare("SELECT * FROM pameldinger WHERE bruker_telefon = ?").all(telefon);
-  const kritikker = db.prepare("SELECT * FROM kritikker WHERE forer_telefon = ?").all(telefon);
-  const resultater = db.prepare("SELECT * FROM resultater WHERE forer_telefon = ?").all(telefon);
+  const pameldinger = db.prepare("SELECT * FROM pameldinger WHERE forer_telefon = ? OR pameldt_av_telefon = ?").all(telefon, telefon);
+  const kritikker = db.prepare("SELECT * FROM kritikker WHERE dommer_telefon = ?").all(telefon);
   const fullmakter = db.prepare("SELECT * FROM fullmakter WHERE giver_telefon = ? OR mottaker_telefon = ?").all(telefon, telefon);
   const klubbRoller = db.prepare("SELECT * FROM klubb_admins WHERE telefon = ?").all(telefon);
+  const smsLogg = db.prepare("SELECT id, type, til, fra, status, created_at FROM sms_log WHERE til = ? OR fra = ? ORDER BY created_at DESC LIMIT 50").all(telefon, telefon);
 
   // Fjern sensitiv data som passord
   delete bruker.passord_hash;
 
   return c.json({
+    gdpr_info: {
+      formål: "GDPR Art. 15 - Rett til innsyn",
+      beskrivelse: "Komplett oversikt over alle personopplysninger lagret om deg",
+      eksportert: new Date().toISOString(),
+      databehandler: "Fuglehundprøve.no"
+    },
     bruker,
     hunder,
     pameldinger,
     kritikker,
-    resultater,
     fullmakter,
     klubbRoller,
-    eksportert: new Date().toISOString()
+    smsLogg
   });
 });
 

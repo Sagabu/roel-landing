@@ -6138,6 +6138,36 @@ app.get("/api/sms/stats", (c) => {
   }
 });
 
+// Send SMS (for invitasjoner, varsler etc.)
+app.post("/api/sms/send", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { to, message, type = "invitasjon", klubb_id = null } = body;
+
+    if (!to || !message) {
+      return c.json({ success: false, error: "Mangler telefonnummer eller melding" }, 400);
+    }
+
+    // Normaliser telefonnummer
+    let telefon = to.replace(/\s+/g, "").replace(/^\+47/, "");
+    if (!/^\d{8}$/.test(telefon)) {
+      return c.json({ success: false, error: "Ugyldig telefonnummer" }, 400);
+    }
+
+    // Send SMS
+    const result = await sendSMS(telefon, message, { type, klubb_id });
+
+    if (result.success) {
+      return c.json({ success: true, provider: result.provider });
+    } else {
+      return c.json({ success: false, error: result.error }, 500);
+    }
+  } catch (err) {
+    console.error("SMS send error:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
 // Backup-liste (driftsadmin)
 app.get("/api/backups", (c) => {
   const fs = require("fs");

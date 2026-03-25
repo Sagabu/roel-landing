@@ -2894,6 +2894,74 @@ app.put("/api/klubber/:id", async (c) => {
 });
 
 // ============================================
+// KLUBB ADMINS API
+// ============================================
+
+// Legg til administrator for en klubb
+app.post("/api/klubber/:id/admins", async (c) => {
+  const klubbId = c.req.param("id");
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const rolle = body.rolle || "admin";
+
+  if (!telefon || !/^\d{8}$/.test(telefon)) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  // Sjekk at klubben eksisterer
+  const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(klubbId);
+  if (!klubb) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  // Sjekk om brukeren eksisterer
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) {
+    return c.json({ error: "Brukeren finnes ikke. Be vedkommende om å opprette konto først." }, 404);
+  }
+
+  // Legg til i klubb_admins
+  try {
+    db.prepare(`
+      INSERT OR REPLACE INTO klubb_admins (telefon, klubb_id, rolle)
+      VALUES (?, ?, ?)
+    `).run(telefon, klubbId, rolle);
+
+    // Oppdater brukerens rolle til å inkludere klubbleder
+    const currentRole = bruker.rolle || "deltaker";
+    if (!currentRole.includes("klubbleder")) {
+      db.prepare("UPDATE brukere SET rolle = ? WHERE telefon = ?").run(
+        currentRole + ",klubbleder",
+        telefon
+      );
+    }
+
+    return c.json({ ok: true, message: "Administrator lagt til" });
+  } catch (err) {
+    return c.json({ error: "Kunne ikke legge til administrator" }, 500);
+  }
+});
+
+// Fjern administrator fra en klubb
+app.delete("/api/klubber/:id/admins/:telefon", (c) => {
+  const klubbId = c.req.param("id");
+  const telefon = c.req.param("telefon");
+
+  db.prepare("DELETE FROM klubb_admins WHERE klubb_id = ? AND telefon = ?").run(klubbId, telefon);
+
+  // Sjekk om brukeren har andre klubb-tilganger
+  const andreKlubber = db.prepare("SELECT COUNT(*) as count FROM klubb_admins WHERE telefon = ?").get(telefon);
+  if (andreKlubber.count === 0) {
+    // Fjern klubbleder-rolle fra bruker
+    const bruker = db.prepare("SELECT rolle FROM brukere WHERE telefon = ?").get(telefon);
+    if (bruker && bruker.rolle) {
+      const nyRolle = bruker.rolle.replace(",klubbleder", "").replace("klubbleder,", "").replace("klubbleder", "deltaker");
+      db.prepare("UPDATE brukere SET rolle = ? WHERE telefon = ?").run(nyRolle || "deltaker", telefon);
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
+// ============================================
 // KLUBB MEDLEMMER API
 // ============================================
 

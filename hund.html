@@ -467,6 +467,7 @@
                                 gender: foundDog.gender || 'unknown',
                                 owner: foundDog.owner || foundDog.handler || 'Ukjent',
                                 handler: foundDog.handler,
+                                image: foundDog.bilde || foundDog.image || null,
                                 critiques: []
                             };
 
@@ -529,6 +530,7 @@
                         breed: apiDog.rase,
                         gender: apiDog.kjonn,
                         owner: apiDog.eier_navn || '',
+                        image: apiDog.bilde || null,
                         critiques: []
                     };
                 }
@@ -572,6 +574,7 @@
                             breed: apiDog.rase || 'Ukjent rase',
                             gender: apiDog.kjonn || 'male',
                             owner: apiDog.eier_navn || 'Ukjent',
+                            image: apiDog.bilde || null,
                             critiques: kritikker.map(k => ({
                                 id: `db-${k.id}`,
                                 trial: k.prove_navn || 'Ukjent prøve',
@@ -656,14 +659,19 @@
         }
 
         function renderDogProfile() {
+            // Vis bilde hvis det finnes, ellers placeholder-ikon
+            const imageHtml = currentDog.image
+                ? `<img src="${currentDog.image}" alt="${currentDog.name}" class="w-24 h-24 rounded-xl object-cover">`
+                : `<div class="w-24 h-24 bg-white rounded-xl flex items-center justify-center">
+                        <svg class="w-12 h-12 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                        </svg>
+                   </div>`;
+
             document.getElementById('dogProfile').innerHTML = `
                 <div class="bg-gradient-to-r from-warm-600 to-bark-800 px-6 py-8">
                     <div class="flex flex-col sm:flex-row items-center gap-6">
-                        <div class="w-24 h-24 bg-white rounded-xl flex items-center justify-center">
-                            <svg class="w-12 h-12 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-                            </svg>
-                        </div>
+                        ${imageHtml}
                         <div class="text-center sm:text-left">
                             <h1 class="text-2xl sm:text-3xl font-bold font-serif text-white">${currentDog.name}</h1>
                             <p class="text-bark-300 mt-1">${currentDog.breed}${currentDog.gender === 'male' ? ' • Hannhund' : (currentDog.gender === 'female' ? ' • Tispe' : '')}</p>

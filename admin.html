@@ -939,6 +939,16 @@
                         </div>
                     </div>
 
+                    <!-- Lagre og fortsett-knapp -->
+                    <div class="mt-8 pt-6 border-t border-bark-100 flex justify-end">
+                        <button onclick="saveTrialDetailsAndContinue()" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-xl font-medium transition flex items-center gap-2">
+                            Lagre og fortsett
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                            </svg>
+                        </button>
+                    </div>
+
                 </section>
 
                 <!-- Eksporter kritikker -->
@@ -5978,6 +5988,74 @@
                 if (resp.ok) {
                     alert('Prøvedetaljer lagret!');
                     updateTrialDetailsStatus();
+                } else {
+                    alert('Kunne ikke lagre prøvedetaljer');
+                }
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                alert('Kunne ikke lagre prøvedetaljer');
+            }
+        }
+
+        // Lagre prøvedetaljer og gå til neste side (last opp deltakere)
+        async function saveTrialDetailsAndContinue() {
+            const trialName = document.getElementById('trialName')?.value?.trim() || '';
+            const trialDate = document.getElementById('trialDateFrom')?.value || '';
+            const trialLocation = document.getElementById('trialLocation')?.value?.trim() || '';
+            const organizerName = document.getElementById('organizerName')?.value?.trim() || '';
+
+            if (!trialName) {
+                alert('Prøvenavn er påkrevd');
+                return;
+            }
+            if (!trialDate) {
+                alert('Dato er påkrevd');
+                return;
+            }
+
+            try {
+                // Lagre prøvedetaljer
+                const resp = await fetch('/api/trial', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: trialName,
+                        start_date: trialDate,
+                        location: trialLocation,
+                        organizing_club: organizerName
+                    })
+                });
+
+                // Lagre praktisk info samtidig
+                const praktiskInfo = {
+                    oppropSted: document.getElementById('oppropSted')?.value || '',
+                    sekretariatApner: document.getElementById('sekretariatApner')?.value || '',
+                    sekretariatStenger: document.getElementById('sekretariatStenger')?.value || '',
+                    provelederNavn: document.getElementById('provelederNavn')?.value || '',
+                    provelederTelefon: document.getElementById('provelederTelefon')?.value || '',
+                    kravSauebevis: document.getElementById('kravSauebevis')?.checked || false,
+                    kravVaksinasjon: true,
+                    kravEierattest: true,
+                    kravStamtavle: true,
+                    jegermiddagTid: document.getElementById('jegermiddagTid')?.value || '',
+                    jegermiddagPris: document.getElementById('jegermiddagPris')?.value || '',
+                    jegermiddagSted: document.getElementById('jegermiddagSted')?.value || '',
+                    jegermiddagPamelding: document.getElementById('jegermiddagPamelding')?.value || '',
+                    premieutdelingTid: document.getElementById('premieutdelingTid')?.value || '',
+                    premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
+                    tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
+                };
+                localStorage.setItem('praktiskInfo', JSON.stringify(praktiskInfo));
+                await fetch('/api/storage/praktiskInfo', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: praktiskInfo })
+                });
+
+                if (resp.ok) {
+                    updateTrialDetailsStatus();
+                    // Naviger til opplasting (last opp deltakere)
+                    showSection('opplasting');
                 } else {
                     alert('Kunne ikke lagre prøvedetaljer');
                 }

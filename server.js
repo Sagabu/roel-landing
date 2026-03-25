@@ -3353,6 +3353,137 @@ app.get("/api/superadmin/sms-samtykke/export", (c) => {
 });
 
 // ============================================
+// GDPR SAMTYKKE API (SUPERADMIN)
+// ============================================
+
+// Hent samtykke-oversikt med søk og filter
+app.get("/api/superadmin/samtykker", (c) => {
+  const search = c.req.query("search") || "";
+  const filter = c.req.query("filter") || "alle";
+  const limit = parseInt(c.req.query("limit") || "100");
+
+  let whereClause = "1=1";
+  const params = [];
+
+  // Søk
+  if (search) {
+    whereClause += " AND (fornavn LIKE ? OR etternavn LIKE ? OR telefon LIKE ? OR epost LIKE ?)";
+    const searchParam = `%${search}%`;
+    params.push(searchParam, searchParam, searchParam, searchParam);
+  }
+
+  // Filter
+  if (filter === "med_samtykke") {
+    whereClause += " AND samtykke_gitt IS NOT NULL";
+  } else if (filter === "uten_samtykke") {
+    whereClause += " AND samtykke_gitt IS NULL";
+  }
+
+  const brukere = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, rolle, samtykke_gitt, created_at
+    FROM brukere
+    WHERE ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(...params, limit);
+
+  // Statistikk
+  const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
+  const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE samtykke_gitt IS NOT NULL").get().n;
+
+  return c.json({
+    brukere,
+    total,
+    statistikk: {
+      med_samtykke: medSamtykke,
+      uten_samtykke: total - medSamtykke
+    }
+  });
+});
+
+// GDPR Innsyn - hent all data for en bruker
+app.get("/api/superadmin/innsyn/:telefon", (c) => {
+  const telefon = c.req.param("telefon");
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  // Hent relaterte data
+  const hunder = db.prepare("SELECT * FROM hunder WHERE eier_telefon = ?").all(telefon);
+  const pameldinger = db.prepare("SELECT * FROM pameldinger WHERE bruker_telefon = ?").all(telefon);
+  const kritikker = db.prepare("SELECT * FROM kritikker WHERE forer_telefon = ?").all(telefon);
+  const resultater = db.prepare("SELECT * FROM resultater WHERE forer_telefon = ?").all(telefon);
+  const fullmakter = db.prepare("SELECT * FROM fullmakter WHERE giver_telefon = ? OR mottaker_telefon = ?").all(telefon, telefon);
+  const klubbRoller = db.prepare("SELECT * FROM klubb_admins WHERE telefon = ?").all(telefon);
+
+  // Fjern sensitiv data som passord
+  delete bruker.passord_hash;
+
+  return c.json({
+    bruker,
+    hunder,
+    pameldinger,
+    kritikker,
+    resultater,
+    fullmakter,
+    klubbRoller,
+    eksportert: new Date().toISOString()
+  });
+});
+
+// Sett samtykke manuelt (superadmin)
+app.post("/api/superadmin/samtykke/:telefon", (c) => {
+  const telefon = c.req.param("telefon");
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(telefon);
+
+  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+});
+
+// Trekk samtykke (superadmin)
+app.delete("/api/superadmin/samtykke/:telefon", (c) => {
+  const telefon = c.req.param("telefon");
+
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
+
+  db.prepare("UPDATE brukere SET samtykke_gitt = NULL WHERE telefon = ?").run(telefon);
+
+  return c.json({ ok: true });
+});
+
+// Eksporter samtykker til CSV
+app.get("/api/superadmin/samtykker/eksport", (c) => {
+  const brukere = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, rolle, samtykke_gitt, created_at
+    FROM brukere
+    ORDER BY samtykke_gitt DESC NULLS LAST, created_at DESC
+  `).all();
+
+  const header = "Telefon,Fornavn,Etternavn,E-post,Rolle,Samtykke gitt,Bruker opprettet";
+  const rows = brukere.map(b => {
+    return [
+      b.telefon,
+      b.fornavn || '',
+      b.etternavn || '',
+      b.epost || '',
+      b.rolle || 'deltaker',
+      b.samtykke_gitt || 'Mangler',
+      b.created_at || ''
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+  });
+
+  const csv = [header, ...rows].join('\n');
+
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="gdpr-samtykker-${new Date().toISOString().split('T')[0]}.csv"`);
+  return c.body('\ufeff' + csv);
+});
+
+// ============================================
 // SMS STATISTIKK API (SUPERADMIN)
 // ============================================
 

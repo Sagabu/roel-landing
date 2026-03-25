@@ -3124,6 +3124,24 @@ app.post("/api/klubb-foresporsel", async (c) => {
     `Ny klubb-forespørsel: ${navn} (org.nr: ${orgnummer})`
   );
 
+  // Send SMS-varsling til superadmin (Aleksander Roel)
+  const superadminTelefon = "47419082"; // Aleksander Roel
+  const rolleNavn = {
+    'leder': 'Leder',
+    'nestleder': 'Nestleder',
+    'proveleder': 'Prøveleder',
+    'sekretar': 'Sekretær',
+    'styremedlem': 'Styremedlem',
+    'annet': 'Annet'
+  }[lederRolle] || lederRolle;
+
+  try {
+    await sendSMS(superadminTelefon, `Ny klubbforespørsel: ${navn.trim()} (${orgnummer.replace(/\s/g, '')})\n\nSøker: ${lederNavn.trim()} (${rolleNavn})\nTlf: ${normalizedPhone}\n\nLogg inn på fuglehundprove.no/superadmin for å behandle.`, { type: 'klubb_foresporsel' });
+    console.log(`📱 SMS sendt til superadmin om ny klubbforespørsel: ${navn}`);
+  } catch (err) {
+    console.error('Feil ved sending av SMS til superadmin:', err);
+  }
+
   return c.json({ success: true, id: result.lastInsertRowid, telefon: normalizedPhone });
 });
 
@@ -3230,12 +3248,14 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     `Godkjent klubb: ${foresporsel.navn} (ID: ${klubbId})`
   );
 
-  // Send SMS til klubbleder om godkjenning
+  // Send SMS til kontaktperson om godkjenning
   try {
-    await sendSms(
+    await sendSMS(
       foresporsel.leder_telefon,
-      `Gratulerer! Din klubb "${foresporsel.navn}" er nå godkjent på fuglehundprove.no. Logg inn med ditt mobilnummer og passord for å komme i gang.`
+      `Hei! "${foresporsel.navn}" er godkjent. Du har tilgang til klubbens profil via "Min side" på fuglehundprove.no`,
+      { type: 'klubb_godkjent' }
     );
+    console.log(`📱 SMS sendt til ${foresporsel.leder_telefon} om godkjent klubb: ${foresporsel.navn}`);
   } catch (smsErr) {
     console.error("Kunne ikke sende godkjennings-SMS:", smsErr);
     // Fortsett selv om SMS feiler

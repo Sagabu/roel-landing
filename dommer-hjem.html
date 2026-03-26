@@ -152,17 +152,37 @@
     </main>
 
     <script>
-        // Party configurations
+        // Hjelpefunksjon for å få ukedag-navn basert på dag-nummer
+        function getDayName(dayNumber) {
+            const config = JSON.parse(localStorage.getItem('trialConfig') || '{}');
+            const startDate = config.startDate || config.start_dato;
+            if (!startDate || isNaN(dayNumber)) return dayNumber; // Returner original hvis ugyldig
+
+            const start = new Date(startDate);
+            const targetDate = new Date(start);
+            targetDate.setDate(start.getDate() + (parseInt(dayNumber) - 1));
+
+            const weekdays = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
+            return weekdays[targetDate.getDay()];
+        }
+
+        // Party configurations (fallback - bør hentes fra trialParties)
         const PARTIES = {
-            demo1: { name: 'Demo-parti (Chris Niebel)', type: 'ukak', judges: 1, dogs: 3, day: 'Demo' },
-            ukak1: { name: 'UK/AK Parti 1', type: 'ukak', judges: 1, dogs: 15, day: 'Dag 1' },
-            ukak2: { name: 'UK/AK Parti 2', type: 'ukak', judges: 1, dogs: 15, day: 'Dag 1' },
-            ukak3: { name: 'UK/AK Parti 3', type: 'ukak', judges: 1, dogs: 15, day: 'Dag 2' },
-            ukak4: { name: 'UK/AK Parti 4', type: 'ukak', judges: 1, dogs: 15, day: 'Dag 2' },
-            vk1: { name: 'VK Kval Parti 1', type: 'vk', judges: 2, dogs: 18, day: 'Dag 1' },
-            vk2: { name: 'VK Kval Parti 2', type: 'vk', judges: 2, dogs: 18, day: 'Dag 1' },
-            vkfinale: { name: 'VK Finale', type: 'vkfinale', judges: 2, dogs: 12, day: 'Dag 2 (søndag)' }
+            demo1: { name: 'Demo-parti (Chris Niebel)', type: 'ukak', judges: 1, dogs: 3, dayNum: 0 },
+            ukak1: { name: 'UK/AK Parti 1', type: 'ukak', judges: 1, dogs: 15, dayNum: 1 },
+            ukak2: { name: 'UK/AK Parti 2', type: 'ukak', judges: 1, dogs: 15, dayNum: 1 },
+            ukak3: { name: 'UK/AK Parti 3', type: 'ukak', judges: 1, dogs: 15, dayNum: 2 },
+            ukak4: { name: 'UK/AK Parti 4', type: 'ukak', judges: 1, dogs: 15, dayNum: 2 },
+            vk1: { name: 'VK Kval Parti 1', type: 'vk', judges: 2, dogs: 18, dayNum: 1 },
+            vk2: { name: 'VK Kval Parti 2', type: 'vk', judges: 2, dogs: 18, dayNum: 1 },
+            vkfinale: { name: 'VK Finale', type: 'vkfinale', judges: 2, dogs: 12, dayNum: 2 }
         };
+
+        // Legg til day-property basert på getDayName
+        Object.keys(PARTIES).forEach(key => {
+            const p = PARTIES[key];
+            p.day = p.dayNum === 0 ? 'Demo' : getDayName(p.dayNum);
+        });
 
         let assignedPartyId = null;
         let judgeRole = null;

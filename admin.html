@@ -441,8 +441,7 @@
                         <div id="dayScheduleSummary" class="mt-4 pt-4 border-t border-blue-200">
                             <p class="text-xs font-medium text-blue-700 mb-2">Oppsummering:</p>
                             <div id="dayScheduleText" class="text-sm text-blue-800 space-y-1">
-                                <div><strong>Dag 1:</strong> 1 UK/AK-parti</div>
-                                <div><strong>Dag 2:</strong> 1 UK/AK-parti</div>
+                                <div class="text-bark-500 italic">Laster...</div>
                             </div>
                         </div>
                     </div>
@@ -2430,6 +2429,19 @@
             updateDayScheduleSummary();
         }
 
+        // Hjelpefunksjon for å få ukedag-navn basert på dag-nummer (1, 2, 3, etc.)
+        function getDayName(dayNumber) {
+            const dateFrom = document.getElementById('trialDateFrom')?.value;
+            if (!dateFrom) return `Dag ${dayNumber}`;
+
+            const startDate = new Date(dateFrom);
+            const targetDate = new Date(startDate);
+            targetDate.setDate(startDate.getDate() + (dayNumber - 1));
+
+            const weekdays = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
+            return weekdays[targetDate.getDay()];
+        }
+
         // Beregn antall dager basert på dato fra/til og oppdater dag-inputs
         function updateTrialDays() {
             const dateFrom = document.getElementById('trialDateFrom').value;
@@ -2479,9 +2491,10 @@
             let html = '';
             for (let dag = 1; dag <= antallDager; dag++) {
                 const prevValue = existingValues[dag] || (dag <= 2 ? '1' : '0');
+                const dayName = getDayName(dag);
                 html += `
                     <div class="bg-white rounded-xl p-3 border border-blue-200">
-                        <label class="block text-sm font-medium text-bark-700 mb-2">Dag ${dag}</label>
+                        <label class="block text-sm font-medium text-bark-700 mb-2">${dayName}</label>
                         <div class="flex items-center gap-2">
                             <input type="number" id="ukakPartierDag${dag}" value="${prevValue}" min="0" max="5"
                                    class="w-16 px-3 py-2 border border-bark-300 rounded-xl text-center text-sm focus:ring-2 focus:ring-warm-500"
@@ -2503,13 +2516,14 @@
         function updateVKDaySelectOptions() {
             const antallDager = parseInt(document.getElementById('antallProvedager').value) || 2;
 
-            // 1-dags VK finale-valg
+            // 1-dags VK valg
             const vk1DaySelect = document.getElementById('vkFinaleDag1day');
             const vkKvalSelect = document.getElementById('vkKvalDag');
 
             let options = '';
             for (let dag = 1; dag <= antallDager; dag++) {
-                options += `<option value="${dag}">Dag ${dag}</option>`;
+                const dayName = getDayName(dag);
+                options += `<option value="${dag}">${dayName}</option>`;
             }
 
             if (vk1DaySelect) vk1DaySelect.innerHTML = options;
@@ -2517,12 +2531,14 @@
                 // For kval, ikke siste dag (finale må være dagen etter)
                 let kvalOptions = '';
                 for (let dag = 1; dag < antallDager; dag++) {
-                    kvalOptions += `<option value="${dag}">Dag ${dag}</option>`;
+                    const dayName = getDayName(dag);
+                    kvalOptions += `<option value="${dag}">${dayName}</option>`;
                 }
                 if (kvalOptions) {
                     vkKvalSelect.innerHTML = kvalOptions;
                 } else {
-                    vkKvalSelect.innerHTML = '<option value="1">Dag 1</option>';
+                    const dayName = getDayName(1);
+                    vkKvalSelect.innerHTML = `<option value="1">${dayName}</option>`;
                 }
             }
         }
@@ -2556,7 +2572,8 @@
         function updateVKFinaleDag() {
             const kvalDag = parseInt(document.getElementById('vkKvalDag').value);
             const finaleDag = kvalDag + 1;
-            document.getElementById('vkFinaleDay').textContent = `Dag ${finaleDag}`;
+            const dayName = getDayName(finaleDag);
+            document.getElementById('vkFinaleDay').textContent = dayName;
             updateDayScheduleSummary();
         }
 
@@ -2574,21 +2591,25 @@
                 const input = document.getElementById(`ukakPartierDag${dag}`);
                 const partier = input ? parseInt(input.value) || 0 : 0;
                 const kapasitet = partier * maxPerParty;
+                const dayName = getDayName(dag);
 
                 if (partier > 0) {
-                    summaryHtml += `<div><strong>Dag ${dag}:</strong> ${partier} UK/AK-parti${partier > 1 ? 'er' : ''} (maks ${kapasitet} hunder)</div>`;
+                    summaryHtml += `<div><strong>${dayName}:</strong> ${partier} UK/AK-parti${partier > 1 ? 'er' : ''} (maks ${kapasitet} hunder)</div>`;
                 }
             }
 
             // VK
             if (vkType === '1day') {
-                const vkDag = document.getElementById('vkFinaleDag1day')?.value || '1';
-                summaryHtml += `<div><strong>Dag ${vkDag}:</strong> VK</div>`;
+                const vkDag = parseInt(document.getElementById('vkFinaleDag1day')?.value) || 1;
+                const vkDayName = getDayName(vkDag);
+                summaryHtml += `<div><strong>${vkDayName}:</strong> VK</div>`;
             } else if (vkType === '2day') {
-                const kvalDag = document.getElementById('vkKvalDag')?.value || '1';
-                const finaleDag = parseInt(kvalDag) + 1;
-                summaryHtml += `<div><strong>Dag ${kvalDag}:</strong> VK Kval (2 partier)</div>`;
-                summaryHtml += `<div><strong>Dag ${finaleDag}:</strong> VK Finale</div>`;
+                const kvalDag = parseInt(document.getElementById('vkKvalDag')?.value) || 1;
+                const finaleDag = kvalDag + 1;
+                const kvalDayName = getDayName(kvalDag);
+                const finaleDayName = getDayName(finaleDag);
+                summaryHtml += `<div><strong>${kvalDayName}:</strong> VK Kval (2 partier)</div>`;
+                summaryHtml += `<div><strong>${finaleDayName}:</strong> VK Finale</div>`;
             }
 
             if (!summaryHtml) {
@@ -4422,7 +4443,8 @@
 
             parties.filter(p => p.type === 'ukak').forEach(party => {
                 const ukPct = party.dogs.length > 0 ? Math.round((party.ukCount / party.dogs.length) * 100) : 0;
-                message += `• ${party.name} (Dag ${party.day}): ${party.dogs.length} hunder (UK: ${party.ukCount} [${ukPct}%], AK: ${party.akCount})\n`;
+                const dayName = getDayName(party.day);
+                message += `• ${party.name} (${dayName}): ${party.dogs.length} hunder (UK: ${party.ukCount} [${ukPct}%], AK: ${party.akCount})\n`;
             });
 
             parties.filter(p => p.type === 'vk').forEach(party => {
@@ -4440,14 +4462,16 @@
             if (totalVenteliste > 0) {
                 message += `\n⚠️ VENTELISTE:\n`;
                 if (dag1Uk.length > 0 || dag1Ak.length > 0) {
-                    message += `• Dag 1: `;
+                    const day1Name = getDayName(1);
+                    message += `• ${day1Name}: `;
                     const dag1Parts = [];
                     if (dag1Uk.length > 0) dag1Parts.push(`${dag1Uk.length} UK`);
                     if (dag1Ak.length > 0) dag1Parts.push(`${dag1Ak.length} AK`);
                     message += dag1Parts.join(', ') + ` på venteliste\n`;
                 }
                 if (dag2Uk.length > 0 || dag2Ak.length > 0) {
-                    message += `• Dag 2: `;
+                    const day2Name = getDayName(2);
+                    message += `• ${day2Name}: `;
                     const dag2Parts = [];
                     if (dag2Uk.length > 0) dag2Parts.push(`${dag2Uk.length} UK`);
                     if (dag2Ak.length > 0) dag2Parts.push(`${dag2Ak.length} AK`);
@@ -4528,7 +4552,7 @@
                 if (dog.klasse === 'UK') klasseColor = 'bg-blue-100 text-blue-700';
                 else if (dog.klasse === 'AK') klasseColor = 'bg-green-100 text-green-700';
 
-                const dagText = dog.dag === '-' ? 'VK' : 'Dag ' + dog.dag;
+                const dagText = dog.dag === '-' ? 'VK' : getDayName(dog.dag);
 
                 return '<tr class="border-b border-bark-100 hover:bg-bark-50">' +
                     '<td class="py-3 px-4 text-sm font-medium text-bark-700">' + dog.plass + '</td>' +
@@ -4923,13 +4947,13 @@
                             for (const dog of dogs) {
                                 // Unngå duplikater
                                 if ((dog.critique || dog.critiqueStatus) && !kritikker.find(k => k.id === dog.id && k.name === dog.name)) {
-                                    // Prøv å utlede dag fra nøkkelnavn (f.eks. ukak1 -> Dag 1, vk2 -> Dag 2)
+                                    // Prøv å utlede dag fra nøkkelnavn (f.eks. ukak1 -> dag 1, vk2 -> dag 2)
                                     const dagMatch = key.match(/(\d+)$/);
-                                    const dagNr = dagMatch ? dagMatch[1] : '1';
+                                    const dagNr = dagMatch ? parseInt(dagMatch[1]) : 1;
                                     kritikker.push({
                                         ...dog,
                                         partyName: key.replace('judgeData_', ''),
-                                        dag: `Dag ${dagNr}`
+                                        dag: getDayName(dagNr)
                                     });
                                 }
                             }
@@ -4956,7 +4980,7 @@
             if (dager.size === 0) {
                 const antallDager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
                 for (let i = 1; i <= antallDager; i++) {
-                    dager.add(`Dag ${i}`);
+                    dager.add(getDayName(i));
                 }
             }
 

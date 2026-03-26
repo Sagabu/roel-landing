@@ -5803,30 +5803,54 @@
 
         // Initialiser Vipps-seksjonen
         async function initVipps() {
-            // Hent klubbens Vipps-nummer fra arrangør
-            const organizerName = document.getElementById('organizerName')?.value || '';
-            // Prøv å finne klubb-ID basert på arrangør-navn
+            // Hent prøvens klubb_id fra URL eller localStorage
+            const urlParams = new URLSearchParams(window.location.search);
+            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+            const klubbId = localStorage.getItem('currentKlubbId');
+
             try {
-                const klubbResp = await fetch('/api/klubber');
-                if (klubbResp.ok) {
-                    const klubber = await klubbResp.json();
-                    // Finn klubben som matcher arrangør
-                    const matchedKlubb = klubber.find(k =>
-                        k.navn.toLowerCase().includes(organizerName.toLowerCase().split(' ')[0]) ||
-                        organizerName.toLowerCase().includes(k.navn.toLowerCase().split(' ')[0])
-                    );
-                    if (matchedKlubb && matchedKlubb.vipps_nummer) {
-                        vippsKlubbNummer = matchedKlubb.vipps_nummer;
-                        document.getElementById('vippsNoNumberWarning').classList.add('hidden');
-                    } else {
-                        document.getElementById('vippsNoNumberWarning').classList.remove('hidden');
+                // Først: Prøv å hente klubb direkte fra prøven
+                if (trialId) {
+                    const proveResp = await fetch(`/api/prover/${trialId}`);
+                    if (proveResp.ok) {
+                        const prove = await proveResp.json();
+                        if (prove.klubb_id) {
+                            const klubbResp = await fetch(`/api/klubber/${prove.klubb_id}`);
+                            if (klubbResp.ok) {
+                                const klubb = await klubbResp.json();
+                                if (klubb.vipps_nummer) {
+                                    vippsKlubbNummer = klubb.vipps_nummer;
+                                    document.getElementById('vippsNoNumberWarning').classList.add('hidden');
+                                    await loadVippsForesporsler();
+                                    return;
+                                }
+                            }
+                        }
                     }
                 }
+
+                // Fallback: Prøv klubb_id fra localStorage
+                if (klubbId) {
+                    const klubbResp = await fetch(`/api/klubber/${klubbId}`);
+                    if (klubbResp.ok) {
+                        const klubb = await klubbResp.json();
+                        if (klubb.vipps_nummer) {
+                            vippsKlubbNummer = klubb.vipps_nummer;
+                            document.getElementById('vippsNoNumberWarning').classList.add('hidden');
+                            await loadVippsForesporsler();
+                            return;
+                        }
+                    }
+                }
+
+                // Ingen Vipps-nummer funnet
+                document.getElementById('vippsNoNumberWarning').classList.remove('hidden');
             } catch (e) {
                 console.error('Kunne ikke hente klubbdata for Vipps:', e);
+                document.getElementById('vippsNoNumberWarning').classList.remove('hidden');
             }
 
-            // Last forespørsler
+            // Last forespørsler uansett
             await loadVippsForesporsler();
         }
 

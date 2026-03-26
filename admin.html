@@ -4302,7 +4302,7 @@
             currentParticipants = [];
         });
 
-        document.getElementById('processUpload').addEventListener('click', () => {
+        document.getElementById('processUpload').addEventListener('click', async () => {
             if (currentParticipants.length === 0) {
                 alert('Ingen deltakere å fordele.');
                 return;
@@ -4310,6 +4310,25 @@
 
             // Save participants to localStorage
             localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
+
+            // Importer deltakere til database (for kobling til brukerkontoer)
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/import-participants', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ participants: currentParticipants })
+                });
+                if (resp.ok) {
+                    const result = await resp.json();
+                    console.log('Deltakere importert til database:', result);
+                }
+            } catch (err) {
+                console.warn('Kunne ikke importere deltakere til database:', err);
+            }
 
             // Separate dogs by class
             const ukDogs = currentParticipants.filter(p => p.klasse === 'UK');

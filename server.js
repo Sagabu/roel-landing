@@ -6055,6 +6055,166 @@ app.post("/api/parse-participants", async (c) => {
   }
 });
 
+// --- Import deltakere til database ---
+// Oppretter hunder og midlertidige eieroppslag basert på deltakerliste
+app.post("/api/import-participants", requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { participants, proveId } = body;
+
+    if (!participants || !Array.isArray(participants)) {
+      return c.json({ error: "Ingen deltakere å importere" }, 400);
+    }
+
+    const results = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: []
+    };
+
+    // Transaksjonsbehandling
+    const insertHund = db.prepare(`
+      INSERT INTO hunder (regnr, navn, rase, kjonn, eier_telefon)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const updateHund = db.prepare(`
+      UPDATE hunder SET navn = ?, rase = ?, eier_telefon = COALESCE(eier_telefon, ?)
+      WHERE regnr = ?
+    `);
+
+    const findHund = db.prepare("SELECT id, eier_telefon FROM hunder WHERE regnr = ?");
+
+    // Opprett midlertidig eier-oppslag tabell hvis ikke finnes
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS eier_oppslag (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        regnr TEXT UNIQUE NOT NULL,
+        eier_navn TEXT,
+        eier_epost TEXT,
+        forer_navn TEXT,
+        forer_epost TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const insertEierOppslag = db.prepare(`
+      INSERT OR REPLACE INTO eier_oppslag (regnr, eier_navn, eier_epost, forer_navn, forer_epost)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const p of participants) {
+      try {
+        const regnr = (p.regnr || '').trim();
+        if (!regnr) {
+          results.skipped++;
+          continue;
+        }
+
+        // Lagre eierinfo i oppslag-tabell for senere kobling
+        insertEierOppslag.run(
+          regnr,
+          p.eier || null,
+          p.epost || null,
+          p.forer || null,
+          null
+        );
+
+        // Sjekk om hunden allerede finnes
+        const existing = findHund.get(regnr);
+
+        if (existing) {
+          // Oppdater eksisterende hund (kun hvis ikke allerede har eier)
+          updateHund.run(
+            p.hundenavn || p.navn,
+            p.rase || null,
+            null, // Ikke overskrive eksisterende eier_telefon
+            regnr
+          );
+          results.updated++;
+        } else {
+          // Opprett ny hund (uten eier_telefon foreløpig)
+          insertHund.run(
+            regnr,
+            p.hundenavn || p.navn,
+            p.rase || null,
+            null, // Kjønn ikke i deltakerliste
+            null  // Eier kobles senere når bruker registrerer seg
+          );
+          results.created++;
+        }
+      } catch (err) {
+        results.errors.push({
+          regnr: p.regnr,
+          error: err.message
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `Importert ${results.created} nye hunder, oppdatert ${results.updated}`,
+      ...results
+    });
+
+  } catch (err) {
+    console.error("Import error:", err);
+    return c.json({ error: "Feil ved import: " + err.message }, 500);
+  }
+});
+
+// --- Koble bruker til hunder basert på e-post/navn ---
+app.post("/api/koble-hunder", requireAuth, async (c) => {
+  try {
+    const bruker = c.get("bruker");
+    const telefon = bruker.telefon;
+    const email = bruker.epost || '';
+    const fullNavn = `${bruker.fornavn || ''} ${bruker.etternavn || ''}`.trim().toLowerCase();
+
+    // Finn hunder som matcher brukerens e-post eller navn fra eier_oppslag
+    const oppslag = db.prepare(`
+      SELECT o.regnr, h.id as hund_id
+      FROM eier_oppslag o
+      JOIN hunder h ON h.regnr = o.regnr
+      WHERE h.eier_telefon IS NULL
+        AND (
+          (o.eier_epost IS NOT NULL AND LOWER(o.eier_epost) = LOWER(?))
+          OR (o.forer_epost IS NOT NULL AND LOWER(o.forer_epost) = LOWER(?))
+          OR (o.eier_navn IS NOT NULL AND LOWER(o.eier_navn) LIKE ?)
+          OR (o.forer_navn IS NOT NULL AND LOWER(o.forer_navn) LIKE ?)
+        )
+    `).all(email, email, `%${fullNavn}%`, `%${fullNavn}%`);
+
+    if (oppslag.length === 0) {
+      return c.json({ success: true, linked: 0, message: "Ingen hunder å koble" });
+    }
+
+    // Koble hundene til brukeren
+    const updateHund = db.prepare("UPDATE hunder SET eier_telefon = ? WHERE id = ?");
+    let linked = 0;
+
+    for (const o of oppslag) {
+      try {
+        updateHund.run(telefon, o.hund_id);
+        linked++;
+      } catch (err) {
+        console.error('Feil ved kobling av hund:', o.regnr, err);
+      }
+    }
+
+    return c.json({
+      success: true,
+      linked,
+      message: `Koblet ${linked} hund${linked === 1 ? '' : 'er'} til din profil`
+    });
+
+  } catch (err) {
+    console.error("Kobling error:", err);
+    return c.json({ error: "Feil ved kobling: " + err.message }, 500);
+  }
+});
+
 // --- Logo upload endpoint ---
 app.post("/api/upload-logo", async (c) => {
   try {

@@ -242,6 +242,25 @@ const FuglehundAuth = (function() {
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.bruker));
 
+    // Prøv å koble hunder fra deltakerliste til denne brukeren
+    try {
+      const kobleResp = await fetch('/api/koble-hunder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${data.token}`
+        }
+      });
+      if (kobleResp.ok) {
+        const kobleResult = await kobleResp.json();
+        if (kobleResult.linked > 0) {
+          console.log('Koblet hunder til brukerprofil:', kobleResult);
+        }
+      }
+    } catch (err) {
+      console.warn('Kunne ikke koble hunder:', err);
+    }
+
     return data.bruker;
   }
 

@@ -516,12 +516,14 @@
 
         // Last terminliste fra databasen
         async function loadTerminliste() {
+            console.log('[Terminliste] Starter lasting...');
             const container = document.getElementById('trialsList');
             const noTrialsMsg = document.getElementById('noTrialsMessage');
             const loadingEl = document.getElementById('trialsLoading');
 
             try {
                 const resp = await fetch('/api/prover');
+                console.log('[Terminliste] API respons:', resp.status);
                 if (!resp.ok) {
                     if (loadingEl) loadingEl.remove();
                     noTrialsMsg.classList.remove('hidden');
@@ -529,6 +531,7 @@
                 }
 
                 const prover = await resp.json();
+                console.log('[Terminliste] Antall prøver fra API:', prover.length);
 
                 // Filtrer kun kommende prøver (start_dato >= i dag)
                 const idag = new Date();
@@ -538,6 +541,8 @@
                     const startDato = new Date(p.start_dato);
                     return startDato >= idag;
                 }).sort((a, b) => new Date(a.start_dato) - new Date(b.start_dato));
+
+                console.log('[Terminliste] Kommende prøver:', kommende.length);
 
                 // Fjern loading-state
                 if (loadingEl) loadingEl.remove();

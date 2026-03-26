@@ -777,7 +777,7 @@
                     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Dato fra</label>
-                            <input type="date" id="trialDateFrom" value="" onchange="updateTrialDays(); setTimeout(() => { document.getElementById('trialDateTo').focus(); try { document.getElementById('trialDateTo').showPicker(); } catch(e) {} }, 100);" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="date" id="trialDateFrom" value="" onchange="updateTrialDays()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Dato til</label>
@@ -6551,7 +6551,7 @@
         });
 
         // ========================================
-        // AUTO-ADVANCE FOR TID OG DATO FELTER
+        // AUTO-ADVANCE FOR TID-FELTER
         // ========================================
         // Når bruker fyller ut tid (HH:MM), gå automatisk videre til neste felt
         document.addEventListener('input', function(e) {
@@ -6559,41 +6559,14 @@
                 const value = e.target.value;
                 // Tid er komplett når den har format HH:MM (5 tegn)
                 if (value && value.length === 5) {
-                    // Finn neste focusable element
-                    const form = e.target.closest('form') || document;
-                    const focusable = Array.from(form.querySelectorAll('input, select, textarea, button'));
+                    // Finn neste focusable element i samme seksjon
+                    const section = e.target.closest('.space-y-4, .grid') || document;
+                    const focusable = Array.from(section.querySelectorAll('input:not([type="date"]), select, textarea'));
                     const currentIndex = focusable.indexOf(e.target);
                     if (currentIndex !== -1 && currentIndex < focusable.length - 1) {
                         const nextElement = focusable[currentIndex + 1];
                         if (nextElement && !nextElement.disabled) {
                             nextElement.focus();
-                            // Åpne date picker hvis neste element er en dato
-                            if (nextElement.type === 'date' && nextElement.showPicker) {
-                                try { nextElement.showPicker(); } catch(err) {}
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // For dato-felter, gå videre når dato er valgt (via change event)
-        document.addEventListener('change', function(e) {
-            if (e.target.type === 'date' && e.target.value) {
-                // Sjekk om dette feltet allerede har en custom onchange handler
-                // Hvis ikke, flytt fokus til neste element
-                const hasCustomHandler = e.target.getAttribute('onchange');
-                if (!hasCustomHandler) {
-                    const form = e.target.closest('form') || document.body;
-                    const focusable = Array.from(form.querySelectorAll('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])'));
-                    const currentIndex = focusable.indexOf(e.target);
-                    if (currentIndex !== -1 && currentIndex < focusable.length - 1) {
-                        const nextElement = focusable[currentIndex + 1];
-                        if (nextElement) {
-                            nextElement.focus();
-                            if (nextElement.type === 'date' && nextElement.showPicker) {
-                                try { nextElement.showPicker(); } catch(err) {}
-                            }
                         }
                     }
                 }

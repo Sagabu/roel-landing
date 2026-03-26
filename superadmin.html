@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Superadmin - Fuglehundprøve</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        /* Skjul innhold til auth-sjekk er ferdig */
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                <div>
+                    <h1 class="text-xl font-serif font-bold">Superadmin</h1>
+                    <p class="text-bark-300 text-xs">Systemadministrasjon</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="admin-panel.html" class="text-bark-200 hover:text-white text-sm transition">Driftsadmin</a>
+                <a href="min-side.html" class="text-bark-200 hover:text-white text-sm transition">Min side</a>
+                <div class="text-right">
+                    <p class="text-xs text-bark-300">Innlogget som</p>
+                    <p class="font-semibold text-sm" id="currentUser">-</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+
+        <!-- SMS Statistikk Dashboard -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">SMS-statistikk</h2>
+                    <p class="text-sm text-bark-500">Oversikt over sendte og mottatte meldinger</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <!-- Kilde-filter -->
+                    <select id="smsKildeFilter" class="px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-warm-500 focus:outline-none">
+                        <option value="alle">Alle kilder</option>
+                        <option value="verifisering">Verifiserings-SMS</option>
+                    </select>
+
+                    <!-- Periode-filter -->
+                    <select id="smsPeriodeFilter" class="px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-warm-500 focus:outline-none">
+                        <option value="uke">Siste uke</option>
+                        <option value="maaned" selected>Siste måned</option>
+                        <option value="aar">Dette året</option>
+                        <option value="alle">All tid</option>
+                    </select>
+
+                    <button onclick="loadSmsStats()" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                        Oppdater
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sammendrag-kort -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-warm-100 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-bark-500">Sendt ut</p>
+                            <p class="text-2xl font-bold text-warm-600" id="smsTotaltUt">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-bark-500">Mottatt inn</p>
+                            <p class="text-2xl font-bold text-green-600" id="smsTotaltInn">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-bark-200 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-bark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-bark-500">Totalt</p>
+                            <p class="text-2xl font-bold text-bark-700" id="smsTotalt">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-bark-500">Gjennomsnitt/dag</p>
+                            <p class="text-2xl font-bold text-blue-600" id="smsSnitt">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graf -->
+            <div class="bg-bark-50 rounded-xl p-4 border border-bark-100 mb-6">
+                <h3 class="font-medium text-bark-700 mb-4">SMS per dag</h3>
+                <div class="h-64">
+                    <canvas id="smsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Per type -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Fordeling per type</h3>
+                    <div class="h-48">
+                        <canvas id="smsTypeChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Per klubb (topp 10)</h3>
+                    <div id="smsPerKlubb" class="space-y-2 max-h-48 overflow-y-auto">
+                        <p class="text-bark-400 text-sm">Laster...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Siste SMS-er -->
+            <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-medium text-bark-700">Siste meldinger</h3>
+                    <button onclick="exportSmsLog()" class="text-sm text-warm-600 hover:text-warm-700 font-medium">
+                        Eksporter CSV
+                    </button>
+                </div>
+                <div id="smsSiste" class="space-y-2 max-h-64 overflow-y-auto">
+                    <p class="text-bark-400 text-sm">Laster...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- GDPR / Samtykke-administrasjon -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">GDPR / Samtykker</h2>
+                    <p class="text-sm text-bark-500">Oversikt over samtykker, innsynsforespørsler og brukerrettigheter</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="eksporterSamtykker()" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Eksporter samtykker (CSV)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Statistikk-kort -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-green-50 rounded-xl p-4 border border-green-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-green-600">Med samtykke</p>
+                            <p class="text-2xl font-bold text-green-700" id="samtykkeAntallMed">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-amber-600">Uten samtykke</p>
+                            <p class="text-2xl font-bold text-amber-700" id="samtykkeAntallUten">0</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-bark-200 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-bark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm text-bark-500">Totalt brukere</p>
+                            <p class="text-2xl font-bold text-bark-700" id="samtykkeAntallTotalt">0</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Søk og filter -->
+            <div class="flex items-center gap-3 mb-4">
+                <input type="text" id="samtykkeSok" placeholder="Søk etter navn, telefon, e-post..."
+                    class="flex-1 px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-warm-500 focus:outline-none">
+                <select id="samtykkeFilter" class="px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-warm-500 focus:outline-none">
+                    <option value="alle">Alle brukere</option>
+                    <option value="med_samtykke">Med samtykke</option>
+                    <option value="uten_samtykke">Uten samtykke</option>
+                </select>
+                <button onclick="loadSamtykker()" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                    Søk
+                </button>
+            </div>
+
+            <!-- Liste -->
+            <div id="samtykkeListe" class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-bark-50 text-bark-600 text-left">
+                        <tr>
+                            <th class="px-4 py-3 rounded-tl-xl">Bruker</th>
+                            <th class="px-4 py-3">Telefon</th>
+                            <th class="px-4 py-3">E-post</th>
+                            <th class="px-4 py-3">Samtykke gitt</th>
+                            <th class="px-4 py-3 rounded-tr-xl text-right">Handlinger</th>
+                        </tr>
+                    </thead>
+                    <tbody id="samtykkeTableBody">
+                        <tr><td colspan="5" class="text-center py-4 text-bark-400">Laster...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Klubb-godkjenninger -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">Klubb-godkjenninger</h2>
+                    <p class="text-sm text-bark-500">Forespørsler om opprettelse av nye klubber</p>
+                </div>
+                <span id="klubbVentendeCount" class="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">0 ventende</span>
+            </div>
+
+            <div id="klubbForesporselListe" class="space-y-4">
+                <p class="text-bark-400 text-center py-4">Laster...</p>
+            </div>
+        </div>
+
+        <!-- Brukeradministrasjon -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">Brukeradministrasjon</h2>
+                    <p class="text-sm text-bark-500">Alle registrerte brukere i systemet</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <input type="text" id="brukerSok" placeholder="Søk etter navn, telefon..."
+                        class="px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-warm-500 focus:outline-none w-64">
+                    <select id="brukerRolleFilter" class="px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-warm-500 focus:outline-none">
+                        <option value="">Alle roller</option>
+                        <option value="superadmin">Superadmin</option>
+                        <option value="admin">Admin</option>
+                        <option value="dommer">Dommer</option>
+                        <option value="deltaker">Deltaker</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="brukerListe" class="overflow-x-auto">
+                <p class="text-bark-400 text-center py-4">Laster...</p>
+            </div>
+        </div>
+
+        <!-- Alle klubber -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">Alle klubber</h2>
+                    <p class="text-sm text-bark-500">Oversikt over registrerte klubber og deres status</p>
+                </div>
+                <span id="klubbTotaltCount" class="px-3 py-1 bg-bark-100 text-bark-600 rounded-full text-sm font-medium">0 klubber</span>
+            </div>
+
+            <div id="klubberListe" class="space-y-3">
+                <p class="text-bark-400 text-center py-4">Laster...</p>
+            </div>
+        </div>
+
+        <!-- Spørreundersøkelser -->
+        <div class="bg-white rounded-2xl shadow-lg border border-bark-100 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-serif font-bold text-bark-800">Spørreundersøkelser</h2>
+                    <p class="text-sm text-bark-500">Svar fra dommerundersøkelsen</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="undersokelseCount" class="px-3 py-1 bg-warm-100 text-warm-700 rounded-full text-sm font-medium">0 svar</span>
+                    <button onclick="eksporterUndersokelser()" class="text-sm text-warm-600 hover:text-warm-700 font-medium">
+                        Eksporter CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sammendrag-kort -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Totalt svar</p>
+                    <p class="text-2xl font-bold text-warm-600" id="surveyTotalt">0</p>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Vil teste</p>
+                    <p class="text-2xl font-bold text-green-600" id="surveyVilTeste">0</p>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Gjennomsnitt erfaring</p>
+                    <p class="text-2xl font-bold text-bark-700" id="surveyErfaring">-</p>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <p class="text-sm text-bark-500">Vanligste alder</p>
+                    <p class="text-2xl font-bold text-blue-600" id="surveyAlder">-</p>
+                </div>
+            </div>
+
+            <!-- Grafer -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Aldersfordeling</h3>
+                    <div class="h-48">
+                        <canvas id="alderChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Års erfaring som dommer</h3>
+                    <div class="h-48">
+                        <canvas id="erfaringChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Utfordringer med papir (topp 5)</h3>
+                    <div class="h-48">
+                        <canvas id="utfordringerChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Foretrukket input-metode</h3>
+                    <div class="h-48">
+                        <canvas id="inputChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Når skrives kritikken ferdig?</h3>
+                    <div class="h-48">
+                        <canvas id="kritikkTidChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                    <h3 class="font-medium text-bark-700 mb-4">Prioriteringer for digital løsning</h3>
+                    <div class="h-48">
+                        <canvas id="prioritetChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fritekst-svar -->
+            <div class="bg-bark-50 rounded-xl p-4 border border-bark-100 mb-6">
+                <h3 class="font-medium text-bark-700 mb-4">Fritekst-svar (hva fungerer / ønsker / tips)</h3>
+                <div id="fritekstsvar" class="space-y-3 max-h-64 overflow-y-auto">
+                    <p class="text-bark-400 text-sm">Laster...</p>
+                </div>
+            </div>
+
+            <!-- Testdeltagere -->
+            <div class="bg-bark-50 rounded-xl p-4 border border-bark-100">
+                <h3 class="font-medium text-bark-700 mb-4">Vil delta i testing</h3>
+                <div id="testdeltagere" class="space-y-2 max-h-48 overflow-y-auto">
+                    <p class="text-bark-400 text-sm">Laster...</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+    let smsChart = null;
+    let smsTypeChart = null;
+
+    // Sjekk autentisering
+    async function checkAuth() {
+        try {
+            const user = JSON.parse(localStorage.getItem('userProfile') || '{}');
+            if (!user.telefon) {
+                window.location.href = 'dommer.html?redirect=superadmin';
+                return;
+            }
+            if (!user.rolle || !user.rolle.includes('superadmin')) {
+                alert('Du har ikke tilgang til denne siden.');
+                window.location.href = 'min-side.html';
+                return;
+            }
+            document.getElementById('currentUser').textContent = `${user.fornavn} ${user.etternavn}`;
+        } catch (e) {
+            console.error('Auth error:', e);
+            window.location.href = 'dommer.html?redirect=superadmin';
+        }
+    }
+
+    // SMS-statistikk
+    async function loadSmsStats() {
+        const periode = document.getElementById('smsPeriodeFilter').value;
+        const kilde = document.getElementById('smsKildeFilter').value;
+
+        try {
+            const resp = await fetch(`/api/superadmin/sms-stats?periode=${periode}&type=${kilde}`);
+            const data = await resp.json();
+
+            // Oppdater sammendragskort
+            document.getElementById('smsTotaltUt').textContent = data.totalt?.ut || 0;
+            document.getElementById('smsTotaltInn').textContent = data.totalt?.inn || 0;
+            document.getElementById('smsTotalt').textContent = (data.totalt?.ut || 0) + (data.totalt?.inn || 0);
+
+            // Beregn gjennomsnitt
+            const dager = data.perDag?.length || 1;
+            const snitt = Math.round(((data.totalt?.ut || 0) + (data.totalt?.inn || 0)) / dager * 10) / 10;
+            document.getElementById('smsSnitt').textContent = snitt;
+
+            // Oppdater linjegraf
+            updateSmsChart(data.perDag || []);
+
+            // Oppdater type-fordeling
+            updateTypeChart(data.perType || {});
+
+            // Oppdater per klubb
+            updatePerKlubb(data.perKlubb || []);
+
+            // Oppdater siste meldinger
+            updateSisteMeldinger(data.siste || []);
+
+        } catch (err) {
+            console.error('Feil ved lasting av SMS-stats:', err);
+        }
+    }
+
+    function updateSmsChart(perDag) {
+        const ctx = document.getElementById('smsChart').getContext('2d');
+
+        if (smsChart) {
+            smsChart.destroy();
+        }
+
+        const labels = perDag.map(d => {
+            const dato = new Date(d.dato);
+            return dato.toLocaleDateString('no-NO', { day: 'numeric', month: 'short' });
+        });
+
+        smsChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Sendt ut',
+                        data: perDag.map(d => d.ut || 0),
+                        borderColor: '#FD8536',
+                        backgroundColor: 'rgba(253, 133, 54, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Mottatt inn',
+                        data: perDag.map(d => d.inn || 0),
+                        borderColor: '#22C55E',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateTypeChart(perType) {
+        const ctx = document.getElementById('smsTypeChart').getContext('2d');
+
+        if (smsTypeChart) {
+            smsTypeChart.destroy();
+        }
+
+        const labels = Object.keys(perType);
+        const data = Object.values(perType);
+
+        smsTypeChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+                datasets: [{
+                    data: data,
+                    backgroundColor: [
+                        '#FD8536',
+                        '#22C55E',
+                        '#3B82F6',
+                        '#A855F7',
+                        '#F59E0B',
+                        '#EF4444',
+                        '#6B7280'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    }
+                }
+            }
+        });
+    }
+
+    function updatePerKlubb(perKlubb) {
+        const container = document.getElementById('smsPerKlubb');
+
+        if (perKlubb.length === 0) {
+            container.innerHTML = '<p class="text-bark-400 text-sm">Ingen klubb-SMS ennå</p>';
+            return;
+        }
+
+        container.innerHTML = perKlubb.slice(0, 10).map(k => `
+            <div class="flex items-center justify-between py-2 border-b border-bark-100 last:border-0">
+                <span class="text-sm text-bark-700">${k.klubb_navn || k.klubb_id || 'Ukjent'}</span>
+                <div class="flex items-center gap-3 text-sm">
+                    <span class="text-warm-600">${k.ut || 0} ut</span>
+                    <span class="text-green-600">${k.inn || 0} inn</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function updateSisteMeldinger(siste) {
+        const container = document.getElementById('smsSiste');
+
+        if (siste.length === 0) {
+            container.innerHTML = '<p class="text-bark-400 text-sm">Ingen meldinger ennå</p>';
+            return;
+        }
+
+        container.innerHTML = siste.map(m => {
+            const dato = new Date(m.created_at);
+            const retning = m.retning === 'ut' ? '→' : '←';
+            const farge = m.retning === 'ut' ? 'text-warm-600' : 'text-green-600';
+
+            return `
+                <div class="flex items-start gap-3 py-2 border-b border-bark-100 last:border-0">
+                    <span class="text-lg ${farge}">${retning}</span>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium text-bark-700">${m.fra} → ${m.til}</span>
+                            <span class="px-2 py-0.5 bg-bark-100 text-bark-500 rounded text-xs">${m.type}</span>
+                        </div>
+                        <p class="text-xs text-bark-500 truncate">${m.melding || '-'}</p>
+                    </div>
+                    <span class="text-xs text-bark-400 whitespace-nowrap">${dato.toLocaleString('no-NO')}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function exportSmsLog() {
+        const periode = document.getElementById('smsPeriodeFilter').value;
+        const kilde = document.getElementById('smsKildeFilter').value;
+
+        try {
+            const resp = await fetch(`/api/superadmin/sms-export?periode=${periode}&type=${kilde}`);
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sms-log-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Feil ved eksport: ' + err.message);
+        }
+    }
+
+    // Klubb-forespørsler
+    async function loadKlubbForesporsel() {
+        try {
+            const resp = await fetch('/api/klubb-foresporsel?status=pending');
+            const { foresporsel } = await resp.json();
+
+            document.getElementById('klubbVentendeCount').textContent = `${foresporsel.length} ventende`;
+
+            const container = document.getElementById('klubbForesporselListe');
+            if (foresporsel.length === 0) {
+                container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen ventende forespørsler</p>';
+                return;
+            }
+
+            container.innerHTML = foresporsel.map(f => {
+                const admins = JSON.parse(f.ekstra_admins || '[]');
+                return `
+                <div class="border border-bark-200 rounded-xl p-4 bg-bark-50">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h4 class="font-bold text-bark-800">${f.navn}</h4>
+                            <p class="text-sm text-bark-500">Org.nr: ${f.orgnummer}</p>
+                            <p class="text-sm text-bark-500">${f.postnummer} ${f.sted}</p>
+                        </div>
+                        <span class="text-xs text-bark-400">${new Date(f.created_at).toLocaleDateString('no-NO')}</span>
+                    </div>
+                    <div class="mt-3 pt-3 border-t border-bark-200">
+                        <p class="text-sm"><strong>Klubbleder:</strong> ${f.leder_navn}</p>
+                        <p class="text-sm text-bark-500">${f.leder_telefon} • ${f.leder_epost || 'Ingen e-post'}</p>
+                        ${admins.length > 0 ? `<p class="text-xs text-bark-400 mt-1">+ ${admins.length} ekstra admin(er)</p>` : ''}
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                        <button onclick="godkjennKlubb(${f.id})" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Godkjenn
+                        </button>
+                        <button onclick="avslaaKlubb(${f.id})" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-xl text-sm font-medium transition">
+                            Avslå
+                        </button>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        } catch (err) {
+            document.getElementById('klubbForesporselListe').innerHTML = '<p class="text-red-500">Feil: ' + err.message + '</p>';
+        }
+    }
+
+    async function godkjennKlubb(id) {
+        if (!confirm('Godkjenne denne klubben? Klubblederen vil få tilgang til å opprette prøver.')) return;
+
+        try {
+            const resp = await fetch(`/api/klubb-foresporsel/${id}/godkjenn`, { method: 'POST' });
+            const result = await resp.json();
+
+            if (resp.ok) {
+                alert(`Klubb godkjent! Klubb-ID: ${result.klubbId}`);
+                loadKlubbForesporsel();
+                loadKlubber();
+            } else {
+                alert('Feil: ' + (result.error || 'Kunne ikke godkjenne'));
+            }
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    async function avslaaKlubb(id) {
+        const grunn = prompt('Oppgi grunn for avslag (valgfritt):');
+        if (grunn === null) return;
+
+        try {
+            const resp = await fetch(`/api/klubb-foresporsel/${id}/avslaa`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ grunn })
+            });
+
+            if (resp.ok) {
+                loadKlubbForesporsel();
+            } else {
+                const result = await resp.json();
+                alert('Feil: ' + (result.error || 'Kunne ikke avslå'));
+            }
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    // Brukere
+    let brukerSearchTimeout;
+    async function loadBrukere(search = '', rolle = '') {
+        try {
+            const resp = await fetch(`/api/superadmin/brukere?search=${encodeURIComponent(search)}&rolle=${encodeURIComponent(rolle)}&limit=100`);
+            const { brukere, total } = await resp.json();
+
+            const container = document.getElementById('brukerListe');
+            if (brukere.length === 0) {
+                container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen brukere funnet</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table class="w-full text-sm">
+                    <thead class="bg-bark-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Navn</th>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Telefon</th>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">E-post</th>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Roller</th>
+                            <th class="px-3 py-2 text-left font-medium text-bark-600">Registrert</th>
+                            <th class="px-3 py-2 text-right font-medium text-bark-600">Handlinger</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${brukere.map(b => `
+                            <tr class="border-t border-bark-100 hover:bg-bark-50">
+                                <td class="px-3 py-2 font-medium">${b.fornavn} ${b.etternavn}</td>
+                                <td class="px-3 py-2 text-bark-500">${b.telefon}</td>
+                                <td class="px-3 py-2 text-bark-500">${b.epost || '-'}</td>
+                                <td class="px-3 py-2">
+                                    ${(b.rolle || 'deltaker').split(',').map(r => {
+                                        let farge = 'bg-bark-100 text-bark-600';
+                                        if (r === 'superadmin') farge = 'bg-red-100 text-red-700';
+                                        else if (r === 'admin') farge = 'bg-amber-100 text-amber-700';
+                                        else if (r === 'dommer') farge = 'bg-warm-100 text-warm-700';
+                                        return `<span class="inline-block px-2 py-0.5 ${farge} rounded text-xs mr-1">${r}</span>`;
+                                    }).join('')}
+                                </td>
+                                <td class="px-3 py-2 text-bark-400 text-xs">${new Date(b.created_at).toLocaleDateString('no-NO')}</td>
+                                <td class="px-3 py-2 text-right">
+                                    <button onclick="redigerBrukerRolle('${b.telefon}', '${b.rolle || ''}')" class="text-warm-600 hover:text-warm-700 text-xs font-medium">
+                                        Endre rolle
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <p class="text-xs text-bark-400 mt-2 text-center">Viser ${brukere.length} av ${total} brukere</p>
+            `;
+        } catch (err) {
+            document.getElementById('brukerListe').innerHTML = '<p class="text-red-500">Feil: ' + err.message + '</p>';
+        }
+    }
+
+    async function redigerBrukerRolle(telefon, currentRolle) {
+        const nyRolle = prompt(`Endre rolle for ${telefon}\n\nNåværende: ${currentRolle || 'deltaker'}\n\nGyldige roller: deltaker, dommer, admin, superadmin\n(kommaseparert for flere)`, currentRolle || 'deltaker');
+
+        if (nyRolle === null) return;
+
+        try {
+            const resp = await fetch(`/api/superadmin/bruker/${telefon}/rolle`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rolle: nyRolle })
+            });
+
+            if (resp.ok) {
+                loadBrukere(document.getElementById('brukerSok').value, document.getElementById('brukerRolleFilter').value);
+            } else {
+                const result = await resp.json();
+                alert('Feil: ' + (result.error || 'Kunne ikke oppdatere'));
+            }
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    document.getElementById('brukerSok').addEventListener('input', (e) => {
+        clearTimeout(brukerSearchTimeout);
+        brukerSearchTimeout = setTimeout(() => {
+            loadBrukere(e.target.value, document.getElementById('brukerRolleFilter').value);
+        }, 300);
+    });
+
+    document.getElementById('brukerRolleFilter').addEventListener('change', (e) => {
+        loadBrukere(document.getElementById('brukerSok').value, e.target.value);
+    });
+
+    // Klubber
+    async function loadKlubber() {
+        try {
+            const resp = await fetch('/api/klubber');
+            const klubber = await resp.json();
+
+            document.getElementById('klubbTotaltCount').textContent = `${klubber.length} klubber`;
+
+            const container = document.getElementById('klubberListe');
+            if (klubber.length === 0) {
+                container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen klubber registrert ennå</p>';
+                return;
+            }
+
+            container.innerHTML = klubber.map(k => `
+                <div class="border border-bark-200 rounded-xl p-4 bg-bark-50 hover:bg-bark-100 transition">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h4 class="font-bold text-bark-800">${k.navn}</h4>
+                            <p class="text-sm text-bark-500">${k.postnummer || ''} ${k.sted || ''}</p>
+                        </div>
+                        <span class="px-2 py-1 ${k.aktiv ? 'bg-green-100 text-green-700' : 'bg-bark-200 text-bark-600'} rounded-lg text-xs font-medium">
+                            ${k.aktiv ? 'Aktiv' : 'Inaktiv'}
+                        </span>
+                    </div>
+                    <div class="mt-2 text-sm text-bark-500">
+                        <span>Org.nr: ${k.orgnummer || '-'}</span>
+                        ${k.telefon ? `<span class="ml-4">Tlf: ${k.telefon}</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        } catch (err) {
+            document.getElementById('klubberListe').innerHTML = '<p class="text-red-500">Feil: ' + err.message + '</p>';
+        }
+    }
+
+    // Filter-endringer
+    document.getElementById('smsPeriodeFilter').addEventListener('change', loadSmsStats);
+    document.getElementById('smsKildeFilter').addEventListener('change', loadSmsStats);
+
+    // Last inn klubber i SMS-filter
+    async function loadSmsKlubber() {
+        try {
+            const resp = await fetch('/api/superadmin/sms-klubber');
+            const klubber = await resp.json();
+
+            const select = document.getElementById('smsKildeFilter');
+            klubber.forEach(k => {
+                const opt = document.createElement('option');
+                opt.value = `klubb:${k.klubb_id}`;
+                opt.textContent = k.klubb_navn || `Klubb ${k.klubb_id}`;
+                select.appendChild(opt);
+            });
+        } catch (err) {
+            console.error('Feil ved lasting av klubber:', err);
+        }
+    }
+
+    // ============================================
+    // UNDERSØKELSER
+    // ============================================
+    let alderChart = null, erfaringChart = null, utfordringerChart = null, inputChart = null, kritikkTidChart = null, prioritetChart = null;
+
+    async function loadUndersokelser() {
+        try {
+            const resp = await fetch('/api/undersokelser');
+            const { items, count } = await resp.json();
+
+            document.getElementById('undersokelseCount').textContent = `${count} svar`;
+            document.getElementById('surveyTotalt').textContent = count;
+
+            if (count === 0) {
+                document.getElementById('surveyVilTeste').textContent = '0';
+                document.getElementById('surveyErfaring').textContent = '-';
+                document.getElementById('surveyAlder').textContent = '-';
+                document.getElementById('fritekstsvar').innerHTML = '<p class="text-bark-400 text-sm">Ingen svar ennå</p>';
+                document.getElementById('testdeltagere').innerHTML = '<p class="text-bark-400 text-sm">Ingen har meldt seg til testing</p>';
+                return;
+            }
+
+            // Analyser data
+            const alderData = { 'under_30': 0, '30-45': 0, '46-60': 0, 'over_60': 0 };
+            const erfaringData = { '0-2': 0, '3-5': 0, '6-10': 0, '10+': 0 };
+            const utfordringerData = {};
+            const inputData = {};
+            const kritikkTidData = {};
+            const prioriteter = { enkelhet: [], hurtigtaster: [], fritekst: [], offline: [], oversikt: [] };
+            const fritekst = [];
+            const testere = [];
+
+            items.forEach(item => {
+                const d = item.data;
+
+                // Alder
+                if (d.alder && alderData[d.alder] !== undefined) alderData[d.alder]++;
+
+                // Erfaring
+                if (d.erfaring && erfaringData[d.erfaring] !== undefined) erfaringData[d.erfaring]++;
+
+                // Utfordringer (kan være array eller string)
+                const utfordringer = Array.isArray(d.papir_utfordringer) ? d.papir_utfordringer : (d.papir_utfordringer ? [d.papir_utfordringer] : []);
+                utfordringer.forEach(u => {
+                    utfordringerData[u] = (utfordringerData[u] || 0) + 1;
+                });
+
+                // Input-preferanse
+                if (d.input_preferanse) {
+                    inputData[d.input_preferanse] = (inputData[d.input_preferanse] || 0) + 1;
+                }
+
+                // Kritikk tidspunkt
+                if (d.kritikk_tidspunkt) {
+                    kritikkTidData[d.kritikk_tidspunkt] = (kritikkTidData[d.kritikk_tidspunkt] || 0) + 1;
+                }
+
+                // Prioriteringer
+                ['enkelhet', 'hurtigtaster', 'fritekst', 'offline', 'oversikt'].forEach(p => {
+                    const val = d[`prioritet_${p}`];
+                    if (val) prioriteter[p].push(parseInt(val));
+                });
+
+                // Fritekst
+                if (d.fungerer_bra || d.onske_annerledes || d.andre_tips) {
+                    fritekst.push({
+                        navn: d.navn || d.kontakt_navn || 'Anonym',
+                        dato: item.created_at,
+                        fungerer: d.fungerer_bra || '',
+                        onske: d.onske_annerledes || '',
+                        tips: d.andre_tips || ''
+                    });
+                }
+
+                // Testere
+                if (d.kontakt_navn || d.kontakt_info) {
+                    testere.push({
+                        navn: d.kontakt_navn || d.navn || 'Ukjent',
+                        kontakt: d.kontakt_info || '',
+                        dato: item.created_at
+                    });
+                }
+            });
+
+            // Oppdater sammendrag
+            document.getElementById('surveyVilTeste').textContent = testere.length;
+
+            // Finn vanligste alder
+            const maxAlder = Object.entries(alderData).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('surveyAlder').textContent = maxAlder[1] > 0 ? formatAlder(maxAlder[0]) : '-';
+
+            // Finn gjennomsnittlig erfaring
+            const erfaringLabels = { '0-2': 1, '3-5': 4, '6-10': 8, '10+': 12 };
+            let erfSum = 0, erfCount = 0;
+            Object.entries(erfaringData).forEach(([k, v]) => {
+                erfSum += erfaringLabels[k] * v;
+                erfCount += v;
+            });
+            document.getElementById('surveyErfaring').textContent = erfCount > 0 ? `~${Math.round(erfSum / erfCount)} år` : '-';
+
+            // Tegn grafer
+            drawAlderChart(alderData);
+            drawErfaringChart(erfaringData);
+            drawUtfordringerChart(utfordringerData);
+            drawInputChart(inputData);
+            drawKritikkTidChart(kritikkTidData);
+            drawPrioritetChart(prioriteter);
+
+            // Vis fritekst
+            renderFritekst(fritekst);
+
+            // Vis testere
+            renderTestere(testere);
+
+        } catch (err) {
+            console.error('Feil ved lasting av undersøkelser:', err);
+        }
+    }
+
+    function formatAlder(key) {
+        const labels = { 'under_30': 'Under 30', '30-45': '30-45', '46-60': '46-60', 'over_60': 'Over 60' };
+        return labels[key] || key;
+    }
+
+    function drawAlderChart(data) {
+        const ctx = document.getElementById('alderChart').getContext('2d');
+        if (alderChart) alderChart.destroy();
+        alderChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Under 30', '30-45', '46-60', 'Over 60'],
+                datasets: [{
+                    data: [data['under_30'], data['30-45'], data['46-60'], data['over_60']],
+                    backgroundColor: ['#FD8536', '#22C55E', '#3B82F6', '#A855F7']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function drawErfaringChart(data) {
+        const ctx = document.getElementById('erfaringChart').getContext('2d');
+        if (erfaringChart) erfaringChart.destroy();
+        erfaringChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['0-2 år', '3-5 år', '6-10 år', '10+ år'],
+                datasets: [{
+                    label: 'Antall',
+                    data: [data['0-2'], data['3-5'], data['6-10'], data['10+']],
+                    backgroundColor: '#FD8536'
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+        });
+    }
+
+    function drawUtfordringerChart(data) {
+        const ctx = document.getElementById('utfordringerChart').getContext('2d');
+        if (utfordringerChart) utfordringerChart.destroy();
+
+        const utfordringLabels = {
+            'vaer_regn': 'Regn/fuktighet',
+            'vaer_kulde': 'Kulde',
+            'vind': 'Vind',
+            'hansker': 'Må ta av hansker',
+            'lesbarhet': 'Lesbarhet',
+            'plass': 'For lite plass',
+            'mister': 'Mister papirer',
+            'huske_detaljer': 'Huske detaljer'
+        };
+
+        const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        utfordringerChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: sorted.map(([k]) => utfordringLabels[k] || k),
+                datasets: [{
+                    label: 'Antall',
+                    data: sorted.map(([, v]) => v),
+                    backgroundColor: '#EF4444'
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }
+        });
+    }
+
+    function drawInputChart(data) {
+        const ctx = document.getElementById('inputChart').getContext('2d');
+        if (inputChart) inputChart.destroy();
+
+        const inputLabels = {
+            'knapper': 'Ferdige knapper',
+            'fritekst': 'Hovedsakelig fritekst',
+            'kombinasjon': 'Kombinasjon',
+            'tale': 'Taleopptak'
+        };
+
+        inputChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(data).map(k => inputLabels[k] || k),
+                datasets: [{
+                    data: Object.values(data),
+                    backgroundColor: ['#FD8536', '#22C55E', '#3B82F6', '#A855F7']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function drawKritikkTidChart(data) {
+        const ctx = document.getElementById('kritikkTidChart').getContext('2d');
+        if (kritikkTidChart) kritikkTidChart.destroy();
+
+        const tidLabels = {
+            'etter_slipp': 'Rett etter slipp',
+            'etter_parti': 'Etter partiet',
+            'samme_kveld': 'Samme kveld',
+            'neste_dag': 'Neste dag'
+        };
+
+        kritikkTidChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: Object.keys(data).map(k => tidLabels[k] || k),
+                datasets: [{
+                    data: Object.values(data),
+                    backgroundColor: ['#22C55E', '#3B82F6', '#F59E0B', '#EF4444']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+    }
+
+    function drawPrioritetChart(prioriteter) {
+        const ctx = document.getElementById('prioritetChart').getContext('2d');
+        if (prioritetChart) prioritetChart.destroy();
+
+        // Beregn gjennomsnittlig prioritet (lavere = viktigere)
+        const labels = ['Enkelhet', 'Hurtigtaster', 'Fritekst', 'Offline', 'Oversikt'];
+        const keys = ['enkelhet', 'hurtigtaster', 'fritekst', 'offline', 'oversikt'];
+        const averages = keys.map(k => {
+            const vals = prioriteter[k];
+            return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+        });
+
+        // Inverter slik at høyere = viktigere (5 - gjennomsnitt)
+        const inverted = averages.map(v => v > 0 ? 6 - v : 0);
+
+        prioritetChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Viktighet (5=høyest)',
+                    data: inverted,
+                    backgroundColor: 'rgba(253, 133, 54, 0.2)',
+                    borderColor: '#FD8536',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { r: { beginAtZero: true, max: 5 } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    function renderFritekst(fritekst) {
+        const container = document.getElementById('fritekstsvar');
+        if (fritekst.length === 0) {
+            container.innerHTML = '<p class="text-bark-400 text-sm">Ingen fritekst-svar</p>';
+            return;
+        }
+
+        container.innerHTML = fritekst.map(f => `
+            <div class="border-b border-bark-200 pb-3 last:border-0">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="font-medium text-bark-700">${f.navn}</span>
+                    <span class="text-xs text-bark-400">${new Date(f.dato).toLocaleDateString('no-NO')}</span>
+                </div>
+                ${f.fungerer ? `<p class="text-sm text-bark-600"><span class="text-green-600 font-medium">Fungerer bra:</span> ${f.fungerer}</p>` : ''}
+                ${f.onske ? `<p class="text-sm text-bark-600"><span class="text-amber-600 font-medium">Ønsker:</span> ${f.onske}</p>` : ''}
+                ${f.tips ? `<p class="text-sm text-bark-600"><span class="text-blue-600 font-medium">Tips:</span> ${f.tips}</p>` : ''}
+            </div>
+        `).join('');
+    }
+
+    function renderTestere(testere) {
+        const container = document.getElementById('testdeltagere');
+        if (testere.length === 0) {
+            container.innerHTML = '<p class="text-bark-400 text-sm">Ingen har meldt seg til testing ennå</p>';
+            return;
+        }
+
+        container.innerHTML = testere.map(t => `
+            <div class="flex items-center justify-between py-2 border-b border-bark-100 last:border-0">
+                <div>
+                    <span class="font-medium text-bark-700">${t.navn}</span>
+                    <span class="text-sm text-bark-500 ml-2">${t.kontakt}</span>
+                </div>
+                <span class="text-xs text-bark-400">${new Date(t.dato).toLocaleDateString('no-NO')}</span>
+            </div>
+        `).join('');
+    }
+
+    async function eksporterUndersokelser() {
+        try {
+            const resp = await fetch('/api/undersokelser');
+            const { items } = await resp.json();
+
+            if (items.length === 0) {
+                alert('Ingen svar å eksportere');
+                return;
+            }
+
+            // Lag CSV
+            const headers = ['Dato', 'Navn', 'Alder', 'Erfaring', 'Prøver per år', 'Input-preferanse', 'Kritikk tidspunkt', 'Fungerer bra', 'Ønsker', 'Tips', 'Kontakt'];
+            const rows = items.map(item => {
+                const d = item.data;
+                return [
+                    new Date(item.created_at).toLocaleDateString('no-NO'),
+                    d.navn || d.kontakt_navn || 'Anonym',
+                    d.alder || '',
+                    d.erfaring || '',
+                    d.prover_per_ar || '',
+                    d.input_preferanse || '',
+                    d.kritikk_tidspunkt || '',
+                    (d.fungerer_bra || '').replace(/"/g, '""'),
+                    (d.onske_annerledes || '').replace(/"/g, '""'),
+                    (d.andre_tips || '').replace(/"/g, '""'),
+                    d.kontakt_info || ''
+                ].map(v => `"${v}"`).join(',');
+            });
+
+            const csv = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `undersokelse-svar-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Feil ved eksport: ' + err.message);
+        }
+    }
+
+    // ============================================
+    // GDPR / SAMTYKKE FUNKSJONER
+    // ============================================
+
+    async function loadSamtykker() {
+        const search = document.getElementById('samtykkeSok')?.value || '';
+        const filter = document.getElementById('samtykkeFilter')?.value || 'alle';
+
+        try {
+            const resp = await fetch(`/api/superadmin/samtykker?search=${encodeURIComponent(search)}&filter=${filter}&limit=100`);
+            const data = await resp.json();
+
+            // Oppdater statistikk
+            document.getElementById('samtykkeAntallMed').textContent = data.statistikk?.med_samtykke || 0;
+            document.getElementById('samtykkeAntallUten').textContent = data.statistikk?.uten_samtykke || 0;
+            document.getElementById('samtykkeAntallTotalt').textContent = data.total || 0;
+
+            // Render tabell
+            const tbody = document.getElementById('samtykkeTableBody');
+            if (!data.brukere || data.brukere.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-bark-400">Ingen brukere funnet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.brukere.map(b => {
+                const samtykkeStatus = b.samtykke_gitt
+                    ? `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                         ${new Date(b.samtykke_gitt).toLocaleDateString('nb-NO')}
+                       </span>`
+                    : `<span class="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs">
+                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01"/></svg>
+                         Mangler
+                       </span>`;
+
+                return `
+                    <tr class="border-b border-bark-100 hover:bg-bark-50">
+                        <td class="px-4 py-3">
+                            <div class="font-medium text-bark-800">${b.fornavn} ${b.etternavn}</div>
+                            <div class="text-xs text-bark-400">${b.rolle || 'deltaker'}</div>
+                        </td>
+                        <td class="px-4 py-3 text-bark-600">${b.telefon}</td>
+                        <td class="px-4 py-3 text-bark-600">${b.epost || '-'}</td>
+                        <td class="px-4 py-3">${samtykkeStatus}</td>
+                        <td class="px-4 py-3 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button onclick="visInnsyn('${b.telefon}')" class="text-warm-600 hover:text-warm-700 text-xs font-medium" title="GDPR innsyn">
+                                    Innsyn
+                                </button>
+                                ${b.samtykke_gitt
+                                    ? `<button onclick="trekkSamtykke('${b.telefon}')" class="text-red-500 hover:text-red-600 text-xs font-medium" title="Trekk samtykke">
+                                         Trekk
+                                       </button>`
+                                    : `<button onclick="settSamtykke('${b.telefon}')" class="text-green-600 hover:text-green-700 text-xs font-medium" title="Registrer samtykke">
+                                         Sett
+                                       </button>`
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+        } catch (err) {
+            console.error('Feil ved lasting av samtykker:', err);
+            document.getElementById('samtykkeTableBody').innerHTML =
+                '<tr><td colspan="5" class="text-center py-4 text-red-500">Feil ved lasting</td></tr>';
+        }
+    }
+
+    async function visInnsyn(telefon) {
+        try {
+            const resp = await fetch(`/api/superadmin/innsyn/${telefon}`);
+            if (!resp.ok) throw new Error('Kunne ikke hente data');
+
+            const data = await resp.json();
+
+            // Lag en enkel JSON-visning i ny fane
+            const jsonStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            // Åpne i ny fane
+            window.open(url, '_blank');
+
+            // Eller last ned som fil:
+            // const a = document.createElement('a');
+            // a.href = url;
+            // a.download = `innsyn_${telefon}_${new Date().toISOString().split('T')[0]}.json`;
+            // a.click();
+
+            alert(`Innsynsdata for ${telefon} er åpnet i ny fane.\n\nDataen kan lagres og sendes til brukeren ved innsynsforespørsel (GDPR Art. 15).`);
+
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    async function trekkSamtykke(telefon) {
+        if (!confirm(`Er du sikker på at du vil trekke samtykket for ${telefon}?\n\nBrukeren vil ikke lenger kunne motta SMS fra arrangører.`)) {
+            return;
+        }
+
+        try {
+            const resp = await fetch(`/api/superadmin/samtykke/${telefon}`, { method: 'DELETE' });
+            if (!resp.ok) throw new Error('Kunne ikke trekke samtykke');
+
+            alert('Samtykke trukket tilbake');
+            loadSamtykker();
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    async function settSamtykke(telefon) {
+        if (!confirm(`Registrer samtykke manuelt for ${telefon}?\n\nDette bør kun gjøres hvis brukeren har gitt muntlig/skriftlig samtykke.`)) {
+            return;
+        }
+
+        try {
+            const resp = await fetch(`/api/superadmin/samtykke/${telefon}`, { method: 'POST' });
+            if (!resp.ok) throw new Error('Kunne ikke registrere samtykke');
+
+            alert('Samtykke registrert');
+            loadSamtykker();
+        } catch (err) {
+            alert('Feil: ' + err.message);
+        }
+    }
+
+    async function eksporterSamtykker() {
+        try {
+            const resp = await fetch('/api/superadmin/samtykker/eksport');
+            if (!resp.ok) throw new Error('Kunne ikke eksportere');
+
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `samtykker_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+        } catch (err) {
+            alert('Feil ved eksport: ' + err.message);
+        }
+    }
+
+    // Event listeners for samtykke-søk
+    document.getElementById('samtykkeSok')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') loadSamtykker();
+    });
+    document.getElementById('samtykkeFilter')?.addEventListener('change', loadSamtykker);
+
+    // Initialiser
+    async function initAll() {
+        await checkAuth();
+        await Promise.all([loadSmsStats(), loadSmsKlubber(), loadKlubbForesporsel(), loadBrukere(), loadKlubber(), loadUndersokelser(), loadSamtykker()]);
+    }
+    initAll().finally(() => document.body.classList.remove('auth-loading'));
+    </script>
+</body>
+</html>

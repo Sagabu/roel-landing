@@ -174,25 +174,33 @@
                     </select>
                 </div>
 
-                <!-- Recipient Name -->
-                <div>
+                <!-- Recipient Name with Autocomplete -->
+                <div class="relative">
                     <label class="block text-sm font-medium text-bark-700 mb-1">Fullmektigens navn *</label>
-                    <input type="text" id="recipientName" required placeholder="Fullt navn"
+                    <input type="text" id="recipientName" required placeholder="Begynn å skrive navn..."
+                        autocomplete="off"
+                        oninput="searchUsers(this.value)"
                         class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
+                    <!-- Autocomplete dropdown -->
+                    <div id="userSuggestions" class="hidden absolute z-10 w-full mt-1 bg-white border border-bark-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                        <!-- Suggestions rendered here -->
+                    </div>
+                    <input type="hidden" id="selectedUserId">
+                    <p id="userMatchInfo" class="text-xs text-bark-500 mt-1 hidden"></p>
                 </div>
 
                 <!-- Recipient Phone -->
                 <div>
-                    <label class="block text-sm font-medium text-bark-700 mb-1">Fullmektigens telefon</label>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Fullmektigens telefon *</label>
                     <div class="flex">
                         <span class="inline-flex items-center px-4 py-3 rounded-l-xl border-2 border-r-0 border-bark-200 bg-bark-50 text-bark-600 font-medium">
                             +47
                         </span>
-                        <input type="tel" id="recipientPhone" placeholder="12345678"
+                        <input type="tel" id="recipientPhone" placeholder="12345678" required
                             maxlength="8" pattern="[0-9]{8}" inputmode="numeric"
                             class="w-full px-4 py-3 rounded-r-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
                     </div>
-                    <p class="text-xs text-bark-500 mt-1">8 siffer uten mellomrom</p>
+                    <p class="text-xs text-bark-500 mt-1">SMS sendes til mottaker ved opprettelse av fullmakt</p>
                 </div>
 
                 <!-- Validity Period -->
@@ -215,11 +223,11 @@
                     <div class="space-y-2">
                         <label class="flex items-center gap-3 cursor-pointer">
                             <input type="checkbox" id="permRun" checked class="w-4 h-4 text-warm-800 rounded">
-                            <span class="text-bark-700">Kan stille med hunden pa prove</span>
+                            <span class="text-bark-700">Kan stille hunden på jaktprøve</span>
                         </label>
                         <label class="flex items-center gap-3 cursor-pointer">
                             <input type="checkbox" id="permRegister" class="w-4 h-4 text-warm-800 rounded">
-                            <span class="text-bark-700">Kan melde pa til prover</span>
+                            <span class="text-bark-700">Kan melde på hunden til jaktprøver</span>
                         </label>
                         <label class="flex items-center gap-3 cursor-pointer">
                             <input type="checkbox" id="permResults" checked class="w-4 h-4 text-warm-800 rounded">
@@ -483,12 +491,95 @@
         function openAddMandateModal() {
             document.getElementById('mandateForm').reset();
             document.getElementById('validFrom').value = new Date().toISOString().split('T')[0];
+            document.getElementById('selectedUserId').value = '';
+            document.getElementById('userMatchInfo').classList.add('hidden');
+            document.getElementById('recipientPhone').readOnly = false;
             document.getElementById('mandateModal').classList.remove('hidden');
         }
 
         function closeMandateModal() {
             document.getElementById('mandateModal').classList.add('hidden');
+            document.getElementById('userSuggestions').classList.add('hidden');
         }
+
+        // Bruker-søk for autocomplete
+        let searchTimeout = null;
+        let selectedRecipient = null;
+
+        async function searchUsers(query) {
+            const suggestionsEl = document.getElementById('userSuggestions');
+            const infoEl = document.getElementById('userMatchInfo');
+
+            // Nullstill valgt bruker hvis man skriver noe nytt
+            if (selectedRecipient && document.getElementById('recipientName').value !== selectedRecipient.navn) {
+                selectedRecipient = null;
+                document.getElementById('selectedUserId').value = '';
+                document.getElementById('recipientPhone').value = '';
+                document.getElementById('recipientPhone').readOnly = false;
+                infoEl.classList.add('hidden');
+            }
+
+            if (query.length < 2) {
+                suggestionsEl.classList.add('hidden');
+                return;
+            }
+
+            // Debounce søk
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/api/brukere/sok?q=${encodeURIComponent(query)}&limit=5`);
+                    if (!resp.ok) return;
+
+                    const brukere = await resp.json();
+
+                    if (brukere.length === 0) {
+                        suggestionsEl.innerHTML = `
+                            <div class="px-4 py-3 text-sm text-bark-500">
+                                Ingen brukere funnet. Skriv inn telefonnummer manuelt.
+                            </div>
+                        `;
+                        suggestionsEl.classList.remove('hidden');
+                        return;
+                    }
+
+                    suggestionsEl.innerHTML = brukere.map(b => `
+                        <div class="px-4 py-3 hover:bg-warm-50 cursor-pointer border-b border-bark-100 last:border-0"
+                             onclick="selectUser('${b.telefon}', '${(b.fornavn + ' ' + b.etternavn).replace(/'/g, "\\'")}')">
+                            <div class="font-medium text-bark-800">${b.fornavn} ${b.etternavn}</div>
+                            <div class="text-xs text-bark-500">+47 ${b.telefon.slice(0,3)} ${b.telefon.slice(3,5)} ${b.telefon.slice(5)}</div>
+                        </div>
+                    `).join('');
+                    suggestionsEl.classList.remove('hidden');
+
+                } catch (err) {
+                    console.error('Søkefeil:', err);
+                }
+            }, 300);
+        }
+
+        function selectUser(telefon, navn) {
+            selectedRecipient = { telefon, navn };
+
+            document.getElementById('recipientName').value = navn;
+            document.getElementById('recipientPhone').value = telefon;
+            document.getElementById('recipientPhone').readOnly = true;
+            document.getElementById('selectedUserId').value = telefon;
+            document.getElementById('userSuggestions').classList.add('hidden');
+
+            const infoEl = document.getElementById('userMatchInfo');
+            infoEl.innerHTML = `<span class="text-green-600">&#10003; Registrert bruker funnet</span>`;
+            infoEl.classList.remove('hidden');
+        }
+
+        // Lukk suggestions når man klikker utenfor
+        document.addEventListener('click', (e) => {
+            const suggestionsEl = document.getElementById('userSuggestions');
+            const nameInput = document.getElementById('recipientName');
+            if (!suggestionsEl.contains(e.target) && e.target !== nameInput) {
+                suggestionsEl.classList.add('hidden');
+            }
+        });
 
         // Form submit
         document.getElementById('mandateForm').addEventListener('submit', async function(e) {

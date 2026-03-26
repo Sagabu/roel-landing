@@ -1115,6 +1115,52 @@ function runMemberMatching(klubbId) {
 }
 
 // ============================================
+// PRØVELEDER INVITASJON SMS
+// ============================================
+
+app.post("/api/sms/proveleder-invitasjon", async (c) => {
+  const body = await c.req.json();
+  const telefon = (body.telefon || "").replace(/\s/g, "");
+  const navn = body.navn || "";
+  const proveNavn = body.proveNavn || "en jaktprøve";
+
+  if (!telefon || telefon.length < 8) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+  if (!navn) {
+    return c.json({ error: "Navn er påkrevd" }, 400);
+  }
+
+  // Sjekk om mottaker er eksisterende bruker
+  const eksisterendeBruker = db.prepare("SELECT telefon, fornavn FROM brukere WHERE telefon = ?").get(telefon);
+
+  let smsMessage;
+  if (eksisterendeBruker) {
+    // Eksisterende bruker
+    smsMessage = `Hei ${eksisterendeBruker.fornavn || navn}! Du er satt opp som prøveleder for ${proveNavn}. Logg inn på fuglehundprove.no for å administrere prøven.`;
+  } else {
+    // Ny bruker - send invitasjon til å registrere seg
+    smsMessage = `Hei ${navn}! Du er invitert som prøveleder for ${proveNavn}. Opprett bruker på fuglehundprove.no/opprett-bruker.html for å komme i gang.`;
+  }
+
+  try {
+    const smsResult = await sendSMS(telefon, smsMessage, { type: "proveleder_invitasjon" });
+
+    if (!smsResult.success) {
+      console.error(`[Prøveleder-invit] SMS feilet til ${telefon}:`, smsResult.error);
+      return c.json({ error: smsResult.error || "Kunne ikke sende SMS" }, 500);
+    }
+
+    console.log(`[Prøveleder-invit] SMS sendt til ${telefon} (${eksisterendeBruker ? 'eksisterende' : 'ny'} bruker) for ${proveNavn}`);
+    return c.json({ success: true, message: "Invitasjon sendt" });
+
+  } catch (err) {
+    console.error(`[Prøveleder-invit] Feil:`, err);
+    return c.json({ error: "Feil ved sending av SMS" }, 500);
+  }
+});
+
+// ============================================
 // AUTH API ENDPOINTS
 // ============================================
 
@@ -5019,6 +5065,36 @@ app.post("/api/brukere/:telefon/fullmakter", async (c) => {
     JSON.stringify(body.permissions || ['run', 'results']),
     'active'
   );
+
+  // Hent info om giveren
+  const giver = db.prepare("SELECT fornavn, etternavn FROM brukere WHERE telefon = ?").get(telefon);
+  const giverNavn = giver ? `${giver.fornavn} ${giver.etternavn}` : 'En hundeeier';
+
+  // Send SMS til mottaker
+  if (body.recipientPhone) {
+    const recipientPhone = body.recipientPhone.replace(/\s/g, '');
+
+    // Sjekk om mottaker er eksisterende bruker
+    const eksisterendeBruker = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(recipientPhone);
+
+    let smsMessage;
+    if (eksisterendeBruker) {
+      // Eksisterende bruker - send enkel bekreftelse
+      smsMessage = `Hei! ${giverNavn} har gitt deg fullmakt til å stille med hunden ${body.dogName || 'deres hund'} på jaktprøver. Logg inn på fuglehundprove.no for detaljer.`;
+    } else {
+      // Ny bruker - send invitasjon til å registrere seg
+      smsMessage = `Hei! ${giverNavn} har gitt deg fullmakt til å stille med hunden ${body.dogName || 'deres hund'} på jaktprøver. Opprett bruker på fuglehundprove.no/opprett-bruker.html for å se fullmakten og melde på til prøver.`;
+    }
+
+    // Send SMS
+    try {
+      await sendSMS(recipientPhone, smsMessage);
+      console.log(`[Fullmakt] SMS sendt til ${recipientPhone} (${eksisterendeBruker ? 'eksisterende' : 'ny'} bruker)`);
+    } catch (smsError) {
+      console.error(`[Fullmakt] Kunne ikke sende SMS til ${recipientPhone}:`, smsError);
+      // Fortsett selv om SMS feiler
+    }
+  }
 
   return c.json({
     id: result.lastInsertRowid,

@@ -6320,6 +6320,16 @@
         // Kjør ved oppstart
         document.addEventListener('DOMContentLoaded', lastAutomatikkInnstillinger);
 
+        // Hent auth headers for API-kall
+        function getAuthHeaders() {
+            const token = localStorage.getItem('fuglehund_token') || localStorage.getItem('authToken');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            return headers;
+        }
+
         // Lagre prøvedetaljer til server
         async function saveTrialDetails() {
             const trialName = document.getElementById('trialName')?.value?.trim() || '';
@@ -6340,7 +6350,7 @@
                 // Lagre prøvedetaljer
                 const resp = await fetch('/api/trial', {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         name: trialName,
                         start_date: trialDate,
@@ -6384,11 +6394,18 @@
                     alert('Prøvedetaljer lagret!');
                     updateTrialDetailsStatus();
                 } else {
-                    alert('Kunne ikke lagre prøvedetaljer');
+                    const errorData = await resp.json().catch(() => ({}));
+                    if (resp.status === 401) {
+                        alert('Du må være logget inn for å lagre prøvedetaljer. Logg inn på nytt.');
+                    } else if (resp.status === 403) {
+                        alert('Du har ikke tilgang til å endre prøvedetaljer. Kontakt administrator.');
+                    } else {
+                        alert('Kunne ikke lagre prøvedetaljer: ' + (errorData.error || 'Ukjent feil'));
+                    }
                 }
             } catch (err) {
                 console.error('Feil ved lagring:', err);
-                alert('Kunne ikke lagre prøvedetaljer');
+                alert('Kunne ikke lagre prøvedetaljer: ' + err.message);
             }
         }
 
@@ -6412,7 +6429,7 @@
                 // Lagre prøvedetaljer
                 const resp = await fetch('/api/trial', {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         name: trialName,
                         start_date: trialDate,
@@ -6457,11 +6474,18 @@
                     // Naviger til opplasting (last opp deltakere)
                     showSection('opplasting');
                 } else {
-                    alert('Kunne ikke lagre prøvedetaljer');
+                    const errorData = await resp.json().catch(() => ({}));
+                    if (resp.status === 401) {
+                        alert('Du må være logget inn for å lagre prøvedetaljer. Logg inn på nytt.');
+                    } else if (resp.status === 403) {
+                        alert('Du har ikke tilgang til å endre prøvedetaljer. Kontakt administrator.');
+                    } else {
+                        alert('Kunne ikke lagre prøvedetaljer: ' + (errorData.error || 'Ukjent feil'));
+                    }
                 }
             } catch (err) {
                 console.error('Feil ved lagring:', err);
-                alert('Kunne ikke lagre prøvedetaljer');
+                alert('Kunne ikke lagre prøvedetaljer: ' + err.message);
             }
         }
 

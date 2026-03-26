@@ -2340,8 +2340,34 @@
             }
 
             if (trialId) {
+                // Først, prøv å hente fra localStorage
                 const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
-                const trial = trials.find(t => t.id === trialId);
+                let trial = trials.find(t => t.id === trialId);
+
+                // Hvis ikke i localStorage, hent fra API
+                if (!trial) {
+                    try {
+                        const resp = await fetch(`/api/prover/${trialId}`);
+                        if (resp.ok) {
+                            const apiTrial = await resp.json();
+                            // Konverter API-format til localStorage-format
+                            trial = {
+                                id: apiTrial.id,
+                                name: apiTrial.navn,
+                                startDate: apiTrial.start_dato,
+                                endDate: apiTrial.slutt_dato,
+                                location: apiTrial.sted,
+                                club: { name: apiTrial.klubb_navn || '' },
+                                classes: apiTrial.klasser
+                            };
+                            // Lagre i localStorage for fremtidig bruk
+                            trials.push(trial);
+                            localStorage.setItem('clubTrials', JSON.stringify(trials));
+                        }
+                    } catch (e) {
+                        console.error('Kunne ikke hente prøve fra API:', e);
+                    }
+                }
 
                 if (trial) {
                     // Update page title
@@ -6412,7 +6438,8 @@
         // Lagre prøvedetaljer og gå til neste side (last opp deltakere)
         async function saveTrialDetailsAndContinue() {
             const trialName = document.getElementById('trialName')?.value?.trim() || '';
-            const trialDate = document.getElementById('trialDateFrom')?.value || '';
+            const trialDateFrom = document.getElementById('trialDateFrom')?.value || '';
+            const trialDateTo = document.getElementById('trialDateTo')?.value || trialDateFrom;
             const trialLocation = document.getElementById('trialLocation')?.value?.trim() || '';
             const organizerName = document.getElementById('organizerName')?.value?.trim() || '';
 
@@ -6420,25 +6447,103 @@
                 alert('Prøvenavn er påkrevd');
                 return;
             }
-            if (!trialDate) {
+            if (!trialDateFrom) {
                 alert('Dato er påkrevd');
                 return;
             }
 
             try {
-                // Lagre prøvedetaljer
-                const resp = await fetch('/api/trial', {
-                    method: 'PUT',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({
-                        name: trialName,
-                        start_date: trialDate,
-                        location: trialLocation,
-                        organizing_club: organizerName
-                    })
-                });
+                // Hent eksisterende prøve-ID fra URL eller localStorage
+                const urlParams = new URLSearchParams(window.location.search);
+                let trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
 
-                // Lagre praktisk info samtidig
+                // Hent klubb-ID fra userSession
+                const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+                const klubbId = localStorage.getItem('currentKlubbId') || userSession.clubId || null;
+
+                // Sjekk om prøven allerede eksisterer i prover-tabellen
+                let proverResp;
+                if (trialId) {
+                    // Forsøk å oppdatere eksisterende prøve
+                    proverResp = await fetch(`/api/prover/${trialId}`, {
+                        method: 'PUT',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            navn: trialName,
+                            sted: trialLocation,
+                            start_dato: trialDateFrom,
+                            slutt_dato: trialDateTo,
+                            klubb_id: klubbId
+                        })
+                    });
+
+                    // Hvis prøven ikke finnes (404), opprett ny
+                    if (proverResp.status === 404) {
+                        trialId = null;
+                    }
+                }
+
+                // Hvis ingen eksisterende prøve, opprett ny
+                if (!trialId) {
+                    proverResp = await fetch('/api/prover', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            navn: trialName,
+                            sted: trialLocation,
+                            start_dato: trialDateFrom,
+                            slutt_dato: trialDateTo,
+                            klubb_id: klubbId,
+                            klasser: { uk: true, ak: true, vk: true }
+                        })
+                    });
+
+                    if (proverResp.ok) {
+                        const data = await proverResp.json();
+                        trialId = data.id;
+                        // Oppdater URL med ny prøve-ID
+                        const newUrl = new URL(window.location);
+                        newUrl.searchParams.set('trial', trialId);
+                        window.history.replaceState({}, '', newUrl);
+                    }
+                }
+
+                if (!proverResp.ok) {
+                    const errorData = await proverResp.json().catch(() => ({}));
+                    if (proverResp.status === 401) {
+                        alert('Du må være logget inn for å lagre prøvedetaljer. Logg inn på nytt.');
+                        return;
+                    } else if (proverResp.status === 403) {
+                        alert('Du har ikke tilgang til å endre prøvedetaljer. Kontakt administrator.');
+                        return;
+                    } else {
+                        alert('Kunne ikke lagre prøve: ' + (errorData.error || 'Ukjent feil'));
+                        return;
+                    }
+                }
+
+                // Lagre prøve-ID i localStorage
+                localStorage.setItem('currentTrialId', trialId);
+
+                // Oppdater også clubTrials i localStorage for bakoverkompatibilitet
+                const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
+                const existingIndex = trials.findIndex(t => t.id === trialId);
+                const trialData = {
+                    id: trialId,
+                    name: trialName,
+                    startDate: trialDateFrom,
+                    endDate: trialDateTo,
+                    location: trialLocation,
+                    club: { name: organizerName }
+                };
+                if (existingIndex >= 0) {
+                    trials[existingIndex] = { ...trials[existingIndex], ...trialData };
+                } else {
+                    trials.push(trialData);
+                }
+                localStorage.setItem('clubTrials', JSON.stringify(trials));
+
+                // Lagre praktisk info
                 const praktiskInfo = {
                     oppropSted: document.getElementById('oppropSted')?.value || '',
                     sekretariatApner: document.getElementById('sekretariatApner')?.value || '',
@@ -6469,20 +6574,23 @@
                     body: JSON.stringify({ value: praktiskInfo })
                 });
 
-                if (resp.ok) {
-                    updateTrialDetailsStatus();
-                    // Naviger til opplasting (last opp deltakere)
-                    showSection('opplasting');
-                } else {
-                    const errorData = await resp.json().catch(() => ({}));
-                    if (resp.status === 401) {
-                        alert('Du må være logget inn for å lagre prøvedetaljer. Logg inn på nytt.');
-                    } else if (resp.status === 403) {
-                        alert('Du har ikke tilgang til å endre prøvedetaljer. Kontakt administrator.');
-                    } else {
-                        alert('Kunne ikke lagre prøvedetaljer: ' + (errorData.error || 'Ukjent feil'));
-                    }
+                // Oppdater header med prøvenavn og dato
+                const headerTitle = document.querySelector('main h1.text-3xl');
+                if (headerTitle) {
+                    headerTitle.textContent = trialName;
                 }
+                const headerSub = document.querySelector('main h1.text-3xl + p');
+                if (headerSub) {
+                    const startDate = new Date(trialDateFrom);
+                    const formattedDate = startDate.toLocaleDateString('nb-NO', {
+                        day: 'numeric', month: 'long', year: 'numeric'
+                    });
+                    headerSub.textContent = formattedDate + ' - ' + trialLocation;
+                }
+
+                updateTrialDetailsStatus();
+                // Naviger til opplasting (last opp deltakere)
+                showSection('opplasting');
             } catch (err) {
                 console.error('Feil ved lagring:', err);
                 alert('Kunne ikke lagre prøvedetaljer: ' + err.message);

@@ -33,6 +33,10 @@
             body { background: white; }
             .print-break { page-break-before: always; }
         }
+        .collapsed .avvik-content,
+        .collapsed .vet-content { display: none; }
+        .collapsed .expand-icon { transform: rotate(0deg); }
+        .expanded .expand-icon { transform: rotate(180deg); }
     </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
@@ -86,7 +90,7 @@
                 </div>
                 <div>
                     <label class="block text-sm text-bark-500 mb-1">Dyrevelferdskontrollør (DVK)</label>
-                    <input type="text" id="dvkNavn" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none bg-bark-50" placeholder="Ditt fulle navn">
+                    <input type="text" id="dvkNavn" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none bg-bark-50" placeholder="Ditt fulle navn" oninput="oppdaterDvkInitialer()">
                 </div>
                 <div class="md:col-span-2">
                     <label class="block text-sm text-bark-500 mb-1">Evt. DVK-assistent</label>
@@ -104,7 +108,7 @@
                     </svg>
                     Kontrollpunkter
                 </h2>
-                <p class="text-sm text-bark-500 mt-1">Registrer antall kontrollerte, hvem som kontrollerte, og om det var OK eller avvik.</p>
+                <p class="text-sm text-bark-500 mt-1">Registrer antall kontrollerte, hvem som kontrollerte (initialer), og om det var OK eller avvik.</p>
             </div>
 
             <div class="overflow-x-auto">
@@ -113,7 +117,7 @@
                         <tr>
                             <th class="text-left px-4 py-3 font-semibold text-bark-700">Kontroll av:</th>
                             <th class="text-center px-4 py-3 font-semibold text-bark-700 w-28">Antall</th>
-                            <th class="text-center px-4 py-3 font-semibold text-bark-700 w-32">Kontrollert av</th>
+                            <th class="text-center px-4 py-3 font-semibold text-bark-700 w-36">Kontrollert av (init.)</th>
                             <th class="text-center px-4 py-3 font-semibold text-bark-700 w-32">Status</th>
                         </tr>
                     </thead>
@@ -137,11 +141,53 @@
             </div>
 
             <div class="p-6">
-                <div id="avvikListe" class="space-y-4 mb-4">
-                    <!-- Avvik legges til her -->
+                <div id="avvikListe" class="space-y-3 mb-4">
+                    <!-- Lagrede avvik vises her (minimert) -->
                 </div>
 
-                <button onclick="leggTilAvvik()" class="w-full border-2 border-dashed border-bark-200 rounded-xl py-4 text-bark-500 hover:border-forest-400 hover:text-forest-600 transition flex items-center justify-center gap-2">
+                <!-- Aktivt avvik-skjema -->
+                <div id="aktivtAvvikSkjema" class="hidden">
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                        <div class="flex justify-between items-start mb-3">
+                            <h4 class="font-semibold text-red-800">Nytt avvik</h4>
+                        </div>
+                        <div class="grid md:grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Hundeeier/fører</label>
+                                <input type="text" id="nyAvvik_eier" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="Navn og kontaktinfo">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Hund (navn og chipnr)</label>
+                                <input type="text" id="nyAvvik_hund" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="Hundens navn, reg.nr/chip">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Sted og tid</label>
+                                <input type="text" id="nyAvvik_stedtid" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="F.eks. Parti 3, kl 10:30">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Vitner</label>
+                                <input type="text" id="nyAvvik_vitner" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="Navn på vitner">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-xs text-red-700 mb-1">Beskrivelse av hendelsen</label>
+                            <textarea id="nyAvvik_beskrivelse" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" rows="3" placeholder="Detaljert beskrivelse av hendelsen og eventuelle tiltak iverksatt..."></textarea>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="lagreAvvik()" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Lagre avvik
+                            </button>
+                            <button onclick="avbrytAvvik()" class="px-4 py-2 border border-bark-200 rounded-lg text-bark-600 hover:bg-bark-50 transition">
+                                Avbryt
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="leggTilAvvikBtn" onclick="visAvvikSkjema()" class="w-full border-2 border-dashed border-bark-200 rounded-xl py-4 text-bark-500 hover:border-red-400 hover:text-red-600 transition flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                     </svg>
@@ -163,11 +209,49 @@
             </div>
 
             <div class="p-6">
-                <div id="vetHenvisninger" class="space-y-4 mb-4">
-                    <!-- Henvisninger legges til her -->
+                <div id="vetHenvisninger" class="space-y-3 mb-4">
+                    <!-- Lagrede henvisninger vises her (minimert) -->
                 </div>
 
-                <button onclick="leggTilVetHenvisning()" class="w-full border-2 border-dashed border-bark-200 rounded-xl py-4 text-bark-500 hover:border-amber-400 hover:text-amber-600 transition flex items-center justify-center gap-2">
+                <!-- Aktivt vet-skjema -->
+                <div id="aktivtVetSkjema" class="hidden">
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                        <div class="flex justify-between items-start mb-3">
+                            <h4 class="font-semibold text-amber-800">Ny henvisning</h4>
+                        </div>
+                        <div class="grid md:grid-cols-3 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs text-amber-700 mb-1">Eiers navn</label>
+                                <input type="text" id="nyVet_eier" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="Hundeeiers navn">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-amber-700 mb-1">Hundens navn</label>
+                                <input type="text" id="nyVet_hund" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="Hundens navn">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-amber-700 mb-1">Reg.nr</label>
+                                <input type="text" id="nyVet_regnr" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="NO12345/24">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-xs text-amber-700 mb-1">Årsak til henvisning</label>
+                            <input type="text" id="nyVet_arsak" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="Beskriv årsaken til henvisningen">
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="lagreVetHenvisning()" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Lagre henvisning
+                            </button>
+                            <button onclick="avbrytVet()" class="px-4 py-2 border border-bark-200 rounded-lg text-bark-600 hover:bg-bark-50 transition">
+                                Avbryt
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="leggTilVetBtn" onclick="visVetSkjema()" class="w-full border-2 border-dashed border-bark-200 rounded-xl py-4 text-bark-500 hover:border-amber-400 hover:text-amber-600 transition flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                     </svg>
@@ -254,8 +338,10 @@
             { id: 'handtering', navn: 'Håndtering av hunder', kategori: 'handtering' }
         ];
 
-        let avvikTeller = 0;
-        let vetTeller = 0;
+        // Lagrede avvik og vet-henvisninger
+        let lagredeAvvik = [];
+        let lagredeVetHenvisninger = [];
+        let dvkInitialer = '';
 
         // Initialiser siden
         document.addEventListener('DOMContentLoaded', function() {
@@ -294,6 +380,20 @@
             }
         }
 
+        function oppdaterDvkInitialer() {
+            const dvkNavn = document.getElementById('dvkNavn').value;
+            if (dvkNavn) {
+                dvkInitialer = dvkNavn.split(' ').map(n => n.charAt(0).toUpperCase()).join('');
+                // Oppdater alle kontrollert av-felter som er tomme
+                kontrollpunkter.forEach(kp => {
+                    const el = document.getElementById(`kontrollertAv_${kp.id}`);
+                    if (el && !el.value) {
+                        el.value = dvkInitialer;
+                    }
+                });
+            }
+        }
+
         function byggKontrollTabell() {
             const tbody = document.getElementById('kontrollTabell');
             tbody.innerHTML = kontrollpunkter.map(kp => `
@@ -302,7 +402,7 @@
                     <td class="px-4 py-3 text-center">
                         <input type="number" min="0" id="antall_${kp.id}"
                             class="w-20 px-2 py-1 text-center rounded-lg border border-bark-200 focus:border-forest-500 outline-none"
-                            placeholder="0">
+                            placeholder="0" onchange="oppdaterStatistikk()">
                     </td>
                     <td class="px-4 py-3 text-center">
                         <input type="text" id="kontrollertAv_${kp.id}"
@@ -322,96 +422,198 @@
             `).join('');
         }
 
-        function leggTilAvvik() {
-            avvikTeller++;
+        // ===== AVVIK-FUNKSJONER =====
+        function visAvvikSkjema() {
+            document.getElementById('aktivtAvvikSkjema').classList.remove('hidden');
+            document.getElementById('leggTilAvvikBtn').classList.add('hidden');
+            document.getElementById('nyAvvik_eier').focus();
+        }
+
+        function avbrytAvvik() {
+            document.getElementById('aktivtAvvikSkjema').classList.add('hidden');
+            document.getElementById('leggTilAvvikBtn').classList.remove('hidden');
+            // Tøm skjemaet
+            document.getElementById('nyAvvik_eier').value = '';
+            document.getElementById('nyAvvik_hund').value = '';
+            document.getElementById('nyAvvik_stedtid').value = '';
+            document.getElementById('nyAvvik_vitner').value = '';
+            document.getElementById('nyAvvik_beskrivelse').value = '';
+        }
+
+        function lagreAvvik() {
+            const avvik = {
+                id: Date.now(),
+                eier: document.getElementById('nyAvvik_eier').value,
+                hund: document.getElementById('nyAvvik_hund').value,
+                stedTid: document.getElementById('nyAvvik_stedtid').value,
+                vitner: document.getElementById('nyAvvik_vitner').value,
+                beskrivelse: document.getElementById('nyAvvik_beskrivelse').value
+            };
+
+            if (!avvik.eier && !avvik.hund && !avvik.beskrivelse) {
+                alert('Vennligst fyll inn minst ett felt.');
+                return;
+            }
+
+            lagredeAvvik.push(avvik);
+            visLagredeAvvik();
+            avbrytAvvik();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        function visLagredeAvvik() {
             const container = document.getElementById('avvikListe');
-            const div = document.createElement('div');
-            div.id = `avvik_${avvikTeller}`;
-            div.className = 'bg-red-50 border border-red-200 rounded-xl p-4';
-            div.innerHTML = `
-                <div class="flex justify-between items-start mb-3">
-                    <h4 class="font-semibold text-red-800">Avvik #${avvikTeller}</h4>
-                    <button onclick="fjernAvvik(${avvikTeller})" class="text-red-400 hover:text-red-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
+            if (lagredeAvvik.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = lagredeAvvik.map((avvik, index) => `
+                <div class="bg-red-50 border border-red-200 rounded-xl overflow-hidden" id="lagretAvvik_${avvik.id}">
+                    <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-red-100 transition" onclick="toggleAvvik(${avvik.id})">
+                        <div class="flex items-center gap-3">
+                            <span class="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded">#${index + 1}</span>
+                            <div>
+                                <span class="font-medium text-red-800">${avvik.hund || 'Ukjent hund'}</span>
+                                <span class="text-red-600 text-sm ml-2">${avvik.stedTid || ''}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="event.stopPropagation(); slettAvvik(${avvik.id})" class="text-red-400 hover:text-red-600 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                            <svg class="w-5 h-5 text-red-400 expand-icon transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="avvik-content hidden px-4 pb-4 border-t border-red-200 pt-3">
+                        <div class="grid md:grid-cols-2 gap-2 text-sm">
+                            <div><span class="text-red-600">Eier/fører:</span> ${avvik.eier || '-'}</div>
+                            <div><span class="text-red-600">Hund:</span> ${avvik.hund || '-'}</div>
+                            <div><span class="text-red-600">Sted/tid:</span> ${avvik.stedTid || '-'}</div>
+                            <div><span class="text-red-600">Vitner:</span> ${avvik.vitner || '-'}</div>
+                        </div>
+                        ${avvik.beskrivelse ? `<div class="mt-2 text-sm"><span class="text-red-600">Beskrivelse:</span> ${avvik.beskrivelse}</div>` : ''}
+                    </div>
                 </div>
-                <div class="grid md:grid-cols-2 gap-3 mb-3">
-                    <div>
-                        <label class="block text-xs text-red-700 mb-1">Hundeeier/fører</label>
-                        <input type="text" class="avvik-eier w-full px-3 py-2 rounded-lg border border-red-200 text-sm" placeholder="Navn og kontaktinfo">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-red-700 mb-1">Hund (navn og chipnr)</label>
-                        <input type="text" class="avvik-hund w-full px-3 py-2 rounded-lg border border-red-200 text-sm" placeholder="Hundens navn, reg.nr/chip">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-red-700 mb-1">Sted og tid</label>
-                        <input type="text" class="avvik-stedtid w-full px-3 py-2 rounded-lg border border-red-200 text-sm" placeholder="F.eks. Parti 3, kl 10:30">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-red-700 mb-1">Vitner</label>
-                        <input type="text" class="avvik-vitner w-full px-3 py-2 rounded-lg border border-red-200 text-sm" placeholder="Navn på vitner">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs text-red-700 mb-1">Beskrivelse av hendelsen</label>
-                    <textarea class="avvik-beskrivelse w-full px-3 py-2 rounded-lg border border-red-200 text-sm" rows="3" placeholder="Detaljert beskrivelse av hendelsen og eventuelle tiltak iverksatt..."></textarea>
-                </div>
-            `;
-            container.appendChild(div);
-            oppdaterStatistikk();
+            `).join('');
         }
 
-        function fjernAvvik(id) {
-            document.getElementById(`avvik_${id}`)?.remove();
-            oppdaterStatistikk();
+        function toggleAvvik(id) {
+            const el = document.getElementById(`lagretAvvik_${id}`);
+            const content = el.querySelector('.avvik-content');
+            const icon = el.querySelector('.expand-icon');
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
         }
 
-        function leggTilVetHenvisning() {
-            vetTeller++;
+        function slettAvvik(id) {
+            if (!confirm('Er du sikker på at du vil slette dette avviket?')) return;
+            lagredeAvvik = lagredeAvvik.filter(a => a.id !== id);
+            visLagredeAvvik();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        // ===== VET-HENVISNING FUNKSJONER =====
+        function visVetSkjema() {
+            document.getElementById('aktivtVetSkjema').classList.remove('hidden');
+            document.getElementById('leggTilVetBtn').classList.add('hidden');
+            document.getElementById('nyVet_eier').focus();
+        }
+
+        function avbrytVet() {
+            document.getElementById('aktivtVetSkjema').classList.add('hidden');
+            document.getElementById('leggTilVetBtn').classList.remove('hidden');
+            // Tøm skjemaet
+            document.getElementById('nyVet_eier').value = '';
+            document.getElementById('nyVet_hund').value = '';
+            document.getElementById('nyVet_regnr').value = '';
+            document.getElementById('nyVet_arsak').value = '';
+        }
+
+        function lagreVetHenvisning() {
+            const henvisning = {
+                id: Date.now(),
+                eier: document.getElementById('nyVet_eier').value,
+                hund: document.getElementById('nyVet_hund').value,
+                regnr: document.getElementById('nyVet_regnr').value,
+                arsak: document.getElementById('nyVet_arsak').value
+            };
+
+            if (!henvisning.eier && !henvisning.hund) {
+                alert('Vennligst fyll inn minst eier eller hundens navn.');
+                return;
+            }
+
+            lagredeVetHenvisninger.push(henvisning);
+            visLagredeVetHenvisninger();
+            avbrytVet();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        function visLagredeVetHenvisninger() {
             const container = document.getElementById('vetHenvisninger');
-            const div = document.createElement('div');
-            div.id = `vet_${vetTeller}`;
-            div.className = 'bg-amber-50 border border-amber-200 rounded-xl p-4';
-            div.innerHTML = `
-                <div class="flex justify-between items-start mb-3">
-                    <h4 class="font-semibold text-amber-800">Henvisning #${vetTeller}</h4>
-                    <button onclick="fjernVetHenvisning(${vetTeller})" class="text-amber-400 hover:text-amber-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="grid md:grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-xs text-amber-700 mb-1">Eiers navn</label>
-                        <input type="text" class="vet-eier w-full px-3 py-2 rounded-lg border border-amber-200 text-sm" placeholder="Hundeeiers navn">
+            if (lagredeVetHenvisninger.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = lagredeVetHenvisninger.map((h, index) => `
+                <div class="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden" id="lagretVet_${h.id}">
+                    <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-amber-100 transition" onclick="toggleVet(${h.id})">
+                        <div class="flex items-center gap-3">
+                            <span class="bg-amber-600 text-white text-xs font-bold px-2 py-1 rounded">#${index + 1}</span>
+                            <div>
+                                <span class="font-medium text-amber-800">${h.hund || 'Ukjent hund'}</span>
+                                <span class="text-amber-600 text-sm ml-2">${h.regnr || ''}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="event.stopPropagation(); slettVet(${h.id})" class="text-amber-400 hover:text-amber-600 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                            <svg class="w-5 h-5 text-amber-400 expand-icon transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs text-amber-700 mb-1">Hundens navn</label>
-                        <input type="text" class="vet-hund w-full px-3 py-2 rounded-lg border border-amber-200 text-sm" placeholder="Hundens navn">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-amber-700 mb-1">Reg.nr</label>
-                        <input type="text" class="vet-regnr w-full px-3 py-2 rounded-lg border border-amber-200 text-sm" placeholder="NO12345/24">
+                    <div class="vet-content hidden px-4 pb-4 border-t border-amber-200 pt-3">
+                        <div class="grid md:grid-cols-2 gap-2 text-sm">
+                            <div><span class="text-amber-600">Eier:</span> ${h.eier || '-'}</div>
+                            <div><span class="text-amber-600">Hund:</span> ${h.hund || '-'}</div>
+                            <div><span class="text-amber-600">Reg.nr:</span> ${h.regnr || '-'}</div>
+                            <div><span class="text-amber-600">Årsak:</span> ${h.arsak || '-'}</div>
+                        </div>
                     </div>
                 </div>
-                <div class="mt-3">
-                    <label class="block text-xs text-amber-700 mb-1">Årsak til henvisning</label>
-                    <input type="text" class="vet-arsak w-full px-3 py-2 rounded-lg border border-amber-200 text-sm" placeholder="Beskriv årsaken til henvisningen">
-                </div>
-            `;
-            container.appendChild(div);
-            oppdaterStatistikk();
+            `).join('');
         }
 
-        function fjernVetHenvisning(id) {
-            document.getElementById(`vet_${id}`)?.remove();
-            oppdaterStatistikk();
+        function toggleVet(id) {
+            const el = document.getElementById(`lagretVet_${id}`);
+            const content = el.querySelector('.vet-content');
+            const icon = el.querySelector('.expand-icon');
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
         }
 
+        function slettVet(id) {
+            if (!confirm('Er du sikker på at du vil slette denne henvisningen?')) return;
+            lagredeVetHenvisninger = lagredeVetHenvisninger.filter(h => h.id !== id);
+            visLagredeVetHenvisninger();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        // ===== STATISTIKK OG LAGRING =====
         function oppdaterStatistikk() {
             let totalt = 0;
             let ok = 0;
@@ -427,20 +629,17 @@
             });
 
             // Legg til avvik fra avvikslisten
-            avvik += document.querySelectorAll('#avvikListe > div').length;
-
-            const vetHenvisninger = document.querySelectorAll('#vetHenvisninger > div').length;
+            avvik += lagredeAvvik.length;
 
             document.getElementById('statKontrollert').textContent = totalt;
             document.getElementById('statOK').textContent = ok;
             document.getElementById('statAvvik').textContent = avvik;
-            document.getElementById('statVet').textContent = vetHenvisninger;
+            document.getElementById('statVet').textContent = lagredeVetHenvisninger.length;
         }
 
         function autoSave() {
             const data = samleInnData();
             localStorage.setItem('dvkJournal', JSON.stringify(data));
-            // TODO: Synkroniser med server
         }
 
         function loadSavedData() {
@@ -452,7 +651,10 @@
                     if (data.proveName) document.getElementById('proveName').value = data.proveName;
                     if (data.arrangorSted) document.getElementById('arrangorSted').value = data.arrangorSted;
                     if (data.proveDato) document.getElementById('proveDato').value = data.proveDato;
-                    if (data.dvkNavn) document.getElementById('dvkNavn').value = data.dvkNavn;
+                    if (data.dvkNavn) {
+                        document.getElementById('dvkNavn').value = data.dvkNavn;
+                        oppdaterDvkInitialer();
+                    }
                     if (data.dvkAssistent) document.getElementById('dvkAssistent').value = data.dvkAssistent;
 
                     // Fyll inn kontrollpunkter
@@ -466,6 +668,21 @@
                             if (avEl && kp.kontrollertAv) avEl.value = kp.kontrollertAv;
                             if (statusEl && kp.status) statusEl.value = kp.status;
                         });
+                    }
+
+                    // Last avvik og vet-henvisninger
+                    if (data.avvik && Array.isArray(data.avvik)) {
+                        lagredeAvvik = data.avvik;
+                        visLagredeAvvik();
+                    }
+                    if (data.vetHenvisninger && Array.isArray(data.vetHenvisninger)) {
+                        lagredeVetHenvisninger = data.vetHenvisninger;
+                        visLagredeVetHenvisninger();
+                    }
+
+                    // Signatur
+                    if (data.signatur && data.signatur.fullSignatur) {
+                        document.getElementById('dvkSignStatus').innerHTML = `<span class="text-green-600">Signert: ${data.signatur.fullSignatur}</span>`;
                     }
 
                     oppdaterStatistikk();
@@ -485,29 +702,6 @@
                 };
             });
 
-            // Samle avvik
-            const avvikListe = [];
-            document.querySelectorAll('#avvikListe > div').forEach(div => {
-                avvikListe.push({
-                    eier: div.querySelector('.avvik-eier')?.value || '',
-                    hund: div.querySelector('.avvik-hund')?.value || '',
-                    stedTid: div.querySelector('.avvik-stedtid')?.value || '',
-                    vitner: div.querySelector('.avvik-vitner')?.value || '',
-                    beskrivelse: div.querySelector('.avvik-beskrivelse')?.value || ''
-                });
-            });
-
-            // Samle vet-henvisninger
-            const vetListe = [];
-            document.querySelectorAll('#vetHenvisninger > div').forEach(div => {
-                vetListe.push({
-                    eier: div.querySelector('.vet-eier')?.value || '',
-                    hund: div.querySelector('.vet-hund')?.value || '',
-                    regnr: div.querySelector('.vet-regnr')?.value || '',
-                    arsak: div.querySelector('.vet-arsak')?.value || ''
-                });
-            });
-
             return {
                 proveName: document.getElementById('proveName').value,
                 arrangorSted: document.getElementById('arrangorSted').value,
@@ -515,8 +709,8 @@
                 dvkNavn: document.getElementById('dvkNavn').value,
                 dvkAssistent: document.getElementById('dvkAssistent').value,
                 kontroller: kontroller,
-                avvik: avvikListe,
-                vetHenvisninger: vetListe
+                avvik: lagredeAvvik,
+                vetHenvisninger: lagredeVetHenvisninger
             };
         }
 
@@ -544,8 +738,7 @@
                 fullSignatur: signaturTekst
             };
 
-            // TODO: Send til server via API
-            // For nå, lagre lokalt
+            // Lagre lokalt
             localStorage.setItem('dvkJournal', JSON.stringify(journalData));
 
             document.getElementById('dvkSignStatus').innerHTML = `<span class="text-green-600">Signert: ${signaturTekst}</span>`;

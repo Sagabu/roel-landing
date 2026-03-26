@@ -4925,10 +4925,13 @@
                             for (const dog of dogs) {
                                 // Unngå duplikater
                                 if ((dog.critique || dog.critiqueStatus) && !kritikker.find(k => k.id === dog.id && k.name === dog.name)) {
+                                    // Prøv å utlede dag fra nøkkelnavn (f.eks. ukak1 -> Dag 1, vk2 -> Dag 2)
+                                    const dagMatch = key.match(/(\d+)$/);
+                                    const dagNr = dagMatch ? dagMatch[1] : '1';
                                     kritikker.push({
                                         ...dog,
                                         partyName: key.replace('judgeData_', ''),
-                                        dag: key.includes('vk') ? 'VK' : 'Dag 1/2'
+                                        dag: `Dag ${dagNr}`
                                     });
                                 }
                             }
@@ -4946,20 +4949,26 @@
             const select = document.getElementById('kritikkDagSelect');
             const dager = new Set();
 
-            // Finn unike dager
+            // Finn unike dager fra partier
             parties.forEach(p => {
                 if (p.dag) dager.add(p.dag);
             });
 
-            // Legg til standard dager hvis ingen finnes
+            // Hvis ingen dager fra partier, bruk antall dager fra prøvekonfigurasjon
             if (dager.size === 0) {
-                dager.add('Dag 1');
-                dager.add('Dag 2');
-                dager.add('VK-dag');
+                const antallDager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
+                for (let i = 1; i <= antallDager; i++) {
+                    dager.add(`Dag ${i}`);
+                }
             }
 
             select.innerHTML = '<option value="">Velg dag...</option>';
-            Array.from(dager).sort().forEach(dag => {
+            // Sorter dager numerisk (Dag 1, Dag 2, Dag 3, etc.)
+            Array.from(dager).sort((a, b) => {
+                const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                return numA - numB;
+            }).forEach(dag => {
                 select.innerHTML += `<option value="${dag}">${dag}</option>`;
             });
 

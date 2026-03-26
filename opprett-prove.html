@@ -814,23 +814,45 @@
             // Set as current active trial
             localStorage.setItem('currentTrialId', trialId);
 
-            // Update API
-            fetch('/api/trial', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+            // Get auth token
+            const token = localStorage.getItem('fuglehund_token') || localStorage.getItem('authToken');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            // Build klasser object for API
+            const klasserObj = {
+                uk: trialData.classes.UK.enabled,
+                ak: trialData.classes.AK.enabled,
+                vk: trialData.classes.VK !== null
+            };
+
+            // Create trial in prover table via API
+            fetch('/api/prover', {
+                method: 'POST',
+                headers: headers,
                 body: JSON.stringify({
-                    name: trialData.name,
-                    location: trialData.location,
-                    start_date: trialData.startDate,
-                    end_date: trialData.endDate,
-                    published: false
+                    navn: trialData.name,
+                    sted: trialData.location,
+                    start_dato: trialData.startDate,
+                    slutt_dato: trialData.endDate,
+                    klubb_id: currentUser?.clubId || null,
+                    klasser: klasserObj
                 })
-            }).then(() => {
+            }).then(resp => {
+                if (!resp.ok) {
+                    throw new Error('Kunne ikke opprette prøve');
+                }
+                return resp.json();
+            }).then(data => {
+                // Store the server-generated ID
+                localStorage.setItem('currentTrialId', data.id);
                 // Redirect to admin page with the new trial ID
-                window.location.href = 'admin.html?trial=' + trialId;
-            }).catch(() => {
-                // Still redirect even if API fails
-                window.location.href = 'admin.html?trial=' + trialId;
+                window.location.href = 'admin.html?trial=' + data.id;
+            }).catch(err => {
+                console.error('Feil ved opprettelse:', err);
+                alert('Kunne ikke opprette prøve. Sjekk at du er logget inn med riktig tilgang.');
             });
         }
     </script>

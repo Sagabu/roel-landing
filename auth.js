@@ -181,6 +181,7 @@ const FuglehundAuth = (function() {
         name,
         loggedInAt,
         isTrialAdmin: !!userData.klubbAdmin,
+        clubId: userData.klubbAdmin?.klubb_id || null,
         clubName: userData.klubbAdmin?.klubb_navn || null,
         clubRole: userData.klubbAdmin?.klubb_rolle || null
       };

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dommerforespørsler - Fuglehundprøve</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        forest: { 50: '#f6f7f4', 100: '#e3e7dc', 200: '#c7d0ba', 300: '#a4b391', 400: '#839770', 500: '#657a53', 600: '#4f6040', 700: '#3f4c34', 800: '#343e2d', 900: '#2c3526', 950: '#151a12' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+
+    <!-- Header -->
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="admin.html" class="flex items-center gap-2 hover:opacity-80 transition">
+                        <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                        <span class="font-serif font-bold">Dommerforespørsler</span>
+                    </a>
+                </div>
+                <div class="flex items-center gap-3">
+                    <a href="admin.html" class="text-bark-200 hover:text-white text-sm font-medium transition">← Tilbake</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <!-- Prøvevalg -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4">Velg prøve</h2>
+            <select id="proveSelect" onchange="loadForesporsler()" class="w-full md:w-auto px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none">
+                <option value="">-- Velg prøve --</option>
+            </select>
+        </div>
+
+        <!-- Ny forespørsel -->
+        <div id="nyForesporselSection" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+                Send ny dommerforespørsel
+            </h2>
+
+            <div class="grid md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-bark-600 mb-1">Søk FKF-godkjent dommer</label>
+                    <input type="text" id="dommerSok" placeholder="Skriv navn eller telefon..."
+                        class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none"
+                        oninput="sokDommere(this.value)">
+                    <div id="dommerResultater" class="mt-2 space-y-1 max-h-48 overflow-y-auto"></div>
+                </div>
+                <div>
+                    <label class="block text-sm text-bark-600 mb-1">Eller legg inn manuelt</label>
+                    <input type="text" id="dommerNavn" placeholder="Dommernavn"
+                        class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none mb-2">
+                    <input type="tel" id="dommerTelefon" placeholder="Telefon"
+                        class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none mb-2">
+                    <input type="email" id="dommerEpost" placeholder="E-post (valgfritt)"
+                        class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none">
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-bark-600 mb-1">Parti (valgfritt)</label>
+                    <input type="text" id="dommerParti" placeholder="F.eks. UK/AK Parti 1"
+                        class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm text-bark-600 mb-1">Reisealternativer</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" id="reiseBil" class="rounded"> Bil
+                        </label>
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" id="reiseFly" class="rounded"> Fly
+                        </label>
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" id="reiseLeiebil" class="rounded"> Leiebil
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-bark-600 mb-1">Melding til dommer</label>
+                <textarea id="dommerMelding" rows="3" placeholder="Personlig melding..."
+                    class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none resize-none"></textarea>
+            </div>
+
+            <button onclick="sendForesporsel()" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+                Send forespørsel
+            </button>
+        </div>
+
+        <!-- Forespørsler oversikt -->
+        <div id="foresporslerSection" class="hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
+                <h2 class="text-lg font-bold font-serif text-bark-800 mb-4">Sendte forespørsler</h2>
+
+                <!-- Status-filter -->
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <button onclick="filterStatus('alle')" class="status-filter px-3 py-1 rounded-full text-sm font-medium bg-bark-100 text-bark-700" data-status="alle">Alle</button>
+                    <button onclick="filterStatus('sendt')" class="status-filter px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-700" data-status="sendt">Sendt</button>
+                    <button onclick="filterStatus('sett')" class="status-filter px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700" data-status="sett">Sett</button>
+                    <button onclick="filterStatus('akseptert')" class="status-filter px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700" data-status="akseptert">Akseptert</button>
+                    <button onclick="filterStatus('avslatt')" class="status-filter px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-700" data-status="avslatt">Avslått</button>
+                </div>
+
+                <div id="foresporslerListe" class="space-y-3">
+                    <p class="text-bark-500 text-sm">Velg en prøve for å se forespørsler</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let valgtProveId = null;
+        let alleForesporsler = [];
+        let fkfDommere = [];
+        let aktivFilter = 'alle';
+
+        async function init() {
+            await loadProver();
+            await loadFkfDommere();
+        }
+
+        async function loadProver() {
+            try {
+                const res = await fetch('/api/prover');
+                const prover = await res.json();
+                const select = document.getElementById('proveSelect');
+                prover.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = `${p.navn} (${p.start_dato || 'Dato ikke satt'})`;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Feil ved lasting av prøver:', err);
+            }
+        }
+
+        async function loadFkfDommere() {
+            try {
+                const res = await fetch('/api/fkf-dommere');
+                fkfDommere = await res.json();
+            } catch (err) {
+                console.error('Feil ved lasting av FKF-dommere:', err);
+            }
+        }
+
+        function sokDommere(query) {
+            const container = document.getElementById('dommerResultater');
+            if (!query || query.length < 2) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const q = query.toLowerCase();
+            const resultater = fkfDommere.filter(d =>
+                `${d.fornavn} ${d.etternavn}`.toLowerCase().includes(q) ||
+                (d.telefon1 && d.telefon1.includes(query)) ||
+                (d.telefon2 && d.telefon2.includes(query))
+            ).slice(0, 5);
+
+            container.innerHTML = resultater.map(d => `
+                <button type="button" onclick="velgDommer('${d.fornavn}', '${d.etternavn}', '${d.telefon1 || d.telefon2 || ''}', '')"
+                    class="w-full text-left px-3 py-2 rounded-lg bg-bark-50 hover:bg-bark-100 text-sm transition">
+                    <span class="font-medium">${d.fornavn} ${d.etternavn}</span>
+                    <span class="text-bark-500 ml-2">${d.sted || ''}</span>
+                    ${d.telefon1 ? `<span class="text-bark-400 ml-2">${d.telefon1}</span>` : ''}
+                </button>
+            `).join('');
+        }
+
+        function velgDommer(fornavn, etternavn, telefon, epost) {
+            document.getElementById('dommerNavn').value = `${fornavn} ${etternavn}`;
+            document.getElementById('dommerTelefon').value = telefon;
+            document.getElementById('dommerEpost').value = epost || '';
+            document.getElementById('dommerResultater').innerHTML = '';
+            document.getElementById('dommerSok').value = '';
+        }
+
+        async function loadForesporsler() {
+            valgtProveId = document.getElementById('proveSelect').value;
+
+            if (!valgtProveId) {
+                document.getElementById('nyForesporselSection').classList.add('hidden');
+                document.getElementById('foresporslerSection').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('nyForesporselSection').classList.remove('hidden');
+            document.getElementById('foresporslerSection').classList.remove('hidden');
+
+            try {
+                const res = await fetch(`/api/prover/${valgtProveId}/dommer-foresporsler`);
+                alleForesporsler = await res.json();
+                renderForesporsler();
+            } catch (err) {
+                console.error('Feil ved lasting av forespørsler:', err);
+            }
+        }
+
+        function filterStatus(status) {
+            aktivFilter = status;
+            document.querySelectorAll('.status-filter').forEach(btn => {
+                btn.classList.remove('ring-2', 'ring-offset-2', 'ring-bark-400');
+            });
+            document.querySelector(`[data-status="${status}"]`).classList.add('ring-2', 'ring-offset-2', 'ring-bark-400');
+            renderForesporsler();
+        }
+
+        function renderForesporsler() {
+            const container = document.getElementById('foresporslerListe');
+            let filtrert = alleForesporsler;
+
+            if (aktivFilter !== 'alle') {
+                filtrert = alleForesporsler.filter(f => f.status === aktivFilter);
+            }
+
+            if (filtrert.length === 0) {
+                container.innerHTML = '<p class="text-bark-500 text-sm">Ingen forespørsler funnet</p>';
+                return;
+            }
+
+            container.innerHTML = filtrert.map(f => {
+                const statusConfig = {
+                    'sendt': { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Sendt' },
+                    'sett': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Sett' },
+                    'akseptert': { bg: 'bg-green-100', text: 'text-green-700', label: 'Akseptert' },
+                    'avslatt': { bg: 'bg-red-100', text: 'text-red-700', label: 'Avslått' },
+                    'kansellert': { bg: 'bg-bark-100', text: 'text-bark-500', label: 'Kansellert' }
+                };
+                const s = statusConfig[f.status] || statusConfig.sendt;
+
+                return `
+                    <div class="border border-bark-100 rounded-xl p-4 hover:border-bark-200 transition">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <h3 class="font-semibold text-bark-800">${f.dommer_navn}</h3>
+                                <p class="text-sm text-bark-500">${f.dommer_telefon} ${f.dommer_epost ? `· ${f.dommer_epost}` : ''}</p>
+                                ${f.parti ? `<p class="text-sm text-bark-600 mt-1">Parti: ${f.parti}</p>` : ''}
+                                ${f.melding ? `<p class="text-sm text-bark-500 mt-2 italic">"${f.melding}"</p>` : ''}
+                                ${f.svar_melding ? `<p class="text-sm text-forest-600 mt-2">Svar: "${f.svar_melding}"</p>` : ''}
+                            </div>
+                            <div class="text-right">
+                                <span class="inline-block px-2 py-1 rounded-full text-xs font-medium ${s.bg} ${s.text}">${s.label}</span>
+                                <p class="text-xs text-bark-400 mt-1">${formatDate(f.sendt_dato)}</p>
+                                ${f.svar_dato ? `<p class="text-xs text-bark-400">Svar: ${formatDate(f.svar_dato)}</p>` : ''}
+                            </div>
+                        </div>
+                        ${f.status === 'sendt' || f.status === 'sett' ? `
+                            <div class="mt-3 pt-3 border-t border-bark-100">
+                                <button onclick="kansellerForesporsel(${f.id})" class="text-sm text-red-600 hover:text-red-700">
+                                    Kanseller forespørsel
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('no-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        async function sendForesporsel() {
+            const navn = document.getElementById('dommerNavn').value.trim();
+            const telefon = document.getElementById('dommerTelefon').value.trim();
+            const epost = document.getElementById('dommerEpost').value.trim();
+            const parti = document.getElementById('dommerParti').value.trim();
+            const melding = document.getElementById('dommerMelding').value.trim();
+            const reiseBil = document.getElementById('reiseBil').checked;
+            const reiseFly = document.getElementById('reiseFly').checked;
+            const reiseLeiebil = document.getElementById('reiseLeiebil').checked;
+
+            if (!navn || !telefon) {
+                alert('Dommernavn og telefon er påkrevd');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/prover/${valgtProveId}/dommer-foresporsler`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dommer_navn: navn,
+                        dommer_telefon: telefon,
+                        dommer_epost: epost,
+                        parti,
+                        melding,
+                        reise_bil: reiseBil,
+                        reise_fly: reiseFly,
+                        reise_leiebil: reiseLeiebil
+                    })
+                });
+
+                const data = await res.json();
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                // Nullstill skjema
+                document.getElementById('dommerNavn').value = '';
+                document.getElementById('dommerTelefon').value = '';
+                document.getElementById('dommerEpost').value = '';
+                document.getElementById('dommerParti').value = '';
+                document.getElementById('dommerMelding').value = '';
+                document.getElementById('reiseBil').checked = false;
+                document.getElementById('reiseFly').checked = false;
+                document.getElementById('reiseLeiebil').checked = false;
+
+                alert('Forespørsel sendt!');
+                loadForesporsler();
+            } catch (err) {
+                console.error('Feil ved sending:', err);
+                alert('Kunne ikke sende forespørsel');
+            }
+        }
+
+        async function kansellerForesporsel(id) {
+            if (!confirm('Er du sikker på at du vil kansellere denne forespørselen?')) return;
+
+            try {
+                const res = await fetch(`/api/prover/${valgtProveId}/dommer-foresporsler/${id}`, {
+                    method: 'DELETE'
+                });
+                if (res.ok) {
+                    loadForesporsler();
+                }
+            } catch (err) {
+                console.error('Feil ved kansellering:', err);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

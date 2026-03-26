@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dommeroppgjør - Fuglehundprøve</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        forest: { 50: '#f6f7f4', 100: '#e3e7dc', 200: '#c7d0ba', 300: '#a4b391', 400: '#839770', 500: '#657a53', 600: '#4f6040', 700: '#3f4c34', 800: '#343e2d', 900: '#2c3526', 950: '#151a12' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+
+    <!-- Header -->
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg no-print">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="admin.html" class="flex items-center gap-2 hover:opacity-80 transition">
+                        <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                        <span class="font-serif font-bold">Dommeroppgjør</span>
+                    </a>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="window.print()" class="text-bark-200 hover:text-white text-sm font-medium transition flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                        </svg>
+                        Skriv ut
+                    </button>
+                    <a href="admin.html" class="text-bark-200 hover:text-white text-sm font-medium transition">← Tilbake</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Prøvevalg -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6 no-print">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4">Velg prøve og dommer</h2>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-bark-600 mb-1">Prøve</label>
+                    <select id="proveSelect" onchange="loadDommere()" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none">
+                        <option value="">-- Velg prøve --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-bark-600 mb-1">Dommer</label>
+                    <select id="dommerSelect" onchange="loadOppgjor()" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none">
+                        <option value="">-- Velg dommer --</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Oppgjørsskjema -->
+        <div id="oppgjorSection" class="hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+                <h2 class="text-xl font-bold font-serif text-bark-800 mb-2">Dommeroppgjør</h2>
+                <p class="text-bark-500 text-sm mb-6">Fyll ut reisekostnader, diett og andre utgifter</p>
+
+                <!-- Dommer-info -->
+                <div class="bg-bark-50 rounded-xl p-4 mb-6">
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-sm text-bark-500">Dommer</p>
+                            <p id="dommerNavnDisplay" class="font-semibold text-bark-800">-</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-bark-500">Kontonummer</p>
+                            <input type="text" id="kontonummer" placeholder="1234.56.78901"
+                                class="w-full px-3 py-1 rounded-lg border border-bark-200 focus:border-warm-500 outline-none text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reisekostnader -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                        </svg>
+                        Reisekostnader
+                    </h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Kilometer</label>
+                            <input type="number" id="reiseKm" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Sats per km</label>
+                            <input type="number" id="reiseKmSats" value="3.50" step="0.10" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">= Kjøregodtgjørelse</label>
+                            <input type="text" id="reiseKmBelop" readonly
+                                class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-bark-50 text-bark-700">
+                        </div>
+                    </div>
+                    <div class="grid md:grid-cols-4 gap-4 mt-3">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Bom/parkering</label>
+                            <input type="number" id="reiseBom" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Ferge</label>
+                            <input type="number" id="reiseFerge" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Fly</label>
+                            <input type="number" id="reiseFly" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Leiebil</label>
+                            <input type="number" id="reiseLeiebil" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-4 mt-3">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Annet (kr)</label>
+                            <input type="number" id="reiseAnnet" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Beskrivelse (annet)</label>
+                            <input type="text" id="reiseAnnetBeskrivelse" placeholder="F.eks. taxi, tog..."
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Diett og overnatting -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        </svg>
+                        Diett og overnatting
+                    </h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Antall dager</label>
+                            <input type="number" id="diettDager" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Diett-sats per dag</label>
+                            <input type="number" id="diettSats" value="350" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">= Diett totalt</label>
+                            <input type="text" id="diettBelop" readonly
+                                class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-bark-50 text-bark-700">
+                        </div>
+                    </div>
+                    <div class="grid md:grid-cols-2 gap-4 mt-3">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Overnatting (netter)</label>
+                            <input type="number" id="overnattingNetter" value="0" min="0"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Overnatting totalt (kr)</label>
+                            <input type="number" id="overnattingBelop" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Honorar (valgfritt) -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Honorar (valgfritt)
+                    </h3>
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Dommerdager</label>
+                            <input type="number" id="honorarDager" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Honorar per dag</label>
+                            <input type="number" id="honorarSats" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">= Honorar totalt</label>
+                            <input type="text" id="honorarBelop" readonly
+                                class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-bark-50 text-bark-700">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FKF-fond -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        FKF Dommerutdanningsfond (trekkes)
+                    </h3>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Trekk til FKF-fond</label>
+                            <input type="number" id="fkfFondBelop" value="0" min="0" oninput="beregnTotalt()"
+                                class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div class="flex items-end">
+                            <p class="text-sm text-bark-500">Frivillig bidrag til dommerutdanning</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Kommentar -->
+                <div class="mb-6">
+                    <label class="block text-sm text-bark-600 mb-1">Kommentar</label>
+                    <textarea id="kommentar" rows="2" placeholder="Eventuelle merknader..."
+                        class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none resize-none"></textarea>
+                </div>
+
+                <!-- Totalsum -->
+                <div class="bg-forest-50 rounded-xl p-4 mb-6">
+                    <div class="flex items-center justify-between">
+                        <span class="font-semibold text-forest-800">Totalt til utbetaling</span>
+                        <span id="totalBelop" class="text-2xl font-bold text-forest-700">kr 0,-</span>
+                    </div>
+                </div>
+
+                <!-- Handlinger -->
+                <div class="flex flex-wrap gap-3 no-print">
+                    <button onclick="lagreOppgjor('utkast')" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-6 py-2 rounded-xl font-medium transition">
+                        Lagre utkast
+                    </button>
+                    <button onclick="lagreOppgjor('innsendt')" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-xl font-medium transition">
+                        Send inn
+                    </button>
+                    <button onclick="lagreOppgjor('utbetalt')" class="bg-warm-500 hover:bg-warm-600 text-white px-6 py-2 rounded-xl font-medium transition">
+                        Marker som utbetalt
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status-info -->
+            <div id="statusInfo" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 p-4">
+                <p class="text-sm text-bark-600">
+                    <span class="font-medium">Status:</span> <span id="oppgjorStatus">-</span>
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let valgtProveId = null;
+        let valgtDommer = null;
+        let eksisterendeOppgjor = null;
+
+        async function init() {
+            await loadProver();
+        }
+
+        async function loadProver() {
+            try {
+                const res = await fetch('/api/prover');
+                const prover = await res.json();
+                const select = document.getElementById('proveSelect');
+                prover.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = `${p.navn} (${p.start_dato || 'Dato ikke satt'})`;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Feil ved lasting av prøver:', err);
+            }
+        }
+
+        async function loadDommere() {
+            valgtProveId = document.getElementById('proveSelect').value;
+            const dommerSelect = document.getElementById('dommerSelect');
+            dommerSelect.innerHTML = '<option value="">-- Velg dommer --</option>';
+            document.getElementById('oppgjorSection').classList.add('hidden');
+
+            if (!valgtProveId) return;
+
+            try {
+                // Hent dommertildelinger for prøven
+                const res = await fetch(`/api/prover/${valgtProveId}/dommer-tildelinger`);
+                const tildelinger = await res.json();
+
+                tildelinger.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = JSON.stringify({ telefon: t.dommer_telefon, navn: `${t.fornavn} ${t.etternavn}` });
+                    opt.textContent = `${t.fornavn} ${t.etternavn} (${t.parti})`;
+                    dommerSelect.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Feil ved lasting av dommere:', err);
+            }
+        }
+
+        async function loadOppgjor() {
+            const dommerData = document.getElementById('dommerSelect').value;
+            if (!dommerData) {
+                document.getElementById('oppgjorSection').classList.add('hidden');
+                return;
+            }
+
+            valgtDommer = JSON.parse(dommerData);
+            document.getElementById('dommerNavnDisplay').textContent = valgtDommer.navn;
+            document.getElementById('oppgjorSection').classList.remove('hidden');
+
+            // Sjekk om det finnes eksisterende oppgjør
+            try {
+                const res = await fetch(`/api/prover/${valgtProveId}/dommer-oppgjor`);
+                const oppgjorListe = await res.json();
+                eksisterendeOppgjor = oppgjorListe.find(o => o.dommer_telefon === valgtDommer.telefon);
+
+                if (eksisterendeOppgjor) {
+                    fyllInnOppgjor(eksisterendeOppgjor);
+                    document.getElementById('statusInfo').classList.remove('hidden');
+                    document.getElementById('oppgjorStatus').textContent = eksisterendeOppgjor.status;
+                } else {
+                    nullstillSkjema();
+                    document.getElementById('statusInfo').classList.add('hidden');
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av oppgjør:', err);
+                nullstillSkjema();
+            }
+        }
+
+        function fyllInnOppgjor(o) {
+            document.getElementById('kontonummer').value = o.kontonummer || '';
+            document.getElementById('reiseKm').value = o.reise_km || 0;
+            document.getElementById('reiseKmSats').value = o.reise_km_sats || 3.50;
+            document.getElementById('reiseBom').value = o.reise_bom || 0;
+            document.getElementById('reiseFerge').value = o.reise_ferge || 0;
+            document.getElementById('reiseFly').value = o.reise_fly || 0;
+            document.getElementById('reiseLeiebil').value = o.reise_leiebil || 0;
+            document.getElementById('reiseAnnet').value = o.reise_annet || 0;
+            document.getElementById('reiseAnnetBeskrivelse').value = o.reise_annet_beskrivelse || '';
+            document.getElementById('diettDager').value = o.diett_dager || 0;
+            document.getElementById('diettSats').value = o.diett_sats || 350;
+            document.getElementById('overnattingNetter').value = o.overnatting_netter || 0;
+            document.getElementById('overnattingBelop').value = o.overnatting_belop || 0;
+            document.getElementById('honorarDager').value = o.honorar_dager || 0;
+            document.getElementById('honorarSats').value = o.honorar_sats || 0;
+            document.getElementById('fkfFondBelop').value = o.fkf_fond_belop || 0;
+            document.getElementById('kommentar').value = o.kommentar || '';
+            beregnTotalt();
+        }
+
+        function nullstillSkjema() {
+            document.getElementById('kontonummer').value = '';
+            document.getElementById('reiseKm').value = 0;
+            document.getElementById('reiseKmSats').value = 3.50;
+            document.getElementById('reiseBom').value = 0;
+            document.getElementById('reiseFerge').value = 0;
+            document.getElementById('reiseFly').value = 0;
+            document.getElementById('reiseLeiebil').value = 0;
+            document.getElementById('reiseAnnet').value = 0;
+            document.getElementById('reiseAnnetBeskrivelse').value = '';
+            document.getElementById('diettDager').value = 0;
+            document.getElementById('diettSats').value = 350;
+            document.getElementById('overnattingNetter').value = 0;
+            document.getElementById('overnattingBelop').value = 0;
+            document.getElementById('honorarDager').value = 0;
+            document.getElementById('honorarSats').value = 0;
+            document.getElementById('fkfFondBelop').value = 0;
+            document.getElementById('kommentar').value = '';
+            eksisterendeOppgjor = null;
+            beregnTotalt();
+        }
+
+        function beregnTotalt() {
+            const km = parseFloat(document.getElementById('reiseKm').value) || 0;
+            const kmSats = parseFloat(document.getElementById('reiseKmSats').value) || 0;
+            const kmBelop = km * kmSats;
+            document.getElementById('reiseKmBelop').value = `kr ${kmBelop.toFixed(2)}`;
+
+            const diettDager = parseFloat(document.getElementById('diettDager').value) || 0;
+            const diettSats = parseFloat(document.getElementById('diettSats').value) || 0;
+            const diettBelop = diettDager * diettSats;
+            document.getElementById('diettBelop').value = `kr ${diettBelop.toFixed(2)}`;
+
+            const honorarDager = parseFloat(document.getElementById('honorarDager').value) || 0;
+            const honorarSats = parseFloat(document.getElementById('honorarSats').value) || 0;
+            const honorarBelop = honorarDager * honorarSats;
+            document.getElementById('honorarBelop').value = `kr ${honorarBelop.toFixed(2)}`;
+
+            const bom = parseFloat(document.getElementById('reiseBom').value) || 0;
+            const ferge = parseFloat(document.getElementById('reiseFerge').value) || 0;
+            const fly = parseFloat(document.getElementById('reiseFly').value) || 0;
+            const leiebil = parseFloat(document.getElementById('reiseLeiebil').value) || 0;
+            const annet = parseFloat(document.getElementById('reiseAnnet').value) || 0;
+            const overnatting = parseFloat(document.getElementById('overnattingBelop').value) || 0;
+            const fkfFond = parseFloat(document.getElementById('fkfFondBelop').value) || 0;
+
+            const total = kmBelop + bom + ferge + fly + leiebil + annet + diettBelop + overnatting + honorarBelop - fkfFond;
+            document.getElementById('totalBelop').textContent = `kr ${total.toFixed(2).replace('.', ',')},-`;
+        }
+
+        async function lagreOppgjor(status) {
+            if (!valgtDommer) {
+                alert('Velg en dommer først');
+                return;
+            }
+
+            const data = {
+                dommer_telefon: valgtDommer.telefon,
+                dommer_navn: valgtDommer.navn,
+                kontonummer: document.getElementById('kontonummer').value,
+                reise_km: parseFloat(document.getElementById('reiseKm').value) || 0,
+                reise_km_sats: parseFloat(document.getElementById('reiseKmSats').value) || 3.50,
+                reise_bom: parseFloat(document.getElementById('reiseBom').value) || 0,
+                reise_ferge: parseFloat(document.getElementById('reiseFerge').value) || 0,
+                reise_fly: parseFloat(document.getElementById('reiseFly').value) || 0,
+                reise_leiebil: parseFloat(document.getElementById('reiseLeiebil').value) || 0,
+                reise_annet: parseFloat(document.getElementById('reiseAnnet').value) || 0,
+                reise_annet_beskrivelse: document.getElementById('reiseAnnetBeskrivelse').value,
+                diett_dager: parseFloat(document.getElementById('diettDager').value) || 0,
+                diett_sats: parseFloat(document.getElementById('diettSats').value) || 350,
+                overnatting_netter: parseFloat(document.getElementById('overnattingNetter').value) || 0,
+                overnatting_belop: parseFloat(document.getElementById('overnattingBelop').value) || 0,
+                honorar_dager: parseFloat(document.getElementById('honorarDager').value) || 0,
+                honorar_sats: parseFloat(document.getElementById('honorarSats').value) || 0,
+                fkf_fond_belop: parseFloat(document.getElementById('fkfFondBelop').value) || 0,
+                kommentar: document.getElementById('kommentar').value
+            };
+
+            try {
+                // Først lagre oppgjøret
+                const res = await fetch(`/api/prover/${valgtProveId}/dommer-oppgjor`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await res.json();
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+
+                // Oppdater status hvis ikke utkast
+                if (status !== 'utkast' && result.id) {
+                    const statusRes = await fetch(`/api/dommer-oppgjor/${result.id}/status`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                }
+
+                const statusTekst = {
+                    'utkast': 'Utkast lagret',
+                    'innsendt': 'Oppgjør sendt inn',
+                    'utbetalt': 'Markert som utbetalt'
+                };
+                alert(statusTekst[status] || 'Lagret');
+
+                document.getElementById('statusInfo').classList.remove('hidden');
+                document.getElementById('oppgjorStatus').textContent = status;
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                alert('Kunne ikke lagre oppgjør');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

@@ -569,6 +569,85 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_klubb_dokumenter_klubb ON klubb_dokumenter(klubb_id);
   CREATE INDEX IF NOT EXISTS idx_klubb_dokumenter_type ON klubb_dokumenter(dokument_type);
+
+  -- Dommerforespørsler (invitasjon til dommere fra prøveleder)
+  CREATE TABLE IF NOT EXISTS dommer_foresporsler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    dommer_telefon TEXT NOT NULL,
+    dommer_navn TEXT NOT NULL,
+    dommer_epost TEXT DEFAULT '',
+    parti TEXT DEFAULT '',
+    melding TEXT DEFAULT '',
+    reise_bil INTEGER DEFAULT 0,
+    reise_fly INTEGER DEFAULT 0,
+    reise_leiebil INTEGER DEFAULT 0,
+    reise_annet TEXT DEFAULT '',
+    status TEXT DEFAULT 'sendt' CHECK(status IN ('sendt', 'sett', 'akseptert', 'avslatt', 'kansellert')),
+    svar_melding TEXT DEFAULT '',
+    sendt_av TEXT NOT NULL REFERENCES brukere(telefon),
+    sendt_dato TEXT DEFAULT (datetime('now')),
+    sett_dato TEXT DEFAULT NULL,
+    svar_dato TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, dommer_telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dommer_foresporsler_prove ON dommer_foresporsler(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dommer_foresporsler_dommer ON dommer_foresporsler(dommer_telefon);
+  CREATE INDEX IF NOT EXISTS idx_dommer_foresporsler_status ON dommer_foresporsler(status);
+
+  -- Dommeroppgjør (økonomi etter gjennomført prøve)
+  CREATE TABLE IF NOT EXISTS dommer_oppgjor (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    dommer_telefon TEXT NOT NULL,
+    dommer_navn TEXT NOT NULL,
+
+    -- Reisekostnader
+    reise_km INTEGER DEFAULT 0,
+    reise_km_sats REAL DEFAULT 3.50,
+    reise_km_belop REAL DEFAULT 0,
+    reise_bom INTEGER DEFAULT 0,
+    reise_ferge INTEGER DEFAULT 0,
+    reise_fly INTEGER DEFAULT 0,
+    reise_leiebil INTEGER DEFAULT 0,
+    reise_annet INTEGER DEFAULT 0,
+    reise_annet_beskrivelse TEXT DEFAULT '',
+
+    -- Diett og overnatting
+    diett_dager INTEGER DEFAULT 0,
+    diett_sats REAL DEFAULT 350,
+    diett_belop REAL DEFAULT 0,
+    overnatting_netter INTEGER DEFAULT 0,
+    overnatting_belop REAL DEFAULT 0,
+
+    -- Honorar
+    honorar_dager INTEGER DEFAULT 0,
+    honorar_sats REAL DEFAULT 0,
+    honorar_belop REAL DEFAULT 0,
+
+    -- FKF Dommerutdanningsfond (trekkes)
+    fkf_fond_belop REAL DEFAULT 0,
+
+    -- Totalt
+    total_belop REAL DEFAULT 0,
+
+    -- Betalingsinformasjon
+    kontonummer TEXT DEFAULT '',
+    betalt INTEGER DEFAULT 0,
+    betalt_dato TEXT DEFAULT NULL,
+    betalt_av TEXT DEFAULT NULL,
+
+    -- Status
+    status TEXT DEFAULT 'utkast' CHECK(status IN ('utkast', 'innsendt', 'godkjent', 'utbetalt', 'avvist')),
+    kommentar TEXT DEFAULT '',
+
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, dommer_telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dommer_oppgjor_prove ON dommer_oppgjor(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dommer_oppgjor_status ON dommer_oppgjor(status);
 `);
 
 // --- Migrations for existing databases ---
@@ -4275,6 +4354,309 @@ app.delete("/api/fkf-dommere/:id", requireAdmin, (c) => {
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("fkf_dommer_slettet", `ID: ${id}`);
   }
 
+  return c.json({ success: true });
+});
+
+// ============================================
+// DOMMERFORESPØRSEL API
+// ============================================
+
+// Hent alle forespørsler for en prøve
+app.get("/api/prover/:id/dommer-foresporsler", (c) => {
+  const proveId = c.req.param("id");
+  const foresporsler = db.prepare(`
+    SELECT df.*, b.fornavn || ' ' || b.etternavn as sendt_av_navn
+    FROM dommer_foresporsler df
+    LEFT JOIN brukere b ON df.sendt_av = b.telefon
+    WHERE df.prove_id = ?
+    ORDER BY df.sendt_dato DESC
+  `).all(proveId);
+  return c.json(foresporsler);
+});
+
+// Hent forespørsler sendt til en dommer (for dommeren selv)
+app.get("/api/dommer-foresporsler/mine", requireAuth, (c) => {
+  const telefon = c.get("user")?.telefon;
+  if (!telefon) return c.json({ error: "Ikke autentisert" }, 401);
+
+  const foresporsler = db.prepare(`
+    SELECT df.*, p.navn as prove_navn, p.start_dato, p.slutt_dato, p.sted as prove_sted,
+           k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as sendt_av_navn
+    FROM dommer_foresporsler df
+    JOIN prover p ON df.prove_id = p.id
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    LEFT JOIN brukere b ON df.sendt_av = b.telefon
+    WHERE df.dommer_telefon = ?
+    ORDER BY df.sendt_dato DESC
+  `).all(telefon);
+  return c.json(foresporsler);
+});
+
+// Send ny dommerforespørsel
+app.post("/api/prover/:id/dommer-foresporsler", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+  const { dommer_telefon, dommer_navn, dommer_epost, parti, melding, reise_bil, reise_fly, reise_leiebil, reise_annet } = body;
+
+  if (!dommer_telefon || !dommer_navn) {
+    return c.json({ error: "Dommer telefon og navn er påkrevd" }, 400);
+  }
+
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO dommer_foresporsler
+        (prove_id, dommer_telefon, dommer_navn, dommer_epost, parti, melding,
+         reise_bil, reise_fly, reise_leiebil, reise_annet, sendt_av)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      proveId, dommer_telefon, dommer_navn, dommer_epost || '', parti || '',
+      melding || '', reise_bil ? 1 : 0, reise_fly ? 1 : 0, reise_leiebil ? 1 : 0,
+      reise_annet || '', user.telefon
+    );
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_forespurt", `Forespørsel sendt til ${dommer_navn} (${dommer_telefon}) for prøve ${prove.navn}`
+    );
+
+    // Send SMS til dommer hvis konfigurert
+    if (smsProvider !== 'dev') {
+      const smsText = `Hei ${dommer_navn.split(' ')[0]}! Du er forespurt som dommer på ${prove.navn} (${prove.start_dato}). Logg inn på fuglehundprove.no for å svare. Mvh ${user.fornavn || 'Prøveleder'}`;
+      try {
+        await sendSms(dommer_telefon, smsText);
+        db.prepare("INSERT INTO sms_log (retning, fra, til, type, melding) VALUES (?, ?, ?, ?, ?)").run(
+          'ut', 'system', dommer_telefon, 'dommer_forespørsel', smsText
+        );
+      } catch (smsErr) {
+        console.error("SMS-feil:", smsErr.message);
+      }
+    }
+
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    if (err.message.includes('UNIQUE constraint')) {
+      return c.json({ error: "Denne dommeren har allerede fått forespørsel til denne prøven" }, 400);
+    }
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Svar på dommerforespørsel (aksepter/avslå)
+app.put("/api/dommer-foresporsler/:id/svar", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+  const { status, svar_melding } = body;
+
+  if (!['akseptert', 'avslatt'].includes(status)) {
+    return c.json({ error: "Ugyldig status. Må være 'akseptert' eller 'avslatt'" }, 400);
+  }
+
+  const foresporsel = db.prepare("SELECT * FROM dommer_foresporsler WHERE id = ?").get(id);
+  if (!foresporsel) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  // Sjekk at brukeren er den forespurte dommeren
+  if (foresporsel.dommer_telefon !== user.telefon) {
+    return c.json({ error: "Du kan kun svare på forespørsler sendt til deg" }, 403);
+  }
+
+  db.prepare(`
+    UPDATE dommer_foresporsler
+    SET status = ?, svar_melding = ?, svar_dato = datetime('now')
+    WHERE id = ?
+  `).run(status, svar_melding || '', id);
+
+  // Hvis akseptert, legg til dommer-tildeling
+  if (status === 'akseptert' && foresporsel.parti) {
+    try {
+      db.prepare(`
+        INSERT OR IGNORE INTO dommer_tildelinger (prove_id, dommer_telefon, parti)
+        VALUES (?, ?, ?)
+      `).run(foresporsel.prove_id, foresporsel.dommer_telefon, foresporsel.parti);
+    } catch (e) {
+      console.log("Dommer allerede tildelt:", e.message);
+    }
+  }
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    `dommer_${status}`, `${foresporsel.dommer_navn} ${status} forespørsel for prøve ${foresporsel.prove_id}`
+  );
+
+  // Send varsel-SMS til prøveleder
+  if (smsProvider !== 'dev') {
+    const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(foresporsel.prove_id);
+    const statusTekst = status === 'akseptert' ? 'akseptert' : 'avslått';
+    const smsText = `${foresporsel.dommer_navn} har ${statusTekst} dommerforespørselen til ${prove?.navn || foresporsel.prove_id}.`;
+    try {
+      await sendSms(foresporsel.sendt_av, smsText);
+    } catch (smsErr) {
+      console.error("SMS-feil:", smsErr.message);
+    }
+  }
+
+  return c.json({ success: true });
+});
+
+// Marker forespørsel som sett
+app.put("/api/dommer-foresporsler/:id/sett", requireAuth, (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const foresporsel = db.prepare("SELECT * FROM dommer_foresporsler WHERE id = ?").get(id);
+  if (!foresporsel) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  if (foresporsel.dommer_telefon !== user.telefon) {
+    return c.json({ error: "Ikke tilgang" }, 403);
+  }
+
+  if (foresporsel.status === 'sendt') {
+    db.prepare("UPDATE dommer_foresporsler SET status = 'sett', sett_dato = datetime('now') WHERE id = ?").run(id);
+  }
+
+  return c.json({ success: true });
+});
+
+// Kanseller forespørsel (prøveleder)
+app.delete("/api/prover/:proveId/dommer-foresporsler/:id", requireAuth, (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+
+  const result = db.prepare("UPDATE dommer_foresporsler SET status = 'kansellert' WHERE id = ? AND prove_id = ?").run(id, proveId);
+  if (result.changes === 0) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  return c.json({ success: true });
+});
+
+// ============================================
+// DOMMEROPPGJØR API
+// ============================================
+
+// Hent alle oppgjør for en prøve
+app.get("/api/prover/:id/dommer-oppgjor", (c) => {
+  const proveId = c.req.param("id");
+  const oppgjor = db.prepare(`
+    SELECT * FROM dommer_oppgjor WHERE prove_id = ? ORDER BY dommer_navn
+  `).all(proveId);
+  return c.json(oppgjor);
+});
+
+// Hent mine oppgjør (for dommer)
+app.get("/api/dommer-oppgjor/mine", requireAuth, (c) => {
+  const telefon = c.get("user")?.telefon;
+  if (!telefon) return c.json({ error: "Ikke autentisert" }, 401);
+
+  const oppgjor = db.prepare(`
+    SELECT do.*, p.navn as prove_navn, p.start_dato, p.slutt_dato, k.navn as klubb_navn
+    FROM dommer_oppgjor do
+    JOIN prover p ON do.prove_id = p.id
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE do.dommer_telefon = ?
+    ORDER BY do.created_at DESC
+  `).all(telefon);
+  return c.json(oppgjor);
+});
+
+// Opprett eller oppdater oppgjør
+app.post("/api/prover/:id/dommer-oppgjor", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const {
+    dommer_telefon, dommer_navn,
+    reise_km, reise_km_sats, reise_bom, reise_ferge, reise_fly, reise_leiebil, reise_annet, reise_annet_beskrivelse,
+    diett_dager, diett_sats, overnatting_netter, overnatting_belop,
+    honorar_dager, honorar_sats, fkf_fond_belop, kontonummer, kommentar
+  } = body;
+
+  if (!dommer_telefon || !dommer_navn) {
+    return c.json({ error: "Dommer telefon og navn er påkrevd" }, 400);
+  }
+
+  // Beregn beløp
+  const reise_km_belop = (reise_km || 0) * (reise_km_sats || 3.50);
+  const diett_belop = (diett_dager || 0) * (diett_sats || 350);
+  const honorar_belop = (honorar_dager || 0) * (honorar_sats || 0);
+  const total_belop = reise_km_belop + (reise_bom || 0) + (reise_ferge || 0) + (reise_fly || 0) +
+                      (reise_leiebil || 0) + (reise_annet || 0) + diett_belop +
+                      (overnatting_belop || 0) + honorar_belop - (fkf_fond_belop || 0);
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO dommer_oppgjor
+        (prove_id, dommer_telefon, dommer_navn,
+         reise_km, reise_km_sats, reise_km_belop, reise_bom, reise_ferge, reise_fly, reise_leiebil, reise_annet, reise_annet_beskrivelse,
+         diett_dager, diett_sats, diett_belop, overnatting_netter, overnatting_belop,
+         honorar_dager, honorar_sats, honorar_belop, fkf_fond_belop, total_belop,
+         kontonummer, kommentar, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'utkast', datetime('now'))
+      ON CONFLICT(prove_id, dommer_telefon) DO UPDATE SET
+        dommer_navn = excluded.dommer_navn,
+        reise_km = excluded.reise_km, reise_km_sats = excluded.reise_km_sats, reise_km_belop = excluded.reise_km_belop,
+        reise_bom = excluded.reise_bom, reise_ferge = excluded.reise_ferge, reise_fly = excluded.reise_fly,
+        reise_leiebil = excluded.reise_leiebil, reise_annet = excluded.reise_annet, reise_annet_beskrivelse = excluded.reise_annet_beskrivelse,
+        diett_dager = excluded.diett_dager, diett_sats = excluded.diett_sats, diett_belop = excluded.diett_belop,
+        overnatting_netter = excluded.overnatting_netter, overnatting_belop = excluded.overnatting_belop,
+        honorar_dager = excluded.honorar_dager, honorar_sats = excluded.honorar_sats, honorar_belop = excluded.honorar_belop,
+        fkf_fond_belop = excluded.fkf_fond_belop, total_belop = excluded.total_belop,
+        kontonummer = excluded.kontonummer, kommentar = excluded.kommentar, updated_at = datetime('now')
+    `).run(
+      proveId, dommer_telefon, dommer_navn,
+      reise_km || 0, reise_km_sats || 3.50, reise_km_belop,
+      reise_bom || 0, reise_ferge || 0, reise_fly || 0, reise_leiebil || 0, reise_annet || 0, reise_annet_beskrivelse || '',
+      diett_dager || 0, diett_sats || 350, diett_belop, overnatting_netter || 0, overnatting_belop || 0,
+      honorar_dager || 0, honorar_sats || 0, honorar_belop, fkf_fond_belop || 0, total_belop,
+      kontonummer || '', kommentar || ''
+    );
+
+    return c.json({ success: true, id: result.lastInsertRowid, total_belop });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Oppdater oppgjør-status
+app.put("/api/dommer-oppgjor/:id/status", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+  const { status, betalt_dato } = body;
+
+  if (!['utkast', 'innsendt', 'godkjent', 'utbetalt', 'avvist'].includes(status)) {
+    return c.json({ error: "Ugyldig status" }, 400);
+  }
+
+  const oppgjor = db.prepare("SELECT * FROM dommer_oppgjor WHERE id = ?").get(id);
+  if (!oppgjor) return c.json({ error: "Oppgjør ikke funnet" }, 404);
+
+  const updates = { status };
+  if (status === 'utbetalt') {
+    updates.betalt = 1;
+    updates.betalt_dato = betalt_dato || new Date().toISOString().split('T')[0];
+    updates.betalt_av = user.telefon;
+  }
+
+  db.prepare(`
+    UPDATE dommer_oppgjor
+    SET status = ?, betalt = COALESCE(?, betalt), betalt_dato = COALESCE(?, betalt_dato), betalt_av = COALESCE(?, betalt_av), updated_at = datetime('now')
+    WHERE id = ?
+  `).run(status, updates.betalt, updates.betalt_dato, updates.betalt_av, id);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "dommer_oppgjor_status", `Oppgjør ${id} for ${oppgjor.dommer_navn}: ${status}`
+  );
+
+  return c.json({ success: true });
+});
+
+// Slett oppgjør
+app.delete("/api/dommer-oppgjor/:id", requireAuth, (c) => {
+  const id = c.req.param("id");
+  const result = db.prepare("DELETE FROM dommer_oppgjor WHERE id = ?").run(id);
+  if (result.changes === 0) return c.json({ error: "Oppgjør ikke funnet" }, 404);
   return c.json({ success: true });
 });
 

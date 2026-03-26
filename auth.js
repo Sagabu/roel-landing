@@ -576,9 +576,9 @@ window.handleApiError = function(error, customMessage) {
       const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
       if (userData.telefon !== SUPERADMIN_PHONE) return;
 
-      // Ikke vis knappen på admin-panel.html (vi er allerede der)
+      // Ikke vis knappen på admin-sider (vi er allerede i admin-området)
       const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-      if (currentPage === 'admin-panel.html') return;
+      if (currentPage === 'admin-panel.html' || currentPage === 'admin.html') return;
 
       // Sjekk om knappen allerede finnes
       if (document.getElementById('superadmin-btn')) return;

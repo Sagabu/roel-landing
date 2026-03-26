@@ -272,21 +272,37 @@
         const proveId = urlParams.get('prove');
 
         async function init() {
-            // Sjekk innlogging
-            const token = localStorage.getItem('fuglehund_token');
-            const userData = localStorage.getItem('fuglehund_user');
+            // Sjekk innlogging - prøv alle mulige session-kilder
+            const token = localStorage.getItem('fuglehund_token') || localStorage.getItem('authToken');
+
+            // Prøv å hente brukerdata fra ulike kilder
+            let userData = null;
+            const sessionSources = ['fuglehund_user', 'userSession', 'userProfile'];
+
+            for (const key of sessionSources) {
+                const data = localStorage.getItem(key);
+                if (data) {
+                    try {
+                        const parsed = JSON.parse(data);
+                        // Sjekk at vi har telefonnummer
+                        if (parsed.telefon || parsed.phone) {
+                            userData = parsed;
+                            // Normaliser telefon-feltet
+                            if (!userData.telefon && userData.phone) {
+                                userData.telefon = userData.phone;
+                            }
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            }
 
             if (!token || !userData) {
                 window.location.href = `deltaker.html?returnTo=${encodeURIComponent(window.location.href)}`;
                 return;
             }
 
-            try {
-                currentUser = JSON.parse(userData);
-            } catch (e) {
-                window.location.href = 'deltaker.html';
-                return;
-            }
+            currentUser = userData;
 
             if (!proveId) {
                 alert('Ingen prøve valgt');

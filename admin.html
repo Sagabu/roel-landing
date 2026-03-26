@@ -1382,6 +1382,38 @@
                         </div>
                     </div>
 
+                    <!-- DVK Skjema -->
+                    <div class="bg-gradient-to-br from-forest-50 to-forest-100 rounded-xl p-5 border border-forest-200 mb-6">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 bg-forest-600 rounded-xl flex items-center justify-center">
+                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="font-semibold text-bark-800">DVK – Dyrevelferdskontroll</h3>
+                                <p class="text-bark-500 text-sm">Kontrollskjema for dyrevelferdskontrolløren</p>
+                            </div>
+                            <div id="dvkStatusBadge" class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                                Ikke startet
+                            </div>
+                        </div>
+                        <p class="text-sm text-bark-600 mb-4">
+                            DVK bruker sitt eget skjema for å logge kontroller under prøven. Kontrollene blir automatisk inkludert i NKK-rapporten.
+                        </p>
+                        <div class="flex gap-2">
+                            <a href="dvk-kontroll.html" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                                Åpne DVK-skjema
+                            </a>
+                            <button onclick="seDVKStatus()" class="bg-white hover:bg-bark-50 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition border border-bark-200">
+                                Se status
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Raseklubber påminnelse -->
                     <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                         <div class="flex items-start gap-3">
@@ -1630,10 +1662,12 @@
                             </svg>
                             <div class="text-sm text-blue-800">
                                 <strong>Roller:</strong>
-                                <ul class="mt-1 grid md:grid-cols-3 gap-x-4 gap-y-1">
+                                <ul class="mt-1 grid md:grid-cols-2 gap-x-4 gap-y-1">
                                     <li><strong>Admin</strong> - Full tilgang til alt</li>
                                     <li><strong>Redaktør</strong> - Kan redigere partier og deltakere</li>
                                     <li><strong>Dommer</strong> - Kan se partilister (kun lesing)</li>
+                                    <li><strong>DVK</strong> - Dyrevelferdskontrollør</li>
+                                    <li><strong>NKK-rep</strong> - NKK-representant</li>
                                 </ul>
                             </div>
                         </div>
@@ -1805,6 +1839,15 @@
                             <input type="text" id="nkk_refNr" placeholder="Tildelt av NKK" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-red-500 outline-none">
                         </div>
                         <div>
+                            <label class="block text-bark-500 mb-1">Prøvetype</label>
+                            <select id="nkk_proveType" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-red-500 outline-none">
+                                <option value="hoyfjellsprove_host">Høyfjellsprøve høst</option>
+                                <option value="hoyfjellsprove_vinter">Høyfjellsprøve vinter</option>
+                                <option value="lavlandsprove">Lavlandsprøve</option>
+                                <option value="skogsprove">Skogsprøve</option>
+                            </select>
+                        </div>
+                        <div>
                             <label class="block text-bark-500 mb-1">Kjørt i DogWeb-Arra?</label>
                             <select id="nkk_dogwebArra" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-red-500 outline-none">
                                 <option value="ja">Ja</option>
@@ -1823,25 +1866,66 @@
                             <span class="text-bark-500">Dato:</span>
                             <span id="nkk_dato" class="font-medium text-bark-800 ml-2">-</span>
                         </div>
-                        <div>
-                            <span class="text-bark-500">Antall påmeldte:</span>
-                            <span id="nkk_antallPameldt" class="font-medium text-bark-800 ml-2">-</span>
+                    </div>
+                    <!-- Detaljert statistikk per klasse -->
+                    <div class="mt-4 bg-white rounded-xl border border-bark-200 overflow-hidden">
+                        <div class="grid grid-cols-4 gap-0 bg-bark-100 text-xs font-semibold text-bark-700">
+                            <div class="px-3 py-2">Klasse</div>
+                            <div class="px-3 py-2 text-center">Påmeldt</div>
+                            <div class="px-3 py-2 text-center">Startet</div>
+                            <div class="px-3 py-2 text-center">Premiert</div>
                         </div>
-                        <div>
-                            <span class="text-bark-500">Antall startende:</span>
-                            <span id="nkk_antallStartende" class="font-medium text-bark-800 ml-2">-</span>
+                        <div class="grid grid-cols-4 gap-0 border-b border-bark-100 text-sm">
+                            <div class="px-3 py-2 font-medium">UK</div>
+                            <div class="px-3 py-2 text-center" id="nkk_pameldtUK">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_startetUK">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_premiertUK">0</div>
                         </div>
-                        <div>
-                            <span class="text-bark-500">Antall premierte:</span>
-                            <span id="nkk_antallPremierte" class="font-medium text-bark-800 ml-2">-</span>
+                        <div class="grid grid-cols-4 gap-0 border-b border-bark-100 text-sm">
+                            <div class="px-3 py-2 font-medium">AK</div>
+                            <div class="px-3 py-2 text-center" id="nkk_pameldtAK">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_startetAK">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_premiertAK">0</div>
+                        </div>
+                        <div class="grid grid-cols-4 gap-0 border-b border-bark-100 text-sm">
+                            <div class="px-3 py-2 font-medium">VK</div>
+                            <div class="px-3 py-2 text-center" id="nkk_pameldtVK">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_startetVK">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_premiertVK">0</div>
+                        </div>
+                        <div class="grid grid-cols-4 gap-0 bg-bark-50 text-sm font-semibold">
+                            <div class="px-3 py-2">Totalt</div>
+                            <div class="px-3 py-2 text-center" id="nkk_antallPameldt">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_antallStartende">0</div>
+                            <div class="px-3 py-2 text-center" id="nkk_antallPremierte">0</div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Dommere og dommerelever -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                        Dommere og dommerelever
+                    </h4>
+                    <div class="bg-white rounded-xl border border-bark-200 overflow-hidden mb-3">
+                        <div class="grid grid-cols-4 gap-0 bg-bark-100 text-xs font-semibold text-bark-700">
+                            <div class="px-3 py-2">Parti</div>
+                            <div class="px-3 py-2">Dommer</div>
+                            <div class="px-3 py-2">Dommerelev</div>
+                            <div class="px-3 py-2 text-center">Signert</div>
+                        </div>
+                        <div id="nkk_dommerListe">
+                            <!-- Fylles dynamisk -->
+                        </div>
+                    </div>
+                    <p class="text-xs text-bark-500">Dommere som har signert digitalt vises med grønt hakesymbol</p>
                 </div>
 
                 <!-- Referat fra prøveleder -->
                 <div class="mb-6">
                     <h4 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
-                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">3</span>
                         Referat fra prøveleder
                     </h4>
                     <div class="grid md:grid-cols-3 gap-4 mb-3">
@@ -1866,35 +1950,9 @@
                             <input type="email" id="nkk_provelederEpost" placeholder="E-post" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm">
                         </div>
                     </div>
-                    <div class="grid md:grid-cols-3 gap-4 mb-3 p-3 bg-bark-50 rounded-xl text-sm">
-                        <div>
-                            <label class="block text-bark-500 mb-1">Påmeldt UK</label>
-                            <span id="nkk_pameldtUK" class="font-medium">0</span> hunder
-                        </div>
-                        <div>
-                            <label class="block text-bark-500 mb-1">Påmeldt AK</label>
-                            <span id="nkk_pameldtAK" class="font-medium">0</span> hunder
-                        </div>
-                        <div>
-                            <label class="block text-bark-500 mb-1">Påmeldt VK</label>
-                            <span id="nkk_pameldtVK" class="font-medium">0</span> hunder
-                        </div>
-                        <div>
-                            <label class="block text-bark-500 mb-1">Startet UK</label>
-                            <span id="nkk_startetUK" class="font-medium">0</span> hunder
-                        </div>
-                        <div>
-                            <label class="block text-bark-500 mb-1">Startet AK</label>
-                            <span id="nkk_startetAK" class="font-medium">0</span> hunder
-                        </div>
-                        <div>
-                            <label class="block text-bark-500 mb-1">Startet VK</label>
-                            <span id="nkk_startetVK" class="font-medium">0</span> hunder
-                        </div>
-                    </div>
                     <div class="mb-3">
-                        <label class="block text-sm text-bark-600 mb-1">Dommere</label>
-                        <textarea id="nkk_dommere" rows="2" placeholder="Liste over dommere som deltok..." class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm"></textarea>
+                        <label class="block text-sm text-bark-600 mb-1">Referat / kommentarer fra prøveleder</label>
+                        <textarea id="nkk_referat" rows="3" placeholder="Eventuelle kommentarer om gjennomføringen..." class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm"></textarea>
                     </div>
                     <div class="flex items-center gap-3 mb-3">
                         <label class="flex items-center gap-2 cursor-pointer">
@@ -1902,14 +1960,55 @@
                             <span class="text-sm text-bark-700">Det bekreftes at det for samtlige tilstedeværende hunder ble framlagt gyldig vaksinasjonsattest</span>
                         </label>
                     </div>
+                    <!-- Digital signatur prøveleder -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-blue-800">Digital signatur</p>
+                                <p class="text-xs text-blue-600" id="nkk_provelederSignStatus">Ikke signert</p>
+                            </div>
+                            <button type="button" onclick="signereDigitalt('proveleder')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                </svg>
+                                Signer digitalt
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Rapport fra NKK's representant -->
                 <div class="mb-6">
                     <h4 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
-                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">3</span>
+                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">4</span>
                         Rapport fra NKK's representant
                     </h4>
+                    <!-- Auto-utfylt info fra praktisk info -->
+                    <div class="bg-bark-50 rounded-xl p-3 mb-3 text-sm">
+                        <p class="text-bark-500 text-xs mb-2">Informasjonen under hentes automatisk fra prøveoppsettet</p>
+                        <div class="grid md:grid-cols-2 gap-3">
+                            <div>
+                                <span class="text-bark-500">Prøvetype:</span>
+                                <span id="nkk_proveTypeDisplay" class="font-medium text-bark-800 ml-1">-</span>
+                            </div>
+                            <div>
+                                <span class="text-bark-500">Ref.nr:</span>
+                                <span id="nkk_refNrDisplay" class="font-medium text-bark-800 ml-1">-</span>
+                            </div>
+                            <div>
+                                <span class="text-bark-500">Arrangør:</span>
+                                <span id="nkk_arrangorRep" class="font-medium text-bark-800 ml-1">-</span>
+                            </div>
+                            <div>
+                                <span class="text-bark-500">Sted:</span>
+                                <span id="nkk_stedRep" class="font-medium text-bark-800 ml-1">-</span>
+                            </div>
+                            <div>
+                                <span class="text-bark-500">Dato:</span>
+                                <span id="nkk_datoRep" class="font-medium text-bark-800 ml-1">-</span>
+                            </div>
+                        </div>
+                    </div>
                     <div class="grid md:grid-cols-2 gap-4 mb-3">
                         <div>
                             <label class="block text-sm text-bark-600 mb-1">Representantens navn</label>
@@ -1928,39 +2027,67 @@
                             <input type="text" id="nkk_nkkrepPostnr" placeholder="Postnr og sted" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm">
                         </div>
                     </div>
-                    <div class="grid md:grid-cols-2 gap-4 mb-3">
-                        <div class="flex items-center gap-3">
+
+                    <!-- Anerkjennelse - avkrysningsboks -->
+                    <div class="bg-white border border-bark-200 rounded-xl p-4 mb-3">
+                        <p class="text-sm font-medium text-bark-700 mb-3">Innstilles prøven til anerkjennelse?</p>
+                        <div class="flex gap-6">
                             <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="nkk_anerkjennelse" value="ja" class="w-4 h-4 text-red-600" checked>
-                                <span class="text-sm text-bark-700">Innstilles til anerkjennelse: <strong>Ja</strong></span>
+                                <input type="radio" name="nkk_anerkjennelse" value="ja" class="w-5 h-5 text-green-600" checked>
+                                <span class="text-sm text-bark-700 font-medium">Ja</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="nkk_anerkjennelse" value="nei" class="w-5 h-5 text-red-600">
+                                <span class="text-sm text-bark-700 font-medium">Nei</span>
                             </label>
                         </div>
-                        <div class="flex items-center gap-3">
+                    </div>
+
+                    <!-- Protester - avkrysningsboks -->
+                    <div class="bg-white border border-bark-200 rounded-xl p-4 mb-3">
+                        <p class="text-sm font-medium text-bark-700 mb-3">Innkomne protester?</p>
+                        <div class="flex gap-6 mb-3">
                             <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="nkk_anerkjennelse" value="nei" class="w-4 h-4 text-red-600">
-                                <span class="text-sm text-bark-700">Innstilles til anerkjennelse: <strong>Nei</strong></span>
+                                <input type="radio" name="nkk_protester" value="nei" class="w-5 h-5 text-green-600" checked onchange="toggleProtester()">
+                                <span class="text-sm text-bark-700 font-medium">Nei</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="nkk_protester" value="ja" class="w-5 h-5 text-red-600" onchange="toggleProtester()">
+                                <span class="text-sm text-bark-700 font-medium">Ja</span>
                             </label>
                         </div>
+                        <div id="nkk_protesterSection" class="hidden">
+                            <textarea id="nkk_protesterBeskrivelse" rows="3" placeholder="Beskriv protest(er), behandling og utfall..." class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm"></textarea>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-3 mb-3">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" id="nkk_harProtester" onchange="toggleProtester()" class="w-4 h-4 text-red-600 rounded">
-                            <span class="text-sm text-bark-700">Innkomne protester</span>
-                        </label>
+
+                    <!-- Utfyllende kommentarer -->
+                    <div class="mb-4">
+                        <label class="block text-sm text-bark-600 mb-1">Evt. utfyllende kommentarer</label>
+                        <textarea id="nkk_nkkrepKommentar" rows="3" placeholder="Eventuelle kommentarer fra NKK-representanten..." class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm"></textarea>
                     </div>
-                    <div id="nkk_protesterSection" class="hidden mb-3">
-                        <textarea id="nkk_protester" rows="3" placeholder="Beskriv protest(er), behandling og utfall..." class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm"></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-bark-600 mb-1">Utfyllende kommentarer</label>
-                        <textarea id="nkk_nkkrepKommentar" rows="2" placeholder="Eventuelle kommentarer..." class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none text-sm"></textarea>
+
+                    <!-- Digital signatur NKK-rep -->
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-red-800">Digital signatur NKK-representant</p>
+                                <p class="text-xs text-red-600" id="nkk_nkkrepSignStatus">Ikke signert</p>
+                            </div>
+                            <button type="button" onclick="signereDigitalt('nkkrep')" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                </svg>
+                                Signer digitalt
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <!-- CACIT -->
                 <div class="mb-6">
                     <h4 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
-                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">4</span>
+                        <span class="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-sm font-bold">5</span>
                         CACIT (hvis aktuelt)
                     </h4>
                     <div class="flex items-center gap-3 mb-3">
@@ -5444,8 +5571,56 @@
 
         function toggleProtester() {
             const section = document.getElementById('nkk_protesterSection');
-            const checkbox = document.getElementById('nkk_harProtester');
-            section.classList.toggle('hidden', !checkbox.checked);
+            const selectedValue = document.querySelector('input[name="nkk_protester"]:checked')?.value;
+            section.classList.toggle('hidden', selectedValue !== 'ja');
+        }
+
+        // Digital signatur funksjon
+        function signereDigitalt(rolle) {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('no-NO');
+            const timeStr = now.toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' });
+
+            let navn = '';
+            let statusEl, inputEl;
+
+            if (rolle === 'proveleder') {
+                inputEl = document.getElementById('nkk_provelederNavn');
+                statusEl = document.getElementById('nkk_provelederSignStatus');
+            } else if (rolle === 'nkkrep') {
+                inputEl = document.getElementById('nkk_nkkrepNavn');
+                statusEl = document.getElementById('nkk_nkkrepSignStatus');
+            }
+
+            if (inputEl) {
+                navn = inputEl.value.trim();
+            }
+
+            if (!navn) {
+                alert('Vennligst fyll inn navn før signering');
+                return;
+            }
+
+            // Lag initialer fra navn
+            const initialer = navn.split(' ').map(n => n.charAt(0).toUpperCase()).join('');
+            const signaturTekst = `${navn} (${initialer}) — ${dateStr} kl ${timeStr}`;
+
+            if (statusEl) {
+                statusEl.innerHTML = `<span class="text-green-600 font-medium">✓ Signert: ${signaturTekst}</span>`;
+                statusEl.dataset.signert = 'true';
+                statusEl.dataset.signatur = signaturTekst;
+            }
+
+            // Lagre signatur i localStorage
+            const signaturer = JSON.parse(localStorage.getItem('nkkSignaturer') || '{}');
+            signaturer[rolle] = {
+                navn: navn,
+                initialer: initialer,
+                dato: dateStr,
+                tid: timeStr,
+                fullSignatur: signaturTekst
+            };
+            localStorage.setItem('nkkSignaturer', JSON.stringify(signaturer));
         }
 
         function toggleCACIT() {
@@ -5461,24 +5636,107 @@
             const organizerName = document.getElementById('organizerName')?.value || '';
 
             const dogs = getAllDogsFromParties();
+            const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
 
-            document.getElementById('nkk_proveNavn').textContent = trialName;
+            // Beregn statistikk per klasse
+            const statsPerKlasse = {
+                UK: { pameldt: 0, startet: 0, premiert: 0 },
+                AK: { pameldt: 0, startet: 0, premiert: 0 },
+                VK: { pameldt: 0, startet: 0, premiert: 0 }
+            };
+
+            // Telle påmeldte (inkl. de på venteliste som ikke startet)
+            participants.forEach(p => {
+                const klasse = (p.klasse || 'AK').toUpperCase();
+                if (statsPerKlasse[klasse]) {
+                    statsPerKlasse[klasse].pameldt++;
+                } else {
+                    // Ukjent klasse -> AK som fallback
+                    statsPerKlasse['AK'].pameldt++;
+                }
+            });
+
+            // Telle startende og premierte
+            dogs.forEach(dog => {
+                const klasse = (dog.klasse || 'AK').toUpperCase();
+                const target = statsPerKlasse[klasse] || statsPerKlasse['AK'];
+                target.startet++;
+
+                // Sjekk om hunden er premiert (har resultat)
+                if (dog.result && dog.result.premie && dog.result.premie !== 'Ikke premiert' && dog.result.premie !== '0') {
+                    target.premiert++;
+                }
+            });
+
+            // Fyll inn statistikk i modalen
+            document.getElementById('nkk_pameldtUK').textContent = statsPerKlasse.UK.pameldt;
+            document.getElementById('nkk_startetUK').textContent = statsPerKlasse.UK.startet;
+            document.getElementById('nkk_premiertUK').textContent = statsPerKlasse.UK.premiert;
+
+            document.getElementById('nkk_pameldtAK').textContent = statsPerKlasse.AK.pameldt;
+            document.getElementById('nkk_startetAK').textContent = statsPerKlasse.AK.startet;
+            document.getElementById('nkk_premiertAK').textContent = statsPerKlasse.AK.premiert;
+
+            document.getElementById('nkk_pameldtVK').textContent = statsPerKlasse.VK.pameldt;
+            document.getElementById('nkk_startetVK').textContent = statsPerKlasse.VK.startet;
+            document.getElementById('nkk_premiertVK').textContent = statsPerKlasse.VK.premiert;
+
+            // Totaler
+            const totalPameldt = statsPerKlasse.UK.pameldt + statsPerKlasse.AK.pameldt + statsPerKlasse.VK.pameldt;
+            const totalStartet = statsPerKlasse.UK.startet + statsPerKlasse.AK.startet + statsPerKlasse.VK.startet;
+            const totalPremiert = statsPerKlasse.UK.premiert + statsPerKlasse.AK.premiert + statsPerKlasse.VK.premiert;
+
+            document.getElementById('nkk_antallPameldt').textContent = totalPameldt;
+            document.getElementById('nkk_antallStartende').textContent = totalStartet;
+            document.getElementById('nkk_antallPremierte').textContent = totalPremiert;
+
+            // Grunnleggende info
             document.getElementById('nkk_dato').textContent = trialDate ? new Date(trialDate).toLocaleDateString('no-NO') : '-';
             document.getElementById('nkk_sted').textContent = trialLocation || '-';
             document.getElementById('nkk_arrangor').textContent = organizerName || '-';
-            document.getElementById('nkk_antallStartende').textContent = dogs.length;
 
-            // Dommerliste
+            // Auto-fyll NKK-rep seksjonen
+            const datoDisplay = trialDate ? new Date(trialDate).toLocaleDateString('no-NO') : '-';
+            const proveTypeSelect = document.getElementById('nkk_proveType');
+            const proveTypeDisplay = proveTypeSelect?.options[proveTypeSelect.selectedIndex]?.text || '-';
+
+            if (document.getElementById('nkk_proveTypeDisplay')) {
+                document.getElementById('nkk_proveTypeDisplay').textContent = proveTypeDisplay;
+            }
+            if (document.getElementById('nkk_arrangorRep')) {
+                document.getElementById('nkk_arrangorRep').textContent = organizerName || '-';
+            }
+            if (document.getElementById('nkk_stedRep')) {
+                document.getElementById('nkk_stedRep').textContent = trialLocation || '-';
+            }
+            if (document.getElementById('nkk_datoRep')) {
+                document.getElementById('nkk_datoRep').textContent = datoDisplay;
+            }
+            if (document.getElementById('nkk_refNrDisplay')) {
+                document.getElementById('nkk_refNrDisplay').textContent = document.getElementById('nkk_refNr')?.value || '-';
+            }
+
+            // Dommerliste med dommerelever og signaturstatus
             const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
             const partyDommere = JSON.parse(localStorage.getItem('partyDommere') || '{}');
+            const dommerSignaturer = JSON.parse(localStorage.getItem('dommerSignaturer') || '{}');
 
-            let dommerHtml = '<div class="grid grid-cols-2 gap-0 border-b border-bark-200"><div class="text-left py-1 font-semibold">Parti</div><div class="text-left py-1 font-semibold">Dommer</div></div>';
-
+            let dommerHtml = '';
             parties.forEach(party => {
                 const dommer = partyDommere[party.name];
-                dommerHtml += `<div class="grid grid-cols-2 gap-0 border-b border-bark-100">
-                    <div class="py-1">${party.displayName || party.name}</div>
-                    <div class="py-1">${dommer ? dommer.navn : '<span class="text-bark-400 italic">Ikke tildelt</span>'}</div>
+                const dommerNavn = dommer ? dommer.navn : '';
+                const dommerElev = dommer?.elev || '';
+                const erSignert = dommerSignaturer[party.name]?.signert || false;
+
+                dommerHtml += `<div class="grid grid-cols-4 gap-0 border-b border-bark-100 text-sm">
+                    <div class="px-3 py-2">${party.displayName || party.name}</div>
+                    <div class="px-3 py-2">${dommerNavn || '<span class="text-bark-400 italic">-</span>'}</div>
+                    <div class="px-3 py-2">${dommerElev || '<span class="text-bark-400">-</span>'}</div>
+                    <div class="px-3 py-2 text-center">
+                        ${erSignert
+                            ? '<svg class="w-5 h-5 text-green-600 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                            : '<span class="text-bark-400">—</span>'}
+                    </div>
                 </div>`;
             });
             document.getElementById('nkk_dommerListe').innerHTML = dommerHtml;
@@ -5491,18 +5749,66 @@
             if (praktiskInfo.provelederTelefon) {
                 document.getElementById('nkk_provelederTlf').value = praktiskInfo.provelederTelefon;
             }
+            if (praktiskInfo.provelederAdresse) {
+                document.getElementById('nkk_provelederAdresse').value = praktiskInfo.provelederAdresse;
+            }
+            if (praktiskInfo.provelederPostnr) {
+                document.getElementById('nkk_provelederPostnr').value = praktiskInfo.provelederPostnr;
+            }
+            if (praktiskInfo.provelederEpost) {
+                document.getElementById('nkk_provelederEpost').value = praktiskInfo.provelederEpost;
+            }
+
+            // Last inn tidligere signaturer
+            const signaturer = JSON.parse(localStorage.getItem('nkkSignaturer') || '{}');
+            if (signaturer.proveleder) {
+                const statusEl = document.getElementById('nkk_provelederSignStatus');
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class="text-green-600 font-medium">✓ Signert: ${signaturer.proveleder.fullSignatur}</span>`;
+                    statusEl.dataset.signert = 'true';
+                }
+            }
+            if (signaturer.nkkrep) {
+                const statusEl = document.getElementById('nkk_nkkrepSignStatus');
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class="text-green-600 font-medium">✓ Signert: ${signaturer.nkkrep.fullSignatur}</span>`;
+                    statusEl.dataset.signert = 'true';
+                }
+            }
         }
 
         function saveNKKRapportDraft() {
             const draft = {
-                referat: document.getElementById('nkk_referat').value,
-                provelederNavn: document.getElementById('nkk_provelederNavn').value,
-                provelederTlf: document.getElementById('nkk_provelederTlf').value,
-                provelederRapport: document.getElementById('nkk_provelederRapport').value,
-                nkkrepNavn: document.getElementById('nkk_nkkrepNavn').value,
-                nkkrepKommentar: document.getElementById('nkk_nkkrepKommentar').value,
-                harProtester: document.getElementById('nkk_harProtester').checked,
-                protester: document.getElementById('nkk_protester').value
+                // Referansenr og prøvetype
+                refNr: document.getElementById('nkk_refNr')?.value || '',
+                proveType: document.getElementById('nkk_proveType')?.value || '',
+                dogwebArra: document.getElementById('nkk_dogwebArra')?.value || '',
+
+                // Prøveleder info
+                referat: document.getElementById('nkk_referat')?.value || '',
+                provelederNavn: document.getElementById('nkk_provelederNavn')?.value || '',
+                provelederTlf: document.getElementById('nkk_provelederTlf')?.value || '',
+                provelederAdresse: document.getElementById('nkk_provelederAdresse')?.value || '',
+                provelederPostnr: document.getElementById('nkk_provelederPostnr')?.value || '',
+                provelederEpost: document.getElementById('nkk_provelederEpost')?.value || '',
+                vaksinasjonsOK: document.getElementById('nkk_vaksinasjonsOK')?.checked || false,
+
+                // NKK-representant
+                nkkrepNavn: document.getElementById('nkk_nkkrepNavn')?.value || '',
+                nkkrepTlf: document.getElementById('nkk_nkkrepTlf')?.value || '',
+                nkkrepAdresse: document.getElementById('nkk_nkkrepAdresse')?.value || '',
+                nkkrepPostnr: document.getElementById('nkk_nkkrepPostnr')?.value || '',
+                nkkrepKommentar: document.getElementById('nkk_nkkrepKommentar')?.value || '',
+
+                // Anerkjennelse og protester (radio buttons)
+                anerkjennelse: document.querySelector('input[name="nkk_anerkjennelse"]:checked')?.value || 'ja',
+                protester: document.querySelector('input[name="nkk_protester"]:checked')?.value || 'nei',
+                protesterBeskrivelse: document.getElementById('nkk_protesterBeskrivelse')?.value || '',
+
+                // CACIT
+                harCACIT: document.getElementById('nkk_harCACIT')?.checked || false,
+                cacitHund: document.getElementById('nkk_cacitHund')?.value || '',
+                cacitEier: document.getElementById('nkk_cacitEier')?.value || ''
             };
 
             localStorage.setItem('nkkRapportDraft', JSON.stringify(draft));
@@ -5512,99 +5818,154 @@
         function loadNKKDraft() {
             const draft = JSON.parse(localStorage.getItem('nkkRapportDraft') || '{}');
 
+            // Referansenr og prøvetype
+            if (draft.refNr) document.getElementById('nkk_refNr').value = draft.refNr;
+            if (draft.proveType) document.getElementById('nkk_proveType').value = draft.proveType;
+            if (draft.dogwebArra) document.getElementById('nkk_dogwebArra').value = draft.dogwebArra;
+
+            // Prøveleder info
             if (draft.referat) document.getElementById('nkk_referat').value = draft.referat;
             if (draft.provelederNavn) document.getElementById('nkk_provelederNavn').value = draft.provelederNavn;
             if (draft.provelederTlf) document.getElementById('nkk_provelederTlf').value = draft.provelederTlf;
-            if (draft.provelederRapport) document.getElementById('nkk_provelederRapport').value = draft.provelederRapport;
-            if (draft.nkkrepNavn) document.getElementById('nkk_nkkrepNavn').value = draft.nkkrepNavn;
-            if (draft.nkkrepKommentar) document.getElementById('nkk_nkkrepKommentar').value = draft.nkkrepKommentar;
-            if (draft.harProtester) {
-                document.getElementById('nkk_harProtester').checked = true;
-                document.getElementById('nkk_protesterSection').classList.remove('hidden');
+            if (draft.provelederAdresse) document.getElementById('nkk_provelederAdresse').value = draft.provelederAdresse;
+            if (draft.provelederPostnr) document.getElementById('nkk_provelederPostnr').value = draft.provelederPostnr;
+            if (draft.provelederEpost) document.getElementById('nkk_provelederEpost').value = draft.provelederEpost;
+            if (draft.vaksinasjonsOK !== undefined) {
+                document.getElementById('nkk_vaksinasjonsOK').checked = draft.vaksinasjonsOK;
             }
-            if (draft.protester) document.getElementById('nkk_protester').value = draft.protester;
+
+            // NKK-representant
+            if (draft.nkkrepNavn) document.getElementById('nkk_nkkrepNavn').value = draft.nkkrepNavn;
+            if (draft.nkkrepTlf) document.getElementById('nkk_nkkrepTlf').value = draft.nkkrepTlf;
+            if (draft.nkkrepAdresse) document.getElementById('nkk_nkkrepAdresse').value = draft.nkkrepAdresse;
+            if (draft.nkkrepPostnr) document.getElementById('nkk_nkkrepPostnr').value = draft.nkkrepPostnr;
+            if (draft.nkkrepKommentar) document.getElementById('nkk_nkkrepKommentar').value = draft.nkkrepKommentar;
+
+            // Anerkjennelse (radio)
+            if (draft.anerkjennelse) {
+                const radio = document.querySelector(`input[name="nkk_anerkjennelse"][value="${draft.anerkjennelse}"]`);
+                if (radio) radio.checked = true;
+            }
+
+            // Protester (radio)
+            if (draft.protester) {
+                const radio = document.querySelector(`input[name="nkk_protester"][value="${draft.protester}"]`);
+                if (radio) radio.checked = true;
+                if (draft.protester === 'ja') {
+                    document.getElementById('nkk_protesterSection').classList.remove('hidden');
+                }
+            }
+            if (draft.protesterBeskrivelse) {
+                document.getElementById('nkk_protesterBeskrivelse').value = draft.protesterBeskrivelse;
+            }
+
+            // CACIT
+            if (draft.harCACIT) {
+                document.getElementById('nkk_harCACIT').checked = true;
+                document.getElementById('nkk_cacitSection').classList.remove('hidden');
+            }
+            if (draft.cacitHund) document.getElementById('nkk_cacitHund').value = draft.cacitHund;
+            if (draft.cacitEier) document.getElementById('nkk_cacitEier').value = draft.cacitEier;
         }
 
         async function generateNKKRapport() {
             const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
             const dogs = getAllDogsFromParties();
+            const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
             const stats = calculateStats();
 
             // Lag ZIP med alle vedlegg
             const zip = new JSZip();
 
-            // 1. Hovedrapport (Excel) - NKK-rapport uten kritikker
-            const reportRows = [{
-                'Felt': 'RAPPORT TIL NKK',
-                'Verdi': ''
-            }, {
-                'Felt': '',
-                'Verdi': ''
-            }, {
-                'Felt': 'Prøvenavn',
-                'Verdi': trialName
-            }, {
-                'Felt': 'Dato',
-                'Verdi': document.getElementById('nkk_dato').textContent
-            }, {
-                'Felt': 'Sted',
-                'Verdi': document.getElementById('nkk_sted').textContent
-            }, {
-                'Felt': 'Arrangør',
-                'Verdi': document.getElementById('nkk_arrangor').textContent
-            }, {
-                'Felt': 'Antall startende',
-                'Verdi': dogs.length
-            }, {
-                'Felt': '',
-                'Verdi': ''
-            }, {
-                'Felt': 'RAPPORT FRA NKKs REPRESENTANT',
-                'Verdi': ''
-            }, {
-                'Felt': 'Navn',
-                'Verdi': document.getElementById('nkk_nkkrepNavn').value || '(Ikke utfylt)'
-            }, {
-                'Felt': 'Rapport',
-                'Verdi': document.getElementById('nkk_nkkrepKommentar').value || '(Ikke utfylt)'
-            }, {
-                'Felt': '',
-                'Verdi': ''
-            }, {
-                'Felt': 'REFERAT FRA PRØVELEDER',
-                'Verdi': ''
-            }, {
-                'Felt': 'Prøveleder',
-                'Verdi': document.getElementById('nkk_provelederNavn').value || '(Ikke utfylt)'
-            }, {
-                'Felt': 'Telefon',
-                'Verdi': document.getElementById('nkk_provelederTlf').value || ''
-            }, {
-                'Felt': 'Referat',
-                'Verdi': document.getElementById('nkk_referat').value || '(Ikke utfylt)'
-            }, {
-                'Felt': '',
-                'Verdi': ''
-            }, {
-                'Felt': 'VAKSINASJON',
-                'Verdi': ''
-            }, {
-                'Felt': 'Alle deltakere vaksinert',
-                'Verdi': document.getElementById('nkk_vaksinasjonsOK')?.checked ? 'Ja' : 'Nei/Ukjent'
-            }, {
-                'Felt': '',
-                'Verdi': ''
-            }, {
-                'Felt': 'PROTESTER',
-                'Verdi': document.getElementById('nkk_harProtester').checked ? 'Ja' : 'Nei'
-            }];
+            // Hent prøvetype tekst
+            const proveTypeSelect = document.getElementById('nkk_proveType');
+            const proveTypeTekst = proveTypeSelect?.options[proveTypeSelect.selectedIndex]?.text || '-';
 
-            if (document.getElementById('nkk_harProtester').checked) {
+            // Beregn statistikk per klasse
+            const statsPerKlasse = {
+                UK: { pameldt: 0, startet: 0, premiert: 0 },
+                AK: { pameldt: 0, startet: 0, premiert: 0 },
+                VK: { pameldt: 0, startet: 0, premiert: 0 }
+            };
+
+            participants.forEach(p => {
+                const klasse = (p.klasse || 'AK').toUpperCase();
+                if (statsPerKlasse[klasse]) statsPerKlasse[klasse].pameldt++;
+                else statsPerKlasse['AK'].pameldt++;
+            });
+
+            dogs.forEach(dog => {
+                const klasse = (dog.klasse || 'AK').toUpperCase();
+                const target = statsPerKlasse[klasse] || statsPerKlasse['AK'];
+                target.startet++;
+                if (dog.result && dog.result.premie && dog.result.premie !== 'Ikke premiert' && dog.result.premie !== '0') {
+                    target.premiert++;
+                }
+            });
+
+            // Hent signaturer
+            const signaturer = JSON.parse(localStorage.getItem('nkkSignaturer') || '{}');
+            const provelederSign = signaturer.proveleder?.fullSignatur || '(Ikke signert)';
+            const nkkrepSign = signaturer.nkkrep?.fullSignatur || '(Ikke signert)';
+
+            // Hent radio-verdier
+            const anerkjennelse = document.querySelector('input[name="nkk_anerkjennelse"]:checked')?.value || 'ja';
+            const harProtester = document.querySelector('input[name="nkk_protester"]:checked')?.value === 'ja';
+
+            // 1. Hovedrapport (Excel) - NKK-rapport uten kritikker
+            const reportRows = [
+                { 'Felt': 'RAPPORT TIL NKK', 'Verdi': '' },
+                { 'Felt': '', 'Verdi': '' },
+                { 'Felt': 'Referansenr.', 'Verdi': document.getElementById('nkk_refNr')?.value || '(Ikke utfylt)' },
+                { 'Felt': 'Prøvetype', 'Verdi': proveTypeTekst },
+                { 'Felt': 'Prøvenavn', 'Verdi': trialName },
+                { 'Felt': 'Dato', 'Verdi': document.getElementById('nkk_dato').textContent },
+                { 'Felt': 'Sted', 'Verdi': document.getElementById('nkk_sted').textContent },
+                { 'Felt': 'Arrangør', 'Verdi': document.getElementById('nkk_arrangor').textContent },
+                { 'Felt': 'Kjørt i DogWeb-Arra', 'Verdi': document.getElementById('nkk_dogwebArra')?.value === 'ja' ? 'Ja' : 'Nei' },
+                { 'Felt': '', 'Verdi': '' },
+                { 'Felt': 'STATISTIKK', 'Verdi': '' },
+                { 'Felt': 'UK - Påmeldt', 'Verdi': statsPerKlasse.UK.pameldt },
+                { 'Felt': 'UK - Startet', 'Verdi': statsPerKlasse.UK.startet },
+                { 'Felt': 'UK - Premiert', 'Verdi': statsPerKlasse.UK.premiert },
+                { 'Felt': 'AK - Påmeldt', 'Verdi': statsPerKlasse.AK.pameldt },
+                { 'Felt': 'AK - Startet', 'Verdi': statsPerKlasse.AK.startet },
+                { 'Felt': 'AK - Premiert', 'Verdi': statsPerKlasse.AK.premiert },
+                { 'Felt': 'VK - Påmeldt', 'Verdi': statsPerKlasse.VK.pameldt },
+                { 'Felt': 'VK - Startet', 'Verdi': statsPerKlasse.VK.startet },
+                { 'Felt': 'VK - Premiert', 'Verdi': statsPerKlasse.VK.premiert },
+                { 'Felt': 'TOTALT - Påmeldt', 'Verdi': statsPerKlasse.UK.pameldt + statsPerKlasse.AK.pameldt + statsPerKlasse.VK.pameldt },
+                { 'Felt': 'TOTALT - Startet', 'Verdi': statsPerKlasse.UK.startet + statsPerKlasse.AK.startet + statsPerKlasse.VK.startet },
+                { 'Felt': 'TOTALT - Premiert', 'Verdi': statsPerKlasse.UK.premiert + statsPerKlasse.AK.premiert + statsPerKlasse.VK.premiert },
+                { 'Felt': '', 'Verdi': '' },
+                { 'Felt': 'REFERAT FRA PRØVELEDER', 'Verdi': '' },
+                { 'Felt': 'Prøveleder', 'Verdi': document.getElementById('nkk_provelederNavn').value || '(Ikke utfylt)' },
+                { 'Felt': 'Adresse', 'Verdi': document.getElementById('nkk_provelederAdresse')?.value || '' },
+                { 'Felt': 'Postnr/sted', 'Verdi': document.getElementById('nkk_provelederPostnr')?.value || '' },
+                { 'Felt': 'Telefon', 'Verdi': document.getElementById('nkk_provelederTlf').value || '' },
+                { 'Felt': 'E-post', 'Verdi': document.getElementById('nkk_provelederEpost')?.value || '' },
+                { 'Felt': 'Referat', 'Verdi': document.getElementById('nkk_referat').value || '(Ikke utfylt)' },
+                { 'Felt': 'Vaksinasjonsattester bekreftet', 'Verdi': document.getElementById('nkk_vaksinasjonsOK')?.checked ? 'Ja' : 'Nei/Ukjent' },
+                { 'Felt': 'Digital signatur', 'Verdi': provelederSign },
+                { 'Felt': '', 'Verdi': '' },
+                { 'Felt': 'RAPPORT FRA NKKs REPRESENTANT', 'Verdi': '' },
+                { 'Felt': 'Navn', 'Verdi': document.getElementById('nkk_nkkrepNavn').value || '(Ikke utfylt)' },
+                { 'Felt': 'Telefon dagtid', 'Verdi': document.getElementById('nkk_nkkrepTlf')?.value || '' },
+                { 'Felt': 'Adresse', 'Verdi': document.getElementById('nkk_nkkrepAdresse')?.value || '' },
+                { 'Felt': 'Postnr/sted', 'Verdi': document.getElementById('nkk_nkkrepPostnr')?.value || '' },
+                { 'Felt': 'Innstilles til anerkjennelse', 'Verdi': anerkjennelse === 'ja' ? 'Ja' : 'Nei' },
+                { 'Felt': 'Innkomne protester', 'Verdi': harProtester ? 'Ja' : 'Nei' }
+            ];
+
+            if (harProtester) {
                 reportRows.push({
-                    'Felt': 'Beskrivelse',
-                    'Verdi': document.getElementById('nkk_protester').value || ''
+                    'Felt': 'Beskrivelse av protester',
+                    'Verdi': document.getElementById('nkk_protesterBeskrivelse')?.value || ''
                 });
             }
+
+            reportRows.push({ 'Felt': 'Kommentarer', 'Verdi': document.getElementById('nkk_nkkrepKommentar')?.value || '' });
+            reportRows.push({ 'Felt': 'Digital signatur', 'Verdi': nkkrepSign });
 
             // CACIT-info
             const harCACIT = document.getElementById('nkk_harCACIT')?.checked;
@@ -5623,7 +5984,7 @@
             }
 
             const reportWs = XLSX.utils.json_to_sheet(reportRows);
-            reportWs['!cols'] = [{ wch: 30 }, { wch: 60 }];
+            reportWs['!cols'] = [{ wch: 35 }, { wch: 60 }];
             const reportWb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(reportWb, reportWs, 'NKK Rapport');
             const reportData = XLSX.write(reportWb, { bookType: 'xlsx', type: 'array' });
@@ -5690,6 +6051,106 @@
                 zip.file('03_Resultatliste.xlsx', resultatFileData);
             }
 
+            // 4. Dommerliste med dommerelever
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const partyDommere = JSON.parse(localStorage.getItem('partyDommere') || '{}');
+            const dommerSignaturer = JSON.parse(localStorage.getItem('dommerSignaturer') || '{}');
+
+            const dommerRows = [
+                { 'Parti': 'DOMMEROVERSIKT', 'Dommer': '', 'Dommerelev': '', 'Digital signatur': '' },
+                { 'Parti': '', 'Dommer': '', 'Dommerelev': '', 'Digital signatur': '' }
+            ];
+
+            parties.forEach(party => {
+                const dommer = partyDommere[party.name];
+                const dommerNavn = dommer ? dommer.navn : '-';
+                const dommerElev = dommer?.elev || '-';
+                const erSignert = dommerSignaturer[party.name]?.signert || false;
+                const signaturTekst = erSignert ? dommerSignaturer[party.name].signatur : '(Ikke signert)';
+
+                dommerRows.push({
+                    'Parti': party.displayName || party.name,
+                    'Dommer': dommerNavn,
+                    'Dommerelev': dommerElev,
+                    'Digital signatur': signaturTekst
+                });
+            });
+
+            if (dommerRows.length > 2) {
+                const dommerWs = XLSX.utils.json_to_sheet(dommerRows);
+                dommerWs['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 40 }];
+                const dommerWb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(dommerWb, dommerWs, 'Dommeroversikt');
+                const dommerFileData = XLSX.write(dommerWb, { bookType: 'xlsx', type: 'array' });
+                zip.file('04_Dommeroversikt.xlsx', dommerFileData);
+            }
+
+            // 5. DVK-rapport (dyrevelferdskontroll)
+            const dvkKontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
+            const dvkSignatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+
+            if (dvkKontroller.length > 0 || dvkSignatur.signert) {
+                const dvkRows = [
+                    { 'Felt': 'RAPPORT FRA DYREVELFERDSKONTROLLØR', 'Verdi': '' },
+                    { 'Felt': '', 'Verdi': '' },
+                    { 'Felt': 'Antall kontroller gjennomført', 'Verdi': dvkKontroller.length },
+                    { 'Felt': 'DVK signatur', 'Verdi': dvkSignatur.fullSignatur || '(Ikke signert)' },
+                    { 'Felt': '', 'Verdi': '' }
+                ];
+
+                // Statistikk
+                let okCount = 0, veiledningCount = 0, tiltakCount = 0;
+                dvkKontroller.forEach(k => {
+                    if (k.tiltak?.diskvalifikasjon || k.tiltak?.proveleder) tiltakCount++;
+                    else if (k.tiltak?.advarsel || k.tiltak?.dommer || k.tiltak?.veiledning) veiledningCount++;
+                    else okCount++;
+                });
+
+                dvkRows.push({ 'Felt': 'Kontroller uten anmerkninger', 'Verdi': okCount });
+                dvkRows.push({ 'Felt': 'Kontroller med veiledning', 'Verdi': veiledningCount });
+                dvkRows.push({ 'Felt': 'Kontroller med tiltak', 'Verdi': tiltakCount });
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'DETALJERTE KONTROLLER', 'Verdi': '' });
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+
+                const typeLabels = {
+                    rutine: 'Rutinekontroll',
+                    varslet: 'Varslet kontroll',
+                    spontan: 'Spontan kontroll',
+                    oppfolging: 'Oppfølging'
+                };
+
+                dvkKontroller.forEach((k, i) => {
+                    const dato = k.tidspunkt ? new Date(k.tidspunkt).toLocaleString('no-NO') : '-';
+                    dvkRows.push({ 'Felt': `--- Kontroll ${i + 1} ---`, 'Verdi': '' });
+                    dvkRows.push({ 'Felt': 'Tidspunkt', 'Verdi': dato });
+                    dvkRows.push({ 'Felt': 'Type', 'Verdi': typeLabels[k.type] || k.type });
+                    dvkRows.push({ 'Felt': 'Parti', 'Verdi': k.parti || 'Generelt' });
+                    if (k.hund) dvkRows.push({ 'Felt': 'Hund', 'Verdi': k.hund });
+                    if (k.forer) dvkRows.push({ 'Felt': 'Fører', 'Verdi': k.forer });
+                    if (k.beskrivelse) dvkRows.push({ 'Felt': 'Beskrivelse', 'Verdi': k.beskrivelse });
+
+                    // Tiltak
+                    const tiltak = [];
+                    if (k.tiltak?.ingen) tiltak.push('Ingen tiltak');
+                    if (k.tiltak?.veiledning) tiltak.push('Muntlig veiledning');
+                    if (k.tiltak?.advarsel) tiltak.push('Advarsel');
+                    if (k.tiltak?.dommer) tiltak.push('Varslet dommer');
+                    if (k.tiltak?.proveleder) tiltak.push('Varslet prøveleder');
+                    if (k.tiltak?.diskvalifikasjon) tiltak.push('Anbefalt diskvalifikasjon');
+
+                    dvkRows.push({ 'Felt': 'Tiltak', 'Verdi': tiltak.length > 0 ? tiltak.join(', ') : 'Ingen' });
+                    dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                });
+
+                const dvkWs = XLSX.utils.json_to_sheet(dvkRows);
+                dvkWs['!cols'] = [{ wch: 35 }, { wch: 60 }];
+                const dvkWb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(dvkWb, dvkWs, 'DVK Rapport');
+                const dvkFileData = XLSX.write(dvkWb, { bookType: 'xlsx', type: 'array' });
+                zip.file('05_DVK_Rapport.xlsx', dvkFileData);
+            }
+
             // Generer og last ned ZIP
             const content = await zip.generateAsync({ type: 'blob' });
             const link = document.createElement('a');
@@ -5699,6 +6160,53 @@
             URL.revokeObjectURL(link.href);
 
             alert(`✅ NKK-rapport generert med ${dogs.length} deltakere.\n\nMerk: Kritikker sendes IKKE til NKK, men til raseklubbene.`);
+        }
+
+        // === DVK STATUS ===
+
+        function seDVKStatus() {
+            const kontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
+            const signatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+
+            let msg = `DVK-status\n\n`;
+            msg += `Antall kontroller: ${kontroller.length}\n`;
+
+            if (kontroller.length > 0) {
+                let ok = 0, veiledning = 0, tiltak = 0;
+                kontroller.forEach(k => {
+                    if (k.tiltak?.diskvalifikasjon || k.tiltak?.proveleder) tiltak++;
+                    else if (k.tiltak?.advarsel || k.tiltak?.dommer || k.tiltak?.veiledning) veiledning++;
+                    else ok++;
+                });
+                msg += `- OK: ${ok}\n- Veiledning gitt: ${veiledning}\n- Tiltak iverksatt: ${tiltak}\n\n`;
+            }
+
+            if (signatur.signert) {
+                msg += `Signert: ${signatur.fullSignatur}`;
+            } else {
+                msg += `Status: Ikke signert ennå`;
+            }
+
+            alert(msg);
+        }
+
+        function updateDVKStatusBadge() {
+            const badge = document.getElementById('dvkStatusBadge');
+            if (!badge) return;
+
+            const kontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
+            const signatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+
+            if (signatur.signert) {
+                badge.className = 'text-xs px-2 py-1 rounded-full bg-green-100 text-green-700';
+                badge.textContent = `Signert (${kontroller.length} kontroller)`;
+            } else if (kontroller.length > 0) {
+                badge.className = 'text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700';
+                badge.textContent = `${kontroller.length} kontroller`;
+            } else {
+                badge.className = 'text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700';
+                badge.textContent = 'Ikke startet';
+            }
         }
 
         // === FKF RAPPORT ===
@@ -7384,6 +7892,7 @@
         // Last terminliste ved oppstart
         document.addEventListener('DOMContentLoaded', function() {
             lastTerminliste();
+            updateDVKStatusBadge();
 
             // Sjekk om det er en valgt prøve fra før
             const savedTrialId = localStorage.getItem('currentTrialId');

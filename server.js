@@ -476,6 +476,46 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sms_log_created ON sms_log(created_at);
   CREATE INDEX IF NOT EXISTS idx_sms_log_type ON sms_log(type);
   CREATE INDEX IF NOT EXISTS idx_sms_log_klubb ON sms_log(klubb_id);
+
+  -- DVK-kontroller (dyrevelferdskontroll)
+  CREATE TABLE IF NOT EXISTS dvk_kontroller (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    tidspunkt TEXT NOT NULL,
+    parti TEXT,
+    type TEXT NOT NULL CHECK(type IN ('rutine', 'varslet', 'spontan', 'oppfolging')),
+    hund TEXT,
+    forer TEXT,
+    beskrivelse TEXT,
+    obs_hundehold INTEGER DEFAULT 0,
+    obs_behandling INTEGER DEFAULT 0,
+    obs_vannmat INTEGER DEFAULT 0,
+    obs_hvile INTEGER DEFAULT 0,
+    obs_veiledning INTEGER DEFAULT 0,
+    obs_bekymring INTEGER DEFAULT 0,
+    tiltak_ingen INTEGER DEFAULT 0,
+    tiltak_veiledning INTEGER DEFAULT 0,
+    tiltak_advarsel INTEGER DEFAULT 0,
+    tiltak_dommer INTEGER DEFAULT 0,
+    tiltak_proveleder INTEGER DEFAULT 0,
+    tiltak_diskvalifikasjon INTEGER DEFAULT 0,
+    registrert_av TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_dvk_kontroller_prove ON dvk_kontroller(prove_id);
+
+  -- DVK-signatur
+  CREATE TABLE IF NOT EXISTS dvk_signaturer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL UNIQUE,
+    dvk_navn TEXT NOT NULL,
+    dvk_telefon TEXT,
+    initialer TEXT,
+    signert_dato TEXT NOT NULL,
+    signert_tid TEXT NOT NULL,
+    full_signatur TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Migrations for existing databases ---
@@ -6659,6 +6699,122 @@ app.post("/api/varsle-nkkrep", async (c) => {
 
   } catch (err) {
     console.error("Feil ved NKK-varsling:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// DVK-KONTROLLER API
+// =============================================
+
+// Hent alle DVK-kontroller for en prøve
+app.get("/api/dvk-kontroller/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const kontroller = db.prepare(`
+      SELECT * FROM dvk_kontroller
+      WHERE prove_id = ?
+      ORDER BY created_at DESC
+    `).all(prove_id);
+    return c.json(kontroller);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Opprett ny DVK-kontroll
+app.post("/api/dvk-kontroller", async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      prove_id, tidspunkt, parti, type, hund, forer, beskrivelse,
+      obs_hundehold, obs_behandling, obs_vannmat, obs_hvile, obs_veiledning, obs_bekymring,
+      tiltak_ingen, tiltak_veiledning, tiltak_advarsel, tiltak_dommer, tiltak_proveleder, tiltak_diskvalifikasjon,
+      registrert_av
+    } = body;
+
+    if (!prove_id || !tidspunkt || !type || !registrert_av) {
+      return c.json({ error: "Mangler påkrevde felt: prove_id, tidspunkt, type, registrert_av" }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO dvk_kontroller (
+        prove_id, tidspunkt, parti, type, hund, forer, beskrivelse,
+        obs_hundehold, obs_behandling, obs_vannmat, obs_hvile, obs_veiledning, obs_bekymring,
+        tiltak_ingen, tiltak_veiledning, tiltak_advarsel, tiltak_dommer, tiltak_proveleder, tiltak_diskvalifikasjon,
+        registrert_av
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      prove_id, tidspunkt, parti || null, type, hund || null, forer || null, beskrivelse || null,
+      obs_hundehold ? 1 : 0, obs_behandling ? 1 : 0, obs_vannmat ? 1 : 0,
+      obs_hvile ? 1 : 0, obs_veiledning ? 1 : 0, obs_bekymring ? 1 : 0,
+      tiltak_ingen ? 1 : 0, tiltak_veiledning ? 1 : 0, tiltak_advarsel ? 1 : 0,
+      tiltak_dommer ? 1 : 0, tiltak_proveleder ? 1 : 0, tiltak_diskvalifikasjon ? 1 : 0,
+      registrert_av
+    );
+
+    autoBackup("dvk-kontroll");
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett en DVK-kontroll
+app.delete("/api/dvk-kontroller/:id", (c) => {
+  const { id } = c.req.param();
+  try {
+    const result = db.prepare("DELETE FROM dvk_kontroller WHERE id = ?").run(id);
+    if (result.changes === 0) {
+      return c.json({ error: "Kontroll ikke funnet" }, 404);
+    }
+    autoBackup("dvk-kontroll-delete");
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent DVK-signatur for en prøve
+app.get("/api/dvk-signatur/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const signatur = db.prepare("SELECT * FROM dvk_signaturer WHERE prove_id = ?").get(prove_id);
+    if (!signatur) {
+      return c.json({ exists: false });
+    }
+    return c.json({ exists: true, ...signatur });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater DVK-signatur
+app.post("/api/dvk-signatur", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { prove_id, dvk_navn, dvk_telefon, initialer, signert_dato, signert_tid, full_signatur } = body;
+
+    if (!prove_id || !dvk_navn || !signert_dato || !signert_tid || !full_signatur) {
+      return c.json({ error: "Mangler påkrevde felt" }, 400);
+    }
+
+    // Upsert - oppdater hvis finnes, ellers opprett
+    db.prepare(`
+      INSERT INTO dvk_signaturer (prove_id, dvk_navn, dvk_telefon, initialer, signert_dato, signert_tid, full_signatur)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(prove_id) DO UPDATE SET
+        dvk_navn = excluded.dvk_navn,
+        dvk_telefon = excluded.dvk_telefon,
+        initialer = excluded.initialer,
+        signert_dato = excluded.signert_dato,
+        signert_tid = excluded.signert_tid,
+        full_signatur = excluded.full_signatur
+    `).run(prove_id, dvk_navn, dvk_telefon || null, initialer || null, signert_dato, signert_tid, full_signatur);
+
+    autoBackup("dvk-signatur");
+    return c.json({ success: true });
+  } catch (err) {
     return c.json({ error: err.message }, 500);
   }
 });

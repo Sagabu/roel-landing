@@ -544,6 +544,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS prove_dokumenter (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     prove_id TEXT NOT NULL,
+    klubb_id TEXT,
     dokument_type TEXT NOT NULL,
     tittel TEXT NOT NULL,
     filnavn TEXT,
@@ -552,7 +553,23 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_prove ON prove_dokumenter(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_klubb ON prove_dokumenter(klubb_id);
   CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_type ON prove_dokumenter(dokument_type);
+
+  -- Klubb-dokumentarkiv (generelle dokumenter ikke knyttet til prøver)
+  CREATE TABLE IF NOT EXISTS klubb_dokumenter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    klubb_id TEXT NOT NULL,
+    dokument_type TEXT NOT NULL,
+    tittel TEXT NOT NULL,
+    beskrivelse TEXT,
+    filnavn TEXT,
+    innhold_json TEXT,
+    opprettet_av TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_klubb_dokumenter_klubb ON klubb_dokumenter(klubb_id);
+  CREATE INDEX IF NOT EXISTS idx_klubb_dokumenter_type ON klubb_dokumenter(dokument_type);
 `);
 
 // --- Migrations for existing databases ---
@@ -7073,6 +7090,162 @@ app.post("/api/prove-dokumenter", async (c) => {
 
     autoBackup("dokument-arkivert");
     return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// KLUBB-DOKUMENTARKIV API
+// =============================================
+
+// Hent alle dokumenter for en klubb (både prøve-dokumenter og generelle)
+app.get("/api/klubber/:klubb_id/dokumenter", (c) => {
+  const { klubb_id } = c.req.param();
+  const type = c.req.query("type"); // Filtrer på type
+  const prove_id = c.req.query("prove_id"); // Filtrer på prøve
+
+  try {
+    // Hent generelle klubb-dokumenter
+    let generalQuery = `
+      SELECT id, klubb_id, NULL as prove_id, dokument_type, tittel, beskrivelse, filnavn, opprettet_av, created_at, 'general' as kilde
+      FROM klubb_dokumenter
+      WHERE klubb_id = ?
+    `;
+    const generalParams = [klubb_id];
+
+    if (type) {
+      generalQuery += ` AND dokument_type = ?`;
+      generalParams.push(type);
+    }
+
+    // Hent prøve-dokumenter for denne klubben
+    let proveQuery = `
+      SELECT pd.id, pd.klubb_id, pd.prove_id, pd.dokument_type, pd.tittel, NULL as beskrivelse, pd.filnavn, pd.opprettet_av, pd.created_at, 'prove' as kilde
+      FROM prove_dokumenter pd
+      WHERE pd.klubb_id = ?
+    `;
+    const proveParams = [klubb_id];
+
+    if (type) {
+      proveQuery += ` AND pd.dokument_type = ?`;
+      proveParams.push(type);
+    }
+
+    if (prove_id) {
+      proveQuery += ` AND pd.prove_id = ?`;
+      proveParams.push(prove_id);
+    }
+
+    const generalDocs = db.prepare(generalQuery).all(...generalParams);
+    const proveDocs = db.prepare(proveQuery).all(...proveParams);
+
+    // Kombiner og sorter etter dato
+    const allDocs = [...generalDocs, ...proveDocs].sort((a, b) =>
+      new Date(b.created_at) - new Date(a.created_at)
+    );
+
+    return c.json(allDocs);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent prøver med dokumentstatistikk for en klubb
+app.get("/api/klubber/:klubb_id/dokumenter/prover", (c) => {
+  const { klubb_id } = c.req.param();
+
+  try {
+    // Hent alle prøver for klubben med dokumenttelling
+    const prover = db.prepare(`
+      SELECT
+        p.id,
+        p.navn,
+        p.start_dato,
+        p.status,
+        (SELECT COUNT(*) FROM prove_dokumenter WHERE prove_id = p.id OR prove_id = p.navn) as dok_count,
+        (SELECT COUNT(*) FROM dvk_journaler WHERE prove_id = p.id OR prove_id = p.navn) as dvk_count
+      FROM prover p
+      WHERE p.klubb_id = ?
+      ORDER BY p.start_dato DESC
+    `).all(klubb_id);
+
+    return c.json(prover);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent ett klubb-dokument
+app.get("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
+  const { klubb_id, id } = c.req.param();
+  const kilde = c.req.query("kilde") || "general";
+
+  try {
+    let dok;
+    if (kilde === "prove") {
+      dok = db.prepare(`SELECT * FROM prove_dokumenter WHERE id = ? AND klubb_id = ?`).get(id, klubb_id);
+    } else {
+      dok = db.prepare(`SELECT * FROM klubb_dokumenter WHERE id = ? AND klubb_id = ?`).get(id, klubb_id);
+    }
+
+    if (!dok) {
+      return c.json({ error: "Dokument ikke funnet" }, 404);
+    }
+
+    return c.json(dok);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Legg til generelt klubb-dokument
+app.post("/api/klubber/:klubb_id/dokumenter", async (c) => {
+  const { klubb_id } = c.req.param();
+
+  try {
+    const body = await c.req.json();
+    const { dokument_type, tittel, beskrivelse, filnavn, innhold, opprettet_av } = body;
+
+    if (!dokument_type || !tittel) {
+      return c.json({ error: "Mangler påkrevde felt" }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO klubb_dokumenter (klubb_id, dokument_type, tittel, beskrivelse, filnavn, innhold_json, opprettet_av)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      klubb_id, dokument_type, tittel, beskrivelse || null, filnavn || null,
+      innhold ? JSON.stringify(innhold) : null,
+      opprettet_av || null
+    );
+
+    autoBackup("klubb-dokument-lagt-til");
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett klubb-dokument
+app.delete("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
+  const { klubb_id, id } = c.req.param();
+  const kilde = c.req.query("kilde") || "general";
+
+  try {
+    let result;
+    if (kilde === "prove") {
+      result = db.prepare(`DELETE FROM prove_dokumenter WHERE id = ? AND klubb_id = ?`).run(id, klubb_id);
+    } else {
+      result = db.prepare(`DELETE FROM klubb_dokumenter WHERE id = ? AND klubb_id = ?`).run(id, klubb_id);
+    }
+
+    if (result.changes === 0) {
+      return c.json({ error: "Dokument ikke funnet" }, 404);
+    }
+
+    autoBackup("klubb-dokument-slettet");
+    return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

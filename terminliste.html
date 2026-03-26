@@ -220,8 +220,18 @@
             const statusBadge = getStatusBadge(prove);
             const typeBadge = getTypeBadge(prove.type);
 
-            // Beregn ledig kapasitet
-            const kapasitet = prove.kapasitet || { UK: { ledig: '?', maks: 40 }, AK: { ledig: '?', maks: 40 }, VK: { ledig: '?', maks: 20 } };
+            // Formater klasser
+            let klasserStr = '';
+            try {
+                const klasserData = typeof prove.klasser === 'string' ? JSON.parse(prove.klasser) : prove.klasser;
+                if (klasserData) {
+                    const klasser = [];
+                    if (klasserData.uk) klasser.push('UK');
+                    if (klasserData.ak) klasser.push('AK');
+                    if (klasserData.vk) klasser.push('VK');
+                    klasserStr = klasser.join(', ');
+                }
+            } catch (e) {}
 
             return `
                 <div class="bg-white rounded-xl border border-bark-100 hover:border-warm-200 hover:shadow-md transition overflow-hidden">
@@ -252,26 +262,13 @@
                                     <div class="flex flex-wrap gap-2 mt-2">
                                         ${typeBadge}
                                         ${statusBadge}
+                                        ${klasserStr ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-forest-100 text-forest-700">${klasserStr}</span>` : ''}
                                     </div>
                                 </div>
 
-                                <!-- Kapasitet og handling -->
+                                <!-- Status-tekst -->
                                 <div class="text-right">
-                                    <div class="text-xs text-bark-500 mb-2">
-                                        <span class="block">UK: ${kapasitet.UK?.ledig ?? '?'}/${kapasitet.UK?.maks ?? 40}</span>
-                                        <span class="block">AK: ${kapasitet.AK?.ledig ?? '?'}/${kapasitet.AK?.maks ?? 40}</span>
-                                        <span class="block">VK: ${kapasitet.VK?.ledig ?? '?'}/${kapasitet.VK?.maks ?? 20}</span>
-                                    </div>
-                                    ${prove.status === 'active' ? `
-                                        <a href="pamelding.html?prove=${prove.id}" class="inline-flex items-center gap-1 bg-warm-500 hover:bg-warm-600 text-white text-sm font-medium px-3 py-2 rounded-lg transition">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                            </svg>
-                                            Meld på
-                                        </a>
-                                    ` : `
-                                        <span class="text-xs text-bark-400">Påmelding åpner snart</span>
-                                    `}
+                                    <span class="text-xs text-bark-400">Påmelding åpner snart</span>
                                 </div>
                             </div>
                         </div>

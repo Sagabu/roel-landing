@@ -513,7 +513,9 @@
                         results: h.results || [],
                         // Dokumenter
                         eierbevis: h.eierbevis || null,
+                        eierbevisDato: h.eierbevis_dato || null,
                         aversjonsbevis: h.aversjonsbevis || null,
+                        aversjonsbevisDato: h.aversjonsbevis_dato || null,
                         vaksinasjon: h.vaksinasjon || null,
                         vaksinasjonDato: h.vaksinasjon_dato || null
                     }));
@@ -1194,7 +1196,7 @@
 
         // Dokumenter (eierbevis, aversjonsbevis, vaksinasjon)
         let currentDocuments = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
-        let documentDates = { vaksinasjon: null };
+        let documentDates = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
 
         function handleDocumentUpload(event, docType) {
             const file = event.target.files[0];
@@ -1206,9 +1208,8 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     currentDocuments[docType] = e.target.result;
-                    if (docType === 'vaksinasjon') {
-                        documentDates.vaksinasjon = new Date().toISOString();
-                    }
+                    // Sett ny dato når dokument lastes opp
+                    documentDates[docType] = new Date().toISOString();
                     updateDocumentPreview(docType);
                 };
                 reader.readAsDataURL(file);
@@ -1295,7 +1296,7 @@
 
         function resetDocumentFields() {
             currentDocuments = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
-            documentDates = { vaksinasjon: null };
+            documentDates = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
             ['eierbevis', 'aversjonsbevis', 'vaksinasjon'].forEach(docType => {
                 document.getElementById(`${docType}Upload`).value = '';
                 updateDocumentPreview(docType);
@@ -1309,6 +1310,8 @@
                 vaksinasjon: dog.vaksinasjon || null
             };
             documentDates = {
+                eierbevis: dog.eierbevisDato || null,
+                aversjonsbevis: dog.aversjonsbevisDato || null,
                 vaksinasjon: dog.vaksinasjonDato || null
             };
             ['eierbevis', 'aversjonsbevis', 'vaksinasjon'].forEach(docType => {
@@ -1334,12 +1337,13 @@
                 eier_telefon: userPhone,
                 bilde: currentDogPhoto || null,
                 // Dokumenter (eierbevis, aversjonsbevis, vaksinasjon)
+                // Bevar eksisterende dato hvis dokumentet ikke er endret
                 eierbevis: currentDocuments.eierbevis || null,
-                eierbevis_dato: currentDocuments.eierbevis ? new Date().toISOString() : null,
+                eierbevis_dato: currentDocuments.eierbevis ? (documentDates.eierbevis || new Date().toISOString()) : null,
                 aversjonsbevis: currentDocuments.aversjonsbevis || null,
-                aversjonsbevis_dato: currentDocuments.aversjonsbevis ? new Date().toISOString() : null,
+                aversjonsbevis_dato: currentDocuments.aversjonsbevis ? (documentDates.aversjonsbevis || new Date().toISOString()) : null,
                 vaksinasjon: currentDocuments.vaksinasjon || null,
-                vaksinasjon_dato: documentDates.vaksinasjon || null
+                vaksinasjon_dato: currentDocuments.vaksinasjon ? (documentDates.vaksinasjon || new Date().toISOString()) : null
             };
 
             try {

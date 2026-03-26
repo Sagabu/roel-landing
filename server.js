@@ -2925,7 +2925,9 @@ app.get("/api/hunder", (c) => {
 // Opprett ny hund
 app.post("/api/hunder", async (c) => {
   const body = await c.req.json();
-  const { regnr, navn, rase, kjonn, fodselsdato, eier_telefon, klubb_id, bilde } = body;
+  const { regnr, navn, rase, kjonn, fodselsdato, eier_telefon, klubb_id, bilde,
+          eierbevis, eierbevis_dato, aversjonsbevis, aversjonsbevis_dato,
+          vaksinasjon, vaksinasjon_dato } = body;
 
   if (!navn) {
     return c.json({ error: "Navn er påkrevd" }, 400);
@@ -2951,9 +2953,13 @@ app.post("/api/hunder", async (c) => {
 
   try {
     const result = db.prepare(`
-      INSERT INTO hunder (regnr, navn, rase, kjonn, fodt, eier_telefon, klubb_id, bilde)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(regnr || null, navn, rase || null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null);
+      INSERT INTO hunder (regnr, navn, rase, kjonn, fodt, eier_telefon, klubb_id, bilde,
+                          eierbevis, eierbevis_dato, aversjonsbevis, aversjonsbevis_dato,
+                          vaksinasjon, vaksinasjon_dato)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(regnr || null, navn, rase || null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null,
+           eierbevis || null, eierbevis_dato || null, aversjonsbevis || null, aversjonsbevis_dato || null,
+           vaksinasjon || null, vaksinasjon_dato || null);
 
     const newHund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(result.lastInsertRowid);
     return c.json(newHund, 201);

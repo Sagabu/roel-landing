@@ -69,9 +69,24 @@
     </header>
 
     <main class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Innsendte oppgjør som venter på godkjenning -->
+        <div id="ventendeOppgjorSection" class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6 no-print">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                </svg>
+                Innsendte oppgjør
+                <span id="ventendeAntall" class="ml-2 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">0</span>
+            </h2>
+            <div id="ventendeOppgjorListe" class="space-y-3">
+                <p class="text-bark-400 text-center py-4">Laster...</p>
+            </div>
+        </div>
+
         <!-- Prøvevalg -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6 no-print">
-            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4">Velg prøve og dommer</h2>
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4">Velg prøve og dommer (manuell utfylling)</h2>
+            <p class="text-sm text-bark-500 mb-4">Bruk dette for å fylle ut oppgjør på vegne av en dommer, eller rediger eksisterende oppgjør.</p>
             <div class="grid md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm text-bark-600 mb-1">Prøve</label>
@@ -482,6 +497,141 @@
         async function init() {
             document.getElementById('signaturDato').valueAsDate = new Date();
             await loadProver();
+            await loadVentendeOppgjor();
+        }
+
+        // Last alle innsendte oppgjør som venter på godkjenning
+        async function loadVentendeOppgjor() {
+            const container = document.getElementById('ventendeOppgjorListe');
+            const badge = document.getElementById('ventendeAntall');
+
+            try {
+                // Hent alle prøver først
+                const proverResp = await fetch('/api/prover');
+                const prover = await proverResp.json();
+
+                let alleOppgjor = [];
+
+                // Hent oppgjør for hver prøve
+                for (const prove of prover) {
+                    try {
+                        const oppgjorResp = await fetch(`/api/prover/${prove.id}/dommer-oppgjor`);
+                        const oppgjorListe = await oppgjorResp.json();
+                        oppgjorListe.forEach(o => {
+                            o.prove_navn = prove.navn;
+                            o.prove_dato = prove.start_dato;
+                        });
+                        alleOppgjor = alleOppgjor.concat(oppgjorListe);
+                    } catch {}
+                }
+
+                // Filtrer til innsendte (venter på godkjenning)
+                const innsendte = alleOppgjor.filter(o => o.status === 'innsendt');
+
+                badge.textContent = innsendte.length;
+
+                if (innsendte.length === 0) {
+                    container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen oppgjør venter på godkjenning</p>';
+                    return;
+                }
+
+                container.innerHTML = innsendte.map(o => `
+                    <div class="flex items-center justify-between p-4 border border-blue-100 bg-blue-50 rounded-xl">
+                        <div>
+                            <h4 class="font-medium text-bark-800">${o.dommer_navn}</h4>
+                            <p class="text-sm text-bark-500">${o.prove_navn} • ${o.prove_dato || '-'}</p>
+                            <p class="text-sm text-forest-700 font-medium">Totalt: kr ${(o.total_belop || 0).toFixed(0)},-</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="visOppgjorDetaljer('${o.prove_id}', '${o.dommer_telefon}')"
+                                class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-3 py-2 rounded-lg text-sm font-medium transition">
+                                Se detaljer
+                            </button>
+                            <button onclick="godkjennOppgjor(${o.id})"
+                                class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Godkjenn
+                            </button>
+                            <button onclick="avvisOppgjor(${o.id})"
+                                class="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm font-medium transition">
+                                Avvis
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (err) {
+                console.error('Feil ved lasting av ventende oppgjør:', err);
+                container.innerHTML = '<p class="text-red-500 text-center py-4">Kunne ikke laste oppgjør</p>';
+            }
+        }
+
+        async function godkjennOppgjor(oppgjorId) {
+            if (!confirm('Er du sikker på at du vil godkjenne dette oppgjøret?')) return;
+
+            try {
+                const resp = await fetch(`/api/dommer-oppgjor/${oppgjorId}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'godkjent' })
+                });
+
+                if (resp.ok) {
+                    alert('Oppgjøret er godkjent!');
+                    loadVentendeOppgjor();
+                } else {
+                    const err = await resp.json();
+                    alert('Feil: ' + (err.error || 'Kunne ikke godkjenne'));
+                }
+            } catch (err) {
+                alert('Feil ved godkjenning');
+            }
+        }
+
+        async function avvisOppgjor(oppgjorId) {
+            const grunn = prompt('Oppgi grunn for avvisning (vises til dommer):');
+            if (grunn === null) return;
+
+            try {
+                // Først oppdater status
+                const statusResp = await fetch(`/api/dommer-oppgjor/${oppgjorId}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'avvist' })
+                });
+
+                if (statusResp.ok) {
+                    alert('Oppgjøret er avvist. Dommer får beskjed om å korrigere og sende inn på nytt.');
+                    loadVentendeOppgjor();
+                } else {
+                    alert('Kunne ikke avvise oppgjøret');
+                }
+            } catch (err) {
+                alert('Feil ved avvisning');
+            }
+        }
+
+        function visOppgjorDetaljer(proveId, dommerTelefon) {
+            // Sett prøve og dommer i dropdown og last oppgjøret
+            document.getElementById('proveSelect').value = proveId;
+            loadDommere().then(() => {
+                // Finn og velg riktig dommer
+                const dommerSelect = document.getElementById('dommerSelect');
+                for (const opt of dommerSelect.options) {
+                    if (opt.value) {
+                        try {
+                            const data = JSON.parse(opt.value);
+                            if (data.telefon === dommerTelefon) {
+                                opt.selected = true;
+                                loadOppgjor();
+                                break;
+                            }
+                        } catch {}
+                    }
+                }
+            });
         }
 
         async function loadProver() {

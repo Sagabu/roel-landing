@@ -4203,6 +4203,29 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
   }
 });
 
+// Hent alle tildelinger for en dommer (basert på telefon)
+app.get("/api/dommer/:telefon/tildelinger", (c) => {
+  const telefon = c.req.param("telefon");
+  const normalized = normalizePhone(telefon);
+
+  if (!normalized) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  const tildelinger = db.prepare(`
+    SELECT dt.id, dt.parti, dt.dommer_rolle, dt.prove_id,
+           p.navn as prove_navn, p.start_dato, p.slutt_dato, p.sted,
+           k.navn as klubb_navn
+    FROM dommer_tildelinger dt
+    JOIN prover p ON dt.prove_id = p.id
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE dt.dommer_telefon = ?
+    ORDER BY p.start_dato DESC
+  `).all(normalized);
+
+  return c.json(tildelinger);
+});
+
 // ============================================
 // FKF GODKJENTE DOMMERE API
 // ============================================

@@ -82,10 +82,19 @@
     </header>
 
     <!-- Day tabs -->
-    <div class="bg-white border-b border-bark-100 sticky top-[73px] z-40">
+    <div class="bg-white border-b border-bark-100 sticky top-0 z-40">
         <div class="max-w-6xl mx-auto px-6">
             <div id="dayTabs" class="flex overflow-x-auto gap-2 py-4">
-                <!-- Populated dynamically -->
+                <!-- Populated dynamically: Dag 1, Dag 2, etc. -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Class tabs (UK/AK, VK) -->
+    <div class="bg-bark-50 border-b border-bark-100">
+        <div class="max-w-6xl mx-auto px-6">
+            <div id="classTabs" class="flex gap-2 py-3">
+                <!-- Populated dynamically based on selected day -->
             </div>
         </div>
     </div>
@@ -247,6 +256,13 @@
         }
 
         const proveId = getProveIdFromUrl();
+
+        // Global state
+        let proveConfig = null;
+        let allParties = [];
+        let currentDay = 1;
+        let currentClass = 'ukak'; // 'ukak', 'vk', 'vk-kval', 'vk-finale'
+        let liveData = {}; // Live judge scores keyed by party ID
 
         // Load praktisk info
         async function loadPraktiskInfo() {
@@ -426,6 +442,172 @@
             }
         }
 
+        // Load trial configuration (number of days, VK setup, etc.)
+        async function loadProveConfig() {
+            try {
+                if (proveId) {
+                    const response = await fetch(`/api/prover/${proveId}`);
+                    if (response.ok) {
+                        const prove = await response.json();
+                        proveConfig = {
+                            antallDager: calculateDays(prove.start_dato, prove.slutt_dato),
+                            startDato: prove.start_dato,
+                            sluttDato: prove.slutt_dato,
+                            vkDager: prove.vk_dager || 1, // 1 = 1-dagers VK, 2 = 2-dagers (kval + finale)
+                            vkKvalDag: prove.vk_kval_dag || null, // Hvilken dag VK kval kjøres
+                            vkFinaleDag: prove.vk_finale_dag || null, // Hvilken dag VK finale kjøres
+                            ukakDager: prove.ukak_dager || [] // Hvilke dager UK/AK kjøres
+                        };
+                        return;
+                    }
+                }
+
+                // Fallback to legacy /api/trial
+                const resp = await fetch('/api/trial');
+                if (resp.ok) {
+                    const trial = await resp.json();
+                    proveConfig = {
+                        antallDager: calculateDays(trial.startDate, trial.endDate) || 2,
+                        startDato: trial.startDate,
+                        sluttDato: trial.endDate,
+                        vkDager: 1,
+                        vkKvalDag: null,
+                        vkFinaleDag: null,
+                        ukakDager: []
+                    };
+                }
+            } catch (e) {
+                console.log('Could not load prove config:', e);
+                // Default config
+                proveConfig = { antallDager: 2, vkDager: 1, ukakDager: [] };
+            }
+        }
+
+        function calculateDays(startDate, endDate) {
+            if (!startDate || !endDate) return 2;
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffTime = Math.abs(end - start);
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        }
+
+        // Render day tabs based on trial configuration
+        function renderDayTabs() {
+            const container = document.getElementById('dayTabs');
+            container.innerHTML = '';
+
+            const antallDager = proveConfig?.antallDager || 2;
+
+            for (let dag = 1; dag <= antallDager; dag++) {
+                const isActive = dag === currentDay;
+                const tab = document.createElement('button');
+                tab.className = `day-tab px-6 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition ${
+                    isActive
+                        ? 'bg-warm-500 text-white shadow-md'
+                        : 'bg-bark-100 text-bark-700 hover:bg-bark-200'
+                }`;
+                tab.dataset.day = dag;
+                tab.innerHTML = `Dag ${dag}`;
+                tab.addEventListener('click', () => selectDay(dag));
+                container.appendChild(tab);
+            }
+        }
+
+        // Render class tabs (UK/AK, VK) based on current day and trial config
+        function renderClassTabs() {
+            const container = document.getElementById('classTabs');
+            container.innerHTML = '';
+
+            const tabs = [];
+
+            // UK/AK is available on all days (unless specifically configured otherwise)
+            tabs.push({ id: 'ukak', label: 'UK/AK', icon: '🐕' });
+
+            // Check VK availability based on trial config
+            const vkDager = proveConfig?.vkDager || 1;
+
+            if (vkDager === 1) {
+                // 1-dagers VK - show on last day or configured day
+                const vkDag = proveConfig?.vkFinaleDag || proveConfig?.antallDager || 2;
+                if (currentDay === vkDag) {
+                    tabs.push({ id: 'vk', label: 'VK', icon: '🏆' });
+                }
+            } else if (vkDager === 2) {
+                // 2-dagers VK - show kval on kval day, finale on finale day
+                const kvalDag = proveConfig?.vkKvalDag || (proveConfig?.antallDager - 1) || 1;
+                const finaleDag = proveConfig?.vkFinaleDag || proveConfig?.antallDager || 2;
+
+                if (currentDay === kvalDag) {
+                    tabs.push({ id: 'vk-kval', label: 'VK Kval', icon: '🎯' });
+                }
+                if (currentDay === finaleDag) {
+                    tabs.push({ id: 'vk-finale', label: 'VK Finale', icon: '🏆' });
+                }
+            }
+
+            tabs.forEach(t => {
+                const isActive = t.id === currentClass || (t.id.startsWith('vk') && currentClass.startsWith('vk') && t.id === currentClass);
+                const tab = document.createElement('button');
+                tab.className = `class-tab px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition flex items-center gap-2 ${
+                    isActive
+                        ? 'bg-bark-800 text-white shadow-sm'
+                        : 'bg-white text-bark-700 hover:bg-bark-100 border border-bark-200'
+                }`;
+                tab.dataset.classType = t.id;
+                tab.innerHTML = `<span>${t.icon}</span> ${t.label}`;
+                tab.addEventListener('click', () => selectClass(t.id));
+                container.appendChild(tab);
+            });
+
+            // If current class not available on this day, switch to ukak
+            if (!tabs.find(t => t.id === currentClass)) {
+                currentClass = 'ukak';
+                renderClassTabs(); // Re-render with corrected selection
+                return;
+            }
+        }
+
+        function selectDay(dag) {
+            currentDay = dag;
+            renderDayTabs();
+            renderClassTabs();
+            renderPartyLists();
+        }
+
+        function selectClass(classType) {
+            currentClass = classType;
+            renderClassTabs();
+            renderPartyLists();
+        }
+
+        // Load live data from judge cards
+        async function loadLiveData() {
+            try {
+                // Try to get live scores from API
+                if (proveId) {
+                    const response = await fetch(`/api/prover/${proveId}/live-scores`);
+                    if (response.ok) {
+                        liveData = await response.json();
+                        return;
+                    }
+                }
+
+                // Fallback to localStorage judgeData
+                const parties = allParties;
+                parties.forEach(party => {
+                    const key = `judgeData_${party.id?.toLowerCase().replace(/\s+/g, '') || party.name?.toLowerCase().replace(/\s+/g, '')}`;
+                    const data = localStorage.getItem(key);
+                    if (data) {
+                        try {
+                            liveData[party.id || party.name] = JSON.parse(data);
+                        } catch (e) {}
+                    }
+                });
+            } catch (e) {
+                console.log('Could not load live data:', e);
+            }
+        }
+
         // Load and render parties
         async function loadParties() {
             let parties = [];
@@ -436,24 +618,33 @@
                     const response = await fetch(`/api/prover/${proveId}/partier`);
                     if (response.ok) {
                         const data = await response.json();
-                        // Transform API response to expected format
                         const partierObj = data.partier || {};
                         const proveInfo = await fetch(`/api/prover/${proveId}`).then(r => r.json()).catch(() => ({}));
 
                         for (const [partiNavn, hunder] of Object.entries(partierObj)) {
                             const isVK = partiNavn.toLowerCase().includes('vk');
+                            const isKval = partiNavn.toLowerCase().includes('kval');
+                            const isFinale = partiNavn.toLowerCase().includes('finale');
                             const ukCount = hunder.filter(h => h.klasse === 'UK').length;
                             const akCount = hunder.filter(h => h.klasse === 'AK').length;
+
+                            let type = 'ukak';
+                            if (isVK) {
+                                if (isKval) type = 'vk-kval';
+                                else if (isFinale) type = 'vk-finale';
+                                else type = 'vk';
+                            }
 
                             parties.push({
                                 id: partiNavn,
                                 name: partiNavn,
-                                type: isVK ? 'vk' : 'ukak',
+                                type,
                                 date: proveInfo.start_dato || new Date().toISOString().split('T')[0],
                                 day: hunder[0]?.dag || 1,
                                 ukCount,
                                 akCount,
                                 dogs: hunder.map((h, i) => ({
+                                    id: h.id,
                                     hundenavn: h.hund_navn || h.navn,
                                     regnr: h.regnr,
                                     rase: h.rase,
@@ -479,6 +670,9 @@
                 }
             }
 
+            // Store globally
+            allParties = parties;
+
             if (!parties || parties.length === 0) {
                 return;
             }
@@ -486,185 +680,252 @@
             // Hide empty state
             document.getElementById('emptyState').classList.add('hidden');
 
-            // Group parties by day/date
-            const partiesByDay = {};
-            parties.forEach(party => {
-                const key = party.date || 'unknown';
-                if (!partiesByDay[key]) {
-                    partiesByDay[key] = [];
-                }
-                partiesByDay[key].push(party);
-            });
-
-            // Sort days
-            const sortedDays = Object.keys(partiesByDay).sort();
-
-            // Render day tabs
-            const dayTabsContainer = document.getElementById('dayTabs');
-            dayTabsContainer.innerHTML = '';
-
-            sortedDays.forEach((dayKey, dayIndex) => {
-                const formattedDate = dayKey !== 'unknown' ? formatDateNorwegian(dayKey) : `Dag ${dayIndex + 1}`;
-                const shortDate = dayKey !== 'unknown' ? formatShortDate(dayKey) : `Dag ${dayIndex + 1}`;
-                const dayParties = partiesByDay[dayKey];
-                const totalDogs = dayParties.reduce((sum, p) => sum + (p.dogs?.length || 0), 0);
-
-                const tab = document.createElement('button');
-                tab.className = `day-tab px-5 py-2.5 rounded-full text-sm font-medium whitespace-nowrap transition ${dayIndex === 0 ? 'bg-warm-500 text-white shadow-sm' : 'bg-bark-100 text-bark-700 hover:bg-bark-200'}`;
-                tab.dataset.day = dayKey;
-                tab.innerHTML = `
-                    <span class="hidden sm:inline">${formattedDate}</span>
-                    <span class="sm:hidden">${shortDate}</span>
-                    <span class="ml-1 ${dayIndex === 0 ? 'text-sky-100' : 'text-bark-500'}">(${totalDogs})</span>
-                `;
-                tab.addEventListener('click', () => switchDay(dayKey));
-                dayTabsContainer.appendChild(tab);
-            });
-
-            // Render party lists for each day
-            const container = document.getElementById('partyListsContainer');
-            container.innerHTML = '';
-
-            sortedDays.forEach((dayKey, dayIndex) => {
-                const dayParties = partiesByDay[dayKey];
-                const formattedDate = dayKey !== 'unknown' ? formatDateNorwegian(dayKey) : `Dag ${dayIndex + 1}`;
-
-                const daySection = document.createElement('div');
-                daySection.className = `day-section ${dayIndex === 0 ? '' : 'hidden'}`;
-                daySection.dataset.day = dayKey;
-
-                // Day header
-                const dayHeader = document.createElement('div');
-                dayHeader.className = 'mb-8';
-                dayHeader.innerHTML = `
-                    <h2 class="text-2xl font-serif font-semibold text-bark-900 capitalize">${formattedDate}</h2>
-                    <p class="text-bark-500 mt-1">${dayParties.length} parti${dayParties.length > 1 ? 'er' : ''} denne dagen</p>
-                `;
-                daySection.appendChild(dayHeader);
-
-                // Party cards
-                const partiesGrid = document.createElement('div');
-                partiesGrid.className = 'space-y-4';
-
-                dayParties.forEach(party => {
-                    const isVK = party.type === 'vk';
-
-                    const partyCard = document.createElement('div');
-                    partyCard.className = 'bg-white rounded-2xl shadow-sm border border-bark-100 overflow-hidden';
-
-                    // UK/AK class badges
-                    let classBadges = '';
-                    if (!isVK && (party.ukCount || party.akCount)) {
-                        classBadges = `
-                            <span class="px-3 py-1 bg-warm-100 text-warm-800 rounded-full text-xs font-medium">UK: ${party.ukCount || 0}</span>
-                            <span class="px-3 py-1 bg-bark-100 text-bark-700 rounded-full text-xs font-medium">AK: ${party.akCount || 0}</span>
-                        `;
-                    }
-
-                    partyCard.innerHTML = `
-                        <div class="px-6 py-4 bg-bark-50 border-b border-bark-100">
-                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                <div class="flex items-center gap-3">
-                                    <h3 class="text-lg font-serif font-semibold text-bark-900">${party.name}</h3>
-                                    <span class="text-sm text-bark-400">Dag ${party.day || dayIndex + 1}</span>
-                                </div>
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="px-3 py-1 ${isVK ? 'bg-amber-100 text-amber-700' : 'bg-warm-100 text-warm-800'} rounded-full text-sm font-medium">${party.dogs?.length || 0} hunder</span>
-                                    ${classBadges}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="bg-bark-50/50 border-b border-bark-100 grid grid-cols-8 gap-0">
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Nr</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Klasse</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Hund</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Rase</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Eier</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Fører</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Premie</div>
-                            <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Cacit</div>
-                        </div>
-                        <div class="divide-y divide-bark-100">
-                            ${(party.dogs || []).map((dog, i) => {
-                                const klasse = dog.klasse || (isVK ? 'VK' : 'AK');
-                                let klasseBadgeColor = 'bg-bark-100 text-bark-700';
-                                if (klasse === 'UK') {
-                                    klasseBadgeColor = 'bg-warm-100 text-warm-800';
-                                } else if (klasse === 'VK') {
-                                    klasseBadgeColor = 'bg-amber-100 text-amber-700';
-                                }
-
-                                return \`
-                                    <div class="grid grid-cols-8 gap-0 hover:bg-bark-50 transition">
-                                        <div class="py-3 px-4 font-medium text-bark-600">\${i + 1}</div>
-                                        <div class="py-3 px-4"><span class="px-2 py-1 \${klasseBadgeColor} rounded text-xs font-medium">\${klasse}</span></div>
-                                        <div class="py-3 px-4">
-                                            <div class="font-medium text-bark-900">\${dog.hundenavn || dog.navn || ''}</div>
-                                            <div class="text-xs text-bark-400">\${dog.regnr || ''}</div>
-                                        </div>
-                                        <div class="py-3 px-4 text-bark-600">\${dog.rase || ''}</div>
-                                        <div class="py-3 px-4 text-bark-700">\${dog.eier || ''}</div>
-                                        <div class="py-3 px-4 text-bark-600">\${dog.forer && dog.forer !== dog.eier ? dog.forer : ''}</div>
-                                        <div class="py-3 px-4 text-bark-600 font-medium">\${dog.premie || ''}</div>
-                                        <div class="py-3 px-4 text-bark-600">\${dog.cacit || ''}</div>
-                                    </div>
-                                \`;
-                            }).join('')}
-                        </div>
-                        <div id="signature-${party.id}" class="px-4 py-2 border-t border-bark-100 text-xs text-bark-500">
-                            <!-- Signatur-status lastes dynamisk -->
-                        </div>
-                    `;
-
-                    // Load signature status for this party
-                    loadPartySignature(party.id);
-
-                    partiesGrid.appendChild(partyCard);
-                });
-
-                daySection.appendChild(partiesGrid);
-                container.appendChild(daySection);
-            });
-
-            // Update quick stats
+            // Render tabs and party lists
+            renderDayTabs();
+            renderClassTabs();
+            renderPartyLists();
             updateQuickStats(parties);
         }
 
-        // Switch day view
-        function switchDay(dayKey) {
-            // Update tab styles
-            document.querySelectorAll('.day-tab').forEach(tab => {
-                if (tab.dataset.day === dayKey) {
-                    tab.classList.remove('bg-bark-100', 'text-bark-700', 'hover:bg-bark-200');
-                    tab.classList.add('bg-warm-500', 'text-white', 'shadow-sm');
-                    tab.querySelector('span:last-child').classList.remove('text-bark-500');
-                    tab.querySelector('span:last-child').classList.add('text-sky-100');
-                } else {
-                    tab.classList.remove('bg-warm-500', 'text-white', 'shadow-sm');
-                    tab.classList.add('bg-bark-100', 'text-bark-700', 'hover:bg-bark-200');
-                    tab.querySelector('span:last-child').classList.remove('text-sky-100');
-                    tab.querySelector('span:last-child').classList.add('text-bark-500');
+        // Render party lists based on current day and class selection
+        function renderPartyLists() {
+            const container = document.getElementById('partyListsContainer');
+
+            // Filter parties for current day and class
+            const filteredParties = allParties.filter(party => {
+                const partyDay = party.day || 1;
+                if (partyDay !== currentDay) return false;
+
+                // Match class type
+                if (currentClass === 'ukak') {
+                    return party.type === 'ukak';
+                } else if (currentClass === 'vk') {
+                    return party.type === 'vk' || party.type === 'vk-kval' || party.type === 'vk-finale';
+                } else if (currentClass === 'vk-kval') {
+                    return party.type === 'vk-kval';
+                } else if (currentClass === 'vk-finale') {
+                    return party.type === 'vk-finale';
                 }
+                return true;
             });
 
-            // Show/hide day sections
-            document.querySelectorAll('.day-section').forEach(section => {
-                if (section.dataset.day === dayKey) {
-                    section.classList.remove('hidden');
-                } else {
-                    section.classList.add('hidden');
-                }
+            if (filteredParties.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-16">
+                        <svg class="w-16 h-16 text-bark-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <h3 class="text-xl font-serif font-semibold text-bark-700 mb-2">Ingen partier</h3>
+                        <p class="text-bark-500">Det er ingen ${currentClass === 'ukak' ? 'UK/AK' : 'VK'}-partier på dag ${currentDay} ennå.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Render parties with live ranking panel
+            container.innerHTML = filteredParties.map(party => renderPartyCard(party)).join('');
+
+            // Load signatures and live data for each party
+            filteredParties.forEach(party => {
+                loadPartySignature(party.id);
+                loadPartyLiveRanking(party);
             });
+        }
+
+        // Render a single party card with live ranking
+        function renderPartyCard(party) {
+            const isVK = party.type.startsWith('vk');
+            const partyId = party.id || party.name;
+
+            // UK/AK class badges
+            let classBadges = '';
+            if (!isVK && (party.ukCount || party.akCount)) {
+                classBadges = `
+                    <span class="px-3 py-1 bg-warm-100 text-warm-800 rounded-full text-xs font-medium">UK: ${party.ukCount || 0}</span>
+                    <span class="px-3 py-1 bg-bark-100 text-bark-700 rounded-full text-xs font-medium">AK: ${party.akCount || 0}</span>
+                `;
+            }
+
+            // Party type label
+            let typeLabel = 'UK/AK';
+            if (party.type === 'vk') typeLabel = 'VK';
+            else if (party.type === 'vk-kval') typeLabel = 'VK Kval';
+            else if (party.type === 'vk-finale') typeLabel = 'VK Finale';
+
+            return `
+                <div class="bg-white rounded-2xl shadow-sm border border-bark-100 overflow-hidden mb-6">
+                    <div class="px-6 py-4 bg-bark-50 border-b border-bark-100">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <h3 class="text-lg font-serif font-semibold text-bark-900">${party.name}</h3>
+                                <span class="px-2 py-1 ${isVK ? 'bg-amber-100 text-amber-700' : 'bg-warm-100 text-warm-800'} rounded text-xs font-medium">${typeLabel}</span>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="px-3 py-1 bg-bark-100 text-bark-700 rounded-full text-sm font-medium">${party.dogs?.length || 0} hunder</span>
+                                ${classBadges}
+                                <span class="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                    <span class="w-2 h-2 bg-green-500 rounded-full live-dot"></span>
+                                    Live
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col lg:flex-row">
+                        <!-- Party list (left side) -->
+                        <div class="flex-1 overflow-x-auto">
+                            <div class="bg-bark-50/50 border-b border-bark-100 grid grid-cols-7 gap-0 min-w-[700px]">
+                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Nr</div>
+                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Klasse</div>
+                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider col-span-2">Hund</div>
+                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Eier/Fører</div>
+                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Premie</div>
+                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Status</div>
+                            </div>
+                            <div class="divide-y divide-bark-100 min-w-[700px]">
+                                ${(party.dogs || []).map((dog, i) => {
+                                    const klasse = dog.klasse || (isVK ? 'VK' : 'AK');
+                                    let klasseBadgeColor = 'bg-bark-100 text-bark-700';
+                                    if (klasse === 'UK') klasseBadgeColor = 'bg-warm-100 text-warm-800';
+                                    else if (klasse === 'VK') klasseBadgeColor = 'bg-amber-100 text-amber-700';
+                                    else if (klasse === 'AK') klasseBadgeColor = 'bg-bark-200 text-bark-700';
+
+                                    return `
+                                        <div class="grid grid-cols-7 gap-0 hover:bg-bark-50 transition" data-dog-id="${dog.id || i}">
+                                            <div class="py-3 px-4 font-medium text-bark-600">${i + 1}</div>
+                                            <div class="py-3 px-4"><span class="px-2 py-1 ${klasseBadgeColor} rounded text-xs font-medium">${klasse}</span></div>
+                                            <div class="py-3 px-4 col-span-2">
+                                                <div class="font-medium text-bark-900">${dog.hundenavn || dog.navn || ''}</div>
+                                                <div class="text-xs text-bark-400">${dog.regnr || ''} · ${dog.rase || ''}</div>
+                                            </div>
+                                            <div class="py-3 px-4">
+                                                <div class="text-bark-700 text-sm">${dog.eier || ''}</div>
+                                                ${dog.forer && dog.forer !== dog.eier ? `<div class="text-bark-500 text-xs">Fører: ${dog.forer}</div>` : ''}
+                                            </div>
+                                            <div class="py-3 px-4 text-bark-600 font-medium">${dog.premie || '-'}</div>
+                                            <div class="py-3 px-4" id="status-${partyId}-${dog.id || i}">
+                                                <span class="text-bark-400 text-sm">-</span>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Live ranking panel (right side) -->
+                        <div class="lg:w-80 lg:border-l border-t lg:border-t-0 border-bark-100 bg-gradient-to-b from-bark-50 to-white">
+                            <div class="px-4 py-3 bg-bark-100 border-b border-bark-200">
+                                <h4 class="font-semibold text-bark-800 flex items-center gap-2">
+                                    <svg class="w-4 h-4 text-warm-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                    </svg>
+                                    Live rangering
+                                </h4>
+                            </div>
+                            <div id="ranking-${partyId}" class="p-4">
+                                <p class="text-bark-400 text-sm text-center py-4">Laster...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="signature-${partyId}" class="px-4 py-2 border-t border-bark-100 text-xs text-bark-500">
+                        <!-- Signatur-status lastes dynamisk -->
+                    </div>
+                </div>
+            `;
+        }
+
+        // Load and display live ranking for a party
+        async function loadPartyLiveRanking(party) {
+            const partyId = party.id || party.name;
+            const container = document.getElementById(`ranking-${partyId}`);
+            if (!container) return;
+
+            // Try to get live data from localStorage (judgeData)
+            const key = `judgeData_${partyId.toLowerCase().replace(/[\s\/]+/g, '')}`;
+            const data = localStorage.getItem(key);
+
+            if (!data) {
+                container.innerHTML = `
+                    <div class="text-center py-6">
+                        <svg class="w-10 h-10 text-bark-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-bark-400 text-sm">Venter på dømming</p>
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                const dogs = JSON.parse(data);
+
+                // Filter dogs with rankings/scores and sort by ranking
+                const rankedDogs = dogs
+                    .filter(d => d.rounds?.length > 0 || d.ranking || d.prize)
+                    .sort((a, b) => (a.ranking || 999) - (b.ranking || 999));
+
+                if (rankedDogs.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-6">
+                            <svg class="w-10 h-10 text-bark-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <p class="text-bark-400 text-sm">Dømming pågår...</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Render ranking list
+                container.innerHTML = `
+                    <div class="space-y-2">
+                        ${rankedDogs.slice(0, 10).map((dog, i) => {
+                            const rankBg = i === 0 ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                                           i === 1 ? 'bg-gray-100 text-gray-700 border-gray-300' :
+                                           i === 2 ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                                           'bg-white text-bark-700 border-bark-200';
+
+                            const prizeLabel = dog.prize || (dog.ranking ? `#${dog.ranking}` : '-');
+
+                            return `
+                                <div class="flex items-center gap-3 p-2 rounded-lg border ${rankBg}">
+                                    <span class="w-6 h-6 flex items-center justify-center font-bold text-sm">${i + 1}</span>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-medium text-sm truncate">${dog.name || dog.hundenavn || 'Ukjent'}</p>
+                                        <p class="text-xs opacity-70">${dog.handler || dog.forer || ''}</p>
+                                    </div>
+                                    <span class="text-xs font-medium px-2 py-1 bg-white/50 rounded">${prizeLabel}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <p class="text-xs text-bark-400 mt-3 text-center">Oppdateres automatisk</p>
+                `;
+
+                // Also update status in the main list
+                rankedDogs.forEach(dog => {
+                    const statusEl = document.getElementById(`status-${partyId}-${dog.id}`);
+                    if (statusEl && dog.rounds?.length > 0) {
+                        const lastRound = dog.rounds[dog.rounds.length - 1];
+                        const status = lastRound.completed ? 'Ferdig' : `Runde ${dog.rounds.length}`;
+                        statusEl.innerHTML = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">${status}</span>`;
+                    }
+                });
+
+            } catch (e) {
+                console.error('Error parsing live data:', e);
+            }
         }
 
         // Update quick stats in header
         function updateQuickStats(parties) {
             const totalDogs = parties.reduce((sum, p) => sum + (p.dogs?.length || 0), 0);
             const ukakParties = parties.filter(p => p.type === 'ukak').length;
-            const vkParties = parties.filter(p => p.type === 'vk').length;
+            const vkParties = parties.filter(p => p.type === 'vk' || p.type === 'vk-kval' || p.type === 'vk-finale').length;
 
-            // Count unique days
-            const uniqueDays = new Set(parties.map(p => p.date)).size;
+            // Use configured days or count unique days
+            const uniqueDays = proveConfig?.antallDager || new Set(parties.map(p => p.date)).size || 2;
 
             const statsContainer = document.getElementById('quickStats');
             statsContainer.innerHTML = `
@@ -767,8 +1028,29 @@
             }
         }
 
+        // Refresh live rankings for all visible parties
+        function refreshLiveRankings() {
+            const filteredParties = allParties.filter(party => {
+                const partyDay = party.day || 1;
+                if (partyDay !== currentDay) return false;
+                if (currentClass === 'ukak') return party.type === 'ukak';
+                if (currentClass === 'vk') return party.type.startsWith('vk');
+                if (currentClass === 'vk-kval') return party.type === 'vk-kval';
+                if (currentClass === 'vk-finale') return party.type === 'vk-finale';
+                return true;
+            });
+
+            filteredParties.forEach(party => {
+                loadPartyLiveRanking(party);
+            });
+        }
+
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load trial configuration first
+            await loadProveConfig();
+
+            // Then load trial info and parties
             loadTrialInfo();
             loadParties();
             loadPraktiskInfo();
@@ -779,12 +1061,19 @@
 
             // Reload parties periodically to catch updates
             setInterval(loadParties, 60000);
+
+            // Refresh live rankings more frequently (every 15 seconds)
+            setInterval(refreshLiveRankings, 15000);
         });
 
-        // Listen for storage changes (for real-time updates from admin)
+        // Listen for storage changes (for real-time updates from admin/judge)
         window.addEventListener('storage', (e) => {
             if (e.key === 'trialParties') {
                 loadParties();
+            }
+            // Also listen for judgeData changes
+            if (e.key?.startsWith('judgeData_')) {
+                refreshLiveRankings();
             }
         });
     </script>

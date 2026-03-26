@@ -5912,48 +5912,43 @@
             const anerkjennelse = document.querySelector('input[name="nkk_anerkjennelse"]:checked')?.value || 'ja';
             const harProtester = document.querySelector('input[name="nkk_protester"]:checked')?.value === 'ja';
 
-            // 1. Hovedrapport (Excel) - NKK-rapport uten kritikker
+            // Beregn totaler
+            const totalPameldt = statsPerKlasse.UK.pameldt + statsPerKlasse.AK.pameldt + statsPerKlasse.VK.pameldt;
+            const totalStartet = statsPerKlasse.UK.startet + statsPerKlasse.AK.startet + statsPerKlasse.VK.startet;
+            const totalPremiert = statsPerKlasse.UK.premiert + statsPerKlasse.AK.premiert + statsPerKlasse.VK.premiert;
+
+            // 1. Hovedrapport (Excel) - NKK-rapport
             const reportRows = [
-                { 'Felt': 'RAPPORT TIL NKK', 'Verdi': '' },
+                { 'Felt': 'PRØVEMAPPE TIL NKK', 'Verdi': '' },
                 { 'Felt': '', 'Verdi': '' },
-                { 'Felt': 'Referansenr.', 'Verdi': document.getElementById('nkk_refNr')?.value || '(Ikke utfylt)' },
-                { 'Felt': 'Prøvetype', 'Verdi': proveTypeTekst },
-                { 'Felt': 'Prøvenavn', 'Verdi': trialName },
-                { 'Felt': 'Dato', 'Verdi': document.getElementById('nkk_dato').textContent },
-                { 'Felt': 'Sted', 'Verdi': document.getElementById('nkk_sted').textContent },
+                { 'Felt': '--- OPPLYSNINGER OM PRØVEN ---', 'Verdi': '' },
                 { 'Felt': 'Arrangør', 'Verdi': document.getElementById('nkk_arrangor').textContent },
-                { 'Felt': 'Kjørt i DogWeb-Arra', 'Verdi': document.getElementById('nkk_dogwebArra')?.value === 'ja' ? 'Ja' : 'Nei' },
+                { 'Felt': 'Sted', 'Verdi': document.getElementById('nkk_sted').textContent },
+                { 'Felt': 'Dato', 'Verdi': document.getElementById('nkk_dato').textContent },
+                { 'Felt': 'Prøven er kjørt i DogWeb-Arra (DWA)', 'Verdi': document.getElementById('nkk_dogwebArra')?.value === 'ja' ? 'Ja' : 'Nei' },
                 { 'Felt': '', 'Verdi': '' },
-                { 'Felt': 'STATISTIKK', 'Verdi': '' },
-                { 'Felt': 'UK - Påmeldt', 'Verdi': statsPerKlasse.UK.pameldt },
-                { 'Felt': 'UK - Startet', 'Verdi': statsPerKlasse.UK.startet },
-                { 'Felt': 'UK - Premiert', 'Verdi': statsPerKlasse.UK.premiert },
-                { 'Felt': 'AK - Påmeldt', 'Verdi': statsPerKlasse.AK.pameldt },
-                { 'Felt': 'AK - Startet', 'Verdi': statsPerKlasse.AK.startet },
-                { 'Felt': 'AK - Premiert', 'Verdi': statsPerKlasse.AK.premiert },
-                { 'Felt': 'VK - Påmeldt', 'Verdi': statsPerKlasse.VK.pameldt },
-                { 'Felt': 'VK - Startet', 'Verdi': statsPerKlasse.VK.startet },
-                { 'Felt': 'VK - Premiert', 'Verdi': statsPerKlasse.VK.premiert },
-                { 'Felt': 'TOTALT - Påmeldt', 'Verdi': statsPerKlasse.UK.pameldt + statsPerKlasse.AK.pameldt + statsPerKlasse.VK.pameldt },
-                { 'Felt': 'TOTALT - Startet', 'Verdi': statsPerKlasse.UK.startet + statsPerKlasse.AK.startet + statsPerKlasse.VK.startet },
-                { 'Felt': 'TOTALT - Premiert', 'Verdi': statsPerKlasse.UK.premiert + statsPerKlasse.AK.premiert + statsPerKlasse.VK.premiert },
+                { 'Felt': 'Antall påmeldte', 'Verdi': totalPameldt },
+                { 'Felt': 'Antall startende', 'Verdi': totalStartet },
+                { 'Felt': 'Antall premierte/bestått', 'Verdi': totalPremiert },
                 { 'Felt': '', 'Verdi': '' },
-                { 'Felt': 'REFERAT FRA PRØVELEDER', 'Verdi': '' },
-                { 'Felt': 'Prøveleder', 'Verdi': document.getElementById('nkk_provelederNavn').value || '(Ikke utfylt)' },
+                { 'Felt': '--- OPPLYSNINGER OM PRØVENS LEDER ---', 'Verdi': '' },
+                { 'Felt': 'Navn', 'Verdi': document.getElementById('nkk_provelederNavn').value || '(Ikke utfylt)' },
                 { 'Felt': 'Adresse', 'Verdi': document.getElementById('nkk_provelederAdresse')?.value || '' },
-                { 'Felt': 'Postnr/sted', 'Verdi': document.getElementById('nkk_provelederPostnr')?.value || '' },
-                { 'Felt': 'Telefon', 'Verdi': document.getElementById('nkk_provelederTlf').value || '' },
+                { 'Felt': 'Postnummer', 'Verdi': document.getElementById('nkk_provelederPostnr')?.value || '' },
+                { 'Felt': 'Mobilnr', 'Verdi': document.getElementById('nkk_provelederTlf').value || '' },
                 { 'Felt': 'E-post', 'Verdi': document.getElementById('nkk_provelederEpost')?.value || '' },
+                { 'Felt': '', 'Verdi': '' },
+                { 'Felt': '--- REFERAT FRA PRØVELEDER ---', 'Verdi': '' },
                 { 'Felt': 'Referat', 'Verdi': document.getElementById('nkk_referat').value || '(Ikke utfylt)' },
                 { 'Felt': 'Vaksinasjonsattester bekreftet', 'Verdi': document.getElementById('nkk_vaksinasjonsOK')?.checked ? 'Ja' : 'Nei/Ukjent' },
-                { 'Felt': 'Digital signatur', 'Verdi': provelederSign },
+                { 'Felt': 'Digital signatur prøveleder', 'Verdi': provelederSign },
                 { 'Felt': '', 'Verdi': '' },
-                { 'Felt': 'RAPPORT FRA NKKs REPRESENTANT', 'Verdi': '' },
+                { 'Felt': '--- RAPPORT FRA NKKs REPRESENTANT ---', 'Verdi': '' },
                 { 'Felt': 'Navn', 'Verdi': document.getElementById('nkk_nkkrepNavn').value || '(Ikke utfylt)' },
                 { 'Felt': 'Telefon dagtid', 'Verdi': document.getElementById('nkk_nkkrepTlf')?.value || '' },
                 { 'Felt': 'Adresse', 'Verdi': document.getElementById('nkk_nkkrepAdresse')?.value || '' },
                 { 'Felt': 'Postnr/sted', 'Verdi': document.getElementById('nkk_nkkrepPostnr')?.value || '' },
-                { 'Felt': 'Innstilles til anerkjennelse', 'Verdi': anerkjennelse === 'ja' ? 'Ja' : 'Nei' },
+                { 'Felt': 'Innstilles prøven til anerkjennelse', 'Verdi': anerkjennelse === 'ja' ? 'Ja' : 'Nei' },
                 { 'Felt': 'Innkomne protester', 'Verdi': harProtester ? 'Ja' : 'Nei' }
             ];
 

@@ -441,10 +441,12 @@
         }
 
         async function init() {
+            console.log('[hund.html] init() starter');
             const urlParams = new URLSearchParams(window.location.search);
             const dogId = urlParams.get('id');
             const regnr = urlParams.get('regnr');
             const partyId = urlParams.get('party');
+            console.log('[hund.html] URL params - dogId:', dogId, 'regnr:', regnr, 'partyId:', partyId);
 
             // Prøv å finne hunden
             let dog = null;
@@ -559,10 +561,13 @@
             // 3. Fallback: Sjekk gammel id-parameter (uten party)
             if (!dog && dogId && !partyId) {
                 // Prøv API med ID FØRST (demo-database kun som fallback)
+                console.log('[hund.html] Henter hund fra API med id:', dogId);
                 try {
                     const resp = await fetch(`/api/hunder/${dogId}`);
+                    console.log('[hund.html] API response status:', resp.status);
                     if (resp.ok) {
                         const apiDog = await resp.json();
+                        console.log('[hund.html] API returnerte hund:', apiDog.navn || apiDog);
                         // Hent kritikker fra API
                         const kritikkerResp = await fetch(`/api/hunder/${dogId}/kritikker`);
                         const kritikker = kritikkerResp.ok ? await kritikkerResp.json() : [];
@@ -620,8 +625,10 @@
                 }
             }
 
+            console.log('[hund.html] Ferdig med søk, dog funnet:', !!dog, dog?.name || dog?.navn);
             if (dog) {
                 currentDog = dog;
+                console.log('[hund.html] Rendrer profil for:', currentDog.name);
                 renderDogProfile();
                 renderCritiques();
 
@@ -1832,9 +1839,18 @@
             }
         }
 
-        // Initialize
-        populateYearFilters();
-        init();
+        // Initialize - wrap in DOMContentLoaded for safety
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('[hund.html] DOMContentLoaded, starter init');
+                populateYearFilters();
+                init();
+            });
+        } else {
+            console.log('[hund.html] DOM allerede lastet, starter init direkte');
+            populateYearFilters();
+            init();
+        }
     </script>
 </body>
 </html>

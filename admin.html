@@ -772,6 +772,69 @@
                     </div>
                 </div>
 
+                <!-- Vipps Suksess Modal - vises etter forespørsel er opprettet -->
+                <div id="vippsSuksessModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+                    <div class="bg-white rounded-2xl max-w-lg w-full overflow-hidden">
+                        <div class="p-6 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-green-100">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="text-xl font-bold text-green-800">Forespørsel opprettet!</h3>
+                                    <p id="vippsSuksessInfo" class="text-sm text-green-600"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-6">
+                            <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
+                                <div class="flex items-start gap-3">
+                                    <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                    </svg>
+                                    <div>
+                                        <p class="font-medium text-yellow-800">SMS sendes ikke automatisk</p>
+                                        <p class="text-sm text-yellow-700 mt-1">Du må sende meldingen manuelt til mottakerne via SMS, Messenger eller lignende.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-bark-50 rounded-xl p-4 mb-4">
+                                <label class="block text-sm font-medium text-bark-700 mb-2">Melding til mottakere:</label>
+                                <textarea id="vippsSuksessMelding" readonly rows="3" class="w-full px-3 py-2 rounded-lg border border-bark-200 bg-white text-sm"></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                <button onclick="kopierVippsMelding()" class="flex items-center justify-center gap-2 bg-bark-100 hover:bg-bark-200 text-bark-700 py-3 rounded-xl font-medium transition">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                                    </svg>
+                                    Kopier tekst
+                                </button>
+                                <a id="vippsSmsLink" href="#" class="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-medium transition">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                                    </svg>
+                                    Åpne SMS
+                                </a>
+                            </div>
+
+                            <div id="vippsSuksessMottakere" class="text-sm text-bark-600 mb-4">
+                                <!-- Liste over mottakere -->
+                            </div>
+                        </div>
+
+                        <div class="p-4 border-t border-bark-100 bg-bark-50">
+                            <button onclick="closeVippsSuksessModal()" class="w-full bg-bark-700 hover:bg-bark-800 text-white py-3 rounded-xl font-medium transition">
+                                Lukk
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Prøvedetaljer (må fylles ut først) -->
                 <section id="provedetaljer" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 p-6">
                     <div class="flex items-center justify-between mb-6">
@@ -5938,26 +6001,53 @@
                 const betalt = f.mottakere?.filter(m => m.status === 'betalt').length || 0;
                 const total = f.mottakere?.length || 0;
                 const prosent = total > 0 ? Math.round((betalt / total) * 100) : 0;
+                const alleBetalt = betalt === total && total > 0;
+                const ikkeBetalt = total - betalt;
 
                 return `
                     <div class="border border-bark-200 rounded-xl overflow-hidden">
-                        <div class="p-4 bg-bark-50 flex items-center justify-between">
-                            <div>
-                                <h4 class="font-semibold text-bark-800">${f.beskrivelse}</h4>
-                                <p class="text-sm text-bark-500">${f.belop} kr • Opprettet ${new Date(f.created_at).toLocaleDateString('no-NO')}</p>
+                        <div class="p-4 bg-bark-50">
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h4 class="font-semibold text-bark-800">${f.beskrivelse}</h4>
+                                    <p class="text-sm text-bark-500">${f.belop} kr • Opprettet ${new Date(f.created_at).toLocaleDateString('no-NO')}</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-lg font-bold ${alleBetalt ? 'text-green-600' : 'text-orange-600'}">${betalt}/${total}</span>
+                                    <p class="text-xs text-bark-500">${alleBetalt ? 'Alle har betalt!' : `${ikkeBetalt} venter`}</p>
+                                </div>
                             </div>
-                            <div class="text-right">
-                                <span class="text-lg font-bold ${prosent === 100 ? 'text-green-600' : 'text-orange-600'}">${betalt}/${total}</span>
-                                <p class="text-xs text-bark-500">har betalt</p>
+                            <!-- Progress bar -->
+                            <div class="h-2 bg-bark-200 rounded-full overflow-hidden mb-3">
+                                <div class="h-full ${alleBetalt ? 'bg-green-500' : 'bg-orange-500'} transition-all" style="width: ${prosent}%"></div>
+                            </div>
+                            <!-- Handlingsknapper -->
+                            <div class="flex flex-wrap gap-2">
+                                ${!alleBetalt ? `
+                                    <button onclick="markerAlleVippsBetalt(${f.id})" class="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        Marker alle betalt
+                                    </button>
+                                ` : ''}
+                                <button onclick="eksporterVippsForesporsler(${f.id})" class="text-xs bg-bark-100 hover:bg-bark-200 text-bark-700 px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Eksporter CSV
+                                </button>
                             </div>
                         </div>
                         <div class="divide-y divide-bark-100 max-h-64 overflow-y-auto">
                             ${f.mottakere?.map(m => `
                                 <div class="px-4 py-2 flex items-center justify-between hover:bg-bark-50">
                                     <div class="flex items-center gap-3">
-                                        <span class="w-8 h-8 rounded-full ${m.status === 'betalt' ? 'bg-green-100 text-green-600' : 'bg-bark-100 text-bark-400'} flex items-center justify-center">
+                                        <button onclick="${m.status === 'betalt' ? `markerVippsIkkeBetalt(${f.id}, '${m.deltaker_telefon}')` : `markerVippsBetalt(${f.id}, '${m.deltaker_telefon}')`}"
+                                            class="w-8 h-8 rounded-full ${m.status === 'betalt' ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-bark-100 text-bark-400 hover:bg-bark-200'} flex items-center justify-center transition cursor-pointer"
+                                            title="${m.status === 'betalt' ? 'Klikk for å angre' : 'Klikk for å markere betalt'}">
                                             ${m.status === 'betalt' ? '✓' : '○'}
-                                        </span>
+                                        </button>
                                         <div>
                                             <p class="font-medium text-bark-700">${m.deltaker_navn}</p>
                                             <p class="text-xs text-bark-400">${m.deltaker_telefon}</p>
@@ -5966,7 +6056,7 @@
                                     <div class="flex items-center gap-2">
                                         ${m.status === 'betalt'
                                             ? `<span class="text-xs text-green-600">Betalt ${m.betalt_dato ? new Date(m.betalt_dato).toLocaleDateString('no-NO') : ''}</span>`
-                                            : `<button onclick="markerVippsBetalt(${f.id}, '${m.deltaker_telefon}')" class="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded-lg transition">Marker betalt</button>`
+                                            : `<span class="text-xs text-bark-400">Venter</span>`
                                         }
                                     </div>
                                 </div>
@@ -5975,6 +6065,27 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        async function markerVippsIkkeBetalt(foresporselId, telefon) {
+            const userPhone = localStorage.getItem('userPhone') || '';
+
+            try {
+                const resp = await fetch(`/api/vipps-foresporsler/${foresporselId}/mottakere/${telefon}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'venter',
+                        notert_av: userPhone
+                    })
+                });
+
+                if (resp.ok) {
+                    await loadVippsForesporsler();
+                }
+            } catch (e) {
+                console.error('Feil ved markering:', e);
+            }
         }
 
         function setVippsBeskrivelse(tekst) {
@@ -6310,12 +6421,8 @@
                     closeVippsModal();
                     await loadVippsForesporsler();
 
-                    // Vis suksess med mulighet for å kopiere melding
-                    if (confirm(`✅ Forespørsel opprettet!\n\n${valgteMottakere.length} mottakere.\n\nVil du kopiere betalingsmeldingen til utklippstavlen?\n\n"${melding}"`)) {
-                        navigator.clipboard.writeText(melding).then(() => {
-                            alert('Melding kopiert! Lim inn i SMS eller annen meldingsapp.');
-                        });
-                    }
+                    // Vis suksess-modal med SMS-valg
+                    showVippsSuksessModal(valgteMottakere, melding, beskrivelse, belop);
                 } else {
                     const err = await resp.json();
                     alert('Feil: ' + (err.error || 'Kunne ikke opprette forespørsel'));
@@ -6347,6 +6454,87 @@
             } catch (e) {
                 console.error('Feil ved markering av betaling:', e);
             }
+        }
+
+        async function markerAlleVippsBetalt(foresporselId) {
+            if (!confirm('Er du sikker på at du vil markere ALLE som betalt?')) return;
+
+            const userPhone = localStorage.getItem('userPhone') || '';
+            const foresporsel = vippsForesporsler.find(f => f.id === foresporselId);
+            if (!foresporsel) return;
+
+            const ikkeBetalt = foresporsel.mottakere?.filter(m => m.status !== 'betalt') || [];
+
+            for (const m of ikkeBetalt) {
+                try {
+                    await fetch(`/api/vipps-foresporsler/${foresporselId}/mottakere/${m.deltaker_telefon}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            status: 'betalt',
+                            notert_av: userPhone
+                        })
+                    });
+                } catch (e) {
+                    console.error('Feil ved markering:', e);
+                }
+            }
+
+            await loadVippsForesporsler();
+        }
+
+        function eksporterVippsForesporsler(foresporselId) {
+            const foresporsel = vippsForesporsler.find(f => f.id === foresporselId);
+            if (!foresporsel) return;
+
+            // Lag CSV
+            let csv = 'Navn,Telefon,Status,Betalt dato\n';
+            foresporsel.mottakere?.forEach(m => {
+                csv += `"${m.deltaker_navn}","${m.deltaker_telefon}","${m.status === 'betalt' ? 'Betalt' : 'Venter'}","${m.betalt_dato || ''}"\n`;
+            });
+
+            // Last ned
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `vipps-${foresporsel.beskrivelse.replace(/[^a-z0-9]/gi, '_')}-${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function showVippsSuksessModal(mottakere, melding, beskrivelse, belop) {
+            document.getElementById('vippsSuksessInfo').textContent = `${mottakere.length} mottaker${mottakere.length !== 1 ? 'e' : ''} • ${belop} kr for "${beskrivelse}"`;
+            document.getElementById('vippsSuksessMelding').value = melding;
+
+            // Lag SMS-lenke (fungerer på mobil)
+            const telefonnumre = mottakere.map(m => m.telefon).join(',');
+            const smsBody = encodeURIComponent(melding);
+            document.getElementById('vippsSmsLink').href = `sms:${telefonnumre}?body=${smsBody}`;
+
+            // Vis mottakerliste
+            document.getElementById('vippsSuksessMottakere').innerHTML = `
+                <p class="font-medium mb-2">Mottakere:</p>
+                <div class="flex flex-wrap gap-2">
+                    ${mottakere.map(m => `<span class="bg-bark-100 px-2 py-1 rounded text-xs">${m.navn} (${m.telefon})</span>`).join('')}
+                </div>
+            `;
+
+            document.getElementById('vippsSuksessModal').classList.remove('hidden');
+        }
+
+        function closeVippsSuksessModal() {
+            document.getElementById('vippsSuksessModal').classList.add('hidden');
+        }
+
+        function kopierVippsMelding() {
+            const melding = document.getElementById('vippsSuksessMelding').value;
+            navigator.clipboard.writeText(melding).then(() => {
+                const btn = event.target.closest('button');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Kopiert!';
+                setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+            });
         }
 
         // Initialiser Vipps når siden lastes

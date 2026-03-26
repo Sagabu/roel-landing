@@ -553,7 +553,6 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_prove ON prove_dokumenter(prove_id);
-  CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_klubb ON prove_dokumenter(klubb_id);
   CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_type ON prove_dokumenter(dokument_type);
 
   -- Klubb-dokumentarkiv (generelle dokumenter ikke knyttet til prøver)
@@ -605,10 +604,17 @@ const migrations = [
   // SMS-samtykke med tidspunkt
   "ALTER TABLE brukere ADD COLUMN sms_samtykke INTEGER DEFAULT 0",
   "ALTER TABLE brukere ADD COLUMN sms_samtykke_tidspunkt TEXT DEFAULT NULL",
+  // Klubb-id for prove_dokumenter (for dokumentarkiv)
+  "ALTER TABLE prove_dokumenter ADD COLUMN klubb_id TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
 }
+
+// Create indexes that depend on migrated columns
+try {
+  db.exec("CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_klubb ON prove_dokumenter(klubb_id)");
+} catch (e) { /* index already exists or column missing */ }
 
 // Fix regnr NOT NULL constraint on existing databases (allow dogs without registration number)
 try {

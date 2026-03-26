@@ -905,7 +905,7 @@ const requireAdmin = async (c, next) => {
     return c.json({ error: "Ugyldig eller utløpt token" }, 401);
   }
 
-  if (!hasAnyRole(payload.rolle, ["admin", "klubbleder", "proveleder"])) {
+  if (!hasAnyRole(payload.rolle, ["admin", "klubbleder", "proveleder", "sekretær", "sekretar"])) {
     return c.json({ error: "Krever admin-tilgang" }, 403);
   }
 
@@ -4604,7 +4604,7 @@ app.delete("/api/prover/:proveId/pameldinger/:id", requireAuth, async (c) => {
   const hund = db.prepare("SELECT eier_telefon FROM hunder WHERE id = ?").get(pamelding.hund_id);
   const erEier = hund && hund.eier_telefon === bruker.telefon;
   const erForer = pamelding.forer_telefon === bruker.telefon;
-  const erAdmin = hasAnyRole(bruker.rolle, ["admin", "klubbleder", "proveleder"]);
+  const erAdmin = hasAnyRole(bruker.rolle, ["admin", "klubbleder", "proveleder", "sekretær", "sekretar"]);
 
   if (!erEier && !erForer && !erAdmin) {
     return c.json({ error: "Ingen tilgang til å avmelde" }, 403);

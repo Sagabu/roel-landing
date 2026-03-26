@@ -725,10 +725,13 @@
             // Render parties with live ranking panel
             container.innerHTML = filteredParties.map(party => renderPartyCard(party)).join('');
 
-            // Load signatures and live data for each party
+            // Load signatures for all parties, live data only for VK
             filteredParties.forEach(party => {
                 loadPartySignature(party.id);
-                loadPartyLiveRanking(party);
+                // Kun last live-rangering for VK-partier
+                if (party.type.startsWith('vk')) {
+                    loadPartyLiveRanking(party);
+                }
             });
         }
 
@@ -763,10 +766,10 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="px-3 py-1 bg-bark-100 text-bark-700 rounded-full text-sm font-medium">${party.dogs?.length || 0} hunder</span>
                                 ${classBadges}
-                                <span class="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                ${isVK ? `<span class="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                                     <span class="w-2 h-2 bg-green-500 rounded-full live-dot"></span>
                                     Live
-                                </span>
+                                </span>` : ''}
                             </div>
                         </div>
                     </div>
@@ -774,15 +777,15 @@
                     <div class="flex flex-col lg:flex-row">
                         <!-- Party list (left side) -->
                         <div class="flex-1 overflow-x-auto">
-                            <div class="bg-bark-50/50 border-b border-bark-100 grid grid-cols-7 gap-0 min-w-[700px]">
+                            <div class="bg-bark-50/50 border-b border-bark-100 grid ${isVK ? 'grid-cols-7' : 'grid-cols-6'} gap-0 min-w-[${isVK ? '700' : '600'}px]">
                                 <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Nr</div>
                                 <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Klasse</div>
                                 <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider col-span-2">Hund</div>
                                 <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Eier/Fører</div>
                                 <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Premie</div>
-                                <div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Status</div>
+                                ${isVK ? '<div class="py-3 px-4 text-xs font-semibold text-bark-500 uppercase tracking-wider">Status</div>' : ''}
                             </div>
-                            <div class="divide-y divide-bark-100 min-w-[700px]">
+                            <div class="divide-y divide-bark-100 min-w-[${isVK ? '700' : '600'}px]">
                                 ${(party.dogs || []).map((dog, i) => {
                                     const klasse = dog.klasse || (isVK ? 'VK' : 'AK');
                                     let klasseBadgeColor = 'bg-bark-100 text-bark-700';
@@ -791,7 +794,7 @@
                                     else if (klasse === 'AK') klasseBadgeColor = 'bg-bark-200 text-bark-700';
 
                                     return `
-                                        <div class="grid grid-cols-7 gap-0 hover:bg-bark-50 transition" data-dog-id="${dog.id || i}">
+                                        <div class="grid ${isVK ? 'grid-cols-7' : 'grid-cols-6'} gap-0 hover:bg-bark-50 transition" data-dog-id="${dog.id || i}">
                                             <div class="py-3 px-4 font-medium text-bark-600">${i + 1}</div>
                                             <div class="py-3 px-4"><span class="px-2 py-1 ${klasseBadgeColor} rounded text-xs font-medium">${klasse}</span></div>
                                             <div class="py-3 px-4 col-span-2">
@@ -803,16 +806,17 @@
                                                 ${dog.forer && dog.forer !== dog.eier ? `<div class="text-bark-500 text-xs">Fører: ${dog.forer}</div>` : ''}
                                             </div>
                                             <div class="py-3 px-4 text-bark-600 font-medium">${dog.premie || '-'}</div>
-                                            <div class="py-3 px-4" id="status-${partyId}-${dog.id || i}">
+                                            ${isVK ? `<div class="py-3 px-4" id="status-${partyId}-${dog.id || i}">
                                                 <span class="text-bark-400 text-sm">-</span>
-                                            </div>
+                                            </div>` : ''}
                                         </div>
                                     `;
                                 }).join('')}
                             </div>
                         </div>
 
-                        <!-- Live ranking panel (right side) -->
+                        ${isVK ? `
+                        <!-- Live ranking panel (right side) - kun for VK -->
                         <div class="lg:w-80 lg:border-l border-t lg:border-t-0 border-bark-100 bg-gradient-to-b from-bark-50 to-white">
                             <div class="px-4 py-3 bg-bark-100 border-b border-bark-200">
                                 <h4 class="font-semibold text-bark-800 flex items-center gap-2">
@@ -826,6 +830,7 @@
                                 <p class="text-bark-400 text-sm text-center py-4">Laster...</p>
                             </div>
                         </div>
+                        ` : ''}
                     </div>
 
                     <div id="signature-${partyId}" class="px-4 py-2 border-t border-bark-100 text-xs text-bark-500">
@@ -1028,19 +1033,17 @@
             }
         }
 
-        // Refresh live rankings for all visible parties
+        // Refresh live rankings for VK parties only
         function refreshLiveRankings() {
-            const filteredParties = allParties.filter(party => {
+            // Kun oppdater VK-partier, ikke UK/AK
+            const vkParties = allParties.filter(party => {
                 const partyDay = party.day || 1;
                 if (partyDay !== currentDay) return false;
-                if (currentClass === 'ukak') return party.type === 'ukak';
-                if (currentClass === 'vk') return party.type.startsWith('vk');
-                if (currentClass === 'vk-kval') return party.type === 'vk-kval';
-                if (currentClass === 'vk-finale') return party.type === 'vk-finale';
-                return true;
+                // Kun VK-partier har live-rangering
+                return party.type.startsWith('vk');
             });
 
-            filteredParties.forEach(party => {
+            vkParties.forEach(party => {
                 loadPartyLiveRanking(party);
             });
         }

@@ -322,11 +322,18 @@
             </div>
 
             <div id="trialsList" class="space-y-4">
-                <!-- Prøver lastes dynamisk fra databasen -->
+                <!-- Loading state -->
+                <div id="trialsLoading" class="text-center py-8">
+                    <div class="animate-pulse flex flex-col items-center gap-4">
+                        <div class="w-16 h-16 bg-bark-200 rounded-xl"></div>
+                        <div class="h-4 bg-bark-200 rounded w-48"></div>
+                        <div class="h-3 bg-bark-100 rounded w-32"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- Melding når ingen prøver er lagt inn -->
-            <div id="noTrialsMessage" class="text-center py-12">
+            <div id="noTrialsMessage" class="hidden text-center py-12">
                 <div class="text-bark-400 mb-4">
                     <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -509,13 +516,19 @@
 
         // Last terminliste fra databasen
         async function loadTerminliste() {
+            const container = document.getElementById('trialsList');
+            const noTrialsMsg = document.getElementById('noTrialsMessage');
+            const loadingEl = document.getElementById('trialsLoading');
+
             try {
                 const resp = await fetch('/api/prover');
-                if (!resp.ok) return;
+                if (!resp.ok) {
+                    if (loadingEl) loadingEl.remove();
+                    noTrialsMsg.classList.remove('hidden');
+                    return;
+                }
 
                 const prover = await resp.json();
-                const container = document.getElementById('trialsList');
-                const noTrialsMsg = document.getElementById('noTrialsMessage');
 
                 // Filtrer kun kommende prøver (start_dato >= i dag)
                 const idag = new Date();
@@ -525,6 +538,9 @@
                     const startDato = new Date(p.start_dato);
                     return startDato >= idag;
                 }).sort((a, b) => new Date(a.start_dato) - new Date(b.start_dato));
+
+                // Fjern loading-state
+                if (loadingEl) loadingEl.remove();
 
                 if (kommende.length === 0) {
                     container.innerHTML = '';

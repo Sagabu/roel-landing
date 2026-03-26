@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DVK - Dyrevelferdskontroll</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        forest: { 50: '#f6f7f4', 100: '#e3e7dc', 200: '#c7d0ba', 300: '#a4b391', 400: '#839770', 500: '#657a53', 600: '#4f6040', 700: '#3f4c34', 800: '#343e2d', 900: '#2c3526', 950: '#151a12' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+
+    <!-- Header -->
+    <header class="bg-forest-700 text-white shadow-lg">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                    <div>
+                        <h1 class="text-xl font-serif font-bold">Dyrevelferdskontrollør</h1>
+                        <p class="text-forest-200 text-sm" id="trialNameDisplay">Laster...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-sm text-forest-200">Innlogget som</p>
+                        <p class="font-semibold" id="dvkName">-</p>
+                    </div>
+                    <button onclick="logout()" class="bg-forest-600 hover:bg-forest-500 px-4 py-2 rounded-xl text-sm font-medium transition">
+                        Logg ut
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <!-- DVK Info Card -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-8">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-forest-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold font-serif text-bark-800">DVK-skjema</h2>
+                    <p class="text-bark-600 mt-1">
+                        Logg dyrevelferdskontroller under prøven. Alle observasjoner lagres automatisk på server og blir med i FKF-rapporten.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ny kontroll -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 mb-8">
+            <div class="px-6 py-4 border-b border-bark-100">
+                <h3 class="text-lg font-semibold text-bark-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Registrer ny kontroll
+                </h3>
+            </div>
+            <div class="p-6">
+                <form id="dvkForm" onsubmit="return registrerKontroll(event)">
+                    <!-- Tidspunkt og parti -->
+                    <div class="grid md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Tidspunkt</label>
+                            <input type="datetime-local" id="kontrollTid" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 focus:ring-1 focus:ring-forest-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Parti</label>
+                            <select id="kontrollParti" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none">
+                                <option value="">Velg parti...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Type kontroll -->
+                    <div class="mb-4">
+                        <label class="block text-sm text-bark-600 mb-2">Type kontroll</label>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <label class="flex items-center gap-2 p-3 bg-bark-50 rounded-xl cursor-pointer hover:bg-bark-100 transition">
+                                <input type="radio" name="kontrollType" value="rutine" class="w-4 h-4 text-forest-600" checked>
+                                <span class="text-sm">Rutinekontroll</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-bark-50 rounded-xl cursor-pointer hover:bg-bark-100 transition">
+                                <input type="radio" name="kontrollType" value="varslet" class="w-4 h-4 text-forest-600">
+                                <span class="text-sm">Varslet</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-bark-50 rounded-xl cursor-pointer hover:bg-bark-100 transition">
+                                <input type="radio" name="kontrollType" value="spontan" class="w-4 h-4 text-forest-600">
+                                <span class="text-sm">Spontan</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-bark-50 rounded-xl cursor-pointer hover:bg-bark-100 transition">
+                                <input type="radio" name="kontrollType" value="oppfolging" class="w-4 h-4 text-forest-600">
+                                <span class="text-sm">Oppfølging</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Observasjoner - checkboxer -->
+                    <div class="mb-4">
+                        <label class="block text-sm text-bark-600 mb-2">Observasjoner</label>
+                        <div class="grid md:grid-cols-2 gap-2">
+                            <label class="flex items-center gap-2 p-3 bg-green-50 rounded-xl cursor-pointer hover:bg-green-100 transition">
+                                <input type="checkbox" id="obs_hundehold" class="w-4 h-4 text-green-600 rounded">
+                                <span class="text-sm text-green-800">Godt hundehold observert</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-green-50 rounded-xl cursor-pointer hover:bg-green-100 transition">
+                                <input type="checkbox" id="obs_behandling" class="w-4 h-4 text-green-600 rounded">
+                                <span class="text-sm text-green-800">Skånsom behandling av hund</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-green-50 rounded-xl cursor-pointer hover:bg-green-100 transition">
+                                <input type="checkbox" id="obs_vannmat" class="w-4 h-4 text-green-600 rounded">
+                                <span class="text-sm text-green-800">Tilgang til vann/mat</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-green-50 rounded-xl cursor-pointer hover:bg-green-100 transition">
+                                <input type="checkbox" id="obs_hvile" class="w-4 h-4 text-green-600 rounded">
+                                <span class="text-sm text-green-800">Tilstrekkelig hvile</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-amber-50 rounded-xl cursor-pointer hover:bg-amber-100 transition">
+                                <input type="checkbox" id="obs_veiledning" class="w-4 h-4 text-amber-600 rounded">
+                                <span class="text-sm text-amber-800">Gitt veiledning til fører</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-3 bg-red-50 rounded-xl cursor-pointer hover:bg-red-100 transition">
+                                <input type="checkbox" id="obs_bekymring" class="w-4 h-4 text-red-600 rounded">
+                                <span class="text-sm text-red-800">Bekymringsfullt forhold observert</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Hund og fører (valgfritt) -->
+                    <div class="grid md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Hund (valgfritt)</label>
+                            <input type="text" id="kontrollHund" placeholder="Hundens navn eller reg.nr" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-bark-600 mb-1">Fører (valgfritt)</label>
+                            <input type="text" id="kontrollForer" placeholder="Førers navn" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none">
+                        </div>
+                    </div>
+
+                    <!-- Beskrivelse -->
+                    <div class="mb-4">
+                        <label class="block text-sm text-bark-600 mb-1">Beskrivelse / kommentarer</label>
+                        <textarea id="kontrollBeskrivelse" rows="3" placeholder="Beskriv observasjoner, tiltak eller andre relevante detaljer..." class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none"></textarea>
+                    </div>
+
+                    <!-- Tiltak iverksatt -->
+                    <div class="mb-6">
+                        <label class="block text-sm text-bark-600 mb-2">Tiltak iverksatt</label>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="flex items-center gap-2 p-2 bg-bark-50 rounded-lg cursor-pointer hover:bg-bark-100 transition">
+                                <input type="checkbox" id="tiltak_ingen" class="w-4 h-4 text-forest-600 rounded">
+                                <span class="text-sm">Ingen tiltak nødvendig</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 bg-bark-50 rounded-lg cursor-pointer hover:bg-bark-100 transition">
+                                <input type="checkbox" id="tiltak_veiledning" class="w-4 h-4 text-forest-600 rounded">
+                                <span class="text-sm">Muntlig veiledning</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 bg-bark-50 rounded-lg cursor-pointer hover:bg-bark-100 transition">
+                                <input type="checkbox" id="tiltak_advarsel" class="w-4 h-4 text-amber-600 rounded">
+                                <span class="text-sm">Advarsel gitt</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 bg-bark-50 rounded-lg cursor-pointer hover:bg-bark-100 transition">
+                                <input type="checkbox" id="tiltak_dommer" class="w-4 h-4 text-amber-600 rounded">
+                                <span class="text-sm">Varslet dommer</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 bg-bark-50 rounded-lg cursor-pointer hover:bg-bark-100 transition">
+                                <input type="checkbox" id="tiltak_proveleder" class="w-4 h-4 text-red-600 rounded">
+                                <span class="text-sm">Varslet prøveleder</span>
+                            </label>
+                            <label class="flex items-center gap-2 p-2 bg-bark-50 rounded-lg cursor-pointer hover:bg-bark-100 transition">
+                                <input type="checkbox" id="tiltak_diskvalifikasjon" class="w-4 h-4 text-red-600 rounded">
+                                <span class="text-sm">Anbefalt diskvalifikasjon</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-forest-600 hover:bg-forest-700 text-white py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Registrer kontroll
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Registrerte kontroller -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100">
+            <div class="px-6 py-4 border-b border-bark-100 flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-bark-800">Mine kontroller</h3>
+                <span id="kontrollCount" class="text-sm text-bark-500">0 kontroller</span>
+            </div>
+            <div id="kontrollListe" class="divide-y divide-bark-100">
+                <div class="p-6 text-center text-bark-400">
+                    <svg class="w-12 h-12 mx-auto mb-2 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    Ingen kontroller registrert ennå
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistikk -->
+        <div class="bg-forest-50 rounded-xl p-6 mt-8">
+            <h4 class="font-semibold text-forest-800 mb-4">Oppsummering</h4>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-forest-700" id="statTotal">0</p>
+                    <p class="text-sm text-bark-500">Totalt kontroller</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-green-600" id="statOK">0</p>
+                    <p class="text-sm text-bark-500">Alt OK</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-amber-600" id="statVeiledning">0</p>
+                    <p class="text-sm text-bark-500">Veiledning gitt</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-red-600" id="statTiltak">0</p>
+                    <p class="text-sm text-bark-500">Tiltak iverksatt</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Digital signatur -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mt-8">
+            <h4 class="font-semibold text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                Digital signatur
+            </h4>
+            <p class="text-sm text-bark-600 mb-4">Signer kontrollrapporten digitalt når prøven er avsluttet.</p>
+            <div class="flex items-center justify-between bg-bark-50 rounded-xl p-4">
+                <div>
+                    <p class="text-sm text-bark-500">Signaturstatus</p>
+                    <p id="dvkSignStatus" class="font-medium text-bark-700">Ikke signert</p>
+                </div>
+                <button onclick="signerDVKRapport()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                    </svg>
+                    Signer rapport
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Prøve-ID (hentes fra trial config)
+        let currentProveId = 'test_prove';
+        let currentUser = { name: 'Test DVK', telefon: '12345678', role: 'dvk' };
+
+        // TEST-VERSJON - ingen autentisering
+        document.addEventListener('DOMContentLoaded', async function() {
+            document.body.classList.remove('auth-loading');
+            document.getElementById('dvkName').textContent = 'Test DVK (Demo)';
+
+            // Last prøveinfo (og hent prove_id)
+            await loadTrialInfo();
+
+            // Last partier til dropdown
+            loadPartier();
+
+            // Last eksisterende kontroller fra server
+            await loadKontroller();
+
+            // Sett standard tidspunkt til nå
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('kontrollTid').value = now.toISOString().slice(0, 16);
+
+            // Last inn signaturstatus fra server
+            await loadSignaturStatus();
+        });
+
+        async function loadTrialInfo() {
+            try {
+                const res = await fetch('/api/trial');
+                if (res.ok) {
+                    const data = await res.json();
+                    const trialName = data.name || 'Fuglehundprøve';
+                    document.getElementById('trialNameDisplay').textContent = trialName;
+                    // Bruk trial-ID eller generer en basert på navn og dato
+                    currentProveId = data.id || `${trialName.replace(/\s+/g, '_')}_${data.start_date || new Date().toISOString().slice(0,10)}`;
+                } else {
+                    currentProveId = 'default_prove';
+                    document.getElementById('trialNameDisplay').textContent = 'Fuglehundprøve';
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av prøveinfo:', err);
+                currentProveId = 'default_prove';
+            }
+        }
+
+        function loadPartier() {
+            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const select = document.getElementById('kontrollParti');
+
+            parties.forEach(party => {
+                const opt = document.createElement('option');
+                opt.value = party.name;
+                opt.textContent = party.displayName || party.name;
+                select.appendChild(opt);
+            });
+
+            // Legg til "Generelt" alternativ
+            const optGen = document.createElement('option');
+            optGen.value = 'generelt';
+            optGen.textContent = 'Generelt (ikke spesifikt parti)';
+            select.appendChild(optGen);
+        }
+
+        async function registrerKontroll(e) {
+            e.preventDefault();
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="4" class="opacity-25"></circle><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" class="opacity-75"></path></svg> Lagrer...';
+
+            const kontroll = {
+                prove_id: currentProveId,
+                tidspunkt: document.getElementById('kontrollTid').value,
+                parti: document.getElementById('kontrollParti').value || null,
+                type: document.querySelector('input[name="kontrollType"]:checked').value,
+                hund: document.getElementById('kontrollHund').value || null,
+                forer: document.getElementById('kontrollForer').value || null,
+                beskrivelse: document.getElementById('kontrollBeskrivelse').value || null,
+                obs_hundehold: document.getElementById('obs_hundehold').checked,
+                obs_behandling: document.getElementById('obs_behandling').checked,
+                obs_vannmat: document.getElementById('obs_vannmat').checked,
+                obs_hvile: document.getElementById('obs_hvile').checked,
+                obs_veiledning: document.getElementById('obs_veiledning').checked,
+                obs_bekymring: document.getElementById('obs_bekymring').checked,
+                tiltak_ingen: document.getElementById('tiltak_ingen').checked,
+                tiltak_veiledning: document.getElementById('tiltak_veiledning').checked,
+                tiltak_advarsel: document.getElementById('tiltak_advarsel').checked,
+                tiltak_dommer: document.getElementById('tiltak_dommer').checked,
+                tiltak_proveleder: document.getElementById('tiltak_proveleder').checked,
+                tiltak_diskvalifikasjon: document.getElementById('tiltak_diskvalifikasjon').checked,
+                registrert_av: currentUser?.name || currentUser?.telefon || 'DVK'
+            };
+
+            try {
+                const res = await fetch('/api/dvk-kontroller', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(kontroll)
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Kunne ikke lagre kontroll');
+                }
+
+                // Nullstill skjema
+                document.getElementById('dvkForm').reset();
+                const now = new Date();
+                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                document.getElementById('kontrollTid').value = now.toISOString().slice(0, 16);
+
+                // Oppdater liste fra server
+                await loadKontroller();
+
+                // Vis bekreftelse
+                showToast('Kontroll registrert og lagret!', 'success');
+
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                showToast('Feil ved lagring: ' + err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> Registrer kontroll';
+            }
+        }
+
+        async function loadKontroller() {
+            const liste = document.getElementById('kontrollListe');
+
+            try {
+                const res = await fetch(`/api/dvk-kontroller/${encodeURIComponent(currentProveId)}`);
+                if (!res.ok) throw new Error('Kunne ikke hente kontroller');
+
+                const kontroller = await res.json();
+
+                if (kontroller.length === 0) {
+                    liste.innerHTML = `<div class="p-6 text-center text-bark-400">
+                        <svg class="w-12 h-12 mx-auto mb-2 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        Ingen kontroller registrert ennå
+                    </div>`;
+                    document.getElementById('kontrollCount').textContent = '0 kontroller';
+                    updateStats([]);
+                    return;
+                }
+
+                document.getElementById('kontrollCount').textContent = `${kontroller.length} kontroller`;
+
+                liste.innerHTML = kontroller.map(k => {
+                    const dato = new Date(k.tidspunkt);
+                    const datoStr = dato.toLocaleDateString('no-NO') + ' ' + dato.toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' });
+
+                    // Bestem farge basert på tiltak
+                    let statusClass = 'bg-green-100 text-green-700';
+                    let statusText = 'OK';
+                    if (k.tiltak_diskvalifikasjon || k.tiltak_proveleder) {
+                        statusClass = 'bg-red-100 text-red-700';
+                        statusText = 'Tiltak';
+                    } else if (k.tiltak_advarsel || k.tiltak_dommer || k.tiltak_veiledning) {
+                        statusClass = 'bg-amber-100 text-amber-700';
+                        statusText = 'Veiledning';
+                    }
+
+                    const typeLabels = {
+                        rutine: 'Rutinekontroll',
+                        varslet: 'Varslet kontroll',
+                        spontan: 'Spontan kontroll',
+                        oppfolging: 'Oppfølging'
+                    };
+
+                    return `<div class="p-4 hover:bg-bark-50 transition">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-sm font-medium text-bark-800">${typeLabels[k.type] || k.type}</span>
+                                    <span class="text-xs px-2 py-0.5 rounded-full ${statusClass}">${statusText}</span>
+                                </div>
+                                <p class="text-xs text-bark-500 mb-2">${datoStr} — ${k.parti || 'Generelt'}</p>
+                                ${k.hund || k.forer ? `<p class="text-sm text-bark-600">Hund: ${k.hund || '-'}, Fører: ${k.forer || '-'}</p>` : ''}
+                                ${k.beskrivelse ? `<p class="text-sm text-bark-600 mt-1">${k.beskrivelse}</p>` : ''}
+                            </div>
+                            <button onclick="slettKontroll(${k.id})" class="text-bark-400 hover:text-red-500 p-1" title="Slett kontroll">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                updateStats(kontroller);
+            } catch (err) {
+                console.error('Feil ved lasting av kontroller:', err);
+                liste.innerHTML = `<div class="p-6 text-center text-red-500">Feil ved lasting av kontroller</div>`;
+            }
+        }
+
+        function updateStats(kontroller) {
+            const total = kontroller.length;
+            let ok = 0, veiledning = 0, tiltak = 0;
+
+            kontroller.forEach(k => {
+                if (k.tiltak_diskvalifikasjon || k.tiltak_proveleder) {
+                    tiltak++;
+                } else if (k.tiltak_advarsel || k.tiltak_dommer || k.tiltak_veiledning) {
+                    veiledning++;
+                } else {
+                    ok++;
+                }
+            });
+
+            document.getElementById('statTotal').textContent = total;
+            document.getElementById('statOK').textContent = ok;
+            document.getElementById('statVeiledning').textContent = veiledning;
+            document.getElementById('statTiltak').textContent = tiltak;
+        }
+
+        async function slettKontroll(id) {
+            if (!confirm('Er du sikker på at du vil slette denne kontrollen?')) return;
+
+            try {
+                const res = await fetch(`/api/dvk-kontroller/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('Kunne ikke slette kontroll');
+
+                await loadKontroller();
+                showToast('Kontroll slettet', 'success');
+            } catch (err) {
+                console.error('Feil ved sletting:', err);
+                showToast('Feil ved sletting: ' + err.message, 'error');
+            }
+        }
+
+        async function loadSignaturStatus() {
+            try {
+                const res = await fetch(`/api/dvk-signatur/${encodeURIComponent(currentProveId)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.exists) {
+                        document.getElementById('dvkSignStatus').innerHTML = `<span class="text-green-600">Signert: ${data.full_signatur}</span>`;
+                    }
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av signaturstatus:', err);
+            }
+        }
+
+        async function signerDVKRapport() {
+            const navn = document.getElementById('dvkName').textContent;
+            if (!navn || navn === '-') {
+                alert('Kunne ikke hente navn. Vennligst logg inn på nytt.');
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('no-NO');
+            const timeStr = now.toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' });
+            const initialer = navn.split(' ').map(n => n.charAt(0).toUpperCase()).join('');
+            const signaturTekst = `${navn} (${initialer}) — ${dateStr} kl ${timeStr}`;
+
+            const signatur = {
+                prove_id: currentProveId,
+                dvk_navn: navn,
+                dvk_telefon: currentUser?.telefon || null,
+                initialer: initialer,
+                signert_dato: dateStr,
+                signert_tid: timeStr,
+                full_signatur: signaturTekst
+            };
+
+            try {
+                const res = await fetch('/api/dvk-signatur', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(signatur)
+                });
+
+                if (!res.ok) throw new Error('Kunne ikke lagre signatur');
+
+                document.getElementById('dvkSignStatus').innerHTML = `<span class="text-green-600">Signert: ${signaturTekst}</span>`;
+                showToast('DVK-rapport signert og lagret!', 'success');
+            } catch (err) {
+                console.error('Feil ved signering:', err);
+                showToast('Feil ved signering: ' + err.message, 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-xl shadow-lg z-50 transition transform ${
+                type === 'success' ? 'bg-green-600 text-white' :
+                type === 'error' ? 'bg-red-600 text-white' :
+                'bg-bark-700 text-white'
+            }`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
+            window.location.href = 'index.html';
+        }
+    </script>
+</body>
+</html>

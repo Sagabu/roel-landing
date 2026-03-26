@@ -29,7 +29,6 @@
         'klubb-login.html',
         'admin.html',
         'admin-panel.html',
-        'superadmin.html',
         'opprett-klubb.html',
         'opprett-bruker.html',
         'opprett-prove.html',

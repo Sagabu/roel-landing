@@ -2846,7 +2846,7 @@ app.get("/api/brreg/:orgnr", async (c) => {
 // Hent alle klubber
 app.get("/api/klubber", (c) => {
   const rows = db.prepare("SELECT * FROM klubber ORDER BY navn").all();
-  return c.json(rows);
+  return c.json({ klubber: rows });
 });
 
 // Hent én klubb
@@ -4149,6 +4149,23 @@ app.get("/api/prover", (c) => {
     ORDER BY p.start_dato DESC
   `).all();
   return c.json(rows);
+});
+
+// Alle prøver (for superadmin) - MÅ komme FØR /api/prover/:id
+app.get("/api/prover/alle", (c) => {
+  try {
+    const prover = db.prepare(`
+      SELECT p.*, k.navn as klubb_navn,
+             (SELECT COUNT(*) FROM pameldte WHERE prove_id = p.id) as antall_pameldte
+      FROM prover p
+      LEFT JOIN klubber k ON p.klubb_id = k.id
+      ORDER BY p.dato_fra DESC
+    `).all();
+    return c.json({ prover });
+  } catch (err) {
+    // Hvis tabellen ikke finnes ennå
+    return c.json({ prover: [] });
+  }
 });
 
 // Hent én prøve
@@ -6321,23 +6338,6 @@ app.delete("/api/backups/:name", (c) => {
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);
-  }
-});
-
-// Alle prøver (for driftsadmin)
-app.get("/api/prover/alle", (c) => {
-  try {
-    const prover = db.prepare(`
-      SELECT p.*, k.navn as klubb_navn,
-             (SELECT COUNT(*) FROM pameldte WHERE prove_id = p.id) as antall_pameldte
-      FROM prover p
-      LEFT JOIN klubber k ON p.klubb_id = k.id
-      ORDER BY p.dato_fra DESC
-    `).all();
-    return c.json({ prover });
-  } catch (err) {
-    // Hvis tabellen ikke finnes ennå
-    return c.json({ prover: [] });
   }
 });
 

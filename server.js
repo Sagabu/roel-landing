@@ -685,6 +685,23 @@ const migrations = [
   "ALTER TABLE brukere ADD COLUMN sms_samtykke_tidspunkt TEXT DEFAULT NULL",
   // Klubb-id for prove_dokumenter (for dokumentarkiv)
   "ALTER TABLE prove_dokumenter ADD COLUMN klubb_id TEXT DEFAULT NULL",
+  // Nye felter for dommeroppgjør (utvidet skjema)
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reise_fra TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reise_til TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reisedekning TEXT DEFAULT 'tur_retur'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reise_passasjerer INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN bompenger TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN parkeringer TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN kollektivreiser TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN diett3_6_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN diett6_12_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN diett_over12_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN bor_utenfor_hk_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN dommer_dager INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN fradrag TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN signatur_dato TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN signatur_sted TEXT DEFAULT ''",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN signatur TEXT DEFAULT ''",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -4567,49 +4584,97 @@ app.post("/api/prover/:id/dommer-oppgjor", requireAuth, async (c) => {
 
   const {
     dommer_telefon, dommer_navn,
-    reise_km, reise_km_sats, reise_bom, reise_ferge, reise_fly, reise_leiebil, reise_annet, reise_annet_beskrivelse,
-    diett_dager, diett_sats, overnatting_netter, overnatting_belop,
-    honorar_dager, honorar_sats, fkf_fond_belop, kontonummer, kommentar
+    // Reisevarighet
+    reise_fra, reise_til, reisedekning,
+    // Kjøregodtgjørelse
+    reise_km, reise_km_sats, reise_passasjerer,
+    // Dynamiske lister (lagret som JSON)
+    bompenger, parkeringer, kollektivreiser, fradrag,
+    // Diett (nye satser)
+    diett3_6_antall, diett6_12_antall, diett_over12_antall, bor_utenfor_hk_antall,
+    // Dommergodtgjørelse
+    dommer_dager,
+    // Signatur
+    signatur_dato, signatur_sted, signatur,
+    kontonummer, kommentar, status
   } = body;
 
   if (!dommer_telefon || !dommer_navn) {
     return c.json({ error: "Dommer telefon og navn er påkrevd" }, 400);
   }
 
+  // Satser
+  const SATSER = {
+    km: 3.50,
+    passasjer: 1.00,
+    diett3_6: 150,
+    diett6_12: 200,
+    diettOver12: 400,
+    borUtenforHK: 500,
+    dommer: 500
+  };
+
   // Beregn beløp
-  const reise_km_belop = (reise_km || 0) * (reise_km_sats || 3.50);
-  const diett_belop = (diett_dager || 0) * (diett_sats || 350);
-  const honorar_belop = (honorar_dager || 0) * (honorar_sats || 0);
-  const total_belop = reise_km_belop + (reise_bom || 0) + (reise_ferge || 0) + (reise_fly || 0) +
-                      (reise_leiebil || 0) + (reise_annet || 0) + diett_belop +
-                      (overnatting_belop || 0) + honorar_belop - (fkf_fond_belop || 0);
+  const km = reise_km || 0;
+  const passasjerer = reise_passasjerer || 0;
+  const kmBelop = (km * SATSER.km) + (km * passasjerer * SATSER.passasjer);
+
+  // Parse JSON-lister
+  const bompengerListe = typeof bompenger === 'string' ? JSON.parse(bompenger || '[]') : (bompenger || []);
+  const parkeringerListe = typeof parkeringer === 'string' ? JSON.parse(parkeringer || '[]') : (parkeringer || []);
+  const kollektivListe = typeof kollektivreiser === 'string' ? JSON.parse(kollektivreiser || '[]') : (kollektivreiser || []);
+  const fradragListe = typeof fradrag === 'string' ? JSON.parse(fradrag || '[]') : (fradrag || []);
+
+  const bomSum = bompengerListe.reduce((sum, b) => sum + (parseFloat(b.belop) || 0), 0);
+  const parkSum = parkeringerListe.reduce((sum, p) => sum + (parseFloat(p.belop) || 0), 0);
+  const kollektivSum = kollektivListe.reduce((sum, k) => sum + (parseFloat(k.belop) || 0), 0);
+  const fradragSum = fradragListe.reduce((sum, f) => sum + (parseFloat(f.belop) || 0), 0);
+
+  // Diett
+  const diett3_6 = (diett3_6_antall || 0) * SATSER.diett3_6;
+  const diett6_12 = (diett6_12_antall || 0) * SATSER.diett6_12;
+  const diettOver12 = (diett_over12_antall || 0) * SATSER.diettOver12;
+  const borUtenforHK = (bor_utenfor_hk_antall || 0) * SATSER.borUtenforHK;
+  const diettSum = diett3_6 + diett6_12 + diettOver12 + borUtenforHK;
+
+  // Dommergodtgjørelse
+  const dommerBelop = (dommer_dager || 0) * SATSER.dommer;
+
+  // Total
+  const total_belop = kmBelop + bomSum + parkSum + kollektivSum + diettSum + dommerBelop - fradragSum;
 
   try {
     const result = db.prepare(`
       INSERT INTO dommer_oppgjor
         (prove_id, dommer_telefon, dommer_navn,
-         reise_km, reise_km_sats, reise_km_belop, reise_bom, reise_ferge, reise_fly, reise_leiebil, reise_annet, reise_annet_beskrivelse,
-         diett_dager, diett_sats, diett_belop, overnatting_netter, overnatting_belop,
-         honorar_dager, honorar_sats, honorar_belop, fkf_fond_belop, total_belop,
-         kontonummer, kommentar, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'utkast', datetime('now'))
+         reise_fra, reise_til, reisedekning,
+         reise_km, reise_km_sats, reise_passasjerer,
+         bompenger, parkeringer, kollektivreiser,
+         diett3_6_antall, diett6_12_antall, diett_over12_antall, bor_utenfor_hk_antall,
+         dommer_dager, fradrag,
+         signatur_dato, signatur_sted, signatur,
+         kontonummer, kommentar, total_belop, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(prove_id, dommer_telefon) DO UPDATE SET
         dommer_navn = excluded.dommer_navn,
-        reise_km = excluded.reise_km, reise_km_sats = excluded.reise_km_sats, reise_km_belop = excluded.reise_km_belop,
-        reise_bom = excluded.reise_bom, reise_ferge = excluded.reise_ferge, reise_fly = excluded.reise_fly,
-        reise_leiebil = excluded.reise_leiebil, reise_annet = excluded.reise_annet, reise_annet_beskrivelse = excluded.reise_annet_beskrivelse,
-        diett_dager = excluded.diett_dager, diett_sats = excluded.diett_sats, diett_belop = excluded.diett_belop,
-        overnatting_netter = excluded.overnatting_netter, overnatting_belop = excluded.overnatting_belop,
-        honorar_dager = excluded.honorar_dager, honorar_sats = excluded.honorar_sats, honorar_belop = excluded.honorar_belop,
-        fkf_fond_belop = excluded.fkf_fond_belop, total_belop = excluded.total_belop,
-        kontonummer = excluded.kontonummer, kommentar = excluded.kommentar, updated_at = datetime('now')
+        reise_fra = excluded.reise_fra, reise_til = excluded.reise_til, reisedekning = excluded.reisedekning,
+        reise_km = excluded.reise_km, reise_km_sats = excluded.reise_km_sats, reise_passasjerer = excluded.reise_passasjerer,
+        bompenger = excluded.bompenger, parkeringer = excluded.parkeringer, kollektivreiser = excluded.kollektivreiser,
+        diett3_6_antall = excluded.diett3_6_antall, diett6_12_antall = excluded.diett6_12_antall,
+        diett_over12_antall = excluded.diett_over12_antall, bor_utenfor_hk_antall = excluded.bor_utenfor_hk_antall,
+        dommer_dager = excluded.dommer_dager, fradrag = excluded.fradrag,
+        signatur_dato = excluded.signatur_dato, signatur_sted = excluded.signatur_sted, signatur = excluded.signatur,
+        kontonummer = excluded.kontonummer, kommentar = excluded.kommentar,
+        total_belop = excluded.total_belop, status = excluded.status, updated_at = datetime('now')
     `).run(
       proveId, dommer_telefon, dommer_navn,
-      reise_km || 0, reise_km_sats || 3.50, reise_km_belop,
-      reise_bom || 0, reise_ferge || 0, reise_fly || 0, reise_leiebil || 0, reise_annet || 0, reise_annet_beskrivelse || '',
-      diett_dager || 0, diett_sats || 350, diett_belop, overnatting_netter || 0, overnatting_belop || 0,
-      honorar_dager || 0, honorar_sats || 0, honorar_belop, fkf_fond_belop || 0, total_belop,
-      kontonummer || '', kommentar || ''
+      reise_fra || null, reise_til || null, reisedekning || 'tur_retur',
+      km, SATSER.km, passasjerer,
+      JSON.stringify(bompengerListe), JSON.stringify(parkeringerListe), JSON.stringify(kollektivListe),
+      diett3_6_antall || 0, diett6_12_antall || 0, diett_over12_antall || 0, bor_utenfor_hk_antall || 0,
+      dommer_dager || 0, JSON.stringify(fradragListe),
+      signatur_dato || null, signatur_sted || '', signatur || '',
+      kontonummer || '', kommentar || '', total_belop, status || 'utkast'
     );
 
     return c.json({ success: true, id: result.lastInsertRowid, total_belop });

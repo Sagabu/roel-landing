@@ -153,10 +153,14 @@
 
     <script>
         // Hjelpefunksjon for å få ukedag-navn basert på dag-nummer
+        // Cached trial config for day names
+        let cachedTrialConfig = null;
+
         function getDayName(dayNumber) {
-            const config = JSON.parse(localStorage.getItem('trialConfig') || '{}');
+            // Prøv cachedTrialConfig først, deretter localStorage
+            const config = cachedTrialConfig || JSON.parse(localStorage.getItem('trialConfig') || '{}');
             const startDate = config.startDate || config.start_dato;
-            if (!startDate || isNaN(dayNumber)) return dayNumber; // Returner original hvis ugyldig
+            if (!startDate || isNaN(dayNumber)) return `Dag ${dayNumber}`; // Fallback med "Dag X"
 
             const start = new Date(startDate);
             const targetDate = new Date(start);
@@ -178,11 +182,13 @@
             vkfinale: { name: 'VK Finale', type: 'vkfinale', judges: 2, dogs: 12, dayNum: 2 }
         };
 
-        // Legg til day-property basert på getDayName
-        Object.keys(PARTIES).forEach(key => {
-            const p = PARTIES[key];
-            p.day = p.dayNum === 0 ? 'Demo' : getDayName(p.dayNum);
-        });
+        // Oppdater PARTIES med faktiske ukedager - kalles etter at config er lastet
+        function updatePartyDayNames() {
+            Object.keys(PARTIES).forEach(key => {
+                const p = PARTIES[key];
+                p.day = p.dayNum === 0 ? 'Demo' : getDayName(p.dayNum);
+            });
+        }
 
         let assignedPartyId = null;
         let judgeRole = null;
@@ -194,6 +200,24 @@
             if (!FuglehundAuth.isLoggedIn()) {
                 window.location.href = 'dommer.html';
                 return;
+            }
+
+            // Last prøvekonfig fra server for å få riktige ukedager
+            try {
+                const configResp = await fetch('/api/trial');
+                if (configResp.ok) {
+                    const config = await configResp.json();
+                    cachedTrialConfig = {
+                        startDate: config.start_date,
+                        start_dato: config.start_date
+                    };
+                    // Oppdater PARTIES med faktiske ukedager
+                    updatePartyDayNames();
+                }
+            } catch (e) {
+                console.log('Kunne ikke laste prøvekonfig, bruker localStorage fallback');
+                // Fallback: oppdater fra localStorage
+                updatePartyDayNames();
             }
 
             // Synkroniser alle sessions (oppdaterer userSession, judgeSession, userProfile)

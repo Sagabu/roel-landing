@@ -1399,7 +1399,7 @@
                             </div>
                         </div>
                         <p class="text-sm text-bark-600 mb-4">
-                            DVK bruker sitt eget skjema for å logge kontroller under prøven. Kontrollene blir automatisk inkludert i NKK-rapporten.
+                            DVK bruker sitt eget skjema for å logge kontroller under prøven. Kontrollene blir automatisk inkludert i FKF-rapporten.
                         </p>
                         <div class="flex gap-2">
                             <a href="dvk-kontroll.html" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
@@ -1407,6 +1407,12 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                 </svg>
                                 Åpne DVK-skjema
+                            </a>
+                            <a href="prove-arkiv.html" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                                </svg>
+                                Dokumentarkiv
                             </a>
                             <button onclick="seDVKStatus()" class="bg-white hover:bg-bark-50 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition border border-bark-200">
                                 Se status
@@ -6140,9 +6146,12 @@
 
         // === FKF RAPPORT ===
 
-        function openFKFRapportModal() {
+        // Global variabel for DVK-journal fra server
+        let cachedDvkJournal = null;
+
+        async function openFKFRapportModal() {
             document.getElementById('fkfRapportModal').classList.remove('hidden');
-            populateFKFData();
+            await populateFKFData();
             loadFKFDraft();
         }
 
@@ -6150,10 +6159,11 @@
             document.getElementById('fkfRapportModal').classList.add('hidden');
         }
 
-        function populateFKFData() {
+        async function populateFKFData() {
             const trialDate = document.getElementById('trialDateFrom')?.value || '';
             const trialLocation = document.getElementById('trialLocation')?.value || '';
             const organizerName = document.getElementById('organizerName')?.value || '';
+            const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
 
             document.getElementById('fkf_dato').textContent = trialDate ? new Date(trialDate).toLocaleDateString('no-NO') : '-';
             document.getElementById('fkf_sted').textContent = trialLocation || '-';
@@ -6214,6 +6224,69 @@
             }
             if (praktiskInfo.provelederTelefon) {
                 document.getElementById('fkf_telefon').value = praktiskInfo.provelederTelefon;
+            }
+
+            // Hent DVK-journal fra server og auto-fyll
+            await loadDvkJournalForFKF(trialName, trialDate);
+        }
+
+        // Hent DVK-journal fra server og fyll inn FKF-skjema
+        async function loadDvkJournalForFKF(trialName, trialDate) {
+            const proveId = `${trialName.replace(/\s+/g, '_')}_${trialDate || new Date().toISOString().slice(0,10)}`;
+
+            try {
+                const res = await fetch(`/api/dvk-journal/${encodeURIComponent(proveId)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.exists && data.journal) {
+                        cachedDvkJournal = data.journal;
+                        const j = data.journal;
+
+                        // Auto-fyll DVK-felter
+                        if (j.dvk_navn) {
+                            document.getElementById('fkf_dvkNavn').value = j.dvk_navn;
+                        }
+                        if (j.dvk_assistent) {
+                            document.getElementById('fkf_dvkAssistent').value = j.dvk_assistent;
+                        }
+
+                        // Sjekk om det er noen avvik
+                        const avvik = j.avvik_json ? JSON.parse(j.avvik_json) : [];
+                        const kontroller = j.kontroller_json ? JSON.parse(j.kontroller_json) : {};
+                        let harAvvik = avvik.length > 0;
+
+                        // Sjekk også kontrollpunktene for avvik
+                        Object.values(kontroller).forEach(kp => {
+                            if (kp.status === 'avvik') harAvvik = true;
+                        });
+
+                        document.getElementById('fkf_dvkOK').checked = !harAvvik;
+
+                        // Fyll inn eventuelle merknader basert på avvik
+                        if (avvik.length > 0) {
+                            const merknadTekst = avvik.map((a, i) =>
+                                `${i+1}. ${a.hund || 'Ukjent'}: ${a.beskrivelse || 'Ingen beskrivelse'}`
+                            ).join('\n');
+                            document.getElementById('fkf_dvkMerknader').value = merknadTekst;
+                        }
+
+                        // Vis signaturstatus
+                        if (j.status === 'signed' || j.status === 'submitted') {
+                            const sig = j.signatur_json ? JSON.parse(j.signatur_json) : {};
+                            const statusBadge = document.createElement('span');
+                            statusBadge.className = 'ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded';
+                            statusBadge.textContent = `DVK signert: ${sig.fullSignatur || 'Ja'}`;
+                            const dvkNavnField = document.getElementById('fkf_dvkNavn');
+                            if (dvkNavnField && !dvkNavnField.parentNode.querySelector('.ml-2')) {
+                                dvkNavnField.parentNode.appendChild(statusBadge);
+                            }
+                        }
+
+                        console.log('DVK-journal lastet fra server for FKF-rapport');
+                    }
+                }
+            } catch (err) {
+                console.error('Feil ved henting av DVK-journal:', err);
             }
         }
 
@@ -6352,68 +6425,121 @@
             const premieWs = XLSX.utils.json_to_sheet(premieRows.length > 0 ? premieRows : [{ 'Klasse': '-', 'Premie': '-', 'Antall': 0 }]);
             XLSX.utils.book_append_sheet(wb, premieWs, 'Premiestatistikk');
 
-            // 5. DVK-skjema (dyrevelferdskontroll) - detaljert kontrollrapport
-            const dvkKontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
-            const dvkSignatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
-
+            // 5. DVK-skjema (kontrolljournal) - fra server
             const dvkRows = [
-                { 'Felt': 'DVK-SKJEMA (DYREVELFERDSKONTROLL)', 'Verdi': '' },
-                { 'Felt': '', 'Verdi': '' },
-                { 'Felt': 'Antall kontroller gjennomført', 'Verdi': dvkKontroller.length },
-                { 'Felt': 'DVK signatur', 'Verdi': dvkSignatur.fullSignatur || '(Ikke signert)' },
+                { 'Felt': 'DVK KONTROLLJOURNAL', 'Verdi': '' },
                 { 'Felt': '', 'Verdi': '' }
             ];
 
-            if (dvkKontroller.length > 0) {
-                // Statistikk
-                let okCount = 0, veiledningCount = 0, tiltakCount = 0;
-                dvkKontroller.forEach(k => {
-                    if (k.tiltak?.diskvalifikasjon || k.tiltak?.proveleder) tiltakCount++;
-                    else if (k.tiltak?.advarsel || k.tiltak?.dommer || k.tiltak?.veiledning) veiledningCount++;
-                    else okCount++;
-                });
+            // Bruk cachedDvkJournal hvis tilgjengelig (hentet fra server)
+            if (cachedDvkJournal) {
+                const j = cachedDvkJournal;
+                const signatur = j.signatur_json ? JSON.parse(j.signatur_json) : {};
+                const kontroller = j.kontroller_json ? JSON.parse(j.kontroller_json) : {};
+                const avvik = j.avvik_json ? JSON.parse(j.avvik_json) : [];
+                const vetHenvisninger = j.vet_henvisninger_json ? JSON.parse(j.vet_henvisninger_json) : [];
 
-                dvkRows.push({ 'Felt': 'Kontroller uten anmerkninger', 'Verdi': okCount });
-                dvkRows.push({ 'Felt': 'Kontroller med veiledning', 'Verdi': veiledningCount });
-                dvkRows.push({ 'Felt': 'Kontroller med tiltak', 'Verdi': tiltakCount });
-                dvkRows.push({ 'Felt': '', 'Verdi': '' });
-                dvkRows.push({ 'Felt': 'DETALJERTE KONTROLLER', 'Verdi': '' });
+                // Prøveinformasjon
+                dvkRows.push({ 'Felt': 'PRØVEINFORMASJON', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'Prøve', 'Verdi': j.prove_navn || trialName });
+                dvkRows.push({ 'Felt': 'Arrangør og sted', 'Verdi': j.arrangor_sted || '' });
+                dvkRows.push({ 'Felt': 'Dato', 'Verdi': j.prove_dato || '' });
+                dvkRows.push({ 'Felt': 'DVK', 'Verdi': j.dvk_navn || '' });
+                dvkRows.push({ 'Felt': 'DVK-assistent', 'Verdi': j.dvk_assistent || '' });
                 dvkRows.push({ 'Felt': '', 'Verdi': '' });
 
-                const typeLabels = {
-                    rutine: 'Rutinekontroll',
-                    varslet: 'Varslet kontroll',
-                    spontan: 'Spontan kontroll',
-                    oppfolging: 'Oppfølging'
+                // Kontrollpunkter - offisielt FKF-skjema
+                const kontrollpunktNavn = {
+                    'id_vaksine': 'ID og vaksinasjonsattest',
+                    'lufttemp': 'Lufttemperatur',
+                    'transport': 'Transport/oppstalling',
+                    'hygiene': 'Hygiene oppstalling',
+                    'vann': 'Tilgang til vann',
+                    'utstyr': 'Utstyr iht reglement',
+                    'drektig': 'Synlig drektige og ammende tisper',
+                    'sykdom': 'Tegn til sykdom',
+                    'vekt': 'Synlig avmagret/sterkt overvektig',
+                    'atferd': 'Atferd (ikke redd/aggressiv)',
+                    'halthet': 'Halthet',
+                    'handtering': 'Håndtering av hunder'
                 };
 
-                dvkKontroller.forEach((k, i) => {
-                    const dato = k.tidspunkt ? new Date(k.tidspunkt).toLocaleString('no-NO') : '-';
-                    dvkRows.push({ 'Felt': `--- Kontroll ${i + 1} ---`, 'Verdi': '' });
-                    dvkRows.push({ 'Felt': 'Tidspunkt', 'Verdi': dato });
-                    dvkRows.push({ 'Felt': 'Type', 'Verdi': typeLabels[k.type] || k.type });
-                    dvkRows.push({ 'Felt': 'Parti', 'Verdi': k.parti || 'Generelt' });
-                    if (k.hund) dvkRows.push({ 'Felt': 'Hund', 'Verdi': k.hund });
-                    if (k.forer) dvkRows.push({ 'Felt': 'Fører', 'Verdi': k.forer });
-                    if (k.beskrivelse) dvkRows.push({ 'Felt': 'Beskrivelse', 'Verdi': k.beskrivelse });
+                dvkRows.push({ 'Felt': 'KONTROLLPUNKTER', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'Kontroll av:', 'Verdi': 'Antall | Kontrollert av | Status' });
 
-                    // Tiltak
-                    const tiltak = [];
-                    if (k.tiltak?.ingen) tiltak.push('Ingen tiltak');
-                    if (k.tiltak?.veiledning) tiltak.push('Muntlig veiledning');
-                    if (k.tiltak?.advarsel) tiltak.push('Advarsel');
-                    if (k.tiltak?.dommer) tiltak.push('Varslet dommer');
-                    if (k.tiltak?.proveleder) tiltak.push('Varslet prøveleder');
-                    if (k.tiltak?.diskvalifikasjon) tiltak.push('Anbefalt diskvalifikasjon');
+                let totaltKontrollert = 0;
+                let antallOK = 0;
+                let antallAvvikKontroll = 0;
 
-                    dvkRows.push({ 'Felt': 'Tiltak', 'Verdi': tiltak.length > 0 ? tiltak.join(', ') : 'Ingen' });
-                    dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                Object.keys(kontrollpunktNavn).forEach(key => {
+                    const kp = kontroller[key] || {};
+                    const antall = parseInt(kp.antall) || 0;
+                    totaltKontrollert += antall;
+                    if (kp.status === 'ok') antallOK++;
+                    if (kp.status === 'avvik') antallAvvikKontroll++;
+
+                    dvkRows.push({
+                        'Felt': kontrollpunktNavn[key],
+                        'Verdi': `${kp.antall || '-'} | ${kp.kontrollertAv || '-'} | ${kp.status ? kp.status.toUpperCase() : '-'}`
+                    });
                 });
+
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'OPPSUMMERING', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'Totalt kontrollert', 'Verdi': totaltKontrollert });
+                dvkRows.push({ 'Felt': 'Kontrollpunkter OK', 'Verdi': antallOK });
+                dvkRows.push({ 'Felt': 'Kontrollpunkter med avvik', 'Verdi': antallAvvikKontroll });
+                dvkRows.push({ 'Felt': 'Registrerte avvik/hendelser', 'Verdi': avvik.length });
+                dvkRows.push({ 'Felt': 'Veterinærhenvisninger', 'Verdi': vetHenvisninger.length });
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+
+                // Avvik/hendelser
+                if (avvik.length > 0) {
+                    dvkRows.push({ 'Felt': 'BRUDD PÅ FORSKRIFT / AVVIK', 'Verdi': '' });
+                    avvik.forEach((a, i) => {
+                        dvkRows.push({ 'Felt': `--- Avvik ${i + 1} ---`, 'Verdi': '' });
+                        dvkRows.push({ 'Felt': 'Eier/fører', 'Verdi': a.eier || '-' });
+                        dvkRows.push({ 'Felt': 'Hund', 'Verdi': a.hund || '-' });
+                        dvkRows.push({ 'Felt': 'Sted/tid', 'Verdi': a.stedTid || '-' });
+                        dvkRows.push({ 'Felt': 'Vitner', 'Verdi': a.vitner || '-' });
+                        dvkRows.push({ 'Felt': 'Beskrivelse', 'Verdi': a.beskrivelse || '-' });
+                        dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                    });
+                }
+
+                // Veterinærhenvisninger
+                if (vetHenvisninger.length > 0) {
+                    dvkRows.push({ 'Felt': 'HENVISNING TIL VETERINÆR', 'Verdi': '' });
+                    vetHenvisninger.forEach((h, i) => {
+                        dvkRows.push({ 'Felt': `--- Henvisning ${i + 1} ---`, 'Verdi': '' });
+                        dvkRows.push({ 'Felt': 'Eier', 'Verdi': h.eier || '-' });
+                        dvkRows.push({ 'Felt': 'Hund', 'Verdi': h.hund || '-' });
+                        dvkRows.push({ 'Felt': 'Reg.nr', 'Verdi': h.regnr || '-' });
+                        dvkRows.push({ 'Felt': 'Årsak', 'Verdi': h.arsak || '-' });
+                        dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                    });
+                }
+
+                // Signatur
+                dvkRows.push({ 'Felt': 'DIGITAL SIGNATUR', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'Signaturstatus', 'Verdi': j.status === 'signed' || j.status === 'submitted' ? 'Signert' : 'Ikke signert' });
+                dvkRows.push({ 'Felt': 'DVK signatur', 'Verdi': signatur.fullSignatur || '(Ikke signert)' });
+                dvkRows.push({ 'Felt': 'Signert tidspunkt', 'Verdi': j.signed_at || '-' });
+
+            } else {
+                // Fallback til localStorage (gammel metode)
+                const dvkKontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
+                const dvkSignatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+
+                dvkRows.push({ 'Felt': 'Antall kontroller gjennomført', 'Verdi': dvkKontroller.length });
+                dvkRows.push({ 'Felt': 'DVK signatur', 'Verdi': dvkSignatur.fullSignatur || '(Ikke signert)' });
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                dvkRows.push({ 'Felt': '(Ingen DVK-kontrolljournal funnet på server)', 'Verdi': '' });
             }
 
             const dvkWs = XLSX.utils.json_to_sheet(dvkRows, { skipHeader: true });
-            dvkWs['!cols'] = [{ wch: 35 }, { wch: 60 }];
-            XLSX.utils.book_append_sheet(wb, dvkWs, 'DVK-skjema');
+            dvkWs['!cols'] = [{ wch: 40 }, { wch: 60 }];
+            XLSX.utils.book_append_sheet(wb, dvkWs, 'DVK-kontrolljournal');
 
             // Last ned
             const fileName = `FKF_Rapport_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;

@@ -516,6 +516,43 @@ db.exec(`
     full_signatur TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- DVK-journaler (komplett journal med alle data)
+  CREATE TABLE IF NOT EXISTS dvk_journaler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL UNIQUE,
+    prove_navn TEXT,
+    arrangor_sted TEXT,
+    prove_dato TEXT,
+    dvk_navn TEXT NOT NULL,
+    dvk_telefon TEXT,
+    dvk_assistent TEXT,
+    kontroller_json TEXT,
+    avvik_json TEXT,
+    vet_henvisninger_json TEXT,
+    signatur_json TEXT,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'signed', 'submitted')),
+    signed_at TEXT,
+    submitted_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_dvk_journaler_prove ON dvk_journaler(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dvk_journaler_status ON dvk_journaler(status);
+
+  -- Dokumentarkiv (alle dokumenter knyttet til en prøve)
+  CREATE TABLE IF NOT EXISTS prove_dokumenter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    dokument_type TEXT NOT NULL,
+    tittel TEXT NOT NULL,
+    filnavn TEXT,
+    innhold_json TEXT,
+    opprettet_av TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_prove ON prove_dokumenter(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_type ON prove_dokumenter(dokument_type);
 `);
 
 // --- Migrations for existing databases ---
@@ -6814,6 +6851,228 @@ app.post("/api/dvk-signatur", async (c) => {
 
     autoBackup("dvk-signatur");
     return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// DVK-JOURNAL API (komplett journal)
+// =============================================
+
+// Hent DVK-journal for en prøve
+app.get("/api/dvk-journal/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const journal = db.prepare("SELECT * FROM dvk_journaler WHERE prove_id = ?").get(prove_id);
+    if (!journal) {
+      return c.json({ exists: false });
+    }
+    // Parse JSON-felt
+    return c.json({
+      exists: true,
+      ...journal,
+      kontroller: journal.kontroller_json ? JSON.parse(journal.kontroller_json) : {},
+      avvik: journal.avvik_json ? JSON.parse(journal.avvik_json) : [],
+      vetHenvisninger: journal.vet_henvisninger_json ? JSON.parse(journal.vet_henvisninger_json) : [],
+      signatur: journal.signatur_json ? JSON.parse(journal.signatur_json) : null
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater DVK-journal (auto-save)
+app.post("/api/dvk-journal", async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      prove_id, prove_navn, arrangor_sted, prove_dato,
+      dvk_navn, dvk_telefon, dvk_assistent,
+      kontroller, avvik, vetHenvisninger
+    } = body;
+
+    if (!prove_id || !dvk_navn) {
+      return c.json({ error: "Mangler påkrevde felt: prove_id, dvk_navn" }, 400);
+    }
+
+    // Upsert
+    db.prepare(`
+      INSERT INTO dvk_journaler (
+        prove_id, prove_navn, arrangor_sted, prove_dato,
+        dvk_navn, dvk_telefon, dvk_assistent,
+        kontroller_json, avvik_json, vet_henvisninger_json,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(prove_id) DO UPDATE SET
+        prove_navn = excluded.prove_navn,
+        arrangor_sted = excluded.arrangor_sted,
+        prove_dato = excluded.prove_dato,
+        dvk_navn = excluded.dvk_navn,
+        dvk_telefon = excluded.dvk_telefon,
+        dvk_assistent = excluded.dvk_assistent,
+        kontroller_json = excluded.kontroller_json,
+        avvik_json = excluded.avvik_json,
+        vet_henvisninger_json = excluded.vet_henvisninger_json,
+        updated_at = datetime('now')
+    `).run(
+      prove_id, prove_navn || null, arrangor_sted || null, prove_dato || null,
+      dvk_navn, dvk_telefon || null, dvk_assistent || null,
+      JSON.stringify(kontroller || {}),
+      JSON.stringify(avvik || []),
+      JSON.stringify(vetHenvisninger || [])
+    );
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Signer og ferdigstill DVK-journal
+app.post("/api/dvk-journal/:prove_id/sign", async (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const body = await c.req.json();
+    const { signatur, journalData } = body;
+
+    if (!signatur || !signatur.fullSignatur) {
+      return c.json({ error: "Mangler signatur" }, 400);
+    }
+
+    // Oppdater journalen med signatur og sett status til signed
+    db.prepare(`
+      UPDATE dvk_journaler SET
+        prove_navn = ?,
+        arrangor_sted = ?,
+        prove_dato = ?,
+        dvk_navn = ?,
+        dvk_telefon = ?,
+        dvk_assistent = ?,
+        kontroller_json = ?,
+        avvik_json = ?,
+        vet_henvisninger_json = ?,
+        signatur_json = ?,
+        status = 'signed',
+        signed_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE prove_id = ?
+    `).run(
+      journalData.proveName || null,
+      journalData.arrangorSted || null,
+      journalData.proveDato || null,
+      journalData.dvkNavn,
+      journalData.dvkTelefon || null,
+      journalData.dvkAssistent || null,
+      JSON.stringify(journalData.kontroller || {}),
+      JSON.stringify(journalData.avvik || []),
+      JSON.stringify(journalData.vetHenvisninger || []),
+      JSON.stringify(signatur),
+      prove_id
+    );
+
+    // Hvis journal ikke finnes, opprett den
+    const exists = db.prepare("SELECT id FROM dvk_journaler WHERE prove_id = ?").get(prove_id);
+    if (!exists) {
+      db.prepare(`
+        INSERT INTO dvk_journaler (
+          prove_id, prove_navn, arrangor_sted, prove_dato,
+          dvk_navn, dvk_telefon, dvk_assistent,
+          kontroller_json, avvik_json, vet_henvisninger_json,
+          signatur_json, status, signed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', datetime('now'))
+      `).run(
+        prove_id,
+        journalData.proveName || null,
+        journalData.arrangorSted || null,
+        journalData.proveDato || null,
+        journalData.dvkNavn,
+        journalData.dvkTelefon || null,
+        journalData.dvkAssistent || null,
+        JSON.stringify(journalData.kontroller || {}),
+        JSON.stringify(journalData.avvik || []),
+        JSON.stringify(journalData.vetHenvisninger || []),
+        JSON.stringify(signatur)
+      );
+    }
+
+    // Lagre også i dokumentarkivet
+    db.prepare(`
+      INSERT INTO prove_dokumenter (prove_id, dokument_type, tittel, innhold_json, opprettet_av)
+      VALUES (?, 'dvk_journal', 'DVK Kontrolljournal', ?, ?)
+    `).run(
+      prove_id,
+      JSON.stringify({ ...journalData, signatur }),
+      signatur.navn
+    );
+
+    autoBackup("dvk-journal-signed");
+    return c.json({ success: true, message: "Journal signert og arkivert" });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// DOKUMENTARKIV API
+// =============================================
+
+// Hent alle dokumenter for en prøve
+app.get("/api/prove-dokumenter/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const dokumenter = db.prepare(`
+      SELECT id, prove_id, dokument_type, tittel, filnavn, opprettet_av, created_at
+      FROM prove_dokumenter
+      WHERE prove_id = ?
+      ORDER BY created_at DESC
+    `).all(prove_id);
+    return c.json(dokumenter);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent ett dokument med innhold
+app.get("/api/prove-dokumenter/:prove_id/:id", (c) => {
+  const { prove_id, id } = c.req.param();
+  try {
+    const dok = db.prepare(`
+      SELECT * FROM prove_dokumenter WHERE prove_id = ? AND id = ?
+    `).get(prove_id, id);
+    if (!dok) {
+      return c.json({ error: "Dokument ikke funnet" }, 404);
+    }
+    return c.json({
+      ...dok,
+      innhold: dok.innhold_json ? JSON.parse(dok.innhold_json) : null
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Legg til dokument i arkivet
+app.post("/api/prove-dokumenter", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { prove_id, dokument_type, tittel, filnavn, innhold, opprettet_av } = body;
+
+    if (!prove_id || !dokument_type || !tittel) {
+      return c.json({ error: "Mangler påkrevde felt" }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO prove_dokumenter (prove_id, dokument_type, tittel, filnavn, innhold_json, opprettet_av)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      prove_id, dokument_type, tittel, filnavn || null,
+      innhold ? JSON.stringify(innhold) : null,
+      opprettet_av || null
+    );
+
+    autoBackup("dokument-arkivert");
+    return c.json({ success: true, id: result.lastInsertRowid });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }

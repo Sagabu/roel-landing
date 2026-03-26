@@ -406,9 +406,9 @@
                                 </select>
                             </div>
 
-                            <!-- 1-dags VK dag-valg -->
+                            <!-- 1-dags VK dag-valg (vises kun hvis flere prøvedager) -->
                             <div id="vk1DayOptions" class="hidden bg-warm-50 rounded-xl p-3 border border-warm-200">
-                                <label class="block text-sm font-medium text-warm-800 mb-2">VK Finale gjennomføres på:</label>
+                                <label class="block text-sm font-medium text-warm-800 mb-2">VK gjennomføres på:</label>
                                 <select id="vkFinaleDag1day" class="w-full px-3 py-2 rounded border border-warm-200 text-sm bg-white focus:ring-2 focus:ring-warm-500" onchange="updateDayScheduleSummary()">
                                     <option value="1">Dag 1</option>
                                     <option value="2">Dag 2</option>
@@ -2495,6 +2495,7 @@
 
             // Oppdater VK dag-valgene
             updateVKDaySelectOptions();
+            updateVKDayOptions(); // Oppdater synlighet av 1-dags VK valg
             updateDayScheduleSummary();
         }
 
@@ -2529,12 +2530,20 @@
         // Show/hide VK day options based on type
         function updateVKDayOptions() {
             const vkType = document.getElementById('vkTypeSelect').value;
+            const antallDager = parseInt(document.getElementById('antallProvedager').value) || 2;
 
             document.getElementById('vk1DayOptions').classList.add('hidden');
             document.getElementById('vk2DayOptions').classList.add('hidden');
 
             if (vkType === '1day') {
-                document.getElementById('vk1DayOptions').classList.remove('hidden');
+                // For 1-dags VK: vis dag-valg kun hvis flere enn 1 prøvedag
+                // Med bare 1 dag går VK åpenbart på dag 1
+                if (antallDager > 1) {
+                    document.getElementById('vk1DayOptions').classList.remove('hidden');
+                } else {
+                    // Sett til dag 1 automatisk
+                    document.getElementById('vkFinaleDag1day').value = '1';
+                }
             } else if (vkType === '2day') {
                 document.getElementById('vk2DayOptions').classList.remove('hidden');
                 updateVKFinaleDag();

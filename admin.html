@@ -6085,72 +6085,6 @@
                 zip.file('04_Dommeroversikt.xlsx', dommerFileData);
             }
 
-            // 5. DVK-rapport (dyrevelferdskontroll)
-            const dvkKontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
-            const dvkSignatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
-
-            if (dvkKontroller.length > 0 || dvkSignatur.signert) {
-                const dvkRows = [
-                    { 'Felt': 'RAPPORT FRA DYREVELFERDSKONTROLLØR', 'Verdi': '' },
-                    { 'Felt': '', 'Verdi': '' },
-                    { 'Felt': 'Antall kontroller gjennomført', 'Verdi': dvkKontroller.length },
-                    { 'Felt': 'DVK signatur', 'Verdi': dvkSignatur.fullSignatur || '(Ikke signert)' },
-                    { 'Felt': '', 'Verdi': '' }
-                ];
-
-                // Statistikk
-                let okCount = 0, veiledningCount = 0, tiltakCount = 0;
-                dvkKontroller.forEach(k => {
-                    if (k.tiltak?.diskvalifikasjon || k.tiltak?.proveleder) tiltakCount++;
-                    else if (k.tiltak?.advarsel || k.tiltak?.dommer || k.tiltak?.veiledning) veiledningCount++;
-                    else okCount++;
-                });
-
-                dvkRows.push({ 'Felt': 'Kontroller uten anmerkninger', 'Verdi': okCount });
-                dvkRows.push({ 'Felt': 'Kontroller med veiledning', 'Verdi': veiledningCount });
-                dvkRows.push({ 'Felt': 'Kontroller med tiltak', 'Verdi': tiltakCount });
-                dvkRows.push({ 'Felt': '', 'Verdi': '' });
-                dvkRows.push({ 'Felt': 'DETALJERTE KONTROLLER', 'Verdi': '' });
-                dvkRows.push({ 'Felt': '', 'Verdi': '' });
-
-                const typeLabels = {
-                    rutine: 'Rutinekontroll',
-                    varslet: 'Varslet kontroll',
-                    spontan: 'Spontan kontroll',
-                    oppfolging: 'Oppfølging'
-                };
-
-                dvkKontroller.forEach((k, i) => {
-                    const dato = k.tidspunkt ? new Date(k.tidspunkt).toLocaleString('no-NO') : '-';
-                    dvkRows.push({ 'Felt': `--- Kontroll ${i + 1} ---`, 'Verdi': '' });
-                    dvkRows.push({ 'Felt': 'Tidspunkt', 'Verdi': dato });
-                    dvkRows.push({ 'Felt': 'Type', 'Verdi': typeLabels[k.type] || k.type });
-                    dvkRows.push({ 'Felt': 'Parti', 'Verdi': k.parti || 'Generelt' });
-                    if (k.hund) dvkRows.push({ 'Felt': 'Hund', 'Verdi': k.hund });
-                    if (k.forer) dvkRows.push({ 'Felt': 'Fører', 'Verdi': k.forer });
-                    if (k.beskrivelse) dvkRows.push({ 'Felt': 'Beskrivelse', 'Verdi': k.beskrivelse });
-
-                    // Tiltak
-                    const tiltak = [];
-                    if (k.tiltak?.ingen) tiltak.push('Ingen tiltak');
-                    if (k.tiltak?.veiledning) tiltak.push('Muntlig veiledning');
-                    if (k.tiltak?.advarsel) tiltak.push('Advarsel');
-                    if (k.tiltak?.dommer) tiltak.push('Varslet dommer');
-                    if (k.tiltak?.proveleder) tiltak.push('Varslet prøveleder');
-                    if (k.tiltak?.diskvalifikasjon) tiltak.push('Anbefalt diskvalifikasjon');
-
-                    dvkRows.push({ 'Felt': 'Tiltak', 'Verdi': tiltak.length > 0 ? tiltak.join(', ') : 'Ingen' });
-                    dvkRows.push({ 'Felt': '', 'Verdi': '' });
-                });
-
-                const dvkWs = XLSX.utils.json_to_sheet(dvkRows);
-                dvkWs['!cols'] = [{ wch: 35 }, { wch: 60 }];
-                const dvkWb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(dvkWb, dvkWs, 'DVK Rapport');
-                const dvkFileData = XLSX.write(dvkWb, { bookType: 'xlsx', type: 'array' });
-                zip.file('05_DVK_Rapport.xlsx', dvkFileData);
-            }
-
             // Generer og last ned ZIP
             const content = await zip.generateAsync({ type: 'blob' });
             const link = document.createElement('a');
@@ -6422,6 +6356,69 @@
             });
             const premieWs = XLSX.utils.json_to_sheet(premieRows.length > 0 ? premieRows : [{ 'Klasse': '-', 'Premie': '-', 'Antall': 0 }]);
             XLSX.utils.book_append_sheet(wb, premieWs, 'Premiestatistikk');
+
+            // 5. DVK-skjema (dyrevelferdskontroll) - detaljert kontrollrapport
+            const dvkKontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
+            const dvkSignatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+
+            const dvkRows = [
+                { 'Felt': 'DVK-SKJEMA (DYREVELFERDSKONTROLL)', 'Verdi': '' },
+                { 'Felt': '', 'Verdi': '' },
+                { 'Felt': 'Antall kontroller gjennomført', 'Verdi': dvkKontroller.length },
+                { 'Felt': 'DVK signatur', 'Verdi': dvkSignatur.fullSignatur || '(Ikke signert)' },
+                { 'Felt': '', 'Verdi': '' }
+            ];
+
+            if (dvkKontroller.length > 0) {
+                // Statistikk
+                let okCount = 0, veiledningCount = 0, tiltakCount = 0;
+                dvkKontroller.forEach(k => {
+                    if (k.tiltak?.diskvalifikasjon || k.tiltak?.proveleder) tiltakCount++;
+                    else if (k.tiltak?.advarsel || k.tiltak?.dommer || k.tiltak?.veiledning) veiledningCount++;
+                    else okCount++;
+                });
+
+                dvkRows.push({ 'Felt': 'Kontroller uten anmerkninger', 'Verdi': okCount });
+                dvkRows.push({ 'Felt': 'Kontroller med veiledning', 'Verdi': veiledningCount });
+                dvkRows.push({ 'Felt': 'Kontroller med tiltak', 'Verdi': tiltakCount });
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                dvkRows.push({ 'Felt': 'DETALJERTE KONTROLLER', 'Verdi': '' });
+                dvkRows.push({ 'Felt': '', 'Verdi': '' });
+
+                const typeLabels = {
+                    rutine: 'Rutinekontroll',
+                    varslet: 'Varslet kontroll',
+                    spontan: 'Spontan kontroll',
+                    oppfolging: 'Oppfølging'
+                };
+
+                dvkKontroller.forEach((k, i) => {
+                    const dato = k.tidspunkt ? new Date(k.tidspunkt).toLocaleString('no-NO') : '-';
+                    dvkRows.push({ 'Felt': `--- Kontroll ${i + 1} ---`, 'Verdi': '' });
+                    dvkRows.push({ 'Felt': 'Tidspunkt', 'Verdi': dato });
+                    dvkRows.push({ 'Felt': 'Type', 'Verdi': typeLabels[k.type] || k.type });
+                    dvkRows.push({ 'Felt': 'Parti', 'Verdi': k.parti || 'Generelt' });
+                    if (k.hund) dvkRows.push({ 'Felt': 'Hund', 'Verdi': k.hund });
+                    if (k.forer) dvkRows.push({ 'Felt': 'Fører', 'Verdi': k.forer });
+                    if (k.beskrivelse) dvkRows.push({ 'Felt': 'Beskrivelse', 'Verdi': k.beskrivelse });
+
+                    // Tiltak
+                    const tiltak = [];
+                    if (k.tiltak?.ingen) tiltak.push('Ingen tiltak');
+                    if (k.tiltak?.veiledning) tiltak.push('Muntlig veiledning');
+                    if (k.tiltak?.advarsel) tiltak.push('Advarsel');
+                    if (k.tiltak?.dommer) tiltak.push('Varslet dommer');
+                    if (k.tiltak?.proveleder) tiltak.push('Varslet prøveleder');
+                    if (k.tiltak?.diskvalifikasjon) tiltak.push('Anbefalt diskvalifikasjon');
+
+                    dvkRows.push({ 'Felt': 'Tiltak', 'Verdi': tiltak.length > 0 ? tiltak.join(', ') : 'Ingen' });
+                    dvkRows.push({ 'Felt': '', 'Verdi': '' });
+                });
+            }
+
+            const dvkWs = XLSX.utils.json_to_sheet(dvkRows, { skipHeader: true });
+            dvkWs['!cols'] = [{ wch: 35 }, { wch: 60 }];
+            XLSX.utils.book_append_sheet(wb, dvkWs, 'DVK-skjema');
 
             // Last ned
             const fileName = `FKF_Rapport_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;

@@ -576,6 +576,10 @@ window.handleApiError = function(error, customMessage) {
       const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
       if (userData.telefon !== SUPERADMIN_PHONE) return;
 
+      // Ikke vis knappen på admin-panel.html (vi er allerede der)
+      const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+      if (currentPage === 'admin-panel.html') return;
+
       // Sjekk om knappen allerede finnes
       if (document.getElementById('superadmin-btn')) return;
 

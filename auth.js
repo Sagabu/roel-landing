@@ -576,9 +576,10 @@ window.handleApiError = function(error, customMessage) {
       const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
       if (userData.telefon !== SUPERADMIN_PHONE) return;
 
-      // Ikke vis knappen på admin-sider (vi er allerede i admin-området)
+      // Ikke vis knappen på sider som allerede har admin-navigasjon
       const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-      if (currentPage === 'admin-panel.html' || currentPage === 'admin.html') return;
+      const excludedPages = ['admin-panel.html', 'admin.html', 'klubb.html', 'min-side.html'];
+      if (excludedPages.includes(currentPage)) return;
 
       // Sjekk om knappen allerede finnes
       if (document.getElementById('superadmin-btn')) return;

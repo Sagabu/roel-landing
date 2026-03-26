@@ -702,6 +702,11 @@ const migrations = [
   "ALTER TABLE dommer_oppgjor ADD COLUMN signatur_dato TEXT DEFAULT NULL",
   "ALTER TABLE dommer_oppgjor ADD COLUMN signatur_sted TEXT DEFAULT ''",
   "ALTER TABLE dommer_oppgjor ADD COLUMN signatur TEXT DEFAULT ''",
+  // Eierbevis og vaksinasjon for hunder
+  "ALTER TABLE hunder ADD COLUMN eierbevis TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN eierbevis_dato TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN vaksinasjon TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN vaksinasjon_dato TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -2971,7 +2976,10 @@ app.put("/api/hunder/:id", async (c) => {
   // Map frontend field names → db column names
   const fieldMap = {
     regnr: "regnr", navn: "navn", rase: "rase", kjonn: "kjonn",
-    fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde"
+    fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde",
+    eierbevis: "eierbevis", eierbevis_dato: "eierbevis_dato",
+    vaksinasjon: "vaksinasjon", vaksinasjon_dato: "vaksinasjon_dato",
+    aversjonsbevis: "aversjonsbevis", aversjonsbevis_dato: "aversjonsbevis_dato"
   };
   const sets = [];
   const vals = [];

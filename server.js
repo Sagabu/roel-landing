@@ -708,6 +708,9 @@ const migrations = [
   "ALTER TABLE hunder ADD COLUMN eierbevis_dato TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN vaksinasjon TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN vaksinasjon_dato TEXT DEFAULT NULL",
+  // Kilde og NKK-id for hunder
+  "ALTER TABLE hunder ADD COLUMN kilde TEXT DEFAULT 'manuell'",
+  "ALTER TABLE hunder ADD COLUMN nkk_id TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -3595,6 +3598,52 @@ app.get("/api/superadmin/brukere", (c) => {
     : db.prepare("SELECT COUNT(*) as n FROM brukere").get();
 
   return c.json({ brukere: rows, total: totalQuery.n });
+});
+
+// Hent alle hunder (kun superadmin)
+app.get("/api/superadmin/hunder", (c) => {
+  const search = c.req.query("search") || '';
+  const rase = c.req.query("rase") || '';
+  const limit = parseInt(c.req.query("limit") || '50');
+  const offset = parseInt(c.req.query("offset") || '0');
+
+  let whereConditions = [];
+  let params = [];
+
+  if (search) {
+    whereConditions.push("(h.navn LIKE ? OR h.regnr LIKE ? OR h.nkk_id LIKE ? OR b.fornavn LIKE ? OR b.etternavn LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  if (rase) {
+    if (rase === 'annen') {
+      whereConditions.push("(h.rase NOT IN ('Engelsk Setter', 'Gordon Setter', 'Irsk Setter', 'Pointer', 'Breton', 'Tysk Korthåret Hønsehund') OR h.rase IS NULL)");
+    } else {
+      whereConditions.push("h.rase = ?");
+      params.push(rase);
+    }
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+
+  const rows = db.prepare(`
+    SELECT h.id, h.regnr, h.nkk_id, h.navn, h.rase, h.kjonn, h.fodt, h.eier_telefon, h.created_at, h.kilde,
+           b.fornavn || ' ' || b.etternavn as eier_navn
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    ${whereClause}
+    ORDER BY h.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  const totalQuery = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    ${whereClause}
+  `).get(...params);
+
+  return c.json({ hunder: rows, total: totalQuery.n });
 });
 
 // Oppdater bruker-rolle (kun superadmin)
@@ -6670,12 +6719,12 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
 
     // Transaksjonsbehandling
     const insertHund = db.prepare(`
-      INSERT INTO hunder (regnr, navn, rase, kjonn, eier_telefon)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO hunder (regnr, navn, rase, kjonn, eier_telefon, kilde)
+      VALUES (?, ?, ?, ?, ?, 'import')
     `);
 
     const updateHund = db.prepare(`
-      UPDATE hunder SET navn = ?, rase = ?, eier_telefon = COALESCE(eier_telefon, ?)
+      UPDATE hunder SET navn = ?, rase = ?, eier_telefon = COALESCE(eier_telefon, ?), kilde = COALESCE(kilde, 'import')
       WHERE regnr = ?
     `);
 

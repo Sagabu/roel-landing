@@ -423,16 +423,21 @@
             </div>
         </div>
 
-        <!-- Brukeroversikt -->
+        <!-- Brukere og hunder -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-4 md:p-6">
             <div class="mb-4">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                        <h2 class="text-base md:text-lg font-serif font-bold text-bark-800">Brukeradministrasjon</h2>
-                        <p class="text-xs md:text-sm text-bark-500">Administrer brukere, roller og tilganger</p>
+                        <h2 class="text-base md:text-lg font-serif font-bold text-bark-800">Brukere og hunder</h2>
+                        <p class="text-xs md:text-sm text-bark-500">Administrer brukere, hunder og tilganger</p>
                     </div>
+                    <span id="brukerHundCount" class="px-3 py-1 bg-bark-100 text-bark-600 rounded-full text-xs md:text-sm font-medium self-start sm:self-auto">-</span>
                 </div>
                 <div class="flex flex-col sm:flex-row gap-2 md:gap-3 mt-3">
+                    <select id="visningsTypeFilter" onchange="switchBrukerHundView()" class="px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none font-medium bg-bark-50">
+                        <option value="brukere">👤 Brukere</option>
+                        <option value="hunder">🐕 Hunder</option>
+                    </select>
                     <select id="brukerRolleFilter" onchange="loadBrukere(document.getElementById('brukerSearch').value)" class="px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
                         <option value="">Alle roller</option>
                         <option value="superadmin">Superadmin</option>
@@ -441,11 +446,26 @@
                         <option value="dommer">Dommer</option>
                         <option value="deltaker">Deltaker</option>
                     </select>
+                    <select id="hundeRaseFilter" onchange="loadHunder(document.getElementById('hundeSearch').value)" class="hidden px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
+                        <option value="">Alle raser</option>
+                        <option value="Engelsk Setter">Engelsk Setter</option>
+                        <option value="Gordon Setter">Gordon Setter</option>
+                        <option value="Irsk Setter">Irsk Setter</option>
+                        <option value="Pointer">Pointer</option>
+                        <option value="Breton">Breton</option>
+                        <option value="Tysk Korthåret Hønsehund">Tysk Korthåret Hønsehund</option>
+                        <option value="annen">Annen rase</option>
+                    </select>
                     <input type="text" id="brukerSearch" placeholder="Søk etter navn, telefon..."
                         class="flex-1 px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
+                    <input type="text" id="hundeSearch" placeholder="Søk etter hundenavn, NKK-nr..."
+                        class="hidden flex-1 px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none">
                 </div>
             </div>
             <div id="brukerList" class="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+                <p class="text-bark-400">Laster...</p>
+            </div>
+            <div id="hundeList" class="hidden overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
                 <p class="text-bark-400">Laster...</p>
             </div>
         </div>
@@ -1308,6 +1328,7 @@
             const { brukere, total } = await resp.json();
 
             document.getElementById('statBrukere').textContent = total || '0';
+            document.getElementById('brukerHundCount').textContent = `${total || 0} brukere`;
 
             const container = document.getElementById('brukerList');
             if (brukere.length === 0) {
@@ -1415,6 +1436,108 @@
         clearTimeout(brukerSearchTimeout);
         brukerSearchTimeout = setTimeout(() => loadBrukere(e.target.value), 300);
     });
+
+    // Hunde-søk med debounce
+    let hundeSearchTimeout;
+    document.getElementById('hundeSearch').addEventListener('input', (e) => {
+        clearTimeout(hundeSearchTimeout);
+        hundeSearchTimeout = setTimeout(() => loadHunder(e.target.value), 300);
+    });
+
+    // ========================================
+    // BYTT MELLOM BRUKERE OG HUNDER
+    // ========================================
+    function switchBrukerHundView() {
+        const type = document.getElementById('visningsTypeFilter').value;
+        const brukerList = document.getElementById('brukerList');
+        const hundeList = document.getElementById('hundeList');
+        const brukerSearch = document.getElementById('brukerSearch');
+        const hundeSearch = document.getElementById('hundeSearch');
+        const rolleFilter = document.getElementById('brukerRolleFilter');
+        const raseFilter = document.getElementById('hundeRaseFilter');
+
+        if (type === 'hunder') {
+            brukerList.classList.add('hidden');
+            hundeList.classList.remove('hidden');
+            brukerSearch.classList.add('hidden');
+            hundeSearch.classList.remove('hidden');
+            rolleFilter.classList.add('hidden');
+            raseFilter.classList.remove('hidden');
+            loadHunder();
+        } else {
+            brukerList.classList.remove('hidden');
+            hundeList.classList.add('hidden');
+            brukerSearch.classList.remove('hidden');
+            hundeSearch.classList.add('hidden');
+            rolleFilter.classList.remove('hidden');
+            raseFilter.classList.add('hidden');
+            loadBrukere();
+        }
+    }
+
+    // ========================================
+    // HUNDEOVERSIKT
+    // ========================================
+    async function loadHunder(search = '') {
+        const raseFilter = document.getElementById('hundeRaseFilter')?.value || '';
+        try {
+            const resp = await fetch(`/api/superadmin/hunder?search=${encodeURIComponent(search)}&rase=${encodeURIComponent(raseFilter)}&limit=50`);
+            const { hunder, total } = await resp.json();
+
+            document.getElementById('brukerHundCount').textContent = `${total || 0} hunder`;
+
+            const container = document.getElementById('hundeList');
+            if (!hunder || hunder.length === 0) {
+                container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen hunder funnet</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <!-- Desktop header -->
+                <div class="hidden md:grid bg-bark-50 sticky top-0 grid-cols-6 gap-0 text-sm">
+                    <div class="px-3 py-2 font-medium text-bark-600">Navn</div>
+                    <div class="px-3 py-2 font-medium text-bark-600">Rase</div>
+                    <div class="px-3 py-2 font-medium text-bark-600">NKK-nr</div>
+                    <div class="px-3 py-2 font-medium text-bark-600">Eier</div>
+                    <div class="px-3 py-2 font-medium text-bark-600">Registrert</div>
+                    <div class="px-3 py-2 text-right font-medium text-bark-600">Kilde</div>
+                </div>
+                <div class="text-sm">
+                    ${hunder.map(h => `
+                        <!-- Desktop view -->
+                        <div class="hidden md:grid grid-cols-6 gap-0 border-t border-bark-100 hover:bg-bark-50">
+                            <div class="px-3 py-2 font-medium">${h.navn || '-'}</div>
+                            <div class="px-3 py-2 text-bark-500">${h.rase || '-'}</div>
+                            <div class="px-3 py-2 text-bark-500 font-mono text-xs">${h.nkk_id || '-'}</div>
+                            <div class="px-3 py-2 text-bark-500 truncate">${h.eier_navn || h.eier_telefon || '-'}</div>
+                            <div class="px-3 py-2 text-bark-400 text-xs">${h.created_at ? new Date(h.created_at).toLocaleDateString('no-NO') : '-'}</div>
+                            <div class="px-3 py-2 text-right">
+                                <span class="px-2 py-0.5 rounded text-xs ${h.kilde === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${h.kilde || 'manuell'}</span>
+                            </div>
+                        </div>
+                        <!-- Mobil view -->
+                        <div class="md:hidden border-t border-bark-100 p-3">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <div class="font-medium text-bark-800">${h.navn || '-'}</div>
+                                    <div class="text-xs text-bark-500">${h.rase || '-'}</div>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-xs ${h.kilde === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${h.kilde || 'manuell'}</span>
+                            </div>
+                            <div class="text-xs text-bark-500 space-y-1">
+                                <div>NKK: <span class="font-mono">${h.nkk_id || '-'}</span></div>
+                                <div>Eier: ${h.eier_navn || h.eier_telefon || '-'}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <p class="text-xs text-bark-400 mt-2 text-center">Viser ${hunder.length} av ${total} hunder</p>
+            `;
+        } catch (err) {
+            console.error('Feil ved lasting av hunder:', err);
+            document.getElementById('hundeList').innerHTML = '<p class="text-red-500 text-center py-4">Feil ved lasting: ' + err.message + '</p>';
+        }
+    }
 
     // ========================================
     // LAST KLUBBER-STATISTIKK
@@ -1593,24 +1716,26 @@
             }
 
             container.innerHTML = klubber.map(k => `
-                <div class="border border-bark-200 rounded-lg p-4 hover:bg-bark-50 transition">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-medium text-bark-800">${k.navn}</h3>
-                                ${k.verifisert ? '<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">Verifisert</span>' : ''}
+                <div class="border border-bark-200 rounded-lg p-3 md:p-4 hover:bg-bark-50 transition">
+                    <div class="flex flex-col gap-2">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h3 class="font-medium text-bark-800 text-sm md:text-base truncate">${k.navn}</h3>
+                                    ${k.verifisert ? '<span class="px-1.5 md:px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs whitespace-nowrap">Verifisert</span>' : ''}
+                                </div>
+                                <p class="text-xs md:text-sm text-bark-500 mt-1 truncate">
+                                    ${k.orgnummer ? `Org: ${k.orgnummer}` : ''}
+                                    ${k.sted ? ` • ${k.sted}` : ''}
+                                </p>
+                                ${k.leder_telefon ? `<p class="text-xs text-bark-400 mt-1">Leder: ${k.leder_telefon}</p>` : ''}
                             </div>
-                            <p class="text-sm text-bark-500 mt-1">
-                                ${k.orgnummer ? `Org: ${k.orgnummer}` : ''}
-                                ${k.sted ? ` • ${k.sted}` : ''}
-                            </p>
-                            ${k.leder_telefon ? `<p class="text-xs text-bark-400 mt-1">Leder: ${k.leder_telefon}</p>` : ''}
                         </div>
-                        <div class="flex items-center gap-2">
-                            <a href="klubb.html?klubbId=${k.id}" class="text-warm-600 hover:text-warm-700 text-sm font-medium">
+                        <div class="flex items-center gap-3 pt-2 border-t border-bark-100">
+                            <a href="klubb.html?klubbId=${k.id}" class="text-warm-600 hover:text-warm-700 text-xs md:text-sm font-medium">
                                 Åpne
                             </a>
-                            <button onclick="visKlubbAdmins('${k.id}', '${k.navn.replace(/'/g, "\\'")}')" class="text-bark-500 hover:text-bark-700 text-sm">
+                            <button onclick="visKlubbAdmins('${k.id}', '${k.navn.replace(/'/g, "\\'")}')" class="text-bark-500 hover:text-bark-700 text-xs md:text-sm">
                                 Tilganger
                             </button>
                         </div>

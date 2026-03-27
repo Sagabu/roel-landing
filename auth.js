@@ -587,33 +587,36 @@ window.handleApiError = function(error, customMessage) {
   FuglehundToast.error(message);
 };
 
-// Superadmin knapp - vises kun for telefon 90852833
+// Superadmin knapp - vises for superadmin-rolle
 (function() {
-  const SUPERADMIN_PHONE = '90852833';
-
   function injectAdminButton() {
     try {
+      // Sjekk om bruker har superadmin-rolle
       const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
-      if (userData.telefon !== SUPERADMIN_PHONE) return;
+      const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+      const rolle = userProfile.rolle || userData.rolle || '';
+      const isSuperadmin = rolle.includes('superadmin');
 
-      // Ikke vis knappen på sider som allerede har admin-navigasjon
+      if (!isSuperadmin) return;
+
+      // Ikke vis knappen på sider som allerede har admin-navigasjon eller egen superadmin-knapp
       const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-      const excludedPages = ['admin-panel.html', 'admin.html', 'klubb.html', 'min-side.html'];
+      const excludedPages = ['admin-panel.html', 'admin.html', 'klubb.html', 'min-side.html', 'profil.html', 'mine-hunder.html', 'jaktprover.html', 'fullmakter.html'];
       if (excludedPages.includes(currentPage)) return;
 
-      // Sjekk om knappen allerede finnes
-      if (document.getElementById('superadmin-btn')) return;
+      // Sjekk om knappen allerede finnes (enten injisert eller statisk adminHeaderBtn)
+      if (document.getElementById('superadmin-btn') || document.getElementById('adminHeaderBtn')) return;
 
       // Finn header
       const header = document.querySelector('header');
       if (!header) return;
 
-      // Lag admin-knappen
+      // Lag superadmin-knappen
       const adminBtn = document.createElement('a');
       adminBtn.id = 'superadmin-btn';
       adminBtn.href = '/admin-panel.html';
-      adminBtn.className = 'bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
-      adminBtn.textContent = 'Admin';
+      adminBtn.className = 'bg-warm-500 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
+      adminBtn.textContent = 'Superadmin';
 
       // Prøv å finne logg ut-knappen først
       const logoutBtn = header.querySelector('button[onclick*="logout"]');

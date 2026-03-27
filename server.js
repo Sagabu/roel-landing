@@ -6902,6 +6902,9 @@ app.get("/storage-shim.js", (c) => {
 
 app.get("/auth.js", (c) => {
   c.header("Content-Type", "application/javascript");
+  c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+  c.header("Pragma", "no-cache");
+  c.header("Expires", "0");
   return c.body(readFileSync(join(__dirname, "auth.js"), "utf-8"));
 });
 

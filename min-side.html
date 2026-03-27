@@ -527,12 +527,14 @@
             if (sessionPhone) {
                 try {
                     // Start ALLE API-kall parallelt for raskere lasting
+                    // Legg til cache-busting for å unngå stale data
+                    const cacheBust = Date.now();
                     const [trialDataResult, syncResult, userInfoResult, dommerInfoResult, profileDataResult] = await Promise.allSettled([
                         loadTrialData(),
                         FuglehundAuth.syncSessions(),
                         getUserByPhoneAsync(sessionPhone),
-                        fetch(`/api/brukere/${sessionPhone}/dommer-info`).then(r => r.ok ? r.json() : null),
-                        fetch(`/api/brukere/${sessionPhone}`).then(r => r.ok ? r.json() : null)
+                        fetch(`/api/brukere/${sessionPhone}/dommer-info?_=${cacheBust}`).then(r => r.ok ? r.json() : null),
+                        fetch(`/api/brukere/${sessionPhone}?_=${cacheBust}`).then(r => r.ok ? r.json() : null)
                     ]);
 
                     // Lagre pre-fetchet data
@@ -541,6 +543,10 @@
                     }
                     if (profileDataResult.status === 'fulfilled') {
                         prefetchedProfileData = profileDataResult.value;
+                        console.log('[Pre-fetch] ProfileData hentet:', prefetchedProfileData ? 'OK' : 'null',
+                            prefetchedProfileData?.profilbilde ? '(har profilbilde)' : '(ingen profilbilde)');
+                    } else {
+                        console.warn('[Pre-fetch] ProfileData feilet:', profileDataResult.reason);
                     }
 
                     const userInfo = userInfoResult.status === 'fulfilled' ? userInfoResult.value : { name: 'Bruker', trials: [] };
@@ -1288,16 +1294,35 @@
 
             // Profilbilde - bruk pre-fetchet data eller hent fra API
             try {
-                const profileData = prefetchedProfileData || await fetch(`/api/brukere/${currentUser.phone}`).then(r => r.ok ? r.json() : null);
+                let profileData = prefetchedProfileData;
+                console.log('[Profilbilde] Start - prefetchedProfileData:', prefetchedProfileData ? 'finnes' : 'null');
+
+                // Hvis vi ikke har pre-fetchet data, hent på nytt
+                if (!profileData) {
+                    console.log('[Profilbilde] Ingen pre-fetchet data, henter fra API...');
+                    const cacheBust = Date.now();
+                    const resp = await fetch(`/api/brukere/${currentUser.phone}?_=${cacheBust}`);
+                    console.log('[Profilbilde] API respons status:', resp.status);
+                    if (resp.ok) {
+                        profileData = await resp.json();
+                        console.log('[Profilbilde] API data hentet:', profileData ? 'OK' : 'tom');
+                    }
+                }
+
                 const profileImageEl = document.getElementById('userProfileImage');
                 const avatarFallbackEl = document.getElementById('userAvatarFallback');
+
+                console.log('[Profilbilde] profileData:', profileData ? 'finnes' : 'null');
+                console.log('[Profilbilde] profilbilde-felt:', profileData?.profilbilde ? profileData.profilbilde.substring(0, 50) + '...' : 'null/undefined');
 
                 if (profileData?.profilbilde) {
                     // Legg til cache-busting for å unngå stale cache
                     const imageUrl = profileData.profilbilde + (profileData.profilbilde.includes('?') ? '&' : '?') + 't=' + Date.now();
+                    console.log('[Profilbilde] Laster bilde URL');
 
                     // Sett opp onload/onerror før vi setter src
                     profileImageEl.onload = function() {
+                        console.log('[Profilbilde] Bilde lastet OK');
                         profileImageEl.classList.remove('hidden');
                         avatarFallbackEl.classList.add('hidden');
                     };
@@ -1310,6 +1335,7 @@
                     // Sett src - dette trigger lastingen
                     profileImageEl.src = imageUrl;
                 } else {
+                    console.log('[Profilbilde] Ingen profilbilde-felt i data, viser fallback');
                     profileImageEl.classList.add('hidden');
                     profileImageEl.removeAttribute('src');
                     avatarFallbackEl.classList.remove('hidden');

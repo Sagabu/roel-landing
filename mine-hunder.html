@@ -49,6 +49,10 @@
                 </div>
                 <div class="flex items-center gap-3">
                     <!-- Search button injected by dog-search.js -->
+                    <!-- Superadmin-knapp (vises kun for superadmin) -->
+                    <a id="adminHeaderBtn" href="admin-panel.html" class="hidden bg-warm-500 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
+                        Superadmin
+                    </a>
                     <button onclick="logout()" class="bg-bark-800 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
                         Logg ut
                     </button>
@@ -64,7 +68,7 @@
                 <a href="min-side.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Min side</a>
                 <a href="profil.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Min profil</a>
                 <a href="mine-hunder.html" class="tab-active px-5 py-4 text-sm font-medium whitespace-nowrap border-b-2 border-warm-500 text-warm-800">Mine hunder</a>
-                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Jaktprover</a>
+                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Jaktprøver</a>
                 <a href="fullmakter.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Fullmakter</a>
             </div>
         </div>
@@ -549,6 +553,22 @@
             console.log('=================================');
 
             await loadDogs();
+
+            // Vis superadmin-knapp hvis bruker har superadmin-rolle
+            try {
+                const phone = FuglehundAuth.getSessionPhone();
+                if (phone) {
+                    const resp = await fetch(`/api/brukere/${phone}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const roller = (data.rolle || '').split(',').map(r => r.trim());
+                        if (roller.includes('superadmin')) {
+                            const adminBtn = document.getElementById('adminHeaderBtn');
+                            if (adminBtn) adminBtn.classList.remove('hidden');
+                        }
+                    }
+                }
+            } catch (e) { console.log('Kunne ikke sjekke admin-rolle:', e); }
         }
 
         function renderDogs() {
@@ -609,7 +629,7 @@
                     <!-- Results Summary -->
                     <div class="bg-bark-50 px-5 py-3 border-t border-bark-100 cursor-pointer hover:bg-bark-100 transition" onclick="viewDogDetails('${dog.id}')">
                         <div class="flex items-center justify-between text-sm">
-                            <span class="text-bark-500">Jaktprover og kritikker</span>
+                            <span class="text-bark-500">Jaktprøver og kritikker</span>
                             <span class="flex items-center gap-2">
                                 <span class="font-medium text-bark-700">${dog.results?.length || 0} prover</span>
                                 <svg class="w-4 h-4 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

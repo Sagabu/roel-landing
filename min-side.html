@@ -515,19 +515,35 @@
 
         // Check for existing session on page load
         // Bruker FuglehundAuth for konsistent sesjonshåndtering
-        document.addEventListener('DOMContentLoaded', async () => {
-            await loadTrialData();
+        // Pre-cached data for raskere lasting
+        let prefetchedDommerInfo = null;
+        let prefetchedProfileData = null;
 
+        document.addEventListener('DOMContentLoaded', async () => {
             // Bruk FuglehundAuth for å hente telefonnummer fra alle session-kilder
             const sessionPhone = FuglehundAuth.getSessionPhone();
 
-            // Hvis vi fant et telefonnummer, synkroniser sessions og vis dashboard
+            // Hvis vi fant et telefonnummer, start alle API-kall parallelt
             if (sessionPhone) {
                 try {
-                    // Synkroniser alle sessions (dette oppdaterer userSession, judgeSession, userProfile)
-                    await FuglehundAuth.syncSessions();
+                    // Start ALLE API-kall parallelt for raskere lasting
+                    const [trialDataResult, syncResult, userInfoResult, dommerInfoResult, profileDataResult] = await Promise.allSettled([
+                        loadTrialData(),
+                        FuglehundAuth.syncSessions(),
+                        getUserByPhoneAsync(sessionPhone),
+                        fetch(`/api/brukere/${sessionPhone}/dommer-info`).then(r => r.ok ? r.json() : null),
+                        fetch(`/api/brukere/${sessionPhone}`).then(r => r.ok ? r.json() : null)
+                    ]);
 
-                    const userInfo = await getUserByPhoneAsync(sessionPhone);
+                    // Lagre pre-fetchet data
+                    if (dommerInfoResult.status === 'fulfilled') {
+                        prefetchedDommerInfo = dommerInfoResult.value;
+                    }
+                    if (profileDataResult.status === 'fulfilled') {
+                        prefetchedProfileData = profileDataResult.value;
+                    }
+
+                    const userInfo = userInfoResult.status === 'fulfilled' ? userInfoResult.value : { name: 'Bruker', trials: [] };
                     currentUser = {
                         phone: sessionPhone,
                         name: userInfo.name || 'Bruker',
@@ -548,6 +564,8 @@
                     console.error('Session restore error:', e);
                     // Ikke fjern sessions, la brukeren logge inn på nytt
                 }
+            } else {
+                await loadTrialData();
             }
 
             // Fjern loading-state - vis riktig innhold
@@ -1268,41 +1286,33 @@
             document.getElementById('userName').textContent = currentUser.name || 'Bruker';
             document.getElementById('userPhone').textContent = '+47 ' + formatPhoneForDisplay(currentUser.phone);
 
-            // Profilbilde - hent fra API (med cache-busting)
+            // Profilbilde - bruk pre-fetchet data eller hent fra API
             try {
-                const profileResp = await fetch(`/api/brukere/${currentUser.phone}?_=${Date.now()}`);
-                if (profileResp.ok) {
-                    const profileData = await profileResp.json();
-                    const profileImageEl = document.getElementById('userProfileImage');
-                    const avatarFallbackEl = document.getElementById('userAvatarFallback');
+                const profileData = prefetchedProfileData || await fetch(`/api/brukere/${currentUser.phone}`).then(r => r.ok ? r.json() : null);
+                const profileImageEl = document.getElementById('userProfileImage');
+                const avatarFallbackEl = document.getElementById('userAvatarFallback');
 
-                    console.log('[Profilbilde] Data mottatt:', profileData.profilbilde ? 'har bilde' : 'ingen bilde');
+                if (profileData?.profilbilde) {
+                    // Legg til cache-busting for å unngå stale cache
+                    const imageUrl = profileData.profilbilde + (profileData.profilbilde.includes('?') ? '&' : '?') + 't=' + Date.now();
 
-                    if (profileData.profilbilde) {
-                        // Legg til cache-busting for å unngå stale cache
-                        const imageUrl = profileData.profilbilde + (profileData.profilbilde.includes('?') ? '&' : '?') + 't=' + Date.now();
-
-                        // Sett opp onload/onerror før vi setter src
-                        profileImageEl.onload = function() {
-                            console.log('[Profilbilde] Bilde lastet OK');
-                            profileImageEl.classList.remove('hidden');
-                            avatarFallbackEl.classList.add('hidden');
-                        };
-                        profileImageEl.onerror = function() {
-                            console.error('[Profilbilde] Kunne ikke laste bilde:', imageUrl);
-                            profileImageEl.classList.add('hidden');
-                            avatarFallbackEl.classList.remove('hidden');
-                        };
-
-                        // Sett src - dette trigger lastingen
-                        profileImageEl.src = imageUrl;
-                    } else {
+                    // Sett opp onload/onerror før vi setter src
+                    profileImageEl.onload = function() {
+                        profileImageEl.classList.remove('hidden');
+                        avatarFallbackEl.classList.add('hidden');
+                    };
+                    profileImageEl.onerror = function() {
+                        console.error('[Profilbilde] Kunne ikke laste bilde');
                         profileImageEl.classList.add('hidden');
-                        profileImageEl.removeAttribute('src');
                         avatarFallbackEl.classList.remove('hidden');
-                    }
+                    };
+
+                    // Sett src - dette trigger lastingen
+                    profileImageEl.src = imageUrl;
                 } else {
-                    console.error('[Profilbilde] API-respons ikke OK:', profileResp.status);
+                    profileImageEl.classList.add('hidden');
+                    profileImageEl.removeAttribute('src');
+                    avatarFallbackEl.classList.remove('hidden');
                 }
             } catch (e) {
                 console.error('[Profilbilde] Feil ved henting:', e);
@@ -1374,34 +1384,31 @@
             const rolesContainer = document.getElementById('rolesContainer');
             const roles = [];
 
-            // Sjekk om bruker er dommer - hent fra API
+            // Sjekk om bruker er dommer - bruk pre-fetchet data eller hent fra API
             try {
-                const resp = await fetch(`/api/brukere/${currentUser.phone}/dommer-info`);
-                if (resp.ok) {
-                    const data = await resp.json();
-                    if (data.isDommer && data.tildelinger?.length > 0) {
-                        const tildeling = data.tildelinger[0];
+                const data = prefetchedDommerInfo || await fetch(`/api/brukere/${currentUser.phone}/dommer-info`).then(r => r.ok ? r.json() : null);
+                if (data?.isDommer && data.tildelinger?.length > 0) {
+                    const tildeling = data.tildelinger[0];
 
-                        // Sett opp judgeSession for dommer-hjem.html
-                        const judgeSession = {
-                            name: currentUser.name,
-                            phone: currentUser.phone,
-                            isJudge: true,
-                            assignedParty: tildeling.parti,
-                            judgeRole: tildeling.dommerRolle,
-                            loggedInAt: new Date().toISOString()
-                        };
-                        localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
+                    // Sett opp judgeSession for dommer-hjem.html
+                    const judgeSession = {
+                        name: currentUser.name,
+                        phone: currentUser.phone,
+                        isJudge: true,
+                        assignedParty: tildeling.parti,
+                        judgeRole: tildeling.dommerRolle,
+                        loggedInAt: new Date().toISOString()
+                    };
+                    localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
 
-                        roles.push({
-                            type: 'dommer',
-                            label: 'Dommer',
-                            description: `${tildeling.proveNavn} - Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
-                            icon: 'clipboard',
-                            bgColor: 'bg-warm-500',
-                            link: 'dommer-hjem.html'
-                        });
-                    }
+                    roles.push({
+                        type: 'dommer',
+                        label: 'Dommer',
+                        description: `${tildeling.proveNavn} - Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
+                        icon: 'clipboard',
+                        bgColor: 'bg-warm-500',
+                        link: 'dommer-hjem.html'
+                    });
                 }
             } catch (e) {
                 console.error('Kunne ikke hente dommer-info:', e);

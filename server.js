@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { bodyLimit } from "hono/body-limit";
 import Database from "better-sqlite3";
 import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
@@ -1018,6 +1019,16 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const app = new Hono();
+
+// --- Body size limit for large files (PDF documents, images) ---
+// Default Hono limit is 256KB, we need 10MB for documents
+app.use('/api/*', bodyLimit({
+  maxSize: 10 * 1024 * 1024, // 10 MB
+  onError: (c) => {
+    console.error('Body too large');
+    return c.json({ error: 'Filen er for stor (maks 10MB)' }, 413);
+  }
+}));
 
 // --- Global error handler ---
 app.onError((err, c) => {

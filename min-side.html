@@ -363,7 +363,7 @@
                     <div class="flex items-center gap-4">
                         <div id="userAvatarContainer" class="w-16 h-16 bg-warm-100 rounded-full flex items-center justify-center overflow-hidden">
                             <!-- Profilbilde (vises hvis bruker har lastet opp) -->
-                            <img id="userProfileImage" src="" alt="Profilbilde" class="w-full h-full object-cover hidden">
+                            <img id="userProfileImage" alt="Profilbilde" class="w-full h-full object-cover hidden">
                             <!-- Fallback avatar (vises hvis ingen profilbilde) -->
                             <svg id="userAvatarFallback" class="w-8 h-8 text-warm-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
@@ -1268,25 +1268,44 @@
             document.getElementById('userName').textContent = currentUser.name || 'Bruker';
             document.getElementById('userPhone').textContent = '+47 ' + formatPhoneForDisplay(currentUser.phone);
 
-            // Profilbilde - hent fra API
+            // Profilbilde - hent fra API (med cache-busting)
             try {
-                const profileResp = await fetch(`/api/brukere/${currentUser.phone}`);
+                const profileResp = await fetch(`/api/brukere/${currentUser.phone}?_=${Date.now()}`);
                 if (profileResp.ok) {
                     const profileData = await profileResp.json();
                     const profileImageEl = document.getElementById('userProfileImage');
                     const avatarFallbackEl = document.getElementById('userAvatarFallback');
 
+                    console.log('[Profilbilde] Data mottatt:', profileData.profilbilde ? 'har bilde' : 'ingen bilde');
+
                     if (profileData.profilbilde) {
-                        profileImageEl.src = profileData.profilbilde;
-                        profileImageEl.classList.remove('hidden');
-                        avatarFallbackEl.classList.add('hidden');
+                        // Legg til cache-busting for å unngå stale cache
+                        const imageUrl = profileData.profilbilde + (profileData.profilbilde.includes('?') ? '&' : '?') + 't=' + Date.now();
+
+                        // Sett opp onload/onerror før vi setter src
+                        profileImageEl.onload = function() {
+                            console.log('[Profilbilde] Bilde lastet OK');
+                            profileImageEl.classList.remove('hidden');
+                            avatarFallbackEl.classList.add('hidden');
+                        };
+                        profileImageEl.onerror = function() {
+                            console.error('[Profilbilde] Kunne ikke laste bilde:', imageUrl);
+                            profileImageEl.classList.add('hidden');
+                            avatarFallbackEl.classList.remove('hidden');
+                        };
+
+                        // Sett src - dette trigger lastingen
+                        profileImageEl.src = imageUrl;
                     } else {
                         profileImageEl.classList.add('hidden');
+                        profileImageEl.removeAttribute('src');
                         avatarFallbackEl.classList.remove('hidden');
                     }
+                } else {
+                    console.error('[Profilbilde] API-respons ikke OK:', profileResp.status);
                 }
             } catch (e) {
-                console.error('Kunne ikke hente profilbilde:', e);
+                console.error('[Profilbilde] Feil ved henting:', e);
             }
 
             // Klubbtilknytning

@@ -1343,7 +1343,7 @@
             await renderRolesSection();
 
             // Render trials
-            renderTrials();
+            await renderTrials();
 
             // Check pending tasks
             await checkPendingTasks();
@@ -1466,17 +1466,59 @@
             return icons[icon] || icons.clipboard;
         }
 
-        function renderTrials() {
+        async function renderTrials() {
             const upcomingContainer = document.getElementById('upcomingTrialsContainer');
             const pastContainer = document.getElementById('pastTrialsContainer');
             const noUpcoming = document.getElementById('noUpcomingTrials');
             const noPast = document.getElementById('noPastTrials');
 
-            const upcomingTrials = currentUser.trials?.filter(t => t.isUpcoming) || [];
+            // Hent brukerens egne prøver (som dommer, prøveleder etc.)
+            const userUpcomingTrials = currentUser.trials?.filter(t => t.isUpcoming) || [];
             const pastTrials = currentUser.trials?.filter(t => !t.isUpcoming) || [];
 
+            // Hent kommende prøver fra klubbens terminliste
+            let clubUpcomingTrials = [];
+            if (currentUser.clubId) {
+                try {
+                    const resp = await fetch(`/api/klubber/${currentUser.clubId}/prover`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+
+                        // Filtrer kun kommende prøver og transformer til riktig format
+                        clubUpcomingTrials = (data.prover || [])
+                            .filter(p => {
+                                const startDate = new Date(p.start_dato || p.dato_fra);
+                                return startDate >= today;
+                            })
+                            .map(p => ({
+                                id: p.id,
+                                name: p.navn,
+                                startDate: p.start_dato || p.dato_fra,
+                                endDate: p.slutt_dato || p.dato_til,
+                                location: p.sted,
+                                clubName: currentUser.clubName,
+                                antallPameldte: p.antall_pameldte || 0,
+                                isClubTrial: true,
+                                roles: []
+                            }))
+                            .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke hente klubbens prøver:', e);
+                }
+            }
+
+            // Kombiner brukerens prøver med klubbens prøver (unngå duplikater)
+            const userTrialIds = new Set(userUpcomingTrials.map(t => t.id));
+            const combinedUpcomingTrials = [
+                ...userUpcomingTrials,
+                ...clubUpcomingTrials.filter(t => !userTrialIds.has(t.id))
+            ];
+
             // Spesialhåndtering for prøveledere uten aktiv prøve
-            if (currentUser.isTrialAdmin && upcomingTrials.length === 0) {
+            if (currentUser.isTrialAdmin && combinedUpcomingTrials.length === 0) {
                 upcomingContainer.classList.remove('hidden');
                 noUpcoming.classList.add('hidden');
                 const clubName = currentUser.clubName || 'Din klubb';
@@ -1509,13 +1551,13 @@
                         </div>
                     </div>
                 `;
-            } else if (upcomingTrials.length === 0) {
+            } else if (combinedUpcomingTrials.length === 0) {
                 upcomingContainer.classList.add('hidden');
                 noUpcoming.classList.remove('hidden');
             } else {
                 upcomingContainer.classList.remove('hidden');
                 noUpcoming.classList.add('hidden');
-                upcomingContainer.innerHTML = upcomingTrials.map(trial => renderTrialCard(trial, true)).join('');
+                upcomingContainer.innerHTML = combinedUpcomingTrials.map(trial => renderTrialCard(trial, true)).join('');
             }
 
             // Render past trials
@@ -1532,7 +1574,10 @@
         function renderTrialCard(trial, isUpcoming) {
             const dateStr = formatDateRange(trial.startDate, trial.endDate);
 
-            const rolesHtml = trial.roles.map(role => `
+            // Håndter klubbprøver uten roller
+            const hasRoles = trial.roles && trial.roles.length > 0;
+
+            const rolesHtml = hasRoles ? trial.roles.map(role => `
                 <div class="flex items-center justify-between py-2 ${isUpcoming ? 'border-b border-bark-100 last:border-0' : ''}">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 bg-${role.color}-100 rounded-full flex items-center justify-center">
@@ -1552,14 +1597,38 @@
                         </a>
                     ` : ''}
                 </div>
-            `).join('');
+            `).join('') : '';
+
+            // Klubbprøve-info (fra terminlisten)
+            const clubTrialInfo = trial.isClubTrial ? `
+                <div class="flex items-center justify-between py-2">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-forest-100 rounded-full flex items-center justify-center">
+                            <svg class="w-4 h-4 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="font-medium text-bark-700">${trial.clubName || 'Din klubb'}</span>
+                            ${trial.antallPameldte > 0 ? `<span class="text-xs text-bark-400 ml-2">${trial.antallPameldte} påmeldte</span>` : ''}
+                        </div>
+                    </div>
+                    <a href="pamelding.html?prove=${trial.id}" class="text-forest-600 hover:text-forest-700 text-sm font-medium flex items-center gap-1">
+                        Meld på
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </a>
+                </div>
+            ` : '';
 
             if (isUpcoming) {
                 return `
-                    <div class="bg-white rounded-xl shadow-sm border-2 border-warm-200 overflow-hidden">
-                        <div class="bg-gradient-to-r from-warm-600 to-warm-700 text-white p-4">
+                    <div class="bg-white rounded-xl shadow-sm border-2 ${trial.isClubTrial && !hasRoles ? 'border-forest-200' : 'border-warm-200'} overflow-hidden">
+                        <div class="bg-gradient-to-r ${trial.isClubTrial && !hasRoles ? 'from-forest-600 to-forest-700' : 'from-warm-600 to-warm-700'} text-white p-4">
                             <h4 class="font-bold font-serif text-lg">${trial.name}</h4>
                             <div class="flex items-center gap-4 mt-1 text-bark-300 text-sm">
+                                ${trial.location ? `
                                 <span class="flex items-center gap-1">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
@@ -1567,6 +1636,7 @@
                                     </svg>
                                     ${trial.location}
                                 </span>
+                                ` : ''}
                                 <span class="flex items-center gap-1">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -1576,8 +1646,9 @@
                             </div>
                         </div>
                         <div class="p-4">
-                            <p class="text-xs text-bark-400 uppercase tracking-wide mb-2">Dine roller</p>
+                            ${hasRoles ? `<p class="text-xs text-bark-400 uppercase tracking-wide mb-2">Dine roller</p>` : ''}
                             ${rolesHtml}
+                            ${clubTrialInfo}
                         </div>
                     </div>
                 `;

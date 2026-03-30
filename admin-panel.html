@@ -2169,124 +2169,150 @@
         let score = 0;
         const funnetBrudd = [];
 
-        // Hjelpefunksjon for ordgrense-matching (unngår falske treff som "barnehage")
+        // Hjelpefunksjon for ordgrense-matching
         function matcherOrd(tekst, ord) {
-            // For fraser med mellomrom, bruk vanlig includes
             if (ord.includes(' ')) {
                 return tekst.includes(ord);
             }
-            // For enkeltord, bruk ordgrense-matching
             const regex = new RegExp(`\\b${ord}\\b`, 'i');
             return regex.test(tekst);
         }
 
-        // Definer regelbrudd med poeng og GDPR-artikkel
+        // Sjekk om det finnes et navngitt person (fornavn brukt direkte)
+        function harNavngittPerson(tekst) {
+            // Typiske norske fornavn som brukes direkte i teksten
+            const navnMønster = /\b[A-ZÆØÅ][a-zæøå]{2,}\b/g;
+            const potensielleNavn = tekst.match(navnMønster) || [];
+            // Sjekk om navnet brukes flere ganger (indikerer direkte tiltale)
+            for (const navn of potensielleNavn) {
+                const antall = (tekst.match(new RegExp(`\\b${navn}\\b`, 'g')) || []).length;
+                if (antall >= 2) return { funnet: true, navn: navn };
+            }
+            return { funnet: false };
+        }
+
+        // PERSONOPPLYSNINGSLOVEN / GDPR - Komplette regler
         const regler = [
+            // === IDENTIFISERING OG PERSONOPPLYSNINGER ===
             {
-                ord: ['barnet', 'mindreårig', 'mindreårige', 'sønn', 'datter', 'gutten', 'jenta', 'år gammel', 'åring'],
-                poeng: 25,
-                regel: 'GDPR Art. 8 - Barns personvern',
-                beskrivelse: 'Informasjon om mindreårige krever foreldres samtykke'
-            },
-            {
-                ord: ['personnummer', 'fødselsnummer', 'fnr'],
-                poeng: 30,
-                regel: 'GDPR Art. 87 - Nasjonalt ID-nummer',
-                beskrivelse: 'Personnummer er særlig beskyttet og skal ikke deles offentlig'
-            },
-            {
-                ord: ['adresse', 'bosted', 'bor i', 'gateadresse', 'veien', 'vegen'],
+                ord: ['du har', 'du er', 'du gjør', 'du bor', 'du jobber', 'sett deg', 'jeg vet at du'],
                 poeng: 15,
-                regel: 'GDPR Art. 5 - Dataminimering',
-                beskrivelse: 'Bostedsadresse er personopplysning som ikke skal deles uten formål'
-            },
-            {
-                ord: ['telefon', 'mobilnummer', 'tlf', 'ring meg'],
-                poeng: 12,
                 regel: 'GDPR Art. 6 - Lovlig behandling',
-                beskrivelse: 'Telefonnummer krever samtykke for offentliggjøring'
+                beskrivelse: 'Direkte identifisering av person uten lovlig grunnlag'
             },
             {
-                ord: ['sykdom', 'diagnose', 'medisin', 'behandling', 'psykisk', 'depresjon', 'angst', 'syk', 'operasjon'],
+                ord: ['bor fra meg', 'meter fra', 'nabo', 'bostedsadresse', 'hjemme hos'],
+                poeng: 18,
+                regel: 'GDPR Art. 5(1)(c) - Dataminimering',
+                beskrivelse: 'Avsløring av bostedsinformasjon er unødvendig og skadelig'
+            },
+            {
+                ord: ['dommer', 'leder', 'styremedlem', 'posisjon som', 'verv', 'tillitsvalgt i'],
+                poeng: 12,
+                regel: 'GDPR Art. 6 - Arbeidsforhold/verv',
+                beskrivelse: 'Utlevering av verv/stilling i negativ kontekst kan skade omdømme'
+            },
+
+            // === ÆREKRENKELSER OG BESKYLDNINGER ===
+            {
+                ord: ['dyremishandling', 'mishandler', 'slår hunder', 'sparker hunder', 'strømme hunder', 'strømmer', 'banker hunder', 'slå ihjel'],
+                poeng: 30,
+                regel: 'Straffeloven § 267 - Ærekrenkelse',
+                beskrivelse: 'Grove beskyldninger om straffbare forhold uten dokumentasjon'
+            },
+            {
+                ord: ['løgner', 'lyver', 'du lyver', 'løyet', 'løgn', 'usant'],
+                poeng: 15,
+                regel: 'GDPR Art. 5(1)(d) - Riktighet',
+                beskrivelse: 'Udokumenterte påstander fremstilt som faktum'
+            },
+            {
+                ord: ['kriminell', 'ulovlig', 'straffbart', 'anmeldt', 'politianmeldt'],
                 poeng: 25,
-                regel: 'GDPR Art. 9 - Særlige kategorier (helse)',
-                beskrivelse: 'Helseopplysninger er sensitiv data med strengt vern'
+                regel: 'GDPR Art. 10 - Straffedommer og lovovertredelser',
+                beskrivelse: 'Påstander om straffbare forhold krever særlig grunnlag'
             },
             {
-                ord: ['bilde uten', 'foto uten', 'filmet uten', 'tatt bilde', 'lagt ut bilde'],
+                ord: ['trakassere', 'trakassering', 'mobber', 'mobbing', 'hets', 'hetser'],
                 poeng: 20,
+                regel: 'Straffeloven § 266 - Hensynsløs atferd',
+                beskrivelse: 'Beskyldninger om trakassering er alvorlige ærekrenkelser'
+            },
+
+            // === BILDER OG OPPHAVSRETT ===
+            {
+                ord: ['bildet fra', 'bilde fra nettside', 'hentet fra', 'klipt fra', 'fra hjemmeside', 'fra nettside'],
+                poeng: 20,
+                regel: 'Åndsverkloven § 104 + GDPR Art. 6',
+                beskrivelse: 'Bilde hentet fra tredjepart uten tillatelse, brukt i negativ kontekst'
+            },
+            {
+                ord: ['lagt ut bilde', 'publisert bilde', 'delt bilde', 'poster bilde'],
+                poeng: 18,
                 regel: 'Åndsverkloven § 104 - Retten til eget bilde',
-                beskrivelse: 'Publisering av bilder krever samtykke fra den avbildede'
+                beskrivelse: 'Publisering av bilde uten samtykke fra den avbildede'
             },
+
+            // === ORGANISASJONSTILKNYTNING ===
             {
-                ord: ['bilde av person', 'foto av person', 'ansikt', 'ansiktet', 'portrett', 'identifiserbar person', 'gjenkjennelig'],
+                ord: ['nkk', 'fkf', 'nesk', 'fuglehundklubb', 'kennelklubb', 'klubben', 'klubbens'],
                 poeng: 10,
-                regel: 'GDPR Art. 6 - Samtykke for bilder',
-                beskrivelse: 'Bilder av identifiserbare personer er personopplysninger'
+                regel: 'GDPR Art. 6 - Organisasjonstilhørighet',
+                beskrivelse: 'Utlevering av organisasjonstilknytning i negativ sammenheng'
             },
+
+            // === TRUSLER OG PRESS ===
             {
-                ord: ['fullt navn', 'heter', 'vedkommende er', 'personen er'],
-                poeng: 8,
-                regel: 'GDPR Art. 5 - Identifisering',
-                beskrivelse: 'Fullt navn i kombinasjon med annen info er identifiserende'
-            },
-            {
-                ord: ['arbeidsgiver', 'jobber', 'arbeidsplass', 'ansatt', 'kollegaen'],
-                poeng: 10,
-                regel: 'GDPR Art. 6 - Arbeidsforhold',
-                beskrivelse: 'Informasjon om arbeidsforhold kan skade den registrerte'
-            },
-            {
-                ord: ['trussel', 'true', 'hevn', 'ta deg', 'passe deg'],
+                ord: ['true meg', 'truet', 'truer', 'presse meg', 'tvinge meg', 'straffe meg'],
                 poeng: 20,
                 regel: 'Straffeloven § 263 - Trusler',
-                beskrivelse: 'Trusler er straffbart uavhengig av personvern'
+                beskrivelse: 'Påstander om trusler i offentlig innlegg'
+            },
+
+            // === SYSTEMATISK SJIKANE ===
+            {
+                ord: ['brutt gdpr', 'bryter gdpr', 'personvern', 'uten lov', 'ulovlig behandling'],
+                poeng: 5,
+                regel: 'GDPR Art. 83 - Erkjennelse av brudd',
+                beskrivelse: 'Innlegget erkjenner selv at GDPR brytes'
             },
             {
-                ord: ['uten samtykke', 'ikke godkjent', 'nektet', 'mot viljen'],
+                ord: ['alle vet', 'miljøet vet', 'flere har sett', 'ikke den eneste', 'mange vet'],
+                poeng: 12,
+                regel: 'GDPR Art. 5(1)(a) - Rettferdig behandling',
+                beskrivelse: 'Oppfordring til bred spredning av udokumenterte påstander'
+            },
+
+            // === SENSITIVE KATEGORIER (GDPR Art. 9) ===
+            {
+                ord: ['sykdom', 'diagnose', 'psykisk', 'behandling', 'medisin'],
+                poeng: 25,
+                regel: 'GDPR Art. 9(1) - Helseopplysninger',
+                beskrivelse: 'Helseopplysninger er særlig sensitive personopplysninger'
+            },
+            {
+                ord: ['barnet', 'mindreårig', 'sønn', 'datter', 'barn av'],
+                poeng: 25,
+                regel: 'GDPR Art. 8 - Barns personvern',
+                beskrivelse: 'Mindreårige har forsterket vern'
+            },
+            {
+                ord: ['personnummer', 'fødselsnummer'],
+                poeng: 30,
+                regel: 'GDPR Art. 87 - Nasjonalt ID-nummer',
+                beskrivelse: 'Personnummer er særlig beskyttet'
+            },
+
+            // === MANGEL PÅ SAMTYKKE ===
+            {
+                ord: ['uten samtykke', 'uten tillatelse', 'uten lov til'],
                 poeng: 15,
                 regel: 'GDPR Art. 7 - Vilkår for samtykke',
-                beskrivelse: 'Behandling uten gyldig samtykke er ulovlig'
-            },
-            {
-                ord: ['gjentatt', 'flere ganger', 'systematisk', 'stadig', 'igjen og igjen'],
-                poeng: 15,
-                regel: 'GDPR Art. 83 - Gjentatte overtredelser',
-                beskrivelse: 'Gjentatte brudd øker alvorlighetsgraden betydelig'
-            },
-            {
-                ord: ['kriminell', 'straffet', 'dømt', 'fengslet', 'tiltalt', 'siktet'],
-                poeng: 25,
-                regel: 'GDPR Art. 10 - Straffedommer',
-                beskrivelse: 'Opplysninger om straffbare forhold har særlig vern'
-            },
-            {
-                ord: ['religion', 'muslim', 'kristen', 'jøde', 'ateist', 'troende'],
-                poeng: 20,
-                regel: 'GDPR Art. 9 - Religiøs overbevisning',
-                beskrivelse: 'Religiøs tilhørighet er sensitiv personopplysning'
-            },
-            {
-                ord: ['seksuell', 'homofil', 'lesbisk', 'bifil', 'trans', 'legning'],
-                poeng: 25,
-                regel: 'GDPR Art. 9 - Seksuell orientering',
-                beskrivelse: 'Seksuell legning er særlig sensitiv informasjon'
-            },
-            {
-                ord: ['fagforening', 'organisert', 'streik', 'tillitsvalgt'],
-                poeng: 15,
-                regel: 'GDPR Art. 9 - Fagforeningsmedlemskap',
-                beskrivelse: 'Fagforeningstilhørighet er sensitiv opplysning'
-            },
-            {
-                ord: ['etnisk', 'rase', 'nasjonalitet', 'innvandrer', 'utlending'],
-                poeng: 20,
-                regel: 'GDPR Art. 9 - Etnisk opprinnelse',
-                beskrivelse: 'Etnisk bakgrunn er sensitiv personopplysning'
+                beskrivelse: 'Behandling av personopplysninger uten gyldig samtykke'
             }
         ];
 
-        // Sjekk hver regel med ordgrense-matching
+        // Sjekk hver regel
         for (const regel of regler) {
             if (regel.ord.some(ord => matcherOrd(tekstLower, ord))) {
                 score += regel.poeng;
@@ -2296,6 +2322,28 @@
                     poeng: regel.poeng
                 });
             }
+        }
+
+        // EKSTRA: Sjekk for navngitt person (gjentas flere ganger)
+        const navnSjekk = harNavngittPerson(renTekst);
+        if (navnSjekk.funnet) {
+            score += 20;
+            funnetBrudd.push({
+                regel: 'GDPR Art. 6 - Identifisering ved navn',
+                beskrivelse: `Person navngis direkte ("${navnSjekk.navn}") - dette gjør innlegget svært identifiserende`,
+                poeng: 20
+            });
+        }
+
+        // EKSTRA: Kombinasjonsbonus - flere alvorlige brudd sammen øker score
+        const alvorligeBrudd = funnetBrudd.filter(b => b.poeng >= 20).length;
+        if (alvorligeBrudd >= 3) {
+            score += 15;
+            funnetBrudd.push({
+                regel: 'GDPR Art. 83(2) - Skjerpende omstendigheter',
+                beskrivelse: 'Flere grove brudd i kombinasjon øker alvorlighetsgraden betydelig',
+                poeng: 15
+            });
         }
 
         // Begrens til 0-100

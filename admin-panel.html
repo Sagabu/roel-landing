@@ -506,6 +506,82 @@
                 <p class="text-bark-400">Laster...</p>
             </div>
         </div>
+
+        <!-- TESTMODUS - For å teste hele flyten -->
+        <div class="bg-white rounded-xl shadow-sm border-2 border-amber-300 p-4 md:p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-bold">TESTMODUS</span>
+                        <h2 class="text-base md:text-lg font-serif font-bold text-bark-800">Test hele flyten</h2>
+                    </div>
+                    <p class="text-xs md:text-sm text-bark-500 mt-1">Opprett testprøve med fiktive deltakere og kritikker for å teste NKK/FKF-rapportering</p>
+                </div>
+            </div>
+
+            <!-- Info-boks -->
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <h4 class="font-medium text-amber-800 mb-2 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Hva testmodus gjør
+                </h4>
+                <ul class="text-sm text-amber-700 space-y-1">
+                    <li>• Oppretter en testprøve med navn "[TEST] Testprøve 2026"</li>
+                    <li>• Legger til 6 fiktive deltakere med hunder (UK, AK og VK)</li>
+                    <li>• Fyller ut kritikker med eksempeldata</li>
+                    <li>• Lar deg teste NKK-prøvemappe og FKF-rapport generering</li>
+                    <li>• All testdata kan slettes med ett klikk</li>
+                </ul>
+            </div>
+
+            <!-- Status -->
+            <div id="testmodusStatus" class="mb-6 hidden">
+                <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <h4 class="font-medium text-green-800 mb-2">Testprøve aktiv</h4>
+                    <div class="flex flex-wrap gap-4 text-sm text-green-700">
+                        <span>Prøve-ID: <strong id="testProveId">-</strong></span>
+                        <span>Deltakere: <strong id="testDeltakere">-</strong></span>
+                        <span>Kritikker: <strong id="testKritikker">-</strong></span>
+                    </div>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <a id="testAdminLink" href="#" target="_blank" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                            Åpne admin-panel →
+                        </a>
+                        <a id="testDommerLink" href="#" target="_blank" class="bg-bark-600 hover:bg-bark-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                            Åpne dommervisning →
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Handlinger -->
+            <div class="flex flex-wrap gap-3">
+                <button onclick="opprettTestprove()" id="btnOpprettTest" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Opprett testprøve
+                </button>
+                <button onclick="slettTestdata()" id="btnSlettTest" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 hidden">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Slett all testdata
+                </button>
+                <button onclick="sjekkTestStatus()" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-2 rounded-xl text-sm font-medium transition">
+                    Oppdater status
+                </button>
+            </div>
+
+            <!-- Logg -->
+            <div id="testmodusLogg" class="mt-6 hidden">
+                <h4 class="font-medium text-bark-700 mb-2 text-sm">Aktivitetslogg</h4>
+                <div id="testLoggContent" class="bg-bark-50 rounded-xl p-3 max-h-32 overflow-y-auto text-xs text-bark-600 font-mono">
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -1820,6 +1896,133 @@
     }
 
     // ========================================
+    // TESTMODUS FUNKSJONER
+    // ========================================
+
+    function testLogg(melding) {
+        const logg = document.getElementById('testLoggContent');
+        const loggContainer = document.getElementById('testmodusLogg');
+        if (loggContainer) loggContainer.classList.remove('hidden');
+
+        const tid = new Date().toLocaleTimeString('no-NO');
+        if (logg) logg.innerHTML = `[${tid}] ${melding}\n` + logg.innerHTML;
+    }
+
+    async function sjekkTestStatus() {
+        try {
+            const resp = await fetch('/api/superadmin/testmodus/status');
+            const data = await resp.json();
+
+            const statusDiv = document.getElementById('testmodusStatus');
+            const btnOpprett = document.getElementById('btnOpprettTest');
+            const btnSlett = document.getElementById('btnSlettTest');
+
+            if (!statusDiv) return; // Element ikke funnet
+
+            if (data.aktiv && data.prove) {
+                statusDiv.classList.remove('hidden');
+                if (btnOpprett) btnOpprett.classList.add('hidden');
+                if (btnSlett) btnSlett.classList.remove('hidden');
+
+                document.getElementById('testProveId').textContent = data.prove.id;
+                document.getElementById('testDeltakere').textContent = data.deltakere || 0;
+                document.getElementById('testKritikker').textContent = data.kritikker || 0;
+
+                document.getElementById('testAdminLink').href = `admin.html?prove_id=${data.prove.id}`;
+                document.getElementById('testDommerLink').href = `dommer-hjem.html?prove_id=${data.prove.id}`;
+
+                testLogg(`Testprøve funnet: ${data.prove.navn}`);
+            } else {
+                statusDiv.classList.add('hidden');
+                if (btnOpprett) btnOpprett.classList.remove('hidden');
+                if (btnSlett) btnSlett.classList.add('hidden');
+            }
+        } catch (err) {
+            console.error('Feil ved testmodus status:', err);
+        }
+    }
+
+    async function opprettTestprove() {
+        if (!confirm('Opprette testprøve med fiktive deltakere og kritikker?\n\nDette vil:\n- Opprette en prøve kalt "[TEST] Testprøve 2026"\n- Legge til 6 fiktive deltakere\n- Fylle ut kritikker for testing')) {
+            return;
+        }
+
+        const btn = document.getElementById('btnOpprettTest');
+        btn.disabled = true;
+        btn.textContent = 'Oppretter...';
+
+        try {
+            testLogg('Starter opprettelse av testprøve...');
+
+            const resp = await fetch('/api/superadmin/testmodus/opprett', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                throw new Error(data.error || 'Kunne ikke opprette testprøve');
+            }
+
+            testLogg(`Testprøve opprettet! ID: ${data.prove_id}`);
+            testLogg(`Deltakere: ${data.deltakere}`);
+            testLogg(`Kritikker: ${data.kritikker}`);
+
+            await sjekkTestStatus();
+
+            alert(`Testprøve opprettet!\n\nPrøve-ID: ${data.prove_id}\nDeltakere: ${data.deltakere}\nKritikker: ${data.kritikker}\n\nDu kan nå teste:\n1. Admin-panelet for prøven\n2. Dommervisningen\n3. NKK/FKF-rapportgenerering`);
+
+        } catch (err) {
+            testLogg(`FEIL: ${err.message}`);
+            alert('Feil: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> Opprett testprøve`;
+        }
+    }
+
+    async function slettTestdata() {
+        if (!confirm('ADVARSEL: Slette ALL testdata?\n\nDette vil permanent fjerne:\n- Testprøven\n- Alle fiktive deltakere\n- Alle testkritikker\n\nEkte data vil IKKE bli påvirket.')) {
+            return;
+        }
+
+        const btn = document.getElementById('btnSlettTest');
+        btn.disabled = true;
+        btn.textContent = 'Sletter...';
+
+        try {
+            testLogg('Starter sletting av testdata...');
+
+            const resp = await fetch('/api/superadmin/testmodus/slett', {
+                method: 'DELETE'
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                throw new Error(data.error || 'Kunne ikke slette testdata');
+            }
+
+            testLogg('Testdata slettet');
+            testLogg(`Prøver fjernet: ${data.prover_slettet}`);
+            testLogg(`Deltakere fjernet: ${data.deltakere_slettet}`);
+            testLogg(`Kritikker fjernet: ${data.kritikker_slettet}`);
+
+            await sjekkTestStatus();
+
+            alert(`Testdata slettet!\n\nPrøver: ${data.prover_slettet}\nDeltakere: ${data.deltakere_slettet}\nKritikker: ${data.kritikker_slettet}`);
+
+        } catch (err) {
+            testLogg(`FEIL: ${err.message}`);
+            alert('Feil: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg> Slett all testdata`;
+        }
+    }
+
+    // ========================================
     // INITIALISERING
     // ========================================
     Promise.all([
@@ -1837,7 +2040,8 @@
         loadData(),
         loadLog(),
         loadSamtykker(),
-        loadKlubber()
+        loadKlubber(),
+        sjekkTestStatus()
     ]).finally(() => document.body.classList.remove('auth-loading'));
     </script>
 </body>

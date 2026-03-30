@@ -2380,13 +2380,71 @@
         return 'bg-green-100 text-green-700 border-green-300';
     }
 
+    // Generer Datatilsynet-tips basert på analyse
+    function genererDatatilsynetTips(analyse, innleggTekst, url) {
+        // Finn tema basert på brudd
+        const temaer = [];
+        if (analyse.brudd.some(b => b.regel.includes('Ærekrenkelse') || b.regel.includes('Art. 10'))) {
+            temaer.push('Ærekrenkende påstander om straffbare forhold');
+        }
+        if (analyse.brudd.some(b => b.regel.includes('Art. 6') || b.regel.includes('Identifisering'))) {
+            temaer.push('Ulovlig publisering av personopplysninger');
+        }
+        if (analyse.brudd.some(b => b.regel.includes('Åndsverkloven') || b.regel.includes('bilde'))) {
+            temaer.push('Publisering av bilde uten samtykke');
+        }
+        if (analyse.brudd.some(b => b.regel.includes('Art. 5'))) {
+            temaer.push('Brudd på krav om rettferdighet og riktighet');
+        }
+
+        const tema = temaer.length > 0 ? temaer.join(', ') : 'Brudd på personvernregelverket';
+
+        // Generer kort beskrivelse
+        const bruddListe = analyse.brudd.map(b => b.regel.split(' - ')[0]).join(', ');
+
+        // Lag sammendrag av innlegget (maks 200 tegn)
+        const kortInnlegg = innleggTekst.length > 200
+            ? innleggTekst.substring(0, 200) + '...'
+            : innleggTekst;
+
+        const beskrivelse = `Et Facebook-innlegg publisert offentlig inneholder grove personvernbrudd mot en navngitt person.
+
+INNLEGGETS INNHOLD (sammendrag):
+${kortInnlegg}
+
+IDENTIFISERTE BRUDD:
+${analyse.brudd.map(b => `• ${b.regel}: ${b.beskrivelse}`).join('\n')}
+
+ALVORLIGHETSGRAD: ${analyse.score}/100 (${analyse.alvorlighet.nivå})
+
+Innlegget inneholder udokumenterte påstander om alvorlige straffbare forhold, publisert med fullt navn og bilde av den omtalte personen. Bildet er hentet fra en organisasjons nettside uten tillatelse. Påstandene fremstilles som faktum uten bevis, og er egnet til å skade vedkommendes omdømme, sosiale liv og karriere.
+
+${url ? `LENKE TIL INNLEGG: ${url}` : 'Skjermbilde av innlegget er vedlagt.'}`;
+
+        return {
+            virksomhet: 'Facebook / Meta Platforms Ireland Limited',
+            orgnr: '(Irsk selskap - ikke norsk org.nr)',
+            virksomhetstype: 'Sosiale medier / Teknologiselskap',
+            tema: tema,
+            sektor: 'Teknologi og digitale tjenester',
+            gjelderBarn: analyse.brudd.some(b => b.regel.includes('Art. 8')) ? 'Ja' : 'Nei',
+            ansatt: 'Nei',
+            beskrivelse: beskrivelse
+        };
+    }
+
     function visAnalyseResultat(analyse) {
         const container = document.getElementById('gdprAnalyseResultat');
         const innhold = document.getElementById('gdprResultatInnhold');
+        const url = document.getElementById('gdprInnleggUrl').value.trim();
+        const innleggTekst = document.getElementById('gdprInnleggTekst').value.trim();
 
         container.classList.remove('hidden');
 
         const scoreClass = getScoreClass(analyse.score);
+
+        // Generer Datatilsynet-tips
+        const tips = genererDatatilsynetTips(analyse, innleggTekst, url);
 
         innhold.className = `rounded-xl p-4 border-2 ${scoreClass}`;
         innhold.innerHTML = `
@@ -2406,7 +2464,7 @@
             </div>
 
             ${analyse.brudd.length > 0 ? `
-                <div class="mb-2">
+                <div class="mb-4">
                     <p class="font-medium text-sm mb-2">Identifiserte regelbrudd:</p>
                     <div class="space-y-2">
                         ${analyse.brudd.map(b => `
@@ -2417,8 +2475,96 @@
                         `).join('')}
                     </div>
                 </div>
-            ` : '<p class="text-sm">Ingen spesifikke regelbrudd identifisert basert på beskrivelsen.</p>'}
+            ` : '<p class="text-sm mb-4">Ingen spesifikke regelbrudd identifisert basert på beskrivelsen.</p>'}
+
+            <!-- DATATILSYNET TIPS-SEKSJON -->
+            <div class="mt-4 pt-4 border-t-2 border-current/20">
+                <div class="flex items-center gap-2 mb-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p class="font-bold text-sm">Ferdig utfylt tips til Datatilsynet:</p>
+                </div>
+
+                <div class="bg-white rounded-lg p-3 space-y-3 text-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Virksomhet:</p>
+                            <p class="font-medium">${tips.virksomhet}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Org.nr:</p>
+                            <p>${tips.orgnr}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Type virksomhet:</p>
+                            <p>${tips.virksomhetstype}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Sektor:</p>
+                            <p>${tips.sektor}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Tema for tipset:</p>
+                            <p class="text-red-700 font-medium">${tips.tema}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Gjelder barn/unge:</p>
+                            <p>${tips.gjelderBarn}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-bark-500 font-medium">Ansatt i virksomheten:</p>
+                            <p>${tips.ansatt}</p>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-bark-200">
+                        <p class="text-xs text-bark-500 font-medium mb-1">Beskrivelse av tipset:</p>
+                        <div class="bg-bark-50 rounded p-2 text-xs whitespace-pre-wrap max-h-48 overflow-y-auto">${tips.beskrivelse}</div>
+                    </div>
+
+                    <div class="flex gap-2 pt-2">
+                        <button onclick="kopierDatatilsynetTips()" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                            </svg>
+                            Kopier beskrivelse
+                        </button>
+                        <a href="https://www.datatilsynet.no/om-datatilsynet/kontakt-oss/tips-oss/" target="_blank" class="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition flex items-center justify-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                            Gå til Datatilsynet
+                        </a>
+                    </div>
+                </div>
+            </div>
         `;
+
+        // Lagre tips for kopiering
+        window.sisteDatatilsynetTips = tips;
+    }
+
+    function kopierDatatilsynetTips() {
+        if (!window.sisteDatatilsynetTips) {
+            alert('Ingen tips å kopiere');
+            return;
+        }
+        const tips = window.sisteDatatilsynetTips;
+        const tekst = tips.beskrivelse;
+
+        navigator.clipboard.writeText(tekst).then(() => {
+            alert('Beskrivelsen er kopiert til utklippstavlen!\\n\\nLim den inn i Datatilsynets tipsskjema.');
+        }).catch(err => {
+            // Fallback for eldre nettlesere
+            const textarea = document.createElement('textarea');
+            textarea.value = tekst;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert('Beskrivelsen er kopiert til utklippstavlen!');
+        });
     }
 
     function nullstillGdprAnalyse() {

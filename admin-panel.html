@@ -2158,14 +2158,32 @@
     }
 
     function analyserInnhold(tekst) {
-        const tekstLower = tekst.toLowerCase();
+        // Fjern instruksjonstekst fra bildeanalysen før vi analyserer
+        let renTekst = tekst
+            .replace(/\[BILDE:.*?For nøyaktig GDPR-analyse.*?\]/gs, '')
+            .replace(/Bildet er lastet opp\. For nøyaktig GDPR-analyse.*?steder\)/gs, '')
+            .replace(/beskriv følgende i tekstfeltet:/gi, '')
+            .replace(/Hvilke personer er synlige.*?identifiserende detaljer/gs, '');
+
+        const tekstLower = renTekst.toLowerCase();
         let score = 0;
         const funnetBrudd = [];
+
+        // Hjelpefunksjon for ordgrense-matching (unngår falske treff som "barnehage")
+        function matcherOrd(tekst, ord) {
+            // For fraser med mellomrom, bruk vanlig includes
+            if (ord.includes(' ')) {
+                return tekst.includes(ord);
+            }
+            // For enkeltord, bruk ordgrense-matching
+            const regex = new RegExp(`\\b${ord}\\b`, 'i');
+            return regex.test(tekst);
+        }
 
         // Definer regelbrudd med poeng og GDPR-artikkel
         const regler = [
             {
-                ord: ['barn', 'barnet', 'mindreårig', 'unge', 'sønn', 'datter', 'gutt', 'jente', 'år gammel'],
+                ord: ['barnet', 'mindreårig', 'mindreårige', 'sønn', 'datter', 'gutten', 'jenta', 'år gammel', 'åring'],
                 poeng: 25,
                 regel: 'GDPR Art. 8 - Barns personvern',
                 beskrivelse: 'Informasjon om mindreårige krever foreldres samtykke'
@@ -2201,7 +2219,7 @@
                 beskrivelse: 'Publisering av bilder krever samtykke fra den avbildede'
             },
             {
-                ord: ['bilde', 'foto', 'video', 'film av'],
+                ord: ['bilde av person', 'foto av person', 'ansikt', 'ansiktet', 'portrett', 'identifiserbar person', 'gjenkjennelig'],
                 poeng: 10,
                 regel: 'GDPR Art. 6 - Samtykke for bilder',
                 beskrivelse: 'Bilder av identifiserbare personer er personopplysninger'
@@ -2268,9 +2286,9 @@
             }
         ];
 
-        // Sjekk hver regel
+        // Sjekk hver regel med ordgrense-matching
         for (const regel of regler) {
-            if (regel.ord.some(ord => tekstLower.includes(ord))) {
+            if (regel.ord.some(ord => matcherOrd(tekstLower, ord))) {
                 score += regel.poeng;
                 funnetBrudd.push({
                     regel: regel.regel,

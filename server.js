@@ -7465,6 +7465,42 @@ app.delete("/api/superadmin/testmodus/slett", (c) => {
 });
 
 // ==========================================
+// GDPR BILDEANALYSE
+// ==========================================
+
+// Analyser bilde for personopplysninger (simulert AI-analyse)
+app.post("/api/gdpr/analyser-bilde", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { image } = body;
+
+    if (!image) {
+      return c.json({ error: "Mangler bilde" }, 400);
+    }
+
+    // For nå: Returner en instruks om manuell beskrivelse
+    // I fremtiden kan dette kobles til en AI-tjeneste (f.eks. OpenAI Vision, Google Cloud Vision)
+    // som faktisk analyserer bildet for personopplysninger
+
+    // Simulert respons - ber brukeren beskrive bildet
+    const beskrivelse = "Bildet er lastet opp. For nøyaktig GDPR-analyse, beskriv følgende i tekstfeltet:\n" +
+      "• Hvilke personer er synlige (ansikter, barn, gjenkjennelige)\n" +
+      "• Tekst som er synlig i bildet (navn, adresser, telefonnumre)\n" +
+      "• Kjøretøy med synlige skiltnummer\n" +
+      "• Andre identifiserende detaljer (uniformer, logoer, steder)";
+
+    return c.json({
+      beskrivelse: beskrivelse,
+      manuell_analyse_kreves: true
+    });
+
+  } catch (err) {
+    console.error('Feil ved bildeanalyse:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ==========================================
 // NKK-REP VARSLING
 // ==========================================
 

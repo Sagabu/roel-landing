@@ -610,6 +610,37 @@
                         <input type="text" id="gdprInnleggUrl" placeholder="Facebook URL (valgfritt)"
                             class="w-full px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-red-400 focus:outline-none">
                     </div>
+                    <!-- Bildeopplasting -->
+                    <div>
+                        <label class="block text-xs text-bark-500 mb-1">Last opp skjermbilde fra innlegget (valgfritt)</label>
+                        <div class="relative">
+                            <input type="file" id="gdprBildeInput" accept="image/*" onchange="handleGdprBilde(this)"
+                                class="hidden">
+                            <div id="gdprBildeDropzone" onclick="document.getElementById('gdprBildeInput').click()"
+                                class="w-full border-2 border-dashed border-bark-300 rounded-xl p-4 text-center cursor-pointer hover:border-red-400 hover:bg-red-50 transition">
+                                <div id="gdprBildePreview" class="hidden">
+                                    <img id="gdprBildeImg" class="max-h-48 mx-auto rounded-lg mb-2" alt="Opplastet bilde">
+                                    <p class="text-xs text-bark-500">Klikk for å bytte bilde</p>
+                                </div>
+                                <div id="gdprBildePlaceholder">
+                                    <svg class="w-8 h-8 mx-auto text-bark-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                    </svg>
+                                    <p class="text-sm text-bark-500">Klikk eller dra skjermbilde hit</p>
+                                    <p class="text-xs text-bark-400 mt-1">Bildet analyseres automatisk for personopplysninger</p>
+                                </div>
+                            </div>
+                            <button type="button" id="gdprFjernBilde" onclick="fjernGdprBilde()" class="hidden absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 text-xs hover:bg-red-600">✕</button>
+                        </div>
+                        <div id="gdprBildeAnalyseStatus" class="hidden mt-2 text-xs text-bark-500 flex items-center gap-2">
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Analyserer bilde...</span>
+                        </div>
+                        <div id="gdprBildeAnalyseResultat" class="hidden mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800"></div>
+                    </div>
                     <div>
                         <textarea id="gdprInnleggTekst" rows="5" placeholder="Beskriv innlegget her: Hva står det? Hvem nevnes? Er det bilder av personer? Nevnes navn, adresser, helseopplysninger, barn etc.?"
                             class="w-full px-3 py-2 border border-bark-200 rounded-xl text-sm focus:border-red-400 focus:outline-none resize-y"></textarea>
@@ -1994,25 +2025,130 @@
         localStorage.setItem('gdpr_rapportering', JSON.stringify(innlegg));
     }
 
-    // Midlertidig lagring av siste analyse
+    // Midlertidig lagring av siste analyse og bilde
     let sisteGdprAnalyse = null;
+    let gdprBildeData = null;
+    let gdprBildeAnalyseTekst = '';
+
+    // Bildehåndtering
+    function handleGdprBilde(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        // Vis preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            gdprBildeData = e.target.result;
+            document.getElementById('gdprBildeImg').src = gdprBildeData;
+            document.getElementById('gdprBildePreview').classList.remove('hidden');
+            document.getElementById('gdprBildePlaceholder').classList.add('hidden');
+            document.getElementById('gdprFjernBilde').classList.remove('hidden');
+
+            // Analyser bildet med AI
+            analyserBildeMedAI(gdprBildeData);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function fjernGdprBilde() {
+        gdprBildeData = null;
+        gdprBildeAnalyseTekst = '';
+        document.getElementById('gdprBildeInput').value = '';
+        document.getElementById('gdprBildeImg').src = '';
+        document.getElementById('gdprBildePreview').classList.add('hidden');
+        document.getElementById('gdprBildePlaceholder').classList.remove('hidden');
+        document.getElementById('gdprFjernBilde').classList.add('hidden');
+        document.getElementById('gdprBildeAnalyseStatus').classList.add('hidden');
+        document.getElementById('gdprBildeAnalyseResultat').classList.add('hidden');
+    }
+
+    async function analyserBildeMedAI(imageData) {
+        const statusEl = document.getElementById('gdprBildeAnalyseStatus');
+        const resultatEl = document.getElementById('gdprBildeAnalyseResultat');
+
+        statusEl.classList.remove('hidden');
+        resultatEl.classList.add('hidden');
+
+        try {
+            // Send til backend for AI-analyse
+            const response = await fetch('/api/gdpr/analyser-bilde', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                gdprBildeAnalyseTekst = data.beskrivelse || '';
+
+                statusEl.classList.add('hidden');
+                resultatEl.classList.remove('hidden');
+                resultatEl.innerHTML = `<strong>AI-analyse av bildet:</strong><br>${gdprBildeAnalyseTekst}`;
+            } else {
+                // Fallback: be brukeren beskrive bildet manuelt
+                statusEl.classList.add('hidden');
+                resultatEl.classList.remove('hidden');
+                resultatEl.innerHTML = '<span class="text-amber-600">⚠️ Kunne ikke analysere bildet automatisk. Beskriv bildet i tekstfeltet nedenfor.</span>';
+                gdprBildeAnalyseTekst = '';
+            }
+        } catch (err) {
+            console.error('Bildeanalyse feilet:', err);
+            statusEl.classList.add('hidden');
+            resultatEl.classList.remove('hidden');
+            resultatEl.innerHTML = '<span class="text-amber-600">⚠️ Bildeanalyse utilgjengelig. Beskriv bildet manuelt i tekstfeltet.</span>';
+            gdprBildeAnalyseTekst = '';
+        }
+    }
+
+    // Drag and drop støtte
+    document.addEventListener('DOMContentLoaded', function() {
+        const dropzone = document.getElementById('gdprBildeDropzone');
+        if (dropzone) {
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('border-red-400', 'bg-red-50');
+            });
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('border-red-400', 'bg-red-50');
+            });
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('border-red-400', 'bg-red-50');
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    const input = document.getElementById('gdprBildeInput');
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                    handleGdprBilde(input);
+                }
+            });
+        }
+    });
 
     function analyserGdprInnlegg() {
         const url = document.getElementById('gdprInnleggUrl').value.trim();
         const tekst = document.getElementById('gdprInnleggTekst').value.trim();
 
-        if (!tekst) {
-            alert('Beskriv innholdet i innlegget (tekst, bilder, personer som nevnes etc.)');
+        // Kombiner brukerens tekst med bildeanalysen
+        let fullTekst = tekst;
+        if (gdprBildeAnalyseTekst) {
+            fullTekst = `[BILDE: ${gdprBildeAnalyseTekst}]\n\n${tekst}`;
+        }
+
+        if (!fullTekst && !gdprBildeData) {
+            alert('Last opp et bilde og/eller beskriv innholdet i innlegget');
             return;
         }
 
-        // Analyser innholdet
-        const analyse = analyserInnhold(tekst);
+        // Analyser innholdet (inkludert bildeanalysen)
+        const analyse = analyserInnhold(fullTekst || 'Ingen tekstbeskrivelse gitt');
 
         // Lagre for senere
         sisteGdprAnalyse = {
             url: url,
-            tekst: tekst,
+            tekst: fullTekst,
+            bildeData: gdprBildeData ? '[BILDE LAGRET]' : null,
             ...analyse,
             dato: new Date().toISOString().split('T')[0]
         };
@@ -2224,6 +2360,8 @@
         document.getElementById('gdprInnleggTekst').value = '';
         document.getElementById('gdprAnalyseResultat').classList.add('hidden');
         sisteGdprAnalyse = null;
+        // Nullstill også bilde
+        fjernGdprBilde();
     }
 
     function lagreGdprInnlegg() {

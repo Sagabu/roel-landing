@@ -434,13 +434,23 @@
 
     <!-- Lagre-knapper -->
     <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 p-2 z-40">
-        <div class="flex gap-2">
-            <button onclick="saveDogAndSelectNew(1)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
-                Lagre H1 + Ny
-            </button>
-            <button onclick="saveDogAndSelectNew(2)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
-                Lagre H2 + Ny
-            </button>
+        <div class="grid grid-cols-2 gap-2">
+            <div class="flex flex-col gap-1">
+                <button onclick="saveDogAndSelectNew(1)" class="bg-bark-500 hover:bg-bark-600 text-white font-medium py-1.5 rounded-lg shadow transition text-[10px]">
+                    Lagre H1 + Ny
+                </button>
+                <button onclick="finishDog(1)" class="bg-red-500 hover:bg-red-600 text-white font-medium py-1.5 rounded-lg shadow transition text-[10px]">
+                    Avslutt H1
+                </button>
+            </div>
+            <div class="flex flex-col gap-1">
+                <button onclick="saveDogAndSelectNew(2)" class="bg-bark-500 hover:bg-bark-600 text-white font-medium py-1.5 rounded-lg shadow transition text-[10px]">
+                    Lagre H2 + Ny
+                </button>
+                <button onclick="finishDog(2)" class="bg-red-500 hover:bg-red-600 text-white font-medium py-1.5 rounded-lg shadow transition text-[10px]">
+                    Avslutt H2
+                </button>
+            </div>
         </div>
         <button onclick="saveBothAndShowPicker()" id="saveBothBtn" class="w-full mt-2 bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
             Lagre begge hunder
@@ -464,6 +474,32 @@
                 <button onclick="confirmDogSelection()" id="confirmPickerBtn" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white font-medium py-2 rounded-xl transition" disabled>
                     Start slipp
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Alle hunder ferdig bedømt -->
+    <div id="allDoneModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+            <div class="bg-forest-700 text-white p-4 text-center">
+                <svg class="w-12 h-12 mx-auto mb-2 text-forest-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <h3 class="font-bold text-xl">Alle hunder er bedømt!</h3>
+                <p class="text-sm text-white/70 mt-1">Partiet er ferdig med slipp</p>
+            </div>
+            <div class="p-6">
+                <p class="text-center text-bark-600 mb-4">
+                    Vil du skrive de endelige kritikkene nå, eller gjøre det senere?
+                </p>
+                <div class="space-y-2">
+                    <button onclick="goToKritikker()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
+                        Skriv kritikker nå
+                    </button>
+                    <button onclick="closeAllDoneModal()" class="w-full bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition">
+                        Gjør det senere
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1046,16 +1082,27 @@
                 btn.classList.remove('bg-green-600');
                 btn.classList.add('bg-forest-600', 'hover:bg-forest-700');
 
+                // Sjekk om alle hunder er ferdig
+                const totalDogs = partyList.length;
+                const finishedDogs = Object.keys(state.ferdigeDogs).length;
+
+                if (finishedDogs >= totalDogs) {
+                    // Alle hunder er ferdig - vis modal
+                    document.getElementById('allDoneModal').classList.remove('hidden');
+                    return;
+                }
+
                 // Vis picker for neste par
                 const remainingUK = getAvailableDogsInClass('UK').length;
                 const remainingAK = getAvailableDogsInClass('AK').length;
 
-                if (remainingUK >= 2 || remainingAK >= 2 || (remainingUK >= 1 && remainingAK >= 1)) {
+                if (remainingUK >= 2 || remainingAK >= 2) {
                     showDogPicker('both');
                 } else if (remainingUK === 1 || remainingAK === 1) {
-                    alert('Kun én hund igjen. Slippet kan ikke fortsette med par.');
+                    alert('Kun én hund igjen i klassen. Velg makker manuelt eller avslutt hunden.');
                 } else {
-                    alert('Alle hunder i partiet er bedømt!');
+                    // Alle tilgjengelige hunder er i bruk eller ferdig
+                    document.getElementById('allDoneModal').classList.remove('hidden');
                 }
             }, 1000);
         }
@@ -1082,6 +1129,53 @@
             // Vis picker for å velge ny hund i samme klasse
             const pickerModeKey = position === 1 ? 'single1' : 'single2';
             showDogPicker(pickerModeKey, requiredClass);
+        }
+
+        // Avslutt én hund (marker som ferdig bedømt)
+        function finishDog(position) {
+            saveDogData(position);
+
+            const dogNr = state.selectedDogs[position];
+            const dog = partyList.find(d => d.nr === dogNr);
+
+            if (!confirm(`Er du sikker på at du vil avslutte bedømmingen av ${dog?.name || 'hunden'}?`)) {
+                return;
+            }
+
+            // Marker som ferdig
+            state.ferdigeDogs[dogNr] = true;
+            document.getElementById(`dog${position}_ferdig`).checked = true;
+            saveToStorage();
+            populateDogSelectors();
+
+            // Sjekk om alle hunder er ferdig
+            checkAllDogsFinished();
+        }
+
+        // Sjekk om alle hunder i partiet er ferdig bedømt
+        function checkAllDogsFinished() {
+            const totalDogs = partyList.length;
+            const finishedDogs = Object.keys(state.ferdigeDogs).length;
+
+            if (finishedDogs >= totalDogs) {
+                // Alle hunder er ferdig - vis modal
+                document.getElementById('allDoneModal').classList.remove('hidden');
+            }
+        }
+
+        // Lukk "alle ferdig"-modal
+        function closeAllDoneModal() {
+            document.getElementById('allDoneModal').classList.add('hidden');
+        }
+
+        // Gå til kritikk-siden
+        function goToKritikker() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const partyId = urlParams.get('party') || 'ukak1';
+            const proveId = urlParams.get('prove') || '';
+
+            // Naviger til kritikk-siden (kan være en egen side eller modal)
+            window.location.href = `dommer-kritikker.html?party=${partyId}&prove=${proveId}`;
         }
 
         function setFerdig(position) {

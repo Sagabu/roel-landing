@@ -452,7 +452,9 @@
             console.log('Dogs to render:', state.dogs.filter(d => !d.knocked));
 
             container.innerHTML = state.dogs.filter(d => !d.knocked).map(dog => {
-                console.log('Rendering dog:', dog.id, dog.name);
+                console.log('Rendering dog:', dog.id, dog.nr, dog.name, 'typeof id:', typeof dog.id);
+                // Bruk nr som fallback hvis id er ugyldig
+                const dogId = dog.id || dog.nr;
                 const hasCritique = dog.critique && dog.critique.trim();
                 const critiqueStatus = dog.critiqueStatus || 'pending'; // pending, submitted, approved, returned
 
@@ -477,7 +479,7 @@
                 const prizeDisplay = dog.prize ? `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">${dog.prize}</span>` : '';
 
                 return `
-                    <button onclick="openCritique(${dog.id})"
+                    <button onclick="openCritique(${dogId})"
                         class="w-full bg-white rounded-xl border-2 ${statusColor || 'border-bark-200'} p-4 text-left hover:shadow-md transition ${critiqueStatus === 'approved' ? 'opacity-75' : ''}">
                         <div class="flex items-center gap-4">
                             <div class="w-12 h-12 bg-warm-100 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -540,7 +542,8 @@
         function openCritique(dogId) {
             console.log('openCritique called with dogId:', dogId);
             console.log('state.dogs:', state.dogs);
-            const dog = state.dogs.find(d => d.id === dogId);
+            // Søk på både id og nr for å håndtere ulike dataformater
+            const dog = state.dogs.find(d => d.id === dogId || d.nr === dogId);
             console.log('Found dog:', dog);
             if (!dog) {
                 console.error('Hund ikke funnet med id:', dogId);
@@ -855,7 +858,7 @@
 
         // Submit critique
         function submitCritique() {
-            const dog = state.dogs.find(d => d.id === state.currentDogId);
+            const dog = state.dogs.find(d => d.id === state.currentDogId || d.nr === state.currentDogId);
             if (!dog) return;
 
             const critiqueText = document.getElementById('critiqueText').value.trim();
@@ -982,7 +985,7 @@
         }
 
         function editReturnedCritique() {
-            const dog = state.dogs.find(d => d.id === state.currentDogId);
+            const dog = state.dogs.find(d => d.id === state.currentDogId || d.nr === state.currentDogId);
             if (dog) {
                 hideReturn();
                 showCritiqueModal(dog);

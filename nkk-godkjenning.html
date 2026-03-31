@@ -229,104 +229,33 @@
         let currentFilter = 'all';
         let nkkRepInfo = null;
 
-        // Initialize with test data
-        function initTestData() {
-            // Always update test data to ensure regNr is present
-            const existing = localStorage.getItem('judgeData_ukak1');
-            if (existing) {
-                // Check if existing data has regNr, if not, force refresh
-                try {
-                    const data = JSON.parse(existing);
-                    if (data[0]?.regNr) return; // Already has regNr, skip
-                } catch (e) {}
-            }
+        // Cache for partilister
+        let partyListCache = {};
 
-            // Create test critiques for Marte to review
-            const testData = [
-                {
-                    id: 1,
-                    nr: 12,
-                    regNr: 'NO45678/22',
-                    name: 'Fjelljegerens Odin',
-                    breed: 'Engelsk Setter',
-                    handler: 'Erik Solberg',
-                    owner: 'Erik Solberg',
-                    critiqueStatus: 'submitted',
-                    critiqueSubmittedBy: 'Kari Nordmann',
-                    critiqueSubmittedAt: new Date().toISOString(),
-                    prize: '1. premie',
-                    critique: 'En fremragende hund med eksepsjonelt god fart og stil. Viste bred og systematisk reviering gjennom hele slippet. Markerte bestemt på to fugler med fast og sikker stand. Reiset kontrollert på ordre. Samarbeidet svært godt med fører og viste god lydighet. En meget lovende unghund med alle kvaliteter for videre utvikling.',
-                    rounds: [{
-                        roundNum: 1,
-                        completed: true,
-                        notes: 'Flott åpning, tok terrenget fint. God fart fra start.',
-                        scores: {
-                            JAKTLYST: 5, FART: 5, SELVSTENDIGHET: 4, SOKSBREDDE: 5, REVIERING: 5, SAMARBEID: 5,
-                            PRESISJON: 4, REISING: 'R', GODKJENT_REISING: true,
-                            STAND_M: 2, STAND_U: 0, TOMSTAND: 0, SLIPPTID: 15
-                        }
-                    }]
-                },
-                {
-                    id: 2,
-                    nr: 8,
-                    regNr: 'NO32156/21',
-                    name: 'Skogsprinsessen',
-                    breed: 'Gordon Setter',
-                    handler: 'Lise Andersen',
-                    owner: 'Lise Andersen',
-                    critiqueStatus: 'submitted',
-                    critiqueSubmittedBy: 'Kari Nordmann',
-                    critiqueSubmittedAt: new Date(Date.now() - 3600000).toISOString(),
-                    prize: '2. premie',
-                    critique: 'Meget pen og harmonisk hund med god fart tilpasset terrenget. Viste selvstendig og effektiv reviering. Fikk en fin markering på fugl med sikker stand. Kunne vært noe mer bestemt i reisingen. God kontakt med fører gjennom hele slippet. Solid innsats som fortjener 2. premie.',
-                    rounds: [{
-                        roundNum: 1,
-                        completed: true,
-                        notes: 'Litt forsiktig start, men tok seg opp.',
-                        scores: {
-                            JAKTLYST: 4, FART: 4, SELVSTENDIGHET: 4, SOKSBREDDE: 4, REVIERING: 4, SAMARBEID: 5,
-                            PRESISJON: 3, REISING: 'R', GODKJENT_REISING: true,
-                            STAND_M: 1, STAND_U: 0, TOMSTAND: 1, SLIPPTID: 15
-                        }
-                    }]
-                },
-                {
-                    id: 3,
-                    nr: 15,
-                    regNr: 'NO18934/20',
-                    name: 'Fjellkongen Rex',
-                    breed: 'Irsk Setter',
-                    handler: 'Jon Haugen',
-                    owner: 'Jon Haugen',
-                    critiqueStatus: 'approved',
-                    critiqueSubmittedBy: 'Chris Niebel',
-                    critiqueSubmittedAt: new Date(Date.now() - 86400000).toISOString(),
-                    approvedAt: new Date(Date.now() - 43200000).toISOString(),
-                    approvedBy: 'Marte Haugen',
-                    prize: '1. premie',
-                    critique: 'Enestående innsats fra start til slutt. Hunden viste fantastisk fart og driv kombinert med systematisk og grundig reviering av terrenget. Tre solide stands på fugl, alle med perfekt presisjon og kontrollert reising. Samarbeidet med fører var eksemplarisk. En virkelig imponerende prestasjon som fortjener høyeste premie.',
-                    rounds: [{
-                        roundNum: 1,
-                        completed: true,
-                        notes: 'Strålende åpning. Tok alle vindkanter.',
-                        scores: {
-                            JAKTLYST: 6, FART: 5, SELVSTENDIGHET: 5, SOKSBREDDE: 5, REVIERING: 5, SAMARBEID: 5,
-                            PRESISJON: 5, REISING: 'R', GODKJENT_REISING: true,
-                            STAND_M: 3, STAND_U: 0, TOMSTAND: 0, SLIPPTID: 15
-                        }
-                    }]
+        // Hent partiliste fra API
+        async function loadPartyList(partyId) {
+            if (partyListCache[partyId]) return partyListCache[partyId];
+
+            try {
+                const resp = await fetch('/api/partiliste/' + partyId);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.hunder) {
+                        partyListCache[partyId] = data.hunder.map((h, i) => ({
+                            nr: i + 1,
+                            navn: h.navn,
+                            rase: h.rase,
+                            klasse: h.klasse,
+                            forer: h.forer_navn || h.eier_navn || '-',
+                            regnr: h.regnr || '-'
+                        }));
+                        return partyListCache[partyId];
+                    }
                 }
-            ];
-
-            localStorage.setItem('judgeData_ukak1', JSON.stringify(testData));
-
-            // Also set up Marte as NKK-rep if not already
-            const teamData = {
-                proveleder: { name: 'Hans Olsen', phone: '99887766', email: 'hans@test.no' },
-                nkkrep: { name: 'Marte Haugen', phone: '90000001', email: 'marte@nkk.no' }
-            };
-            localStorage.setItem('trialTeam', JSON.stringify(teamData));
+            } catch (e) {
+                console.error('Kunne ikke laste partiliste:', e);
+            }
+            return [];
         }
 
         // Load NKK rep info
@@ -365,36 +294,86 @@
             } catch (e) {}
         }
 
-        function loadAllCritiques() {
+        async function loadAllCritiques() {
             allCritiques = [];
 
-            Object.keys(PARTIES).forEach(partyId => {
-                const saved = localStorage.getItem('judgeData_' + partyId);
-                if (saved) {
-                    const dogs = JSON.parse(saved);
-                    dogs.forEach(dog => {
-                        // Inkluder hunder som er ferdig bedømt (status === 'done')
-                        // og som enten har critiqueStatus satt, eller er klare for godkjenning
-                        const isDone = dog.status === 'done' && !dog.knocked;
-                        const hasSubmittedCritique = dog.critiqueStatus && dog.critiqueStatus !== 'pending';
+            // Last fra nytt dommerkort-format (dommerkort_ukak_*)
+            for (const partyId of Object.keys(PARTIES)) {
+                const storageKey = 'dommerkort_ukak_' + partyId;
 
-                        if (isDone || hasSubmittedCritique) {
-                            allCritiques.push({
-                                ...dog,
-                                partyId,
-                                partyName: PARTIES[partyId].name,
-                                // Sett default critiqueStatus for ferdig bedømte hunder uten status
-                                critiqueStatus: dog.critiqueStatus || (isDone ? 'submitted' : 'pending')
+                // Prøv localStorage først
+                let partyData = null;
+                const saved = localStorage.getItem(storageKey);
+                if (saved) {
+                    try {
+                        partyData = JSON.parse(saved);
+                    } catch (e) {}
+                }
+
+                // Prøv også server
+                if (!partyData) {
+                    try {
+                        const resp = await fetch('/api/storage/' + storageKey);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.value) {
+                                partyData = data.value;
+                                localStorage.setItem(storageKey, JSON.stringify(partyData));
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                if (!partyData?.dogData) continue;
+
+                // Hent partiliste for hundeinfo
+                const partyList = await loadPartyList(partyId);
+
+                // Gå gjennom ferdige hunder med innsendte kritikker
+                Object.keys(partyData.dogData).forEach(dogNrStr => {
+                    const dogNr = parseInt(dogNrStr);
+                    const dogData = partyData.dogData[dogNr];
+                    const dogInfo = partyList.find(d => d.nr === dogNr) || {};
+
+                    // Kun inkluder hunder med innsendt kritikk
+                    if (dogData.kritikkStatus === 'submitted' || dogData.kritikkStatus === 'approved') {
+                        // Beregn totaler
+                        let totals = { slipptid: 0, stand_m: 0, stand_u: 0, tomstand: 0, makker_stand: 0, sjanse: 0 };
+                        if (dogData.slipps) {
+                            Object.values(dogData.slipps).forEach(slipp => {
+                                ['slipptid', 'stand_m', 'stand_u', 'tomstand', 'makker_stand', 'sjanse'].forEach(f => {
+                                    if (slipp[f]) totals[f] += slipp[f];
+                                });
                             });
                         }
-                    });
-                }
-            });
+
+                        allCritiques.push({
+                            id: dogNr,
+                            nr: dogNr,
+                            name: dogInfo.navn || `Hund ${dogNr}`,
+                            breed: dogInfo.rase || '-',
+                            handler: dogInfo.forer || '-',
+                            regNr: dogInfo.regnr || '-',
+                            klasse: dogInfo.klasse || '-',
+                            partyId,
+                            partyName: PARTIES[partyId]?.name || partyId,
+                            critiqueStatus: dogData.kritikkStatus,
+                            critique: dogData.kritikk || '',
+                            prize: dogData.premie ? dogData.premie + '. premie' : null,
+                            critiqueSubmittedAt: dogData.kritikkSendtAt,
+                            approvedAt: dogData.kritikkGodkjentAt,
+                            totals,
+                            jaktegenskaper: dogData.jaktegenskaper || {},
+                            fuglebehandling: dogData.fuglebehandling || {}
+                        });
+                    }
+                });
+            }
 
             const filter = document.getElementById('partyFilter');
             const usedParties = [...new Set(allCritiques.map(c => c.partyId))];
             filter.innerHTML = '<option value="all">Alle partier</option>' +
-                usedParties.map(p => `<option value="${p}">${PARTIES[p].name}</option>`).join('');
+                usedParties.map(p => `<option value="${p}">${PARTIES[p]?.name || p}</option>`).join('');
         }
 
         function filterByParty(partyId) {
@@ -402,8 +381,8 @@
             render();
         }
 
-        function render() {
-            loadAllCritiques();
+        async function render() {
+            await loadAllCritiques();
 
             let filtered = allCritiques;
             if (currentFilter !== 'all') {
@@ -1101,9 +1080,11 @@
         }
 
         // Initialize
-        initTestData();
-        loadNkkRepInfo();
-        render();
+        async function init() {
+            await loadNkkRepInfo();
+            await render();
+        }
+        init();
     </script>
 </body>
 </html>

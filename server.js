@@ -7289,32 +7289,54 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
       return c.json({ error: "Det finnes allerede en testprøve. Slett den først." }, 400);
     }
 
-    // Finn eller opprett en testklubber
+    // Finn eller opprett en testklubb
     let klubbId = db.prepare("SELECT id FROM klubber WHERE navn = 'Testklubben'").get()?.id;
     if (!klubbId) {
-      const klubbResult = db.prepare(`
-        INSERT INTO klubber (navn, orgnummer, postnummer, sted, aktiv, created_at)
-        VALUES ('Testklubben', '999999999', '0001', 'Testby', 1, datetime('now'))
-      `).run();
-      klubbId = klubbResult.lastInsertRowid;
+      // Generer en unik ID for klubben (tabellen bruker TEXT id, ikke autoincrement)
+      klubbId = 'test-klubb-' + Date.now();
+      db.prepare(`
+        INSERT INTO klubber (id, navn, orgnummer, region)
+        VALUES (?, 'Testklubben', '999999999', 'Test')
+      `).run(klubbId);
     }
 
     // Opprett testprøve
     const nesteDag = new Date();
     nesteDag.setDate(nesteDag.getDate() + 7);
     const startDato = nesteDag.toISOString().split('T')[0];
+    const proveId = 'test-prove-' + Date.now();
 
-    const proveResult = db.prepare(`
+    db.prepare(`
       INSERT INTO prover (
-        navn, sted, start_dato, slutt_dato, klubb_id, klasser,
-        max_deltakere, pris, status, created_at
+        id, navn, sted, start_dato, slutt_dato, klubb_id, klasser, status
       ) VALUES (
-        '[TEST] Testprøve 2026', 'Testfjellet', ?, ?, ?,
-        '{"uk":true,"ak":true,"vk":true}',
-        30, 500, 'aktiv', datetime('now')
+        ?, '[TEST] Testprøve 2026', 'Testfjellet', ?, ?, ?,
+        '{"uk":true,"ak":true,"vk":true}', 'aktiv'
       )
-    `).run(startDato, startDato, klubbId);
-    const proveId = proveResult.lastInsertRowid;
+    `).run(proveId, startDato, startDato, klubbId);
+
+    // Opprett en testdommer (NKK-rep) som skal motta kritikkene
+    const dommerTelefon = '99900000';
+    const nkkrepTelefon = '99900099';
+
+    const dommerExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(dommerTelefon);
+    if (!dommerExists) {
+      db.prepare(`
+        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
+        VALUES (?, 'Test', 'Dommer', 'test.dommer@test.no', 'dommer')
+      `).run(dommerTelefon);
+    }
+
+    const nkkrepExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(nkkrepTelefon);
+    if (!nkkrepExists) {
+      db.prepare(`
+        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
+        VALUES (?, 'Test', 'NKK-Rep', 'test.nkkrep@test.no', 'admin')
+      `).run(nkkrepTelefon);
+    }
+
+    // Sett NKK-rep på prøven
+    db.prepare("UPDATE prover SET nkkrep_telefon = ? WHERE id = ?").run(nkkrepTelefon, proveId);
 
     // Fiktive hunder og førere
     const testData = [
@@ -7326,83 +7348,63 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
       { hund: 'TEST-Tara', regnr: 'NO99999/06', rase: 'Pointer', klasse: 'VK', forer: 'Lise Testmo', telefon: '99900006' }
     ];
 
-    // Opprett testbrukere og påmeldinger
+    // Opprett testbrukere, hunder og påmeldinger
     let deltakereOpprettet = 0;
+    const opprettedeHunder = [];
+
     for (const td of testData) {
       // Opprett bruker hvis ikke eksisterer
       const brukerExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(td.telefon);
       if (!brukerExists) {
         db.prepare(`
-          INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, created_at)
-          VALUES (?, ?, '', ?, 'deltaker', datetime('now'))
+          INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
+          VALUES (?, ?, '', ?, 'deltaker')
         `).run(td.telefon, td.forer, `${td.forer.toLowerCase().replace(' ', '.')}@test.no`);
       }
 
-      // Opprett hund
-      db.prepare(`
-        INSERT OR IGNORE INTO hunder (registreringsnummer, navn, rase, fodt, eier_telefon, created_at)
-        VALUES (?, ?, ?, '2022-01-01', ?, datetime('now'))
-      `).run(td.regnr, td.hund, td.rase, td.telefon);
+      // Opprett hund (bruk regnr-kolonnen)
+      const eksisterendeHund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(td.regnr);
+      let hundId;
+      if (!eksisterendeHund) {
+        const hundResult = db.prepare(`
+          INSERT INTO hunder (regnr, navn, rase, fodt, eier_telefon)
+          VALUES (?, ?, ?, '2022-01-01', ?)
+        `).run(td.regnr, td.hund, td.rase, td.telefon);
+        hundId = hundResult.lastInsertRowid;
+      } else {
+        hundId = eksisterendeHund.id;
+      }
 
-      // Opprett påmelding
+      opprettedeHunder.push({ ...td, hundId });
+
+      // Opprett påmelding (bruk riktig tabellstruktur)
       db.prepare(`
-        INSERT INTO paameldinger (
-          prove_id, hund_regnr, forer_telefon, klasse, parti_nummer,
-          status, created_at
-        ) VALUES (?, ?, ?, ?, ?, 'bekreftet', datetime('now'))
-      `).run(proveId, td.regnr, td.telefon, td.klasse, td.klasse === 'UK' ? 1 : (td.klasse === 'AK' ? 2 : 3));
+        INSERT INTO pameldinger (
+          prove_id, hund_id, forer_telefon, klasse, parti, status
+        ) VALUES (?, ?, ?, ?, ?, 'bekreftet')
+      `).run(proveId, hundId, td.telefon, td.klasse, td.klasse);
 
       deltakereOpprettet++;
     }
 
-    // Opprett testkritikker
-    let kritikkerOpprettet = 0;
-    const kritikkMaler = [
-      { premie: 0, jaktlyst: 3, fart: 3, rekkevidde: 3, samarbeid: 3, selvstendighet: 3, stil: 3, sokeform: 3, terrengbehandling: 3, fugleinteresse: 3, apportering: 1, lydighet: 3, viltfinnerevne: 3, reis: 1, ro_stand: 1, sjanse: 0, tomstand: 0, tekst: 'Testkritikk for UK-hund. Viser lovende anlegg og god jaktlyst. Arbeider med fin stil og form.' },
-      { premie: 2, jaktlyst: 4, fart: 4, rekkevidde: 4, samarbeid: 4, selvstendighet: 4, stil: 4, sokeform: 4, terrengbehandling: 4, fugleinteresse: 4, apportering: 1, lydighet: 4, viltfinnerevne: 4, reis: 1, ro_stand: 1, sjanse: 0, tomstand: 0, tekst: 'Testkritikk for AK-hund. God jaktlyst og fart. Viser fin stil og selvstendighet. Godkjent fuglearbeid.' },
-      { premie: 1, jaktlyst: 5, fart: 5, rekkevidde: 5, samarbeid: 5, selvstendighet: 5, stil: 5, sokeform: 5, terrengbehandling: 5, fugleinteresse: 5, apportering: 1, lydighet: 5, viltfinnerevne: 5, reis: 1, ro_stand: 1, sjanse: 0, tomstand: 0, tekst: 'Testkritikk for VK-hund. Fremragende prestasjon! Meget god jaktlyst og rekkevidde. Vinner av dagens prøve.' }
-    ];
-
-    for (let i = 0; i < testData.length; i++) {
-      const td = testData[i];
-      const mal = kritikkMaler[i % 3];
-      const slipptid = td.klasse === 'UK' ? 45 : (td.klasse === 'AK' ? 65 : 75);
-
-      db.prepare(`
-        INSERT INTO kritikker (
-          prove_id, hund_regnr, forer_telefon, dommer_telefon, klasse,
-          premie, jaktlyst, fart_stil, stil, rekkevidde, selvstendighet, samarbeid_kontakt,
-          sokeform, terrengbehandling, fugleinteresse, viltfinnerevne,
-          reis, ro_stand, sjanse, tomstand, apport, rapport_spontan,
-          slipptid, kritikk_tekst, status, created_at
-        ) VALUES (
-          ?, ?, ?, '99900000', ?,
-          ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, 0,
-          ?, ?, 'godkjent', datetime('now')
-        )
-      `).run(
-        proveId, td.regnr, td.telefon, td.klasse,
-        mal.premie, mal.jaktlyst, mal.fart, mal.stil, mal.rekkevidde, mal.selvstendighet, mal.samarbeid,
-        mal.sokeform, mal.terrengbehandling, mal.fugleinteresse, mal.viltfinnerevne,
-        mal.reis, mal.ro_stand, mal.sjanse, mal.tomstand, mal.apportering,
-        slipptid, mal.tekst
-      );
-
-      kritikkerOpprettet++;
-    }
+    // Tildel testdommer til alle partier
+    db.prepare(`
+      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti)
+      VALUES (?, ?, 'UK'), (?, ?, 'AK'), (?, ?, 'VK')
+    `).run(proveId, dommerTelefon, proveId, dommerTelefon, proveId, dommerTelefon);
 
     // Logg
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "testmodus_opprettet", `Testprøve opprettet med ID ${proveId}, ${deltakereOpprettet} deltakere, ${kritikkerOpprettet} kritikker`
+      "testmodus_opprettet", `Testprøve opprettet med ID ${proveId}, ${deltakereOpprettet} deltakere, dommer: ${dommerTelefon}, NKK-rep: ${nkkrepTelefon}`
     );
 
     return c.json({
       success: true,
       prove_id: proveId,
       deltakere: deltakereOpprettet,
-      kritikker: kritikkerOpprettet
+      dommer: dommerTelefon,
+      nkkrep: nkkrepTelefon,
+      melding: `Testprøve opprettet! Logg inn som dommer med tlf ${dommerTelefon}. NKK-rep er ${nkkrepTelefon}.`
     });
 
   } catch (err) {
@@ -7432,8 +7434,11 @@ app.delete("/api/superadmin/testmodus/slett", (c) => {
       kritikkerSlettet += k.changes;
 
       // Slett påmeldinger
-      const p = db.prepare("DELETE FROM paameldinger WHERE prove_id = ?").run(proveId);
+      const p = db.prepare("DELETE FROM pameldinger WHERE prove_id = ?").run(proveId);
       deltagereSlettet += p.changes;
+
+      // Slett dommer-tildelinger
+      db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ?").run(proveId);
 
       // Slett prøven
       db.prepare("DELETE FROM prover WHERE id = ?").run(proveId);
@@ -7444,7 +7449,10 @@ app.delete("/api/superadmin/testmodus/slett", (c) => {
     db.prepare("DELETE FROM brukere WHERE telefon LIKE '999000%'").run();
 
     // Slett testhunder
-    db.prepare("DELETE FROM hunder WHERE registreringsnummer LIKE 'NO99999%'").run();
+    db.prepare("DELETE FROM hunder WHERE regnr LIKE 'NO99999%'").run();
+
+    // Slett testklubb
+    db.prepare("DELETE FROM klubber WHERE id LIKE 'test-klubb-%'").run();
 
     // Logg
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(

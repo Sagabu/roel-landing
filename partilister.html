@@ -675,7 +675,23 @@
                 }
             }
 
-            // Fallback to localStorage for legacy support
+            // Fallback 1: Try to load from kv_store (server-side) for legacy support
+            if (parties.length === 0) {
+                try {
+                    const kvResponse = await fetch('/api/storage/trialParties');
+                    if (kvResponse.ok) {
+                        const kvData = await kvResponse.json();
+                        if (kvData.value && Array.isArray(kvData.value)) {
+                            parties = kvData.value;
+                            console.log('Loaded parties from kv_store:', parties.length);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not load from kv_store:', e);
+                }
+            }
+
+            // Fallback 2: Try localStorage (only works if user visited admin page in same browser)
             if (parties.length === 0) {
                 const partiesJson = localStorage.getItem('trialParties');
                 if (partiesJson) {

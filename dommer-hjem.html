@@ -290,75 +290,9 @@
             renderAssignedParty();
         }
 
-        // Render multiple party cards (for testmodus with UK,AK,VK)
-        function renderMultipleParties(container, klasser) {
-            container.innerHTML = '';
-            container.classList.remove('hidden');
-            document.getElementById('noPartyMessage').classList.add('hidden');
-
-            const klasseConfig = {
-                'UK': { name: 'Unghundklasse (UK)', color: 'forest', type: 'ukak' },
-                'AK': { name: 'Åpen klasse (AK)', color: 'forest', type: 'ukak' },
-                'VK': { name: 'Vinnerklasse (VK)', color: 'warm', type: 'vk' }
-            };
-
-            const cards = klasser.map(klasse => {
-                const config = klasseConfig[klasse] || { name: klasse, color: 'bark', type: 'ukak' };
-                const isVK = config.type === 'vk';
-                const bgColor = isVK ? 'bg-gradient-to-br from-warm-50 to-warm-100' : 'bg-gradient-to-br from-forest-50 to-forest-100';
-                const borderColor = isVK ? 'border-warm-300' : 'border-forest-300';
-                const btnColor = isVK ? 'bg-warm-600 hover:bg-warm-700' : 'bg-forest-600 hover:bg-forest-700';
-                const partiId = klasse.toLowerCase() + '1'; // UK -> uk1, AK -> ak1, VK -> vk1
-
-                return `
-                    <div class="${bgColor} rounded-xl border-2 ${borderColor} p-4 shadow-sm mb-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-3">
-                                <span class="${isVK ? 'bg-warm-600' : 'bg-forest-600'} text-white w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg">${klasse}</span>
-                                <div>
-                                    <h3 class="font-bold text-bark-800">${config.name}</h3>
-                                    <p class="text-sm text-bark-500">Testprøve</p>
-                                </div>
-                            </div>
-                            <span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Testmodus</span>
-                        </div>
-                        <button onclick="goToAssessmentWithClass('${klasse}')" class="${btnColor} text-white w-full py-3 rounded-lg font-medium transition flex items-center justify-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            Start bedømming
-                        </button>
-                    </div>
-                `;
-            }).join('');
-
-            container.innerHTML = cards;
-        }
-
-        // Go to assessment with specific class
-        function goToAssessmentWithClass(klasse) {
-            const sessionData = JSON.parse(localStorage.getItem('judgeSession') || '{}');
-            sessionData.selectedParty = klasse;
-            sessionData.selectedClass = klasse;
-            localStorage.setItem('judgeSession', JSON.stringify(sessionData));
-
-            if (klasse === 'VK') {
-                window.location.href = 'dommer-vk.html?party=' + klasse + '&klasse=' + klasse;
-            } else {
-                window.location.href = 'dommer-ukak.html?party=' + klasse + '&klasse=' + klasse;
-            }
-        }
-
         // Render assigned party card
         function renderAssignedParty() {
             const container = document.getElementById('assignedPartyCard');
-
-            // Håndter kommaseparerte klasser (f.eks. "UK,AK,VK" fra testmodus)
-            if (assignedPartyId && assignedPartyId.includes(',')) {
-                const klasser = assignedPartyId.split(',').map(k => k.trim());
-                renderMultipleParties(container, klasser);
-                return;
-            }
 
             if (!assignedPartyId || !PARTIES[assignedPartyId]) {
                 // No party assigned

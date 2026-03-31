@@ -7351,14 +7351,14 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
     // Sett NKK-rep på prøven
     db.prepare("UPDATE prover SET nkkrep_telefon = ? WHERE id = ?").run(nkkrepTelefon, proveId);
 
-    // Fiktive hunder og førere
+    // Fiktive hunder og førere - UK/AK går sammen i "ukak1", VK i "vk1"
     const testData = [
-      { hund: 'TEST-Duke', regnr: 'NO99999/01', rase: 'Engelsk Setter', klasse: 'UK', forer: 'Test Testesen', telefon: '99900001' },
-      { hund: 'TEST-Bella', regnr: 'NO99999/02', rase: 'Pointer', klasse: 'UK', forer: 'Kari Testmann', telefon: '99900002' },
-      { hund: 'TEST-Max', regnr: 'NO99999/03', rase: 'Gordon Setter', klasse: 'AK', forer: 'Per Testvik', telefon: '99900003' },
-      { hund: 'TEST-Luna', regnr: 'NO99999/04', rase: 'Irsk Setter', klasse: 'AK', forer: 'Anne Testberg', telefon: '99900004' },
-      { hund: 'TEST-Rex', regnr: 'NO99999/05', rase: 'Engelsk Setter', klasse: 'VK', forer: 'Ole Testgård', telefon: '99900005' },
-      { hund: 'TEST-Tara', regnr: 'NO99999/06', rase: 'Pointer', klasse: 'VK', forer: 'Lise Testmo', telefon: '99900006' }
+      { hund: 'TEST-Duke', regnr: 'NO99999/01', rase: 'Engelsk Setter', klasse: 'UK', parti: 'ukak1', forer: 'Test Testesen', telefon: '99900001' },
+      { hund: 'TEST-Bella', regnr: 'NO99999/02', rase: 'Pointer', klasse: 'UK', parti: 'ukak1', forer: 'Kari Testmann', telefon: '99900002' },
+      { hund: 'TEST-Max', regnr: 'NO99999/03', rase: 'Gordon Setter', klasse: 'AK', parti: 'ukak1', forer: 'Per Testvik', telefon: '99900003' },
+      { hund: 'TEST-Luna', regnr: 'NO99999/04', rase: 'Irsk Setter', klasse: 'AK', parti: 'ukak1', forer: 'Anne Testberg', telefon: '99900004' },
+      { hund: 'TEST-Rex', regnr: 'NO99999/05', rase: 'Engelsk Setter', klasse: 'VK', parti: 'vk1', forer: 'Ole Testgård', telefon: '99900005' },
+      { hund: 'TEST-Tara', regnr: 'NO99999/06', rase: 'Pointer', klasse: 'VK', parti: 'vk1', forer: 'Lise Testmo', telefon: '99900006' }
     ];
 
     // Opprett testbrukere, hunder og påmeldinger
@@ -7390,20 +7390,21 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
 
       opprettedeHunder.push({ ...td, hundId });
 
-      // Opprett påmelding (bruk riktig tabellstruktur)
+      // Opprett påmelding (bruk riktig tabellstruktur - parti er ukak1 eller vk1)
       db.prepare(`
         INSERT INTO pameldinger (
           prove_id, hund_id, forer_telefon, klasse, parti, status
         ) VALUES (?, ?, ?, ?, ?, 'bekreftet')
-      `).run(proveId, hundId, td.telefon, td.klasse, td.klasse);
+      `).run(proveId, hundId, td.telefon, td.klasse, td.parti);
 
       deltakereOpprettet++;
     }
 
-    // Tildel testdommer til prøven (parti-feltet kan inneholde kommaseparerte verdier eller vi bruker én tildeling)
+    // Tildel testdommer til partiet ukak1 (UK/AK går sammen)
+    // Merk: UNIQUE constraint på (prove_id, dommer_telefon), så vi må velge ett parti
     db.prepare(`
       INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti)
-      VALUES (?, ?, 'UK,AK,VK')
+      VALUES (?, ?, 'ukak1')
     `).run(proveId, dommerTelefon);
 
     // Logg

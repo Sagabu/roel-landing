@@ -1406,18 +1406,29 @@ app.post("/api/auth/login", async (c) => {
     return c.json({ error: "Verifiseringskode påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234
-  const isTestBypass = telefon === "90852833" && kode === "1234";
+  // Bypass for testing: telefon 90852833 med kode 1234, eller testnumre (9990xxxx) med kode 0000
+  const isTestBypass = (telefon === "90852833" && kode === "1234") ||
+                       (telefon.startsWith("9990") && kode === "0000");
 
-  if (isDevMode || isTestBypass) {
-    // I dev-mode eller test-bypass: godta "1234" som gyldig kode
+  if (isTestBypass) {
+    // Test-bypass: Godkjent direkte
+  } else if (isDevMode) {
+    // I dev-mode: godta "1234" som gyldig kode
     if (kode !== validDevCode) {
       return c.json({ error: "Feil kode" }, 401);
     }
   } else {
-    // I produksjon: Her skal SMS-verifisering implementeres
-    // For nå: Avvis alle innlogginger i production uten ekte SMS-system
-    return c.json({ error: "SMS-verifisering ikke konfigurert" }, 501);
+    // I produksjon: Verifiser mot OTP-tabellen
+    const otp = db.prepare(
+      "SELECT rowid FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+    ).get(telefon, kode);
+
+    if (!otp) {
+      return c.json({ error: "Feil kode" }, 401);
+    }
+
+    // Marker koden som brukt
+    db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
   }
 
   const token = generateToken(bruker);

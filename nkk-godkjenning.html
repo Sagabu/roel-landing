@@ -335,8 +335,12 @@
                     const dogData = partyData.dogData[dogNr];
                     const dogInfo = partyList.find(d => d.nr === dogNr) || {};
 
+                    // Støtt både norske (kritikkStatus) og engelske (critiqueStatus) feltnavn
+                    const status = dogData.kritikkStatus || dogData.critiqueStatus;
+                    const kritikkTekst = dogData.kritikk || dogData.finalCritique || dogData.critique || '';
+
                     // Kun inkluder hunder med innsendt kritikk
-                    if (dogData.kritikkStatus === 'submitted' || dogData.kritikkStatus === 'approved') {
+                    if (status === 'submitted' || status === 'approved') {
                         // Beregn totaler
                         let totals = { slipptid: 0, stand_m: 0, stand_u: 0, tomstand: 0, makker_stand: 0, sjanse: 0 };
                         if (dogData.slipps) {
@@ -357,11 +361,11 @@
                             klasse: dogInfo.klasse || '-',
                             partyId,
                             partyName: PARTIES[partyId]?.name || partyId,
-                            critiqueStatus: dogData.kritikkStatus,
-                            critique: dogData.kritikk || '',
-                            prize: dogData.premie ? dogData.premie + '. premie' : null,
-                            critiqueSubmittedAt: dogData.kritikkSendtAt,
-                            approvedAt: dogData.kritikkGodkjentAt,
+                            critiqueStatus: status,
+                            critique: kritikkTekst,
+                            prize: dogData.premie || null,
+                            critiqueSubmittedAt: dogData.kritikkSendtAt || dogData.critiqueSubmittedAt,
+                            approvedAt: dogData.kritikkGodkjentAt || dogData.approvedAt,
                             totals,
                             jaktegenskaper: dogData.jaktegenskaper || {},
                             fuglebehandling: dogData.fuglebehandling || {}

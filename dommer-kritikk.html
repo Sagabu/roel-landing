@@ -416,8 +416,12 @@
                                 reviering: lastSlipp.reviering,
                                 samarbeid: lastSlipp.samarbeid
                             },
-                            // Samle alle kommentarer fra slipp
-                            critique: data.samletKommentar || collectSlippComments(data),
+                            // Premie valgt på fjellet
+                            prize: data.premie || '',
+                            // Notater fra fjellet (kun til referanse, IKKE den endelige kritikken)
+                            fieldNotes: data.samletKommentar || collectSlippComments(data),
+                            // Den endelige kritikken (starter tom - skal skrives her)
+                            critique: data.finalCritique || '',
                             critiqueStatus: data.critiqueStatus || 'pending'
                         });
                     });
@@ -496,9 +500,15 @@
                         </div>
                         ${hasCritique ? `
                             <div class="mt-3 pt-3 border-t border-bark-100">
+                                <p class="text-xs text-bark-500 mb-1">Endelig kritikk:</p>
                                 <p class="text-sm text-bark-600 line-clamp-2">${dog.critique}</p>
                             </div>
-                        ` : ''}
+                        ` : (dog.fieldNotes ? `
+                            <div class="mt-3 pt-3 border-t border-bark-100">
+                                <p class="text-xs text-bark-400 mb-1">Notater fra fjellet:</p>
+                                <p class="text-sm text-bark-500 line-clamp-2 italic">${dog.fieldNotes}</p>
+                            </div>
+                        ` : '')}
                     </button>
                 `;
             }).join('');
@@ -720,14 +730,14 @@
                     .filter(r => r.notes && r.notes.trim())
                     .map(r => `Slipp ${r.roundNum}: ${r.notes}`)
                     .join('\n\n');
-            } else if (dog.critique) {
-                // Nytt format - kritikken er allerede samlet fra slipp-kommentarer
-                allNotes = dog.critique;
+            } else if (dog.fieldNotes) {
+                // Nytt format - notater fra fjellet (kun referanse)
+                allNotes = dog.fieldNotes;
             }
 
             document.getElementById('modalFieldNotes').textContent = allNotes || 'Ingen notater registrert';
 
-            // Existing critique
+            // Existing critique - den endelige kritikken (IKKE notatene fra fjellet)
             document.getElementById('critiqueText').value = dog.critique || '';
 
             // Existing premie
@@ -875,9 +885,6 @@
                 return;
             }
 
-            // Save edited scores from the modal inputs
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-
             // Helper to get input value
             const getVal = (id) => {
                 const el = document.getElementById(id);
@@ -890,22 +897,45 @@
                 return el ? el.checked : false;
             };
 
-            // Update scores from editable inputs
-            latestRound.scores.PRESISJON = getVal('edit_PRESISJON');
-            latestRound.scores.REISING = getVal('edit_REISING');
-            latestRound.scores.GODKJENT_REISING = getChecked('edit_GODKJENT_REISING');
-            latestRound.scores.STAND_M = getVal('edit_STAND_M');
-            latestRound.scores.STAND_U = getVal('edit_STAND_U');
-            latestRound.scores.TOMSTAND = getVal('edit_TOMSTAND');
-            latestRound.scores.MAKKER_STAND = getVal('edit_MAKKER_STAND');
-            latestRound.scores.SJANSE = getVal('edit_SJANSE');
-            latestRound.scores.SLIPPTID = getVal('edit_SLIPPTID');
-            latestRound.scores.JAKTLYST = getVal('edit_JAKTLYST');
-            latestRound.scores.FART = getVal('edit_FART');
-            latestRound.scores.SELVSTENDIGHET = getVal('edit_SELVSTENDIGHET');
-            latestRound.scores.SOKSBREDDE = getVal('edit_SOKSBREDDE');
-            latestRound.scores.REVIERING = getVal('edit_REVIERING');
-            latestRound.scores.SAMARBEID = getVal('edit_SAMARBEID');
+            // Save edited scores from the modal inputs (støtt begge formater)
+            if (dog.rounds && dog.rounds.length > 0) {
+                // Gammelt format
+                const latestRound = dog.rounds[dog.rounds.length - 1];
+                latestRound.scores.PRESISJON = getVal('edit_PRESISJON');
+                latestRound.scores.REISING = getVal('edit_REISING');
+                latestRound.scores.GODKJENT_REISING = getChecked('edit_GODKJENT_REISING');
+                latestRound.scores.STAND_M = getVal('edit_STAND_M');
+                latestRound.scores.STAND_U = getVal('edit_STAND_U');
+                latestRound.scores.TOMSTAND = getVal('edit_TOMSTAND');
+                latestRound.scores.MAKKER_STAND = getVal('edit_MAKKER_STAND');
+                latestRound.scores.SJANSE = getVal('edit_SJANSE');
+                latestRound.scores.SLIPPTID = getVal('edit_SLIPPTID');
+                latestRound.scores.JAKTLYST = getVal('edit_JAKTLYST');
+                latestRound.scores.FART = getVal('edit_FART');
+                latestRound.scores.SELVSTENDIGHET = getVal('edit_SELVSTENDIGHET');
+                latestRound.scores.SOKSBREDDE = getVal('edit_SOKSBREDDE');
+                latestRound.scores.REVIERING = getVal('edit_REVIERING');
+                latestRound.scores.SAMARBEID = getVal('edit_SAMARBEID');
+            } else {
+                // Nytt format - oppdater stats og rawData
+                if (!dog.stats) dog.stats = {};
+                if (!dog.rawData) dog.rawData = {};
+                dog.stats.stand_m = getVal('edit_STAND_M');
+                dog.stats.stand_u = getVal('edit_STAND_U');
+                dog.stats.tomstand = getVal('edit_TOMSTAND');
+                dog.stats.makker_stand = getVal('edit_MAKKER_STAND');
+                dog.stats.sjanse = getVal('edit_SJANSE');
+                dog.stats.slipptid = getVal('edit_SLIPPTID');
+                dog.rawData.presisjon = getVal('edit_PRESISJON');
+                dog.rawData.reising = getVal('edit_REISING');
+                dog.rawData.godkjent_reis = getChecked('edit_GODKJENT_REISING');
+                dog.rawData.jaktlyst = getVal('edit_JAKTLYST');
+                dog.rawData.fart = getVal('edit_FART');
+                dog.rawData.selvstendighet = getVal('edit_SELVSTENDIGHET');
+                dog.rawData.soksbredde = getVal('edit_SOKSBREDDE');
+                dog.rawData.reviering = getVal('edit_REVIERING');
+                dog.rawData.samarbeid = getVal('edit_SAMARBEID');
+            }
 
             // Save premie
             const premie = document.getElementById('premieSelect').value;
@@ -921,15 +951,40 @@
                 dog.premieValidationErrors = [];
             }
 
-            // Save critique
+            // Save critique (den endelige kritikken - IKKE notatene fra fjellet)
             dog.critique = critiqueText;
             dog.critiqueStatus = 'submitted';
             dog.critiqueSentToNKK = true;
             dog.critiqueSubmittedAt = new Date().toISOString();
             dog.critiqueSubmittedBy = state.judgeName;
 
-            // Save to localStorage
+            // Save to localStorage - støtt begge formater
             localStorage.setItem('judgeData_' + state.party, JSON.stringify(state.dogs));
+
+            // Oppdater også dommerkort_ukak_ formatet hvis det brukes
+            const ukakKey = 'dommerkort_ukak_' + state.party;
+            const ukakSaved = localStorage.getItem(ukakKey);
+            if (ukakSaved) {
+                const ukakData = JSON.parse(ukakSaved);
+                const dogNr = dog.nr || dog.id;
+                if (ukakData.dogData && ukakData.dogData[dogNr]) {
+                    ukakData.dogData[dogNr].finalCritique = critiqueText;
+                    ukakData.dogData[dogNr].critiqueStatus = 'submitted';
+                    ukakData.dogData[dogNr].premie = dog.prize;
+                    localStorage.setItem(ukakKey, JSON.stringify(ukakData));
+
+                    // Sync til server
+                    const token = localStorage.getItem('fuglehund_token');
+                    fetch('/api/storage/' + ukakKey, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+                        },
+                        body: JSON.stringify({ value: ukakData })
+                    }).catch(err => console.warn('Kunne ikke synce til server:', err));
+                }
+            }
 
             hideModal();
             renderDogList();

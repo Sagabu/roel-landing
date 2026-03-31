@@ -540,7 +540,6 @@
 
         // Open critique modal
         function openCritique(dogId) {
-            alert('openCritique kalt med dogId: ' + dogId);
             console.log('openCritique called with dogId:', dogId);
             console.log('state.dogs:', state.dogs);
             // Søk på både id og nr for å håndtere ulike dataformater
@@ -713,11 +712,18 @@
                 </div>
             `;
 
-            // Field notes - combine all round notes
-            const allNotes = dog.rounds
-                .filter(r => r.notes && r.notes.trim())
-                .map(r => `Slipp ${r.roundNum}: ${r.notes}`)
-                .join('\n\n');
+            // Field notes - combine all round notes (støtt begge formater)
+            let allNotes = '';
+            if (dog.rounds && dog.rounds.length > 0) {
+                // Gammelt format
+                allNotes = dog.rounds
+                    .filter(r => r.notes && r.notes.trim())
+                    .map(r => `Slipp ${r.roundNum}: ${r.notes}`)
+                    .join('\n\n');
+            } else if (dog.critique) {
+                // Nytt format - kritikken er allerede samlet fra slipp-kommentarer
+                allNotes = dog.critique;
+            }
 
             document.getElementById('modalFieldNotes').textContent = allNotes || 'Ingen notater registrert';
 

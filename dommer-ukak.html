@@ -435,16 +435,37 @@
     <!-- Lagre-knapper -->
     <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 p-2 z-40">
         <div class="flex gap-2">
-            <button onclick="saveAndSelectNewPartner(1)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
-                Lagre H1 + Velg ny makker
+            <button onclick="saveDogAndSelectNew(1)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
+                Lagre H1 + Ny
             </button>
-            <button onclick="saveAndSelectNewPartner(2)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
-                Lagre H2 + Velg ny makker
+            <button onclick="saveDogAndSelectNew(2)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
+                Lagre H2 + Ny
             </button>
         </div>
-        <button onclick="saveBothAndNext()" id="saveBothBtn" class="w-full mt-2 bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
-            Lagre begge og neste par →
+        <button onclick="saveBothAndShowPicker()" id="saveBothBtn" class="w-full mt-2 bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
+            Lagre begge hunder
         </button>
+    </div>
+
+    <!-- Modal for å velge nye hunder -->
+    <div id="dogPickerModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div class="bg-forest-700 text-white p-4">
+                <h3 class="font-bold text-lg" id="pickerTitle">Velg neste par</h3>
+                <p class="text-sm text-white/70" id="pickerSubtitle">Velg to hunder fra samme klasse</p>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[50vh]" id="dogPickerList">
+                <!-- Fylles dynamisk -->
+            </div>
+            <div class="p-4 border-t border-bark-200 flex gap-2">
+                <button onclick="closeDogPicker()" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-2 rounded-xl transition">
+                    Avbryt
+                </button>
+                <button onclick="confirmDogSelection()" id="confirmPickerBtn" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white font-medium py-2 rounded-xl transition" disabled>
+                    Start slipp
+                </button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -476,32 +497,191 @@
             });
         }
 
-        // Finn neste tilgjengelige par i samme klasse
-        function getNextPairInClass(currentClass) {
-            const availableDogs = partyList.filter(d =>
-                d.klasse === currentClass && !state.ferdigeDogs[d.nr]
-            );
-            if (availableDogs.length >= 2) {
-                return [availableDogs[0].nr, availableDogs[1].nr];
-            } else if (availableDogs.length === 1) {
-                // Bare én hund igjen i klassen, prøv neste klasse
-                const nextClass = currentClass === 'UK' ? 'AK' : null;
-                if (nextClass) {
-                    const nextClassDogs = partyList.filter(d =>
-                        d.klasse === nextClass && !state.ferdigeDogs[d.nr]
-                    );
-                    if (nextClassDogs.length >= 1) {
-                        return [availableDogs[0].nr, nextClassDogs[0].nr];
+        // Hent tilgjengelige hunder i en klasse (ikke ferdig-markert)
+        function getAvailableDogsInClass(klasse) {
+            return partyList.filter(d => d.klasse === klasse && !state.ferdigeDogs[d.nr]);
+        }
+
+        // Valider at begge hunder er i samme klasse
+        function validateSameClass() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            if (dog1 && dog2 && dog1.klasse !== dog2.klasse) {
+                return false;
+            }
+            return true;
+        }
+
+        // Modal state
+        let pickerMode = 'both'; // 'both', 'single1', 'single2'
+        let selectedPickerDogs = [];
+
+        // Vis dog picker modal
+        function showDogPicker(mode, currentClass = null) {
+            pickerMode = mode;
+            selectedPickerDogs = [];
+
+            const modal = document.getElementById('dogPickerModal');
+            const list = document.getElementById('dogPickerList');
+            const title = document.getElementById('pickerTitle');
+            const subtitle = document.getElementById('pickerSubtitle');
+            const confirmBtn = document.getElementById('confirmPickerBtn');
+
+            // Sett tittel basert på modus
+            if (mode === 'both') {
+                title.textContent = 'Velg neste par';
+                subtitle.textContent = 'Velg to hunder fra samme klasse';
+            } else {
+                const pos = mode === 'single1' ? '1' : '2';
+                title.textContent = `Velg ny hund ${pos}`;
+                subtitle.textContent = 'Velg én hund fra samme klasse som makkeren';
+            }
+
+            // Bygg liste over tilgjengelige hunder, gruppert etter klasse
+            const ukDogs = getAvailableDogsInClass('UK');
+            const akDogs = getAvailableDogsInClass('AK');
+
+            let html = '';
+
+            if (ukDogs.length > 0) {
+                html += `<div class="mb-4">
+                    <h4 class="font-bold text-sm text-forest-700 mb-2 flex items-center gap-2">
+                        <span class="bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full text-xs">UK</span>
+                        Unghundklasse (${ukDogs.length} tilgjengelig)
+                    </h4>
+                    <div class="space-y-1">
+                        ${ukDogs.map(d => buildDogOption(d, currentClass)).join('')}
+                    </div>
+                </div>`;
+            }
+
+            if (akDogs.length > 0) {
+                html += `<div class="mb-4">
+                    <h4 class="font-bold text-sm text-warm-700 mb-2 flex items-center gap-2">
+                        <span class="bg-warm-100 text-warm-700 px-2 py-0.5 rounded-full text-xs">AK</span>
+                        Åpen klasse (${akDogs.length} tilgjengelig)
+                    </h4>
+                    <div class="space-y-1">
+                        ${akDogs.map(d => buildDogOption(d, currentClass)).join('')}
+                    </div>
+                </div>`;
+            }
+
+            if (html === '') {
+                html = '<p class="text-center text-bark-500 py-8">Ingen flere hunder tilgjengelig</p>';
+            }
+
+            list.innerHTML = html;
+            confirmBtn.disabled = true;
+            modal.classList.remove('hidden');
+        }
+
+        function buildDogOption(dog, restrictToClass) {
+            const isRestricted = restrictToClass && dog.klasse !== restrictToClass;
+            const bgClass = isRestricted ? 'bg-bark-100 opacity-50' : 'bg-bark-50 hover:bg-bark-100 cursor-pointer';
+            const borderClass = dog.klasse === 'UK' ? 'border-forest-200' : 'border-warm-200';
+
+            return `<div class="dog-picker-option ${bgClass} border ${borderClass} rounded-lg p-2 flex items-center gap-3 transition"
+                        data-dog-nr="${dog.nr}" data-dog-klasse="${dog.klasse}"
+                        ${isRestricted ? '' : `onclick="toggleDogSelection(${dog.nr}, '${dog.klasse}')"`}>
+                <div class="w-6 h-6 rounded-full border-2 ${dog.klasse === 'UK' ? 'border-forest-400' : 'border-warm-400'} flex items-center justify-center dog-check">
+                </div>
+                <div class="flex-1">
+                    <p class="font-medium text-sm">${dog.nr}. ${dog.race} ${dog.name}</p>
+                    <p class="text-xs text-bark-500">${dog.owner}</p>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded-full ${dog.klasse === 'UK' ? 'bg-forest-100 text-forest-700' : 'bg-warm-100 text-warm-700'}">${dog.klasse}</span>
+            </div>`;
+        }
+
+        function toggleDogSelection(dogNr, dogKlasse) {
+            const maxSelect = pickerMode === 'both' ? 2 : 1;
+
+            const idx = selectedPickerDogs.findIndex(d => d.nr === dogNr);
+            if (idx >= 0) {
+                // Fjern valg
+                selectedPickerDogs.splice(idx, 1);
+            } else {
+                // Sjekk om vi kan legge til
+                if (selectedPickerDogs.length >= maxSelect) {
+                    // Fjern første og legg til ny
+                    selectedPickerDogs.shift();
+                }
+
+                // Sjekk klasse-restriksjon for par-valg
+                if (pickerMode === 'both' && selectedPickerDogs.length === 1) {
+                    if (selectedPickerDogs[0].klasse !== dogKlasse) {
+                        alert('Begge hunder må være i samme klasse (UK eller AK)');
+                        return;
                     }
                 }
-                return [availableDogs[0].nr, null];
+
+                selectedPickerDogs.push({ nr: dogNr, klasse: dogKlasse });
             }
-            // Ingen flere i denne klassen, prøv neste
-            const nextClass = currentClass === 'UK' ? 'AK' : null;
-            if (nextClass) {
-                return getNextPairInClass(nextClass);
+
+            // Oppdater UI
+            document.querySelectorAll('.dog-picker-option').forEach(el => {
+                const nr = parseInt(el.dataset.dogNr);
+                const checkEl = el.querySelector('.dog-check');
+                const isSelected = selectedPickerDogs.some(d => d.nr === nr);
+
+                if (isSelected) {
+                    checkEl.innerHTML = '<svg class="w-4 h-4 text-forest-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+                    el.classList.add('ring-2', 'ring-forest-500');
+                } else {
+                    checkEl.innerHTML = '';
+                    el.classList.remove('ring-2', 'ring-forest-500');
+                }
+
+                // Disable hunder i feil klasse etter første valg (for par-modus)
+                if (pickerMode === 'both' && selectedPickerDogs.length === 1) {
+                    const selectedClass = selectedPickerDogs[0].klasse;
+                    if (el.dataset.dogKlasse !== selectedClass && !isSelected) {
+                        el.classList.add('opacity-50');
+                        el.style.pointerEvents = 'none';
+                    }
+                } else if (pickerMode === 'both') {
+                    el.classList.remove('opacity-50');
+                    el.style.pointerEvents = '';
+                }
+            });
+
+            // Oppdater confirm-knapp
+            const confirmBtn = document.getElementById('confirmPickerBtn');
+            if (pickerMode === 'both') {
+                confirmBtn.disabled = selectedPickerDogs.length !== 2;
+            } else {
+                confirmBtn.disabled = selectedPickerDogs.length !== 1;
             }
-            return [null, null];
+        }
+
+        function closeDogPicker() {
+            document.getElementById('dogPickerModal').classList.add('hidden');
+            selectedPickerDogs = [];
+        }
+
+        function confirmDogSelection() {
+            if (pickerMode === 'both' && selectedPickerDogs.length === 2) {
+                state.selectedDogs[1] = selectedPickerDogs[0].nr;
+                state.selectedDogs[2] = selectedPickerDogs[1].nr;
+                state.currentSlipp++;
+            } else if (pickerMode === 'single1' && selectedPickerDogs.length === 1) {
+                state.selectedDogs[1] = selectedPickerDogs[0].nr;
+            } else if (pickerMode === 'single2' && selectedPickerDogs.length === 1) {
+                state.selectedDogs[2] = selectedPickerDogs[0].nr;
+            }
+
+            closeDogPicker();
+            saveToStorage();
+            populateDogSelectors();
+            updateDogDisplays();
+            updateSlippLabels();
+            loadDogData(1);
+            loadDogData(2);
+            updateTotals();
         }
 
         async function init() {
@@ -813,16 +993,13 @@
             updateTotals();
         }
 
-        // Lagre begge hunder og last neste par i samme klasse
-        function saveBothAndNext() {
+        // Lagre begge hunder og vis picker for neste par
+        function saveBothAndShowPicker() {
             saveDogData(1);
             saveDogData(2);
 
-            // Merk begge som ferdig med dette slippet (men ikke nødvendigvis helt ferdig)
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
-            const dog1 = partyList.find(d => d.nr === dog1Nr);
-            const dog2 = partyList.find(d => d.nr === dog2Nr);
 
             // Sjekk om hundene er markert som "Ferdig"
             const dog1Ferdig = document.getElementById('dog1_ferdig').checked;
@@ -833,54 +1010,54 @@
 
             saveToStorage();
 
-            // Finn neste par - prioriter samme klasse som nåværende
-            const currentClass = dog1?.klasse || 'UK';
-            const [nextDog1, nextDog2] = getNextPairInClass(currentClass);
+            // Vis bekreftelse
+            const btn = document.getElementById('saveBothBtn');
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Lagret!';
+            btn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
+            btn.classList.add('bg-green-600');
 
-            if (nextDog1 !== null) {
-                state.selectedDogs[1] = nextDog1;
-                if (nextDog2 !== null) {
-                    state.selectedDogs[2] = nextDog2;
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+                btn.classList.add('bg-forest-600', 'hover:bg-forest-700');
+
+                // Vis picker for neste par
+                const remainingUK = getAvailableDogsInClass('UK').length;
+                const remainingAK = getAvailableDogsInClass('AK').length;
+
+                if (remainingUK >= 2 || remainingAK >= 2 || (remainingUK >= 1 && remainingAK >= 1)) {
+                    showDogPicker('both');
+                } else if (remainingUK === 1 || remainingAK === 1) {
+                    alert('Kun én hund igjen. Slippet kan ikke fortsette med par.');
+                } else {
+                    alert('Alle hunder i partiet er bedømt!');
                 }
-
-                populateDogSelectors();
-                updateDogDisplays();
-                loadDogData(1);
-                loadDogData(2);
-                updateTotals();
-
-                // Vis bekreftelse
-                const btn = document.getElementById('saveBothBtn');
-                const originalText = btn.textContent;
-                btn.textContent = '✓ Lagret! Neste par lastet';
-                btn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
-                btn.classList.add('bg-green-600');
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.classList.remove('bg-green-600');
-                    btn.classList.add('bg-forest-600', 'hover:bg-forest-700');
-                }, 2000);
-            } else {
-                alert('Alle hunder i partiet er bedømt!');
-            }
+            }, 1000);
         }
 
-        // Lagre én hund og velg ny makker
-        function saveAndSelectNewPartner(position) {
+        // Lagre én hund og velg ny hund i samme klasse
+        function saveDogAndSelectNew(position) {
             saveDogData(position);
+
+            const dogNr = state.selectedDogs[position];
+            const dog = partyList.find(d => d.nr === dogNr);
+
+            // Sjekk om hunden er markert som "Ferdig"
+            const ferdig = document.getElementById(`dog${position}_ferdig`).checked;
+            if (ferdig) state.ferdigeDogs[dogNr] = true;
+
             saveToStorage();
 
-            // Vis bekreftelse og åpne velger for den andre hunden
+            // Finn klassen til makkeren (den andre hunden som ikke byttes ut)
             const otherPosition = position === 1 ? 2 : 1;
-            const selectEl = document.getElementById(`dog${otherPosition}Select`);
+            const otherDogNr = state.selectedDogs[otherPosition];
+            const otherDog = partyList.find(d => d.nr === otherDogNr);
+            const requiredClass = otherDog?.klasse || dog?.klasse || 'UK';
 
-            // Marker at bruker skal velge ny makker
-            selectEl.focus();
-            selectEl.classList.add('ring-2', 'ring-warm-500');
-            setTimeout(() => selectEl.classList.remove('ring-2', 'ring-warm-500'), 3000);
-
-            // Vis bekreftelse
-            alert(`Hund ${position} er lagret. Velg ny makker i felt ${otherPosition}.`);
+            // Vis picker for å velge ny hund i samme klasse
+            const pickerModeKey = position === 1 ? 'single1' : 'single2';
+            showDogPicker(pickerModeKey, requiredClass);
         }
 
         function setFerdig(position) {

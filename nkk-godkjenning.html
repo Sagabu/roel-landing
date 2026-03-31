@@ -484,33 +484,35 @@
             let dog = null;
             let dogs = null;
 
-            // Nytt format - prøv localStorage først, deretter server
+            // Nytt format - ALLTID hent fra server først for å få oppdaterte data
             const storageKey = 'dommerkort_ukak_' + partyId;
             let ukakData = null;
 
-            // Prøv localStorage
-            const ukakSaved = localStorage.getItem(storageKey);
-            if (ukakSaved) {
-                ukakData = JSON.parse(ukakSaved);
+            // Hent fra server først
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/storage/' + storageKey, {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        ukakData = data.value;
+                        console.log('Hentet fra server, jaktegenskaper:', ukakData.dogData?.[dogId]?.jaktegenskaper);
+                        // Oppdater localStorage med ferske data
+                        localStorage.setItem(storageKey, JSON.stringify(ukakData));
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke hente fra server:', e);
             }
 
-            // Prøv også server hvis ikke funnet eller mangler data
+            // Fallback til localStorage hvis server feilet
             if (!ukakData || !ukakData.dogData || !ukakData.dogData[dogId]) {
-                try {
-                    const token = localStorage.getItem('fuglehund_token');
-                    const resp = await fetch('/api/storage/' + storageKey, {
-                        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
-                    });
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        if (data.value) {
-                            ukakData = data.value;
-                            // Cache i localStorage
-                            localStorage.setItem(storageKey, JSON.stringify(ukakData));
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Kunne ikke hente fra server:', e);
+                const ukakSaved = localStorage.getItem(storageKey);
+                if (ukakSaved) {
+                    ukakData = JSON.parse(ukakSaved);
+                    console.log('Bruker localStorage fallback');
                 }
             }
 

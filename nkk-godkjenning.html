@@ -483,10 +483,37 @@
             let dog = null;
             let dogs = null;
 
-            // Nytt format
-            const ukakSaved = localStorage.getItem('dommerkort_ukak_' + partyId);
+            // Nytt format - prøv localStorage først, deretter server
+            const storageKey = 'dommerkort_ukak_' + partyId;
+            let ukakData = null;
+
+            // Prøv localStorage
+            const ukakSaved = localStorage.getItem(storageKey);
             if (ukakSaved) {
-                const ukakData = JSON.parse(ukakSaved);
+                ukakData = JSON.parse(ukakSaved);
+            }
+
+            // Prøv også server hvis ikke funnet eller mangler data
+            if (!ukakData || !ukakData.dogData || !ukakData.dogData[dogId]) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch('/api/storage/' + storageKey, {
+                        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            ukakData = data.value;
+                            // Cache i localStorage
+                            localStorage.setItem(storageKey, JSON.stringify(ukakData));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke hente fra server:', e);
+                }
+            }
+
+            if (ukakData) {
                 if (ukakData.dogData && ukakData.dogData[dogId]) {
                     const dogData = ukakData.dogData[dogId];
                     const partyList = await loadPartyList(partyId);

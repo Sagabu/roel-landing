@@ -1009,7 +1009,7 @@
             }
         }
 
-        function approveCritique() {
+        async function approveCritique() {
             if (!currentReview) return;
 
             const { partyId, dogId, dog, dogs } = currentReview;
@@ -1018,16 +1018,52 @@
             dog.approvedAt = new Date().toISOString();
             dog.approvedBy = nkkRepInfo?.name || 'NKK-representant';
 
-            localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+            // Oppdater også dommerkort_ukak_ formatet og synkroniser til server
+            const storageKey = 'dommerkort_ukak_' + partyId;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/storage/' + storageKey, {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value && data.value.dogData && data.value.dogData[dogId]) {
+                        data.value.dogData[dogId].critiqueStatus = 'approved';
+                        data.value.dogData[dogId].approvedAt = dog.approvedAt;
+                        data.value.dogData[dogId].approvedBy = dog.approvedBy;
+
+                        // Lagre tilbake til server
+                        await fetch('/api/storage/' + storageKey, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+                            },
+                            body: JSON.stringify({ value: data.value })
+                        });
+
+                        // Oppdater localStorage
+                        localStorage.setItem(storageKey, JSON.stringify(data.value));
+                    }
+                }
+            } catch (e) {
+                console.error('Feil ved lagring av godkjenning:', e);
+            }
+
+            // Lagre også til gammelt format for bakoverkompatibilitet
+            if (dogs) {
+                localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+            }
 
             hideReview();
+            await loadAllCritiques();
             render();
 
             // Show success toast
             showToast('Kritikken er godkjent!', 'success');
         }
 
-        function returnCritique() {
+        async function returnCritique() {
             if (!currentReview) return;
 
             const comment = document.getElementById('returnComment').value.trim();
@@ -1037,9 +1073,45 @@
             dog.nkkComment = comment || 'Vennligst se over kritikken på nytt.';
             dog.returnedAt = new Date().toISOString();
 
-            localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+            // Oppdater også dommerkort_ukak_ formatet og synkroniser til server
+            const storageKey = 'dommerkort_ukak_' + partyId;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/storage/' + storageKey, {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value && data.value.dogData && data.value.dogData[dogId]) {
+                        data.value.dogData[dogId].critiqueStatus = 'returned';
+                        data.value.dogData[dogId].nkkComment = dog.nkkComment;
+                        data.value.dogData[dogId].returnedAt = dog.returnedAt;
+
+                        // Lagre tilbake til server
+                        await fetch('/api/storage/' + storageKey, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+                            },
+                            body: JSON.stringify({ value: data.value })
+                        });
+
+                        // Oppdater localStorage
+                        localStorage.setItem(storageKey, JSON.stringify(data.value));
+                    }
+                }
+            } catch (e) {
+                console.error('Feil ved lagring av retur:', e);
+            }
+
+            // Lagre også til gammelt format for bakoverkompatibilitet
+            if (dogs) {
+                localStorage.setItem('judgeData_' + partyId, JSON.stringify(dogs));
+            }
 
             hideReview();
+            await loadAllCritiques();
             render();
 
             showToast('Kritikken er sendt tilbake til dommer', 'warning');

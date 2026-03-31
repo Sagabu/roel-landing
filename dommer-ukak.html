@@ -39,26 +39,25 @@
 <body class="bg-cream min-h-screen font-sans">
 
     <!-- Header -->
-    <header class="bg-gradient-to-r from-bark-700 to-bark-800 text-white sticky top-0 z-50 shadow-lg">
+    <header class="bg-gradient-to-r from-forest-700 to-forest-800 text-white sticky top-0 z-50 shadow-lg">
         <div class="px-3 py-2">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                    <a href="/" class="p-1 hover:bg-white/20 rounded-lg transition">
-                        <img src="images/logo.png" alt="Logo" class="w-6 h-6">
+                    <a href="dommer-hjem.html" class="p-1 hover:bg-white/20 rounded-lg transition flex items-center gap-1">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
                     </a>
                     <div>
-                        <p class="font-bold font-serif text-sm">UK/AK Dommerkort</p>
-                        <p class="text-white/70 text-xs">Slipp <span id="currentSlipp">1</span></p>
+                        <p class="font-bold font-serif text-sm" id="headerPartyName">UK/AK Parti</p>
+                        <p class="text-white/70 text-xs">Slipp <span id="currentSlipp">1</span> • <span id="headerTrialName">Testprøve</span></p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
                     <button onclick="resetAll()" class="bg-red-500/80 hover:bg-red-600 px-2 py-1 rounded-lg text-xs font-medium transition" title="Nullstill alt">
                         ↺
                     </button>
-                    <span class="bg-white/20 px-2 py-1 rounded-full text-xs font-bold">UK/AK</span>
-                    <button onclick="nextSlipp()" class="bg-warm-500 hover:bg-warm-600 px-2 py-1 rounded-lg text-xs font-medium transition">
-                        Neste →
-                    </button>
+                    <span class="bg-white/20 px-2 py-1 rounded-full text-xs font-bold" id="headerSlippBadge">Slipp 1</span>
                 </div>
             </div>
         </div>
@@ -433,10 +432,18 @@
 
     </main>
 
-    <!-- Lagre-knapp -->
+    <!-- Lagre-knapper -->
     <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-bark-200 p-2 z-40">
-        <button onclick="saveAll()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
-            Lagre begge hunder
+        <div class="flex gap-2">
+            <button onclick="saveAndSelectNewPartner(1)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
+                Lagre H1 + Velg ny makker
+            </button>
+            <button onclick="saveAndSelectNewPartner(2)" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl shadow transition text-xs">
+                Lagre H2 + Velg ny makker
+            </button>
+        </div>
+        <button onclick="saveBothAndNext()" id="saveBothBtn" class="w-full mt-2 bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
+            Lagre begge og neste par →
         </button>
     </div>
 
@@ -454,18 +461,58 @@
             dogData: {},
         };
 
-        // Demo partiliste
-        const partyList = [
-            { nr: 1, race: 'ES', name: 'Neadalens Zlatan', owner: 'Roel, Aleksander', klasse: 'UK' },
-            { nr: 2, race: 'IS', name: 'Braut', owner: 'Hansen, Per', klasse: 'UK' },
-            { nr: 3, race: 'ES', name: 'Fjellheimens Tara', owner: 'Olsen, Kari', klasse: 'AK' },
-            { nr: 4, race: 'GS', name: 'Storm av Høgfjellet', owner: 'Berg, Ole', klasse: 'AK' },
-            { nr: 5, race: 'IS', name: 'Vinterens Håp', owner: 'Dahl, Lisa', klasse: 'UK' },
-            { nr: 6, race: 'ES', name: 'Sølvrevens Balder', owner: 'Vik, Thomas', klasse: 'AK' }
-        ];
+        // Partiliste - lastes fra API, sorteres med UK først, deretter AK
+        let partyList = [];
+        let trialInfo = { name: 'Prøve', partyName: 'UK/AK Parti' };
+
+        // Sorter partilisten: UK først, deretter AK
+        function sortPartyList(list) {
+            return list.sort((a, b) => {
+                // UK kommer før AK
+                if (a.klasse === 'UK' && b.klasse === 'AK') return -1;
+                if (a.klasse === 'AK' && b.klasse === 'UK') return 1;
+                // Innen samme klasse, sorter etter nr
+                return a.nr - b.nr;
+            });
+        }
+
+        // Finn neste tilgjengelige par i samme klasse
+        function getNextPairInClass(currentClass) {
+            const availableDogs = partyList.filter(d =>
+                d.klasse === currentClass && !state.ferdigeDogs[d.nr]
+            );
+            if (availableDogs.length >= 2) {
+                return [availableDogs[0].nr, availableDogs[1].nr];
+            } else if (availableDogs.length === 1) {
+                // Bare én hund igjen i klassen, prøv neste klasse
+                const nextClass = currentClass === 'UK' ? 'AK' : null;
+                if (nextClass) {
+                    const nextClassDogs = partyList.filter(d =>
+                        d.klasse === nextClass && !state.ferdigeDogs[d.nr]
+                    );
+                    if (nextClassDogs.length >= 1) {
+                        return [availableDogs[0].nr, nextClassDogs[0].nr];
+                    }
+                }
+                return [availableDogs[0].nr, null];
+            }
+            // Ingen flere i denne klassen, prøv neste
+            const nextClass = currentClass === 'UK' ? 'AK' : null;
+            if (nextClass) {
+                return getNextPairInClass(nextClass);
+            }
+            return [null, null];
+        }
 
         async function init() {
+            // Last partiliste fra API
+            await loadPartyList();
             await loadFromStorage();
+
+            // Oppdater header med prøve/parti-info
+            document.getElementById('headerPartyName').textContent = trialInfo.partyName;
+            document.getElementById('headerTrialName').textContent = trialInfo.name;
+
             populateDogSelectors();
             updateDogDisplays();
             updateSlippLabels();
@@ -473,6 +520,50 @@
             loadDogData(2);
             updateTotals();
             setupDictation();
+        }
+
+        async function loadPartyList() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const partyId = urlParams.get('party') || 'ukak1';
+            const proveId = urlParams.get('prove');
+
+            try {
+                // Prøv å hente fra API
+                let url = '/api/partiliste/' + partyId;
+                if (proveId) url += '?prove_id=' + proveId;
+
+                const resp = await fetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.hunder && data.hunder.length > 0) {
+                        partyList = sortPartyList(data.hunder.map((h, i) => ({
+                            nr: i + 1,
+                            race: h.rase?.substring(0, 2).toUpperCase() || '??',
+                            name: h.navn,
+                            owner: h.forer_navn || h.eier_navn || '-',
+                            klasse: h.klasse || 'UK',
+                            hundId: h.hund_id || h.id
+                        })));
+                        trialInfo.name = data.prove_navn || 'Prøve';
+                        trialInfo.partyName = data.parti_navn || partyId.toUpperCase();
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste partiliste fra API:', e);
+            }
+
+            // Fallback: Demo-data sortert med UK først
+            partyList = sortPartyList([
+                { nr: 1, race: 'ES', name: 'Neadalens Zlatan', owner: 'Roel, Aleksander', klasse: 'UK' },
+                { nr: 2, race: 'IS', name: 'Braut', owner: 'Hansen, Per', klasse: 'UK' },
+                { nr: 3, race: 'ES', name: 'Fjellheimens Tara', owner: 'Olsen, Kari', klasse: 'AK' },
+                { nr: 4, race: 'GS', name: 'Storm av Høgfjellet', owner: 'Berg, Ole', klasse: 'AK' },
+                { nr: 5, race: 'IS', name: 'Vinterens Håp', owner: 'Dahl, Lisa', klasse: 'UK' },
+                { nr: 6, race: 'ES', name: 'Sølvrevens Balder', owner: 'Vik, Thomas', klasse: 'AK' }
+            ]);
+            trialInfo.name = 'Demo-prøve';
+            trialInfo.partyName = 'UK/AK Demo';
         }
 
         async function loadFromStorage() {
@@ -585,8 +676,11 @@
         }
 
         function updateSlippLabels() {
-            document.getElementById('slippLabel').textContent = state.currentSlipp;
+            const slippLabel = document.getElementById('slippLabel');
+            if (slippLabel) slippLabel.textContent = state.currentSlipp;
             document.getElementById('currentSlipp').textContent = state.currentSlipp;
+            const slippBadge = document.getElementById('headerSlippBadge');
+            if (slippBadge) slippBadge.textContent = 'Slipp ' + state.currentSlipp;
             document.querySelectorAll('.dog1SlippNr, .dog2SlippNr').forEach(el => {
                 el.textContent = state.currentSlipp;
             });
@@ -717,6 +811,76 @@
             loadDogData(1);
             loadDogData(2);
             updateTotals();
+        }
+
+        // Lagre begge hunder og last neste par i samme klasse
+        function saveBothAndNext() {
+            saveDogData(1);
+            saveDogData(2);
+
+            // Merk begge som ferdig med dette slippet (men ikke nødvendigvis helt ferdig)
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            // Sjekk om hundene er markert som "Ferdig"
+            const dog1Ferdig = document.getElementById('dog1_ferdig').checked;
+            const dog2Ferdig = document.getElementById('dog2_ferdig').checked;
+
+            if (dog1Ferdig) state.ferdigeDogs[dog1Nr] = true;
+            if (dog2Ferdig) state.ferdigeDogs[dog2Nr] = true;
+
+            saveToStorage();
+
+            // Finn neste par - prioriter samme klasse som nåværende
+            const currentClass = dog1?.klasse || 'UK';
+            const [nextDog1, nextDog2] = getNextPairInClass(currentClass);
+
+            if (nextDog1 !== null) {
+                state.selectedDogs[1] = nextDog1;
+                if (nextDog2 !== null) {
+                    state.selectedDogs[2] = nextDog2;
+                }
+
+                populateDogSelectors();
+                updateDogDisplays();
+                loadDogData(1);
+                loadDogData(2);
+                updateTotals();
+
+                // Vis bekreftelse
+                const btn = document.getElementById('saveBothBtn');
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Lagret! Neste par lastet';
+                btn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
+                btn.classList.add('bg-green-600');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('bg-green-600');
+                    btn.classList.add('bg-forest-600', 'hover:bg-forest-700');
+                }, 2000);
+            } else {
+                alert('Alle hunder i partiet er bedømt!');
+            }
+        }
+
+        // Lagre én hund og velg ny makker
+        function saveAndSelectNewPartner(position) {
+            saveDogData(position);
+            saveToStorage();
+
+            // Vis bekreftelse og åpne velger for den andre hunden
+            const otherPosition = position === 1 ? 2 : 1;
+            const selectEl = document.getElementById(`dog${otherPosition}Select`);
+
+            // Marker at bruker skal velge ny makker
+            selectEl.focus();
+            selectEl.classList.add('ring-2', 'ring-warm-500');
+            setTimeout(() => selectEl.classList.remove('ring-2', 'ring-warm-500'), 3000);
+
+            // Vis bekreftelse
+            alert(`Hund ${position} er lagret. Velg ny makker i felt ${otherPosition}.`);
         }
 
         function setFerdig(position) {

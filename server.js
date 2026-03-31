@@ -6283,19 +6283,32 @@ app.get("/api/prover/:proveId/signaturer", (c) => {
 // KRITIKKER API
 // ============================================
 
-// Hent alle kritikker for en hund
+// Hent alle kritikker for en hund (støtter både id og regnr)
 app.get("/api/hunder/:id/kritikker", (c) => {
-  const id = c.req.param("id");
+  const idParam = c.req.param("id");
+
+  // Prøv først å finne hund via regnr (for kompatibilitet med frontend)
+  let hund = null;
+  if (isNaN(parseInt(idParam))) {
+    // Ikke et tall, sannsynligvis regnr
+    hund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(idParam);
+  }
+
+  // Bruk hund_id direkte, eller funnet hund-ID fra regnr
+  const hundId = hund ? hund.id : idParam;
+
   const kritikker = db.prepare(`
     SELECT k.*,
+           h.navn as hund_navn, h.regnr,
            p.navn as prove_navn, p.sted as prove_sted,
            b.fornavn || ' ' || b.etternavn as dommer_navn
     FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
     LEFT JOIN prover p ON k.prove_id = p.id
     LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
-    WHERE k.hund_id = ?
+    WHERE k.hund_id = ? OR h.regnr = ?
     ORDER BY k.dato DESC
-  `).all(id);
+  `).all(hundId, idParam);
   return c.json(kritikker);
 });
 
@@ -6325,6 +6338,28 @@ app.post("/api/kritikker", requireDommer, async (c) => {
   // Bruk innlogget dommers telefon
   const dommer_telefon = bruker.telefon;
 
+  // Slå opp hund_id fra regnr hvis ikke oppgitt direkte
+  let hund_id = body.hund_id;
+  if (!hund_id && body.hund_regnr) {
+    const hund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(body.hund_regnr);
+    if (hund) {
+      hund_id = hund.id;
+    }
+  }
+
+  // Hvis vi fortsatt ikke har hund_id, opprett hund basert på info vi har
+  if (!hund_id && body.hund_navn) {
+    try {
+      const insertHund = db.prepare(`
+        INSERT INTO hunder (navn, regnr, rase) VALUES (?, ?, ?)
+      `).run(body.hund_navn, body.hund_regnr || '', body.rase || '');
+      hund_id = insertHund.lastInsertRowid;
+    } catch (e) {
+      // Hund finnes kanskje allerede, ignorer feil
+      console.log('Kunne ikke opprette hund:', e.message);
+    }
+  }
+
   const result = db.prepare(`
     INSERT INTO kritikker (
       hund_id, prove_id, dommer_telefon, dato, klasse, parti, sted,
@@ -6332,20 +6367,21 @@ app.post("/api/kritikker", requireDommer, async (c) => {
       stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid,
       jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
       sek_spontan, sek_forbi, apport, rapport_spontan,
-      adferd, premie, kritikk_tekst
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      adferd, premie, kritikk_tekst, status, submitted_at, submitted_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    body.hund_id, body.prove_id, dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
+    hund_id, body.prove_id, dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
     body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
     body.stand_m, body.stand_u, body.tomstand, body.makker_stand, body.sjanse, body.slipptid,
     body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
-    body.sek_spontan, body.sek_forbi, body.apport, body.rapport_spontan ? 1 : 0,
-    body.adferd, body.premie, body.kritikk_tekst
+    body.sek_spontan || 0, body.sek_forbi || 0, body.apport, body.rapport_spontan ? 1 : 0,
+    body.adferd || '', body.premie, body.kritikk_tekst,
+    body.status || 'submitted', new Date().toISOString(), dommer_telefon
   );
 
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
     "kritikk_opprettet",
-    JSON.stringify({ kritikk_id: result.lastInsertRowid, dommer: dommer_telefon, hund_id: body.hund_id })
+    JSON.stringify({ kritikk_id: result.lastInsertRowid, dommer: dommer_telefon, hund_id: hund_id })
   );
 
   return c.json({ id: result.lastInsertRowid, ok: true });
@@ -6425,6 +6461,22 @@ app.get("/api/kritikker/pending", (c) => {
     LEFT JOIN prover p ON k.prove_id = p.id
     WHERE k.status = 'submitted'
     ORDER BY k.submitted_at DESC
+  `).all();
+  return c.json(rows);
+});
+
+// Hent godkjente kritikker
+app.get("/api/kritikker/approved", (c) => {
+  const rows = db.prepare(`
+    SELECT k.*, h.navn as hund_navn, h.regnr, h.rase,
+           b.fornavn || ' ' || b.etternavn as dommer_navn,
+           p.navn as prove_navn, p.sted as prove_sted
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    LEFT JOIN prover p ON k.prove_id = p.id
+    WHERE k.status = 'approved'
+    ORDER BY k.approved_at DESC
   `).all();
   return c.json(rows);
 });

@@ -1054,7 +1054,7 @@
         }
 
         // Submit critique
-        function submitCritique() {
+        async function submitCritique() {
             const dog = state.dogs.find(d => d.id === state.currentDogId || d.nr === state.currentDogId);
             if (!dog) return;
 
@@ -1171,7 +1171,7 @@
 
                     localStorage.setItem(ukakKey, JSON.stringify(ukakData));
 
-                    // Sync til server
+                    // Sync til server (kv_store)
                     const token = localStorage.getItem('fuglehund_token');
                     fetch('/api/storage/' + ukakKey, {
                         method: 'PUT',
@@ -1183,6 +1183,9 @@
                     }).catch(err => console.warn('Kunne ikke synce til server:', err));
                 }
             }
+
+            // === KRITISK: Lagre kritikk til database via /api/kritikker ===
+            await saveKritikkToDatabase(dog, critiqueText, premie);
 
             hideModal();
             renderDogList();
@@ -1201,6 +1204,89 @@
             document.getElementById('successMessage').textContent =
                 `Kritikken for ${dog.name} er sendt til NKK-representant for godkjenning.`;
             document.getElementById('successModal').classList.remove('hidden');
+        }
+
+        // Lagre kritikk til database via API
+        async function saveKritikkToDatabase(dog, critiqueText, premie) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                if (!token) {
+                    console.warn('Ingen token - kritikk lagres kun lokalt');
+                    return;
+                }
+
+                // Hent prøve-ID fra localStorage
+                const proveId = localStorage.getItem('currentTrialId') || '';
+
+                // Hent hund-info - vi bruker regnr for å finne hund_id på serveren
+                const regnr = dog.regnr || dog.regNr || '';
+
+                // Bygg kritikk-data
+                const stats = dog.stats || {};
+                const rawData = dog.rawData || {};
+
+                const kritikkData = {
+                    // Identifikasjon
+                    prove_id: proveId,
+                    hund_regnr: regnr, // Server kan slå opp hund_id fra dette
+                    hund_navn: dog.name || '',
+
+                    // Parti og klasse
+                    klasse: dog.class || 'AK',
+                    parti: state.party || '',
+                    dato: new Date().toISOString().split('T')[0],
+                    sted: '', // Kan fylles inn senere
+
+                    // Fuglebehandling
+                    presisjon: rawData.presisjon || null,
+                    reising: rawData.reising || null,
+                    godkjent_reising: rawData.godkjent_reis ? 1 : 0,
+
+                    // Stand og arbeid
+                    stand_m: stats.stand_m || 0,
+                    stand_u: stats.stand_u || 0,
+                    tomstand: stats.tomstand || 0,
+                    makker_stand: stats.makker_stand || 0,
+                    sjanse: stats.sjanse || 0,
+                    slipptid: stats.slipptid || 0,
+
+                    // Jaktegenskaper (1-6 skala)
+                    jaktlyst: rawData.jaktlyst || null,
+                    fart: rawData.fart || null,
+                    selvstendighet: rawData.selvstendighet || null,
+                    soksbredde: rawData.soksbredde || null,
+                    reviering: rawData.reviering || null,
+                    samarbeid: rawData.samarbeid || null,
+
+                    // Premie og kritikk
+                    premie: premie || '',
+                    kritikk_tekst: critiqueText || '',
+
+                    // Status
+                    status: 'submitted'
+                };
+
+                const response = await fetch('/api/kritikker', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(kritikkData)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('Kritikk lagret i database med ID:', result.id);
+                    // Lagre kritikk-ID på hunden for senere referanse
+                    dog.kritikkId = result.id;
+                } else {
+                    const error = await response.json();
+                    console.error('Feil ved lagring av kritikk:', error);
+                }
+            } catch (err) {
+                console.error('Kunne ikke lagre kritikk til database:', err);
+            }
         }
 
         // Notify NKK-rep via SMS when all critiques are ready

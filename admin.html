@@ -5232,8 +5232,8 @@
         // Last inn kritikk-statistikk
         async function loadKritikkStats() {
             try {
-                // Hent kritikker fra judgeData i localStorage (fra dommer-grensesnittet)
-                const kritikker = getAllKritikkerFromStorage();
+                // Hent kritikker fra database og localStorage
+                const kritikker = await getAllKritikkerFromStorage();
 
                 const total = kritikker.length;
                 const godkjente = kritikker.filter(k => k.critiqueStatus === 'approved').length;
@@ -5247,9 +5247,53 @@
             }
         }
 
-        // Hent alle kritikker fra localStorage (judgeData_*)
-        function getAllKritikkerFromStorage() {
+        // Hent alle kritikker fra database og localStorage
+        async function getAllKritikkerFromStorage() {
             const kritikker = [];
+            const seenIds = new Set();
+
+            // === 1. FØRST: Hent fra database-API ===
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+                // Hent alle kritikker (pending og approved)
+                const [pendingResp, approvedResp] = await Promise.all([
+                    fetch('/api/kritikker/pending', { headers }),
+                    fetch('/api/kritikker/approved', { headers })
+                ]);
+
+                const processDbKritikker = async (resp) => {
+                    if (!resp.ok) return;
+                    const rows = await resp.json();
+                    for (const k of rows) {
+                        const dbId = `db_${k.id}`;
+                        if (seenIds.has(dbId)) continue;
+                        seenIds.add(dbId);
+                        kritikker.push({
+                            id: dbId,
+                            dbId: k.id,
+                            name: k.hund_navn || 'Ukjent hund',
+                            regnr: k.regnr,
+                            klasse: k.klasse || 'AK',
+                            prize: k.premie,
+                            critique: k.kritikk_tekst,
+                            critiqueStatus: k.status,
+                            partyName: k.parti || 'Ukjent',
+                            dommer: k.dommer_navn,
+                            fromDatabase: true
+                        });
+                    }
+                };
+
+                await processDbKritikker(pendingResp);
+                await processDbKritikker(approvedResp);
+                console.log(`[Admin] Lastet ${kritikker.length} kritikker fra database`);
+            } catch (e) {
+                console.warn('[Admin] Kunne ikke laste kritikker fra database:', e);
+            }
+
+            // === 2. FALLBACK: Hent fra localStorage ===
             const parties = getTrialParties();
 
             for (const party of parties) {
@@ -5263,6 +5307,9 @@
                 if (Array.isArray(data)) {
                     for (const dog of data) {
                         if (dog.critique || dog.critiqueStatus) {
+                            const localId = `local_${dog.id}_${dog.name}`;
+                            if (seenIds.has(localId)) continue;
+                            seenIds.add(localId);
                             kritikker.push({
                                 ...dog,
                                 partyName: party.displayName || party.name,
@@ -5283,8 +5330,10 @@
                         const dogs = JSON.parse(data);
                         if (Array.isArray(dogs)) {
                             for (const dog of dogs) {
+                                const localId = `local_${dog.id}_${dog.name}`;
                                 // Unngå duplikater
-                                if ((dog.critique || dog.critiqueStatus) && !kritikker.find(k => k.id === dog.id && k.name === dog.name)) {
+                                if ((dog.critique || dog.critiqueStatus) && !seenIds.has(localId)) {
+                                    seenIds.add(localId);
                                     // Prøv å utlede dag fra nøkkelnavn (f.eks. ukak1 -> dag 1, vk2 -> dag 2)
                                     const dagMatch = key.match(/(\d+)$/);
                                     const dagNr = dagMatch ? parseInt(dagMatch[1]) : 1;
@@ -5353,7 +5402,7 @@
                 return;
             }
 
-            let kritikker = getAllKritikkerFromStorage();
+            let kritikker = await getAllKritikkerFromStorage();
 
             if (value.startsWith('party:')) {
                 const partyName = value.replace('party:', '');
@@ -5373,7 +5422,7 @@
 
         // Eksporter alle kritikker
         async function exportAlleKritikker() {
-            const kritikker = getAllKritikkerFromStorage();
+            const kritikker = await getAllKritikkerFromStorage();
 
             if (kritikker.length === 0) {
                 alert('Ingen kritikker funnet. Kritikkene opprettes av dommerne i dommerportalen.');
@@ -5470,7 +5519,7 @@
 
         // Eksporter kritikker per rase (ZIP med separate filer)
         async function exportKritikkerPerRase() {
-            const kritikker = getAllKritikkerFromStorage();
+            const kritikker = await getAllKritikkerFromStorage();
 
             if (kritikker.length === 0) {
                 alert('Ingen kritikker funnet.');
@@ -5580,9 +5629,9 @@
         }
 
         // Beregn statistikk
-        function calculateStats() {
+        async function calculateStats() {
             const dogs = getAllDogsFromParties();
-            const kritikker = getAllKritikkerFromStorage();
+            const kritikker = await getAllKritikkerFromStorage();
 
             const stats = {
                 totalPameldt: dogs.length,
@@ -5948,7 +5997,7 @@
             const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
             const dogs = getAllDogsFromParties();
             const participants = getTrialParticipants();
-            const stats = calculateStats();
+            const stats = await calculateStats();
 
             // Lag ZIP med alle vedlegg
             const zip = new JSZip();
@@ -6242,7 +6291,7 @@
             // Sett dagens dato som standard innsendingsdato
             document.getElementById('fkf_innsendingsDato').value = new Date().toISOString().slice(0, 10);
 
-            const stats = calculateStats();
+            const stats = await calculateStats();
 
             // Klassestatistikk (partistatistikk)
             let klasseHtml = '';
@@ -6360,8 +6409,8 @@
             }
         }
 
-        function beregnFKFAvgift() {
-            const stats = calculateStats();
+        async function beregnFKFAvgift() {
+            const stats = await calculateStats();
             const AVGIFT_PER_STARTER = 7.50; // Fast avgift kr 7,50 per starter
             const totalStartet = (stats.perKlasse.UK?.startet || 0) + (stats.perKlasse.AK?.startet || 0) + (stats.perKlasse.VK?.startet || 0);
             const totalAvgift = totalStartet * AVGIFT_PER_STARTER;
@@ -6409,7 +6458,7 @@
 
         async function generateFKFRapport() {
             const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
-            const stats = calculateStats();
+            const stats = await calculateStats();
 
             // Beregninger - fast avgift kr 7,50 per starter
             const AVGIFT_PER_STARTER = 7.50;

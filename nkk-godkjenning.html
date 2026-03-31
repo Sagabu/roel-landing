@@ -297,7 +297,117 @@
         async function loadAllCritiques() {
             allCritiques = [];
 
-            // Last fra nytt dommerkort-format (dommerkort_ukak_*)
+            // === FØRST: Hent fra database-API (primær kilde) ===
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+                // Hent pending kritikker
+                const pendingResp = await fetch('/api/kritikker/pending', { headers });
+                if (pendingResp.ok) {
+                    const pendingRows = await pendingResp.json();
+                    for (const row of pendingRows) {
+                        allCritiques.push({
+                            id: row.id,
+                            dbId: row.id, // Database ID for godkjenning
+                            nr: row.id,
+                            name: row.hund_navn || `Hund ${row.id}`,
+                            breed: row.rase || '-',
+                            handler: '-',
+                            regNr: row.regnr || '-',
+                            klasse: row.klasse || '-',
+                            partyId: row.parti || 'ukjent',
+                            partyName: PARTIES[row.parti]?.name || row.parti || 'Ukjent parti',
+                            critiqueStatus: row.status || 'submitted',
+                            critique: row.kritikk_tekst || '',
+                            prize: row.premie || null,
+                            critiqueSubmittedAt: row.submitted_at,
+                            critiqueSubmittedBy: row.dommer_navn || row.dommer_telefon || '-',
+                            approvedAt: row.approved_at,
+                            approvedBy: row.approved_by,
+                            totals: {
+                                slipptid: row.slipptid || 0,
+                                stand_m: row.stand_m || 0,
+                                stand_u: row.stand_u || 0,
+                                tomstand: row.tomstand || 0,
+                                makker_stand: row.makker_stand || 0,
+                                sjanse: row.sjanse || 0
+                            },
+                            jaktegenskaper: {
+                                jaktlyst: row.jaktlyst,
+                                fart: row.fart,
+                                selvstendighet: row.selvstendighet,
+                                soksbredde: row.soksbredde,
+                                reviering: row.reviering,
+                                samarbeid: row.samarbeid
+                            },
+                            fuglebehandling: {
+                                presisjon: row.presisjon,
+                                reising: row.reising,
+                                godkjentReising: row.godkjent_reising
+                            },
+                            fromDatabase: true // Markør for å bruke riktig godkjenningsmetode
+                        });
+                    }
+                }
+
+                // Hent godkjente kritikker
+                const approvedResp = await fetch('/api/kritikker/approved', { headers });
+                if (approvedResp.ok) {
+                    const approvedRows = await approvedResp.json();
+                    for (const row of (approvedRows.kritikker || approvedRows)) {
+                        // Sjekk at vi ikke allerede har denne
+                        if (!allCritiques.find(c => c.dbId === row.id)) {
+                            allCritiques.push({
+                                id: row.id,
+                                dbId: row.id,
+                                nr: row.id,
+                                name: row.hund_navn || `Hund ${row.id}`,
+                                breed: row.rase || '-',
+                                handler: '-',
+                                regNr: row.regnr || '-',
+                                klasse: row.klasse || '-',
+                                partyId: row.parti || 'ukjent',
+                                partyName: PARTIES[row.parti]?.name || row.parti || 'Ukjent parti',
+                                critiqueStatus: 'approved',
+                                critique: row.kritikk_tekst || '',
+                                prize: row.premie || null,
+                                critiqueSubmittedAt: row.submitted_at,
+                                critiqueSubmittedBy: row.dommer_navn || '-',
+                                approvedAt: row.approved_at,
+                                approvedBy: row.approved_by,
+                                totals: {
+                                    slipptid: row.slipptid || 0,
+                                    stand_m: row.stand_m || 0,
+                                    stand_u: row.stand_u || 0,
+                                    tomstand: row.tomstand || 0,
+                                    makker_stand: row.makker_stand || 0,
+                                    sjanse: row.sjanse || 0
+                                },
+                                jaktegenskaper: {
+                                    jaktlyst: row.jaktlyst,
+                                    fart: row.fart,
+                                    selvstendighet: row.selvstendighet,
+                                    soksbredde: row.soksbredde,
+                                    reviering: row.reviering,
+                                    samarbeid: row.samarbeid
+                                },
+                                fuglebehandling: {
+                                    presisjon: row.presisjon,
+                                    reising: row.reising,
+                                    godkjentReising: row.godkjent_reising
+                                },
+                                fromDatabase: true
+                            });
+                        }
+                    }
+                }
+                console.log(`[NKK] Lastet ${allCritiques.length} kritikker fra database`);
+            } catch (e) {
+                console.warn('[NKK] Kunne ikke laste fra database:', e);
+            }
+
+            // === FALLBACK: Last fra localStorage/kv_store (dommerkort_ukak_*) ===
             for (const partyId of Object.keys(PARTIES)) {
                 const storageKey = 'dommerkort_ukak_' + partyId;
 
@@ -1023,6 +1133,27 @@
             dog.critiqueStatus = 'approved';
             dog.approvedAt = new Date().toISOString();
             dog.approvedBy = nkkRepInfo?.name || 'NKK-representant';
+
+            // === KRITISK: Godkjenn i database via API hvis kritikken kom fra database ===
+            if (dog.fromDatabase && dog.dbId) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/kritikker/${dog.dbId}/godkjenn`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+                        }
+                    });
+                    if (resp.ok) {
+                        console.log('Kritikk godkjent i database:', dog.dbId);
+                    } else {
+                        console.error('Feil ved godkjenning i database:', await resp.text());
+                    }
+                } catch (e) {
+                    console.error('Kunne ikke godkjenne i database:', e);
+                }
+            }
 
             // Oppdater også dommerkort_ukak_ formatet og synkroniser til server
             const storageKey = 'dommerkort_ukak_' + partyId;

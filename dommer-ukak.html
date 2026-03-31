@@ -499,6 +499,9 @@
         <button onclick="saveBothAndShowPicker()" id="saveBothBtn" class="w-full mt-2 bg-forest-600 hover:bg-forest-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
             Lagre begge hunder
         </button>
+        <button onclick="finishBothDogs()" id="finishBothBtn" class="w-full mt-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl shadow-lg transition text-sm">
+            Lagre og avslutt begge hunder
+        </button>
     </div>
 
     <!-- Modal for å velge nye hunder -->
@@ -1286,6 +1289,40 @@
             populateDogSelectors();
 
             // Sjekk om alle hunder er ferdig
+            checkAllDogsFinished();
+        }
+
+        // Avslutt begge hunder samtidig
+        function finishBothDogs() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            if (!dog1Nr || !dog2Nr) {
+                alert('Velg begge hunder først');
+                return;
+            }
+
+            const names = [dog1?.name || 'Hund 1', dog2?.name || 'Hund 2'].join(' og ');
+            if (!confirm(`Er du sikker på at du vil avslutte bedømmingen av ${names}?`)) {
+                return;
+            }
+
+            // Lagre begge hundene
+            saveDogData(1);
+            saveDogData(2);
+
+            // Samle kommentarer og marker som ferdig
+            collectAllComments(dog1Nr);
+            collectAllComments(dog2Nr);
+            state.ferdigeDogs[dog1Nr] = true;
+            state.ferdigeDogs[dog2Nr] = true;
+            document.getElementById('dog1_ferdig').checked = true;
+            document.getElementById('dog2_ferdig').checked = true;
+
+            saveToStorage();
+            populateDogSelectors();
             checkAllDogsFinished();
         }
 

@@ -6120,8 +6120,8 @@ app.get("/api/partiliste/:partyId", (c) => {
   if (proveId) {
     prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
   } else {
-    // Finn nyeste aktive prøve
-    prove = db.prepare("SELECT * FROM prover WHERE status IN ('aktiv', 'publisert', 'pagaende') ORDER BY created_at DESC LIMIT 1").get();
+    // Finn nyeste aktive prøve (støtter både norsk og engelsk status)
+    prove = db.prepare("SELECT * FROM prover WHERE status IN ('aktiv', 'active', 'publisert', 'published', 'pagaende', 'ongoing') ORDER BY created_at DESC LIMIT 1").get();
   }
 
   if (!prove) {

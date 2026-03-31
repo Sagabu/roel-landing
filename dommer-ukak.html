@@ -868,10 +868,17 @@
             // Lagre lokalt først (for offline-støtte)
             localStorage.setItem('dommerkort_ukak_' + partyId, JSON.stringify(dataToSave));
 
+            // Hent auth token
+            const token = localStorage.getItem('fuglehund_token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+
             // Synkroniser til server (fire and forget)
             fetch('/api/storage/dommerkort_ukak_' + partyId, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ value: dataToSave })
             }).catch(err => console.warn('Kunne ikke lagre til server:', err));
         }
@@ -883,7 +890,9 @@
             const storageKey = 'dommerkort_ukak_' + partyId;
             localStorage.removeItem(storageKey);
             // Slett også fra server
-            fetch('/api/storage/' + storageKey, { method: 'DELETE' }).catch(() => {});
+            const token = localStorage.getItem('fuglehund_token');
+            const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+            fetch('/api/storage/' + storageKey, { method: 'DELETE', headers }).catch(() => {});
             location.reload();
         }
 

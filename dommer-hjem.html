@@ -331,12 +331,14 @@
             }
 
             // Prøv å hente faktisk antall hunder fra partiliste-API
+            let gotTotalFromAPI = false;
             try {
                 const partyListResp = await fetch('/api/partiliste/' + assignedPartyId);
                 if (partyListResp.ok) {
                     const partyListData = await partyListResp.json();
                     if (partyListData.hunder && partyListData.hunder.length > 0) {
                         totalDogs = partyListData.hunder.length;
+                        gotTotalFromAPI = true;
                     }
                 }
             } catch (e) {
@@ -349,15 +351,14 @@
                     if (ukakData.ferdigeDogs) {
                         finishedDogs = Object.keys(ukakData.ferdigeDogs).length;
 
-                        // Bruk dogData-count som totalDogs hvis vi ikke fikk fra API
-                        // og dogData har flere hunder enn ferdigeDogs
-                        const dogDataCount = Object.keys(ukakData.dogData || {}).length;
-                        if (dogDataCount > 0 && dogDataCount > finishedDogs) {
-                            totalDogs = dogDataCount;
-                        } else if (dogDataCount > 0 && finishedDogs > 0) {
-                            // Hvis ferdigeDogs >= dogDataCount, bruk ferdigeDogs som total
-                            // (alle hunder som har vært bedømt er nå ferdige)
-                            totalDogs = Math.max(dogDataCount, finishedDogs);
+                        // Bare bruk dogData-count som totalDogs hvis vi IKKE fikk fra API
+                        if (!gotTotalFromAPI) {
+                            const dogDataCount = Object.keys(ukakData.dogData || {}).length;
+                            if (dogDataCount > 0 && dogDataCount > finishedDogs) {
+                                totalDogs = dogDataCount;
+                            } else if (dogDataCount > 0 && finishedDogs > 0) {
+                                totalDogs = Math.max(dogDataCount, finishedDogs);
+                            }
                         }
 
                         if (finishedDogs > 0) {
@@ -369,7 +370,7 @@
                             } else {
                                 statusClasses = 'bg-blue-100 text-blue-700';
                             }
-                        } else if (ukakData.currentSlipp > 1 || dogDataCount > 0) {
+                        } else if (ukakData.currentSlipp > 1 || Object.keys(ukakData.dogData || {}).length > 0) {
                             statusText = 'Pågår';
                             statusClasses = 'bg-blue-100 text-blue-700';
                         }

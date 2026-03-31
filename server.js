@@ -1528,8 +1528,9 @@ app.post("/api/auth/verify-code-only", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234
-  const isTestBypass = telefon === "90852833" && code === "1234";
+  // Bypass for testing: telefon 90852833 med kode 1234, eller testnumre (9990xxxx) med kode 000000
+  const isTestBypass = (telefon === "90852833" && code === "1234") ||
+                       (telefon.startsWith("9990") && code === "000000");
 
   const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
@@ -1557,8 +1558,9 @@ app.post("/api/auth/verify-code", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234
-  const isTestBypass = telefon === "90852833" && code === "1234";
+  // Bypass for testing: telefon 90852833 med kode 1234, eller testnumre (9990xxxx) med kode 000000
+  const isTestBypass = (telefon === "90852833" && code === "1234") ||
+                       (telefon.startsWith("9990") && code === "000000");
 
   const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"

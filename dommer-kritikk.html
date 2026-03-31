@@ -33,7 +33,7 @@
         /* Skjul innhold til auth-sjekk er ferdig */
         .auth-loading header, .auth-loading main { visibility: hidden; }
     </style>
-    <script src="auth.js"></script>
+    <!-- auth.js injiseres automatisk av server -->
 </head>
 <body class="bg-cream min-h-screen font-sans auth-loading">
 
@@ -274,8 +274,81 @@
             vkfinale: { name: 'VK Finale', color: 'amber' }
         };
 
+        // Beregn totalt statistikk fra alle slipp
+        function calculateTotalStats(dogData) {
+            const stats = {
+                slipptid: 0, stand_m: 0, stand_u: 0, tomstand: 0, makker_stand: 0, sjanse: 0
+            };
+            if (!dogData.slipps) return stats;
+
+            Object.values(dogData.slipps).forEach(slipp => {
+                stats.slipptid += parseInt(slipp.slipptid) || 0;
+                stats.stand_m += parseInt(slipp.stand_m) || 0;
+                stats.stand_u += parseInt(slipp.stand_u) || 0;
+                stats.tomstand += parseInt(slipp.tomstand) || 0;
+                stats.makker_stand += parseInt(slipp.makker_stand) || 0;
+                stats.sjanse += parseInt(slipp.sjanse) || 0;
+            });
+            return stats;
+        }
+
+        // Samle alle kommentarer fra slipp
+        function collectSlippComments(dogData) {
+            if (!dogData.slipps) return '';
+            const comments = [];
+            Object.keys(dogData.slipps)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .forEach(slippNr => {
+                    const slipp = dogData.slipps[slippNr];
+                    if (slipp.kommentar && slipp.kommentar.trim()) {
+                        comments.push(`Slipp ${slippNr}: ${slipp.kommentar}`);
+                    }
+                });
+            return comments.join('\n');
+        }
+
+        // Hent hundeinfo fra API
+        async function loadDogInfoFromAPI() {
+            try {
+                const resp = await fetch('/api/partiliste/' + state.party);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.hunder && data.hunder.length > 0) {
+                        // Oppdater state.dogs med info fra API
+                        data.hunder.forEach((apiDog, index) => {
+                            const nr = index + 1;
+                            const existingDog = state.dogs.find(d => d.nr === nr);
+                            if (existingDog) {
+                                existingDog.name = apiDog.navn || existingDog.name;
+                                existingDog.breed = apiDog.rase || existingDog.breed;
+                                existingDog.handler = apiDog.forer_navn || apiDog.eier_navn || existingDog.handler;
+                                existingDog.class = apiDog.klasse || existingDog.class;
+                                existingDog.regnr = apiDog.regnr;
+                            } else {
+                                // Hund finnes ikke i localStorage - legg den til
+                                state.dogs.push({
+                                    id: nr,
+                                    nr: nr,
+                                    name: apiDog.navn,
+                                    breed: apiDog.rase || '-',
+                                    handler: apiDog.forer_navn || apiDog.eier_navn || '-',
+                                    class: apiDog.klasse || 'UK',
+                                    regnr: apiDog.regnr,
+                                    status: 'pending',
+                                    critique: '',
+                                    critiqueStatus: 'pending'
+                                });
+                            }
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste hundeinfo fra API:', e);
+            }
+        }
+
         // Initialize
-        (function init() {
+        (async function init() {
             const session = localStorage.getItem('judgeSession');
             if (!session) {
                 window.location.href = 'dommer.html';
@@ -299,13 +372,51 @@
             // Update header
             document.getElementById('headerPartyName').textContent = state.partyConfig.name;
             document.getElementById('judgeName').textContent = state.judgeName;
-            document.getElementById('backLink').href = 'dommer-vk.html?party=' + state.party;
+            document.getElementById('backLink').href = 'dommer-hjem.html';
 
-            // Load dogs from localStorage
-            const saved = localStorage.getItem('judgeData_' + state.party);
-            if (saved) {
-                state.dogs = JSON.parse(saved);
+            // Load dogs - prøv nytt format først (dommerkort_ukak_), så gammelt (judgeData_)
+            const ukakKey = 'dommerkort_ukak_' + state.party;
+            const ukakSaved = localStorage.getItem(ukakKey);
+
+            if (ukakSaved) {
+                // Nytt format fra dommer-ukak.html
+                const ukakData = JSON.parse(ukakSaved);
+                console.log('Laster fra nytt format:', ukakData);
+
+                // Konverter til kritikk-format
+                state.dogs = [];
+                if (ukakData.dogData) {
+                    Object.keys(ukakData.dogData).forEach((dogNr, index) => {
+                        const data = ukakData.dogData[dogNr];
+                        const isFerdig = ukakData.ferdigeDogs && ukakData.ferdigeDogs[dogNr];
+
+                        // Hent hundeinfo fra partilist API (fallback til grunnleggende info)
+                        state.dogs.push({
+                            id: parseInt(dogNr),
+                            nr: parseInt(dogNr),
+                            name: data.navn || `Hund ${dogNr}`,
+                            breed: data.rase || '-',
+                            handler: data.forer || '-',
+                            class: data.klasse || 'UK',
+                            status: isFerdig ? 'done' : 'in_progress',
+                            // Samle statistikk fra alle slipp
+                            stats: calculateTotalStats(data),
+                            // Samle alle kommentarer fra slipp
+                            critique: data.samletKommentar || collectSlippComments(data),
+                            critiqueStatus: data.critiqueStatus || 'pending'
+                        });
+                    });
+                }
+            } else {
+                // Gammelt format
+                const saved = localStorage.getItem('judgeData_' + state.party);
+                if (saved) {
+                    state.dogs = JSON.parse(saved);
+                }
             }
+
+            // Hent hundeinfo fra API for å fylle ut navn etc.
+            await loadDogInfoFromAPI();
 
             renderDogList();
             updateProgress();

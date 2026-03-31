@@ -1885,8 +1885,8 @@ app.post("/api/auth/login-password", async (c) => {
     return c.json({ error: "Feil passord" }, 401);
   }
 
-  // Sjekk om re-verifisering kreves (>60 dager)
-  if (needsReverification(bruker.siste_innlogging)) {
+  // Sjekk om re-verifisering kreves (>60 dager) - hopp over for testbrukere
+  if (!isTestBypass && needsReverification(bruker.siste_innlogging)) {
     return c.json({
       requiresVerification: true,
       message: "Det er over 60 dager siden siste innlogging. Verifiser med SMS-kode.",

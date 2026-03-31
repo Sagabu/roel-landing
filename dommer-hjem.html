@@ -330,25 +330,46 @@
                 } catch (e) {}
             }
 
+            // Prøv å hente faktisk antall hunder fra partiliste-API
+            try {
+                const partyListResp = await fetch('/api/partiliste/' + assignedPartyId);
+                if (partyListResp.ok) {
+                    const partyListData = await partyListResp.json();
+                    if (partyListData.hunder && partyListData.hunder.length > 0) {
+                        totalDogs = partyListData.hunder.length;
+                    }
+                }
+            } catch (e) {
+                console.log('Kunne ikke hente partiliste, bruker lagret data');
+            }
+
             if (ukakSaved) {
                 try {
                     const ukakData = JSON.parse(ukakSaved);
                     if (ukakData.ferdigeDogs) {
                         finishedDogs = Object.keys(ukakData.ferdigeDogs).length;
-                        // Hent faktisk antall hunder fra dogData eller bruk party.dogs
+
+                        // Bruk dogData-count som totalDogs hvis vi ikke fikk fra API
+                        // og dogData har flere hunder enn ferdigeDogs
                         const dogDataCount = Object.keys(ukakData.dogData || {}).length;
-                        if (dogDataCount > 0) totalDogs = Math.max(totalDogs, dogDataCount);
+                        if (dogDataCount > 0 && dogDataCount > finishedDogs) {
+                            totalDogs = dogDataCount;
+                        } else if (dogDataCount > 0 && finishedDogs > 0) {
+                            // Hvis ferdigeDogs >= dogDataCount, bruk ferdigeDogs som total
+                            // (alle hunder som har vært bedømt er nå ferdige)
+                            totalDogs = Math.max(dogDataCount, finishedDogs);
+                        }
 
                         if (finishedDogs > 0) {
                             statusText = `${finishedDogs}/${totalDogs} ferdig`;
-                            if (finishedDogs >= totalDogs) {
+                            if (finishedDogs >= totalDogs && totalDogs > 0) {
                                 statusClasses = 'bg-green-100 text-green-700';
                                 statusText = 'Alle bedømt';
                                 allDogsFinished = true;
                             } else {
                                 statusClasses = 'bg-blue-100 text-blue-700';
                             }
-                        } else if (ukakData.currentSlipp > 1 || Object.keys(ukakData.dogData || {}).length > 0) {
+                        } else if (ukakData.currentSlipp > 1 || dogDataCount > 0) {
                             statusText = 'Pågår';
                             statusClasses = 'bg-blue-100 text-blue-700';
                         }

@@ -6107,6 +6107,62 @@ app.post("/api/hunder/:id/aversjonsbevis/godkjenn", (c) => {
 });
 
 // ============================================
+// PARTILISTE API
+// ============================================
+
+// Hent partiliste med hunder for et parti
+app.get("/api/partiliste/:partyId", (c) => {
+  const partyId = c.req.param("partyId");
+  const proveId = c.req.query("prove_id");
+
+  // Finn aktiv prøve hvis ikke spesifisert
+  let prove = null;
+  if (proveId) {
+    prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  } else {
+    // Finn nyeste aktive prøve
+    prove = db.prepare("SELECT * FROM prover WHERE status IN ('aktiv', 'publisert', 'pagaende') ORDER BY created_at DESC LIMIT 1").get();
+  }
+
+  if (!prove) {
+    return c.json({ error: "Ingen aktiv prøve funnet" }, 404);
+  }
+
+  // Hent påmeldinger for dette partiet
+  const pameldinger = db.prepare(`
+    SELECT
+      p.id as pamelding_id,
+      p.klasse,
+      p.parti,
+      p.forer_telefon,
+      h.id as hund_id,
+      h.navn,
+      h.regnr,
+      h.rase,
+      h.kjonn,
+      h.fodt,
+      b_eier.fornavn || ' ' || b_eier.etternavn as eier_navn,
+      b_forer.fornavn || ' ' || b_forer.etternavn as forer_navn
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    LEFT JOIN brukere b_eier ON h.eier_telefon = b_eier.telefon
+    LEFT JOIN brukere b_forer ON p.forer_telefon = b_forer.telefon
+    WHERE p.prove_id = ? AND p.parti = ? AND p.status = 'bekreftet'
+    ORDER BY
+      CASE p.klasse WHEN 'UK' THEN 1 WHEN 'AK' THEN 2 WHEN 'VK' THEN 3 ELSE 4 END,
+      p.id
+  `).all(prove.id, partyId);
+
+  return c.json({
+    prove_id: prove.id,
+    prove_navn: prove.navn,
+    parti: partyId,
+    parti_navn: partyId.toUpperCase().replace('UKAK', 'UK/AK Parti ').replace('VK', 'VK Parti '),
+    hunder: pameldinger
+  });
+});
+
+// ============================================
 // PARTI-SIGNATURER API
 // ============================================
 

@@ -379,24 +379,48 @@
                 }
             }
 
-            // Fallback: sjekk gammel format
+            // Fallback: sjekk gammel format (judgeData_*)
             if (!ukakSaved) {
-                const saved = localStorage.getItem('judgeData_' + assignedPartyId);
-                if (saved) {
+                // Prøv localStorage først
+                let oldSaved = localStorage.getItem('judgeData_' + assignedPartyId);
+
+                // Prøv også server for gammelt format
+                if (!oldSaved) {
                     try {
-                        const dogs = JSON.parse(saved);
-                        const done = dogs.filter(d => d.status === 'done').length;
-                        const total = dogs.length;
-                        if (done > 0) {
-                            statusText = `${done}/${total} ferdig`;
-                            if (done === total) {
-                                statusClasses = 'bg-green-100 text-green-700';
-                                allDogsFinished = true;
-                            } else {
-                                statusClasses = 'bg-blue-100 text-blue-700';
+                        const resp = await fetch('/api/storage/judgeData_' + assignedPartyId);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.value) {
+                                oldSaved = JSON.stringify(data.value);
+                                localStorage.setItem('judgeData_' + assignedPartyId, oldSaved);
                             }
                         }
                     } catch (e) {}
+                }
+
+                if (oldSaved) {
+                    try {
+                        const dogs = JSON.parse(oldSaved);
+                        if (Array.isArray(dogs)) {
+                            const done = dogs.filter(d => d.status === 'done' || d.critiqueStatus).length;
+                            // Bruk totalDogs fra partiliste-API hvis tilgjengelig
+                            const total = totalDogs > 0 ? totalDogs : dogs.length;
+                            finishedDogs = done;
+
+                            if (done > 0) {
+                                statusText = `${done}/${total} ferdig`;
+                                if (done >= total && total > 0) {
+                                    statusClasses = 'bg-green-100 text-green-700';
+                                    statusText = 'Alle bedømt';
+                                    allDogsFinished = true;
+                                } else {
+                                    statusClasses = 'bg-blue-100 text-blue-700';
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Feil ved parsing av gammel data:', e);
+                    }
                 }
             }
 

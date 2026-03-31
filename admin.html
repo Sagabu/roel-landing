@@ -2408,6 +2408,59 @@
 
     <script>
         // ========================================
+        // PRØVE-SPESIFIKKE STORAGE KEYS
+        // ========================================
+        // Hjelpefunksjoner for å håndtere prøve-spesifikke localStorage-nøkler
+        // Dette sikrer at hver prøve har sin egen partiliste og deltakerliste
+
+        function getCurrentTrialId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
+        }
+
+        function getTrialPartiesKey() {
+            const trialId = getCurrentTrialId();
+            // Hvis vi har en prøve-ID, bruk prøve-spesifikk nøkkel
+            // Ellers fall tilbake til global nøkkel for bakoverkompatibilitet
+            return trialId ? `trialParties_${trialId}` : 'trialParties';
+        }
+
+        function getTrialParticipantsKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `trialParticipants_${trialId}` : 'trialParticipants';
+        }
+
+        function getTrialVentelisteKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `trialVenteliste_${trialId}` : 'trialVenteliste';
+        }
+
+        // Hjelpefunksjoner for å lese/skrive med riktig nøkkel
+        function getTrialParties() {
+            return JSON.parse(localStorage.getItem(getTrialPartiesKey()) || '[]');
+        }
+
+        function setTrialParties(parties) {
+            localStorage.setItem(getTrialPartiesKey(), JSON.stringify(parties));
+        }
+
+        function getTrialParticipants() {
+            return JSON.parse(localStorage.getItem(getTrialParticipantsKey()) || '[]');
+        }
+
+        function setTrialParticipants(participants) {
+            localStorage.setItem(getTrialParticipantsKey(), JSON.stringify(participants));
+        }
+
+        function getTrialVenteliste() {
+            return JSON.parse(localStorage.getItem(getTrialVentelisteKey()) || '{}');
+        }
+
+        function setTrialVenteliste(venteliste) {
+            localStorage.setItem(getTrialVentelisteKey(), JSON.stringify(venteliste));
+        }
+
+        // ========================================
         // PRAKTISK INFO - SAVE AND LOAD
         // ========================================
         async function savePraktiskInfo() {
@@ -3028,9 +3081,9 @@
 
         // Oppdater statistikk-kortene øverst basert på lagrede data
         function updateStatsFromStorage() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
-            const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{}');
-            const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            const parties = getTrialParties();
+            const venteliste = getTrialVenteliste();
+            const participants = getTrialParticipants();
 
             // Tell opp totalt antall hunder i partier
             let totalInParties = 0;
@@ -3102,7 +3155,7 @@
         let currentConfirmationFilter = 'all';
 
         function updateConfirmationSection() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
 
             if (parties.length === 0) {
                 document.getElementById('confirmationEmptyState').classList.remove('hidden');
@@ -3234,7 +3287,7 @@
 
         // Toggle bekreftelse for en hund
         function toggleConfirmation(regnr, confirmed) {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
 
             for (const party of parties) {
                 const dog = party.dogs.find(d => d.regnr === regnr);
@@ -3244,7 +3297,7 @@
                 }
             }
 
-            localStorage.setItem('trialParties', JSON.stringify(parties));
+            setTrialParties(parties);
             updateStatsFromStorage();
         }
 
@@ -3259,7 +3312,7 @@
 
         // Sjekk om det finnes eksisterende data og vis handlingsknapper
         function checkExistingData() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const existingDataEl = document.getElementById('existingDataActions');
             const existingDataInfo = document.getElementById('existingDataInfo');
 
@@ -3276,7 +3329,7 @@
 
         // Bekreft og slett alle data
         function confirmClearAllData() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             let totalDogs = 0;
             parties.forEach(p => totalDogs += p.dogs.length);
 
@@ -3297,10 +3350,10 @@
 
         // Slett alle data
         function clearAllData() {
-            // Fjern alle relevante localStorage-nøkler
-            localStorage.removeItem('trialParties');
-            localStorage.removeItem('trialVenteliste');
-            localStorage.removeItem('trialParticipants');
+            // Fjern alle relevante localStorage-nøkler (prøve-spesifikke)
+            localStorage.removeItem(getTrialPartiesKey());
+            localStorage.removeItem(getTrialVentelisteKey());
+            localStorage.removeItem(getTrialParticipantsKey());
             localStorage.removeItem('partyDommere');
 
             // Nullstill statistikk
@@ -3336,7 +3389,7 @@
 
         // Åpne dialog for å legge til hund manuelt
         function openAddDogDialog() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
 
             // Bygg parti-valg
             const partyOptions = parties.map(p =>
@@ -3411,7 +3464,7 @@
             }
 
             // Sjekk at hunden ikke allerede finnes
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             for (const party of parties) {
                 if (party.dogs.find(d => d.regnr === regnr)) {
                     alert('En hund med dette registreringsnummeret finnes allerede!');
@@ -3430,7 +3483,7 @@
 
             if (partyName === '__venteliste__') {
                 // Legg til venteliste
-                const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{"dag1":{"uk":[],"ak":[]},"dag2":{"uk":[],"ak":[]},"vk":[]}');
+                const venteliste = getTrialVenteliste();
                 if (klasse === 'VK') {
                     venteliste.vk = venteliste.vk || [];
                     venteliste.vk.push(newDog);
@@ -3439,7 +3492,7 @@
                     venteliste.dag1[kl] = venteliste.dag1[kl] || [];
                     venteliste.dag1[kl].push(newDog);
                 }
-                localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+                setTrialVenteliste(venteliste);
                 renderVenteliste(venteliste);
             } else {
                 // Legg til parti
@@ -3464,7 +3517,7 @@
                     if (klasse === 'UK') party.ukCount = (party.ukCount || 0) + 1;
                     else if (klasse === 'AK') party.akCount = (party.akCount || 0) + 1;
 
-                    localStorage.setItem('trialParties', JSON.stringify(parties));
+                    setTrialParties(parties);
                     renderAllParties(parties);
                 }
             }
@@ -3583,7 +3636,7 @@
             const partyType = input.dataset.partyType || 'ukak';
             const terreng = input.value.trim();
 
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const party = parties.find(p => p.name === partyName);
 
             if (party) {
@@ -3602,7 +3655,7 @@
                 }
 
                 // Lagre
-                localStorage.setItem('trialParties', JSON.stringify(parties));
+                setTrialParties(parties);
 
                 // Oppdater tittelen direkte i DOM (ikke re-render hele listen)
                 const titleEl = document.getElementById('party-title-' + partyId);
@@ -3656,8 +3709,8 @@
         // Last lagrede partier ved sideoppstart
         function loadSavedParties() {
             try {
-                const savedParties = JSON.parse(localStorage.getItem('trialParties') || '[]');
-                const savedVenteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{}');
+                const savedParties = getTrialParties();
+                const savedVenteliste = getTrialVenteliste();
 
                 if (savedParties.length > 0) {
                     renderAllParties(savedParties);
@@ -3690,7 +3743,7 @@
         let moveDialogFromPartyObj = null;
 
         function openMoveDialog(regnr, fromPartyName) {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
 
             // Finn hunden og kildepartiet
             let dog = null;
@@ -3785,7 +3838,7 @@
                 return;
             }
 
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const toParty = parties.find(p => p.name === destination);
 
             if (!toParty) {
@@ -3826,8 +3879,8 @@
             const destination = document.getElementById('moveDestination').value;
             if (!destination || !moveDialogDog || !moveDialogFromParty) return;
 
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
-            const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{"dag1":{"uk":[],"ak":[]},"dag2":{"uk":[],"ak":[]},"vk":[]}');
+            const parties = getTrialParties();
+            const venteliste = getTrialVenteliste();
 
             const fromParty = parties.find(p => p.name === moveDialogFromParty);
 
@@ -3857,8 +3910,8 @@
                 }
 
                 // Lagre og oppdater
-                localStorage.setItem('trialParties', JSON.stringify(parties));
-                localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+                setTrialParties(parties);
+                setTrialVenteliste(venteliste);
                 closeMoveDialog();
                 renderAllParties(parties);
                 renderVenteliste(venteliste);
@@ -3930,8 +3983,8 @@
             }
 
             // Lagre
-            localStorage.setItem('trialParties', JSON.stringify(parties));
-            localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+            setTrialParties(parties);
+            setTrialVenteliste(venteliste);
 
             closeMoveDialog();
 
@@ -4383,7 +4436,7 @@
                 return;
             }
 
-            const existingParties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const existingParties = getTrialParties();
 
             if (existingParties.length === 0) {
                 alert('Ingen eksisterende data. Bruk "Fordel på partier" i stedet.');
@@ -4418,7 +4471,7 @@
             if (!confirm(confirmMsg)) return;
 
             // Legg nye hunder på venteliste
-            const venteliste = JSON.parse(localStorage.getItem('trialVenteliste') || '{"dag1":{"uk":[],"ak":[]},"dag2":{"uk":[],"ak":[]},"vk":[]}');
+            const venteliste = getTrialVenteliste();
 
             newDogs.forEach(dog => {
                 if (dog.klasse === 'VK') {
@@ -4431,12 +4484,12 @@
                 }
             });
 
-            localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+            setTrialVenteliste(venteliste);
 
             // Oppdater participants-listen
-            const allParticipants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            const allParticipants = getTrialParticipants();
             newDogs.forEach(d => allParticipants.push(d));
-            localStorage.setItem('trialParticipants', JSON.stringify(allParticipants));
+            setTrialParticipants(allParticipants);
 
             // Oppdater UI
             renderVenteliste(venteliste);
@@ -4458,8 +4511,8 @@
                 return;
             }
 
-            // Save participants to localStorage
-            localStorage.setItem('trialParticipants', JSON.stringify(currentParticipants));
+            // Save participants to localStorage (prøve-spesifikk nøkkel)
+            setTrialParticipants(currentParticipants);
 
             // Importer deltakere til database (for kobling til brukerkontoer)
             try {
@@ -4712,10 +4765,10 @@
             }
 
             // Store waitlist (med klasseinformasjon)
-            localStorage.setItem('trialVenteliste', JSON.stringify(venteliste));
+            setTrialVenteliste(venteliste);
 
             // Save parties to localStorage
-            localStorage.setItem('trialParties', JSON.stringify(parties));
+            setTrialParties(parties);
 
             // Render partier med de globale funksjonene (inkluderer flytt-knapper)
             renderAllParties(parties);
@@ -5006,7 +5059,7 @@
             yPos += 10;
 
             // Get party data from localStorage (populated when participants are uploaded)
-            const storedParticipants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            const storedParticipants = getTrialParticipants();
 
             // If no participants uploaded yet, show message and return
             if (storedParticipants.length === 0) {
@@ -5197,7 +5250,7 @@
         // Hent alle kritikker fra localStorage (judgeData_*)
         function getAllKritikkerFromStorage() {
             const kritikker = [];
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
 
             for (const party of parties) {
                 const judgeDataKey = 'judgeData_' + party.name.toLowerCase().replace(/\s+/g, '');
@@ -5252,7 +5305,7 @@
 
         // Populer dag-dropdown
         function populateDagSelect() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const select = document.getElementById('kritikkDagSelect');
             const dager = new Set();
 
@@ -5507,7 +5560,7 @@
 
         // Hent alle deltagende hunder fra partier
         function getAllDogsFromParties() {
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const allDogs = [];
 
             parties.forEach(party => {
@@ -5659,7 +5712,7 @@
             const organizerName = document.getElementById('organizerName')?.value || '';
 
             const dogs = getAllDogsFromParties();
-            const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            const participants = getTrialParticipants();
 
             // Beregn statistikk per klasse
             const statsPerKlasse = {
@@ -5740,7 +5793,7 @@
             }
 
             // Dommerliste med dommerelever og signaturstatus
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const partyDommere = JSON.parse(localStorage.getItem('partyDommere') || '{}');
             const dommerSignaturer = JSON.parse(localStorage.getItem('dommerSignaturer') || '{}');
 
@@ -5894,7 +5947,7 @@
         async function generateNKKRapport() {
             const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
             const dogs = getAllDogsFromParties();
-            const participants = JSON.parse(localStorage.getItem('trialParticipants') || '[]');
+            const participants = getTrialParticipants();
             const stats = calculateStats();
 
             // Lag ZIP med alle vedlegg
@@ -6009,7 +6062,7 @@
             zip.file('01_NKK_Rapport.xlsx', reportData);
 
             // 2. Partilister/resultatlister med dommersignatur-felt
-            const partiData = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const partiData = getTrialParties();
             const partiRows = [];
 
             partiData.forEach(party => {
@@ -6070,7 +6123,7 @@
             }
 
             // 4. Dommerliste med dommerelever
-            const parties = JSON.parse(localStorage.getItem('trialParties') || '[]');
+            const parties = getTrialParties();
             const partyDommere = JSON.parse(localStorage.getItem('partyDommere') || '{}');
             const dommerSignaturer = JSON.parse(localStorage.getItem('dommerSignaturer') || '{}');
 

@@ -20,9 +20,9 @@
     'trialParticipants', 'trialParties', 'praktiskInfo', 'currentTrialId'
   ];
 
-  // judgeData_* keys are dynamic (per party)
+  // judgeData_* and trialParties_* keys are dynamic (per party / per trial)
   function isSyncedKey(key) {
-    return SYNCED_KEYS.includes(key) || key.startsWith('judgeData_');
+    return SYNCED_KEYS.includes(key) || key.startsWith('judgeData_') || key.startsWith('trialParties_') || key.startsWith('trialParticipants_');
   }
 
   // Hent auth headers for requests

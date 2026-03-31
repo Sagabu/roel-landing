@@ -675,7 +675,23 @@
                 }
             }
 
-            // Fallback 1: Try to load from kv_store (server-side) for legacy support
+            // Fallback 1: Try prøve-spesifikk nøkkel i kv_store
+            if (parties.length === 0 && proveId) {
+                try {
+                    const kvResponse = await fetch(`/api/storage/trialParties_${proveId}`);
+                    if (kvResponse.ok) {
+                        const kvData = await kvResponse.json();
+                        if (kvData.value && Array.isArray(kvData.value)) {
+                            parties = kvData.value;
+                            console.log('Loaded parties from prøve-spesifikk kv_store:', parties.length);
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not load from prøve-spesifikk kv_store:', e);
+                }
+            }
+
+            // Fallback 2: Try global kv_store (legacy support for old data)
             if (parties.length === 0) {
                 try {
                     const kvResponse = await fetch('/api/storage/trialParties');
@@ -683,17 +699,21 @@
                         const kvData = await kvResponse.json();
                         if (kvData.value && Array.isArray(kvData.value)) {
                             parties = kvData.value;
-                            console.log('Loaded parties from kv_store:', parties.length);
+                            console.log('Loaded parties from global kv_store:', parties.length);
                         }
                     }
                 } catch (e) {
-                    console.log('Could not load from kv_store:', e);
+                    console.log('Could not load from global kv_store:', e);
                 }
             }
 
-            // Fallback 2: Try localStorage (only works if user visited admin page in same browser)
+            // Fallback 3: Try localStorage (only works if user visited admin page in same browser)
             if (parties.length === 0) {
-                const partiesJson = localStorage.getItem('trialParties');
+                // Prøv først prøve-spesifikk nøkkel
+                let partiesJson = proveId ? localStorage.getItem(`trialParties_${proveId}`) : null;
+                if (!partiesJson) {
+                    partiesJson = localStorage.getItem('trialParties');
+                }
                 if (partiesJson) {
                     parties = JSON.parse(partiesJson) || [];
                 }

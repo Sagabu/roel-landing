@@ -146,21 +146,9 @@
 
                 <!-- Premie Selection -->
                 <div>
-                    <h3 class="text-sm font-semibold text-bark-600 mb-2">Tildelt premie</h3>
+                    <h3 class="text-sm font-semibold text-bark-600 mb-2">Tildelt premie <span id="premieClassLabel" class="text-xs text-bark-400 font-normal"></span></h3>
                     <select id="premieSelect" class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none text-sm bg-white">
-                        <option value="">-- Ingen premie --</option>
-                        <option value="1.UK">1. UK (Unghundklasse)</option>
-                        <option value="2.UK">2. UK</option>
-                        <option value="3.UK">3. UK</option>
-                        <option value="1.AK">1. AK (Åpen klasse)</option>
-                        <option value="2.AK">2. AK</option>
-                        <option value="3.AK">3. AK</option>
-                        <option value="1.VK">1. VK (Vinnerklasse)</option>
-                        <option value="2.VK">2. VK</option>
-                        <option value="3.VK">3. VK</option>
-                        <option value="4.VK">4. VK</option>
-                        <option value="5.VK">5. VK</option>
-                        <option value="6.VK">6. VK</option>
+                        <!-- Fylles dynamisk basert på hundens klasse -->
                     </select>
                     <div id="premieValidation" class="hidden mt-2 p-3 rounded-xl text-sm">
                         <!-- Validation messages rendered here -->
@@ -851,11 +839,66 @@
             // Existing critique - den endelige kritikken (IKKE notatene fra fjellet)
             document.getElementById('critiqueText').value = dog.critique || '';
 
-            // Existing premie
-            document.getElementById('premieSelect').value = dog.prize || '';
+            // Fyll premie-valg basert på hundens klasse
+            populatePremieSelect(dog.class || 'UK', dog.prize);
             validatePremie(); // Run validation on load
 
             document.getElementById('critiqueModal').classList.remove('hidden');
+        }
+
+        // Fyll premie-dropdown basert på hundens klasse
+        function populatePremieSelect(dogClass, currentPrize) {
+            const select = document.getElementById('premieSelect');
+            const classLabel = document.getElementById('premieClassLabel');
+
+            // Normaliser klassen (fjern tall, ta bare UK/AK/VK)
+            const normalizedClass = (dogClass || 'UK').toUpperCase().replace(/[^A-Z]/g, '');
+            let premieClass = 'UK'; // Default
+
+            if (normalizedClass.includes('VK')) {
+                premieClass = 'VK';
+            } else if (normalizedClass.includes('AK')) {
+                premieClass = 'AK';
+            } else if (normalizedClass.includes('UK')) {
+                premieClass = 'UK';
+            }
+
+            // Vis klassen i label
+            const classNames = { 'UK': 'Unghundklasse', 'AK': 'Åpen klasse', 'VK': 'Vinnerklasse' };
+            classLabel.textContent = `(${classNames[premieClass]})`;
+
+            // Bygg options basert på klasse
+            let options = '<option value="">-- Ingen premie --</option>';
+
+            if (premieClass === 'UK') {
+                options += `
+                    <option value="1.UK">1. premie UK</option>
+                    <option value="2.UK">2. premie UK</option>
+                    <option value="3.UK">3. premie UK</option>
+                `;
+            } else if (premieClass === 'AK') {
+                options += `
+                    <option value="1.AK">1. premie AK</option>
+                    <option value="2.AK">2. premie AK</option>
+                    <option value="3.AK">3. premie AK</option>
+                `;
+            } else if (premieClass === 'VK') {
+                options += `
+                    <option value="1.VK">1. premie VK</option>
+                    <option value="2.VK">2. premie VK</option>
+                    <option value="3.VK">3. premie VK</option>
+                    <option value="4.VK">4. premie VK</option>
+                    <option value="5.VK">5. premie VK</option>
+                    <option value="6.VK">6. premie VK</option>
+                `;
+            }
+
+            select.innerHTML = options;
+
+            // Sett eksisterende verdi hvis den finnes
+            if (currentPrize) {
+                select.value = currentPrize;
+            }
         }
 
         // Validate premie requirements

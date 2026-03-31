@@ -390,7 +390,10 @@
                         const data = ukakData.dogData[dogNr];
                         const isFerdig = ukakData.ferdigeDogs && ukakData.ferdigeDogs[dogNr];
 
-                        // Hent hundeinfo fra partilist API (fallback til grunnleggende info)
+                        // Hent verdier fra siste slipp for rawData
+                        const slippKeys = data.slipps ? Object.keys(data.slipps).sort((a,b) => parseInt(b) - parseInt(a)) : [];
+                        const lastSlipp = slippKeys.length > 0 ? data.slipps[slippKeys[0]] : {};
+
                         state.dogs.push({
                             id: parseInt(dogNr),
                             nr: parseInt(dogNr),
@@ -401,6 +404,18 @@
                             status: isFerdig ? 'done' : 'in_progress',
                             // Samle statistikk fra alle slipp
                             stats: calculateTotalStats(data),
+                            // Rådata fra siste slipp (for visning i modal)
+                            rawData: {
+                                presisjon: lastSlipp.presisjon,
+                                reising: lastSlipp.reising,
+                                godkjent_reis: lastSlipp.godkjent_reis,
+                                jaktlyst: lastSlipp.jaktlyst,
+                                fart: lastSlipp.fart,
+                                selvstendighet: lastSlipp.selvstendighet,
+                                soksbredde: lastSlipp.soksbredde,
+                                reviering: lastSlipp.reviering,
+                                samarbeid: lastSlipp.samarbeid
+                            },
                             // Samle alle kommentarer fra slipp
                             critique: data.samletKommentar || collectSlippComments(data),
                             critiqueStatus: data.critiqueStatus || 'pending'
@@ -540,7 +555,7 @@
             document.getElementById('modalDogName').textContent = dog.name;
             document.getElementById('modalDogNr').textContent = dog.nr;
             document.getElementById('modalDogFullName').textContent = dog.name;
-            document.getElementById('modalDogDetails').textContent = `${dog.breed} • Fører: ${dog.handler} • Eier: ${dog.owner}`;
+            document.getElementById('modalDogDetails').textContent = `${dog.breed} • Fører: ${dog.handler}`;
 
             // Prize badge
             const prizeBadge = document.getElementById('modalPrizeBadge');
@@ -551,9 +566,33 @@
                 prizeBadge.classList.add('hidden');
             }
 
-            // Scores - editable inputs
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
+            // Scores - støtt både gammelt og nytt format
+            let s = {};
+            if (dog.rounds && dog.rounds.length > 0) {
+                // Gammelt format
+                const latestRound = dog.rounds[dog.rounds.length - 1];
+                s = latestRound.scores || {};
+            } else if (dog.stats) {
+                // Nytt format - konverter til samme struktur
+                s = {
+                    SLIPPTID: dog.stats.slipptid,
+                    STAND_M: dog.stats.stand_m,
+                    STAND_U: dog.stats.stand_u,
+                    TOMSTAND: dog.stats.tomstand,
+                    MAKKER_STAND: dog.stats.makker_stand,
+                    SJANSE: dog.stats.sjanse,
+                    // Disse hentes fra rawData hvis tilgjengelig
+                    PRESISJON: dog.rawData?.presisjon,
+                    REISING: dog.rawData?.reising,
+                    GODKJENT_REISING: dog.rawData?.godkjent_reis,
+                    JAKTLYST: dog.rawData?.jaktlyst,
+                    FART: dog.rawData?.fart,
+                    SELVSTENDIGHET: dog.rawData?.selvstendighet,
+                    SOKSBREDDE: dog.rawData?.soksbredde,
+                    REVIERING: dog.rawData?.reviering,
+                    SAMARBEID: dog.rawData?.samarbeid
+                };
+            }
             document.getElementById('modalScores').innerHTML = `
                 <p class="text-xs text-bark-500 mb-2 italic">Du kan justere tallene ved behov før innsending</p>
                 <!-- Fuglebehandling -->

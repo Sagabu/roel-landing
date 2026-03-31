@@ -507,9 +507,9 @@
                         const data = ukakData.dogData[dogNr];
                         const isFerdig = ukakData.ferdigeDogs && ukakData.ferdigeDogs[dogNr];
 
-                        // Hent verdier fra siste slipp for rawData
-                        const slippKeys = data.slipps ? Object.keys(data.slipps).sort((a,b) => parseInt(b) - parseInt(a)) : [];
-                        const lastSlipp = slippKeys.length > 0 ? data.slipps[slippKeys[0]] : {};
+                        // Hent jaktegenskaper og fuglebehandling fra riktig sted
+                        const jakt = data.jaktegenskaper || {};
+                        const fugl = data.fuglebehandling || {};
 
                         state.dogs.push({
                             id: parseInt(dogNr),
@@ -521,17 +521,17 @@
                             status: isFerdig ? 'done' : 'in_progress',
                             // Samle statistikk fra alle slipp
                             stats: calculateTotalStats(data),
-                            // Rådata fra siste slipp (for visning i modal)
+                            // Rådata fra fuglebehandling og jaktegenskaper (ikke fra slipp!)
                             rawData: {
-                                presisjon: lastSlipp.presisjon,
-                                reising: lastSlipp.reising,
-                                godkjent_reis: lastSlipp.godkjent_reis,
-                                jaktlyst: lastSlipp.jaktlyst,
-                                fart: lastSlipp.fart,
-                                selvstendighet: lastSlipp.selvstendighet,
-                                soksbredde: lastSlipp.soksbredde,
-                                reviering: lastSlipp.reviering,
-                                samarbeid: lastSlipp.samarbeid
+                                presisjon: fugl.presisjon,
+                                reising: fugl.reising,
+                                godkjent_reis: fugl.godkjentReising,
+                                jaktlyst: jakt.jaktlyst,
+                                fart: jakt.fart,
+                                selvstendighet: jakt.selvstendighet,
+                                soksbredde: jakt.soksbredde,
+                                reviering: jakt.reviering,
+                                samarbeid: jakt.samarbeid
                             },
                             // Premie valgt på fjellet
                             prize: data.premie || '',
@@ -1151,6 +1151,24 @@
                     ukakData.dogData[dogNr].finalCritique = critiqueText;
                     ukakData.dogData[dogNr].critiqueStatus = 'submitted';
                     ukakData.dogData[dogNr].premie = dog.prize;
+
+                    // Lagre jaktegenskaper og fuglebehandling fra rawData
+                    if (dog.rawData) {
+                        ukakData.dogData[dogNr].jaktegenskaper = {
+                            jaktlyst: dog.rawData.jaktlyst,
+                            fart: dog.rawData.fart,
+                            selvstendighet: dog.rawData.selvstendighet,
+                            soksbredde: dog.rawData.soksbredde,
+                            reviering: dog.rawData.reviering,
+                            samarbeid: dog.rawData.samarbeid
+                        };
+                        ukakData.dogData[dogNr].fuglebehandling = {
+                            presisjon: dog.rawData.presisjon,
+                            reising: dog.rawData.reising,
+                            godkjentReising: dog.rawData.godkjent_reis
+                        };
+                    }
+
                     localStorage.setItem(ukakKey, JSON.stringify(ukakData));
 
                     // Sync til server

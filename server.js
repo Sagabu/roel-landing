@@ -7470,6 +7470,76 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
       VALUES (?, ?, 'ukak1')
     `).run(proveId, dommerTelefon);
 
+    // Opprett ferdigutfylte dommerkort med jaktegenskaper og kritikker
+    // slik at man kan teste NKK-godkjenning direkte
+    const ukakHunder = opprettedeHunder.filter(h => h.parti === 'ukak1');
+    const ferdigeDogs = {};
+    const dogData = {};
+
+    ukakHunder.forEach((hund, index) => {
+      const nr = index + 1;
+      ferdigeDogs[nr] = true;
+      dogData[nr] = {
+        navn: hund.hund,
+        rase: hund.rase,
+        forer: hund.forer,
+        klasse: hund.klasse,
+        slipps: {
+          1: {
+            slipptid: 30 + Math.floor(Math.random() * 30),
+            stand_m: Math.floor(Math.random() * 3),
+            stand_u: Math.floor(Math.random() * 2),
+            tomstand: Math.floor(Math.random() * 2),
+            makker_stand: Math.floor(Math.random() * 2),
+            sjanse: 0,
+            kommentar: `Slipp 1: ${hund.hund} viste god jaktlyst og søkte ivrig.`
+          },
+          2: {
+            slipptid: 25 + Math.floor(Math.random() * 25),
+            stand_m: 1 + Math.floor(Math.random() * 2),
+            stand_u: Math.floor(Math.random() * 2),
+            tomstand: 0,
+            makker_stand: Math.floor(Math.random() * 2),
+            sjanse: 0,
+            kommentar: `Slipp 2: Fin fremgang. ${hund.hund} markerte godt på fugl.`
+          }
+        },
+        jaktegenskaper: {
+          jaktlyst: 4 + Math.floor(Math.random() * 2),
+          fart: 3 + Math.floor(Math.random() * 3),
+          selvstendighet: 4 + Math.floor(Math.random() * 2),
+          soksbredde: 3 + Math.floor(Math.random() * 3),
+          reviering: 4 + Math.floor(Math.random() * 2),
+          samarbeid: 4 + Math.floor(Math.random() * 2)
+        },
+        fuglebehandling: {
+          presisjon: String(3 + Math.floor(Math.random() * 3)),
+          reising: String(4 + Math.floor(Math.random() * 2)),
+          godkjentReising: true
+        },
+        sekundering: {},
+        premie: hund.klasse === 'AK' ? '1. AK' : (Math.random() > 0.5 ? '1. premie' : '2. premie'),
+        uonsketAdferd: '',
+        samletKommentar: `Slipp 1: ${hund.hund} viste god jaktlyst og søkte ivrig.\nSlipp 2: Fin fremgang. ${hund.hund} markerte godt på fugl.`,
+        finalCritique: `${hund.hund} (${hund.rase}) viste gjennomgående god jaktlyst og arbeidsvilje. Hunden dekket terrenget effektivt med passende søksbredde. Fuglearbeidet var solid med sikker stand og fin reis. God samarbeidsvilje med fører.`,
+        critiqueStatus: 'submitted'
+      };
+    });
+
+    const dommerKort = {
+      partyId: 'ukak1',
+      currentSlipp: 2,
+      selectedDogs: { 1: 1, 2: 2 },
+      ferdigeDogs,
+      dogData
+    };
+
+    // Lagre dommerkort i kv_store
+    db.prepare(`
+      INSERT OR REPLACE INTO kv_store (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+    `).run('dommerkort_ukak_ukak1', JSON.stringify(dommerKort));
+
     // Logg
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "testmodus_opprettet", `Testprøve opprettet med ID ${proveId}, ${deltakereOpprettet} deltakere, dommer: ${dommerTelefon}, NKK-rep: ${nkkrepTelefon}`

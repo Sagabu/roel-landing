@@ -31,9 +31,34 @@
         .score-input:focus { transform: scale(1.02); }
         input[type="number"] { font-size: 14px; }
         input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
-        .dog-card { overflow-y: auto; }
+        .dog-card { overflow-y: auto; transition: all 0.3s ease; }
         .compact-input { height: 28px; font-size: 12px; }
         .section-title { font-size: 9px; }
+
+        /* Zoom mode */
+        .zoom-mode .dog-card { display: none; }
+        .zoom-mode .dog-card.zoomed {
+            display: block;
+            width: 100% !important;
+            border-right: none !important;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .zoom-mode .dog-card.zoomed .compact-input { height: 36px; font-size: 16px; }
+        .zoom-mode .dog-card.zoomed .section-title { font-size: 11px; }
+        .zoom-mode .dog-card.zoomed input[type="number"] { font-size: 18px; }
+        .zoom-mode .dog-card.zoomed .text-\[8px\] { font-size: 10px; }
+        .zoom-mode .dog-card.zoomed .text-\[10px\] { font-size: 12px; }
+        .zoom-mode .dog-card.zoomed .w-8 { width: 2.5rem; }
+        .zoom-mode .dog-card.zoomed .h-6 { height: 2rem; }
+        .zoom-mode .dog-card.zoomed textarea { font-size: 16px; min-height: 120px; }
+
+        .zoom-btn {
+            transition: all 0.2s;
+        }
+        .zoom-btn:hover {
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
@@ -64,10 +89,10 @@
     </header>
 
     <!-- Two-column layout -->
-    <main class="flex pb-14" style="height: calc(100vh - 90px);">
+    <main id="mainContainer" class="flex pb-14" style="height: calc(100vh - 90px);">
 
         <!-- HUND 1 (Venstre) -->
-        <div class="w-1/2 border-r border-bark-300 dog-card p-1.5">
+        <div id="dogCard1" class="w-1/2 border-r border-bark-300 dog-card p-1.5">
             <div class="bg-white rounded-xl shadow overflow-hidden">
 
                 <!-- Dog selector -->
@@ -77,9 +102,16 @@
                 </div>
 
                 <!-- Dog info header -->
-                <div class="bg-bark-700 text-white px-2 py-1.5">
-                    <p class="font-bold font-serif text-xs" id="dog1Name">Hund 1</p>
-                    <p class="text-white/70 text-[10px]" id="dog1Info">-</p>
+                <div class="bg-bark-700 text-white px-2 py-1.5 flex items-center justify-between">
+                    <div>
+                        <p class="font-bold font-serif text-xs" id="dog1Name">Hund 1</p>
+                        <p class="text-white/70 text-[10px]" id="dog1Info">-</p>
+                    </div>
+                    <button onclick="toggleZoom(1)" class="zoom-btn bg-white/20 hover:bg-white/30 p-1.5 rounded-lg" title="Zoom inn/ut">
+                        <svg id="zoom1Icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                        </svg>
+                    </button>
                 </div>
 
                 <!-- STATISTIKK (dette slippet) -->
@@ -251,7 +283,8 @@
         </div>
 
         <!-- HUND 2 (Høyre) -->
-        <div class="w-1/2 dog-card p-1.5">
+        <!-- HUND 2 (Høyre) -->
+        <div id="dogCard2" class="w-1/2 dog-card p-1.5">
             <div class="bg-white rounded-xl shadow overflow-hidden">
 
                 <!-- Dog selector -->
@@ -261,9 +294,16 @@
                 </div>
 
                 <!-- Dog info header -->
-                <div class="bg-bark-700 text-white px-2 py-1.5">
-                    <p class="font-bold font-serif text-xs" id="dog2Name">Hund 2</p>
-                    <p class="text-white/70 text-[10px]" id="dog2Info">-</p>
+                <div class="bg-bark-700 text-white px-2 py-1.5 flex items-center justify-between">
+                    <div>
+                        <p class="font-bold font-serif text-xs" id="dog2Name">Hund 2</p>
+                        <p class="text-white/70 text-[10px]" id="dog2Info">-</p>
+                    </div>
+                    <button onclick="toggleZoom(2)" class="zoom-btn bg-white/20 hover:bg-white/30 p-1.5 rounded-lg" title="Zoom inn/ut">
+                        <svg id="zoom2Icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                        </svg>
+                    </button>
                 </div>
 
                 <!-- STATISTIKK (dette slippet) -->
@@ -520,7 +560,48 @@
             selectedDogs: { 1: 1, 2: 2 },
             ferdigeDogs: {},
             dogData: {},
+            zoomedDog: null  // null = split view, 1 eller 2 = zoomed på den hunden
         };
+
+        // Zoom inn/ut på et kort
+        function toggleZoom(dogPosition) {
+            const mainContainer = document.getElementById('mainContainer');
+            const card1 = document.getElementById('dogCard1');
+            const card2 = document.getElementById('dogCard2');
+            const icon1 = document.getElementById('zoom1Icon');
+            const icon2 = document.getElementById('zoom2Icon');
+
+            // Zoom-in ikon (pluss)
+            const zoomInSvg = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>';
+            // Zoom-ut ikon (minus)
+            const zoomOutSvg = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"/>';
+
+            if (state.zoomedDog === dogPosition) {
+                // Zoom ut - tilbake til split view
+                state.zoomedDog = null;
+                mainContainer.classList.remove('zoom-mode');
+                card1.classList.remove('zoomed');
+                card2.classList.remove('zoomed');
+                icon1.innerHTML = zoomInSvg;
+                icon2.innerHTML = zoomInSvg;
+            } else {
+                // Zoom inn på valgt kort
+                state.zoomedDog = dogPosition;
+                mainContainer.classList.add('zoom-mode');
+                card1.classList.remove('zoomed');
+                card2.classList.remove('zoomed');
+
+                if (dogPosition === 1) {
+                    card1.classList.add('zoomed');
+                    icon1.innerHTML = zoomOutSvg;
+                    icon2.innerHTML = zoomInSvg;
+                } else {
+                    card2.classList.add('zoomed');
+                    icon2.innerHTML = zoomOutSvg;
+                    icon1.innerHTML = zoomInSvg;
+                }
+            }
+        }
 
         // Partiliste - lastes fra API, sorteres med UK først, deretter AK
         let partyList = [];

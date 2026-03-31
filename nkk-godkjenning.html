@@ -301,27 +301,33 @@
             for (const partyId of Object.keys(PARTIES)) {
                 const storageKey = 'dommerkort_ukak_' + partyId;
 
-                // Prøv localStorage først
+                // ALLTID hent fra server først for å få oppdaterte data
                 let partyData = null;
-                const saved = localStorage.getItem(storageKey);
-                if (saved) {
-                    try {
-                        partyData = JSON.parse(saved);
-                    } catch (e) {}
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch('/api/storage/' + storageKey, {
+                        headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            partyData = data.value;
+                            // Oppdater localStorage med ferske data
+                            localStorage.setItem(storageKey, JSON.stringify(partyData));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke hente fra server:', e);
                 }
 
-                // Prøv også server
+                // Fallback til localStorage hvis server feilet
                 if (!partyData) {
-                    try {
-                        const resp = await fetch('/api/storage/' + storageKey);
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            if (data.value) {
-                                partyData = data.value;
-                                localStorage.setItem(storageKey, JSON.stringify(partyData));
-                            }
-                        }
-                    } catch (e) {}
+                    const saved = localStorage.getItem(storageKey);
+                    if (saved) {
+                        try {
+                            partyData = JSON.parse(saved);
+                        } catch (e) {}
+                    }
                 }
 
                 if (!partyData?.dogData) continue;

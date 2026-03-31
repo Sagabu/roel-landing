@@ -46,7 +46,15 @@
         'kritikk-visning.html',
         'upload-logo.html',
         'undersokelse.html',
-        'dommertest.html'
+        'dommertest.html',
+        'dvk-kontroll.html',
+        'dommer-kritikker.html',
+        'dommer-ukak.html',
+        'dommer-vk.html',
+        'dommer-vk-test.html',
+        'dommer-ukak-dual.html',
+        'prove-arkiv.html',
+        'superadmin.html'
     ];
     if (EXCLUDED_PAGES.includes(currentPage)) {
         return; // Ikke injiser navbar på disse sidene

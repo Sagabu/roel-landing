@@ -7387,11 +7387,11 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
       deltakereOpprettet++;
     }
 
-    // Tildel testdommer til alle partier
+    // Tildel testdommer til prøven (parti-feltet kan inneholde kommaseparerte verdier eller vi bruker én tildeling)
     db.prepare(`
       INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti)
-      VALUES (?, ?, 'UK'), (?, ?, 'AK'), (?, ?, 'VK')
-    `).run(proveId, dommerTelefon, proveId, dommerTelefon, proveId, dommerTelefon);
+      VALUES (?, ?, 'UK,AK,VK')
+    `).run(proveId, dommerTelefon);
 
     // Logg
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(

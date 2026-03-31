@@ -579,10 +579,31 @@
             modal.classList.remove('hidden');
         }
 
+        function getDogStats(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data?.slipps) return { slippCount: 0, totalSlipptid: 0 };
+
+            const slipps = Object.keys(data.slipps);
+            let totalSlipptid = 0;
+            slipps.forEach(slippNr => {
+                if (data.slipps[slippNr]?.slipptid) {
+                    totalSlipptid += data.slipps[slippNr].slipptid;
+                }
+            });
+
+            return { slippCount: slipps.length, totalSlipptid };
+        }
+
         function buildDogOption(dog, restrictToClass) {
             const isRestricted = restrictToClass && dog.klasse !== restrictToClass;
             const bgClass = isRestricted ? 'bg-bark-100 opacity-50' : 'bg-bark-50 hover:bg-bark-100 cursor-pointer';
             const borderClass = dog.klasse === 'UK' ? 'border-forest-200' : 'border-warm-200';
+
+            // Hent statistikk for hunden
+            const stats = getDogStats(dog.nr);
+            const statsText = stats.slippCount > 0
+                ? `${stats.slippCount} slipp • ${stats.totalSlipptid} min`
+                : 'Ikke startet';
 
             return `<div class="dog-picker-option ${bgClass} border ${borderClass} rounded-lg p-2 flex items-center gap-3 transition"
                         data-dog-nr="${dog.nr}" data-dog-klasse="${dog.klasse}"
@@ -593,7 +614,10 @@
                     <p class="font-medium text-sm">${dog.nr}. ${dog.race} ${dog.name}</p>
                     <p class="text-xs text-bark-500">${dog.owner}</p>
                 </div>
-                <span class="text-xs px-2 py-0.5 rounded-full ${dog.klasse === 'UK' ? 'bg-forest-100 text-forest-700' : 'bg-warm-100 text-warm-700'}">${dog.klasse}</span>
+                <div class="text-right">
+                    <span class="text-xs px-2 py-0.5 rounded-full ${dog.klasse === 'UK' ? 'bg-forest-100 text-forest-700' : 'bg-warm-100 text-warm-700'}">${dog.klasse}</span>
+                    <p class="text-[10px] text-bark-400 mt-0.5">${statsText}</p>
+                </div>
             </div>`;
         }
 

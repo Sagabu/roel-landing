@@ -1868,13 +1868,20 @@ app.post("/api/auth/login-password", async (c) => {
     return c.json({ error: "Passord er påkrevd" }, 400);
   }
 
-  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
+  // Test-bypass: telefonnumre som starter med 9990 kan bruke "0000" som passord
+  const isTestBypass = telefon.startsWith("9990") && passord === "0000";
+
+  // For testbrukere: hent bruker uten å sjekke verifisert-status
+  const bruker = isTestBypass
+    ? db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon)
+    : db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
 
   if (!bruker) {
     return c.json({ error: "Bruker ikke funnet eller ikke verifisert" }, 401);
   }
 
-  if (!verifyPassword(passord, bruker.passord_hash)) {
+  // Hopp over passord-sjekk for testbrukere
+  if (!isTestBypass && !verifyPassword(passord, bruker.passord_hash)) {
     return c.json({ error: "Feil passord" }, 401);
   }
 

@@ -478,16 +478,88 @@
             `;
         }
 
-        function openReview(partyId, dogId) {
-            const saved = localStorage.getItem('judgeData_' + partyId);
-            if (!saved) return;
+        async function openReview(partyId, dogId) {
+            // Prøv først nytt format (dommerkort_ukak_), deretter gammelt format (judgeData_)
+            let dog = null;
+            let dogs = null;
 
-            const dogs = JSON.parse(saved);
-            const dog = dogs.find(d => d.id === dogId);
-            if (!dog) return;
+            // Nytt format
+            const ukakSaved = localStorage.getItem('dommerkort_ukak_' + partyId);
+            if (ukakSaved) {
+                const ukakData = JSON.parse(ukakSaved);
+                if (ukakData.dogData && ukakData.dogData[dogId]) {
+                    const dogData = ukakData.dogData[dogId];
+                    const partyList = await loadPartyList(partyId);
+                    const dogInfo = partyList.find(d => d.nr === dogId) || {};
+
+                    // Beregn totaler fra slipps
+                    let totals = { slipptid: 0, stand_m: 0, stand_u: 0, tomstand: 0, makker_stand: 0, sjanse: 0 };
+                    if (dogData.slipps) {
+                        Object.values(dogData.slipps).forEach(slipp => {
+                            ['slipptid', 'stand_m', 'stand_u', 'tomstand', 'makker_stand', 'sjanse'].forEach(f => {
+                                if (slipp[f]) totals[f] += parseInt(slipp[f]) || 0;
+                            });
+                        });
+                    }
+
+                    dog = {
+                        id: dogId,
+                        nr: dogId,
+                        name: dogInfo.navn || `Hund ${dogId}`,
+                        breed: dogInfo.rase || '-',
+                        handler: dogInfo.forer || '-',
+                        owner: dogInfo.eier || dogInfo.forer || '-',
+                        regNr: dogInfo.regnr || '-',
+                        klasse: dogInfo.klasse || '-',
+                        prize: dogData.premie || null,
+                        critique: dogData.finalCritique || dogData.kritikk || '',
+                        critiqueStatus: dogData.critiqueStatus || dogData.kritikkStatus || 'submitted',
+                        totals,
+                        fuglebehandling: dogData.fuglebehandling || {},
+                        jaktegenskaper: dogData.jaktegenskaper || {},
+                        // For kompatibilitet med gammel kode
+                        rounds: [{
+                            scores: {
+                                SLIPPTID: totals.slipptid,
+                                STAND_M: totals.stand_m,
+                                STAND_U: totals.stand_u,
+                                TOMSTAND: totals.tomstand,
+                                MAKKER_STAND: totals.makker_stand,
+                                SJANSE: totals.sjanse,
+                                PRESISJON: dogData.fuglebehandling?.presisjon,
+                                REISING: dogData.fuglebehandling?.reising,
+                                GODKJENT_REISING: dogData.fuglebehandling?.godkjentReising,
+                                JAKTLYST: dogData.jaktegenskaper?.jaktlyst,
+                                FART: dogData.jaktegenskaper?.fart,
+                                SELVSTENDIGHET: dogData.jaktegenskaper?.selvstendighet,
+                                SOKSBREDDE: dogData.jaktegenskaper?.soksbredde,
+                                REVIERING: dogData.jaktegenskaper?.reviering,
+                                SAMARBEID: dogData.jaktegenskaper?.samarbeid
+                            },
+                            notes: dogData.samletKommentar || ''
+                        }]
+                    };
+                }
+            }
+
+            // Gammelt format som fallback
+            if (!dog) {
+                const saved = localStorage.getItem('judgeData_' + partyId);
+                if (!saved) {
+                    console.error('Ingen data funnet for parti:', partyId);
+                    return;
+                }
+                dogs = JSON.parse(saved);
+                dog = dogs.find(d => d.id === dogId);
+            }
+
+            if (!dog) {
+                console.error('Hund ikke funnet:', dogId);
+                return;
+            }
 
             currentReview = { partyId, dogId, dog, dogs };
-            document.getElementById('reviewDogName').textContent = `${dog.name} • ${PARTIES[partyId].name}`;
+            document.getElementById('reviewDogName').textContent = `${dog.name} • ${PARTIES[partyId]?.name || partyId}`;
             generateCritiquePreview(dog, partyId);
             renderActionButtons(dog.critiqueStatus);
 
@@ -500,13 +572,23 @@
         }
 
         function generateCritiquePreview(dog, partyId) {
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
+            // Støtt både gammelt og nytt format
+            const latestRound = dog.rounds && dog.rounds.length > 0 ? dog.rounds[dog.rounds.length - 1] : { scores: {}, notes: '' };
+            const s = latestRound.scores || {};
 
-            const allNotes = dog.rounds
-                .filter(r => r.notes && r.notes.trim())
-                .map((r, i) => r.notes)
-                .join(' ');
+            // Bruk totals hvis tilgjengelig (nytt format), ellers scores
+            if (dog.totals) {
+                s.SLIPPTID = s.SLIPPTID || dog.totals.slipptid;
+                s.STAND_M = s.STAND_M || dog.totals.stand_m;
+                s.STAND_U = s.STAND_U || dog.totals.stand_u;
+                s.TOMSTAND = s.TOMSTAND || dog.totals.tomstand;
+                s.MAKKER_STAND = s.MAKKER_STAND || dog.totals.makker_stand;
+                s.SJANSE = s.SJANSE || dog.totals.sjanse;
+            }
+
+            const allNotes = dog.rounds && dog.rounds.length > 0
+                ? dog.rounds.filter(r => r.notes && r.notes.trim()).map((r, i) => r.notes).join(' ')
+                : '';
 
             const prizeColors = {
                 '1. premie': 'from-yellow-400 to-amber-500',

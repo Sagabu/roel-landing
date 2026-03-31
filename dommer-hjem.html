@@ -287,11 +287,11 @@
             }
 
             // Render the page
-            renderAssignedParty();
+            await renderAssignedParty();
         }
 
         // Render assigned party card
-        function renderAssignedParty() {
+        async function renderAssignedParty() {
             const container = document.getElementById('assignedPartyCard');
 
             if (!assignedPartyId || !PARTIES[assignedPartyId]) {
@@ -305,25 +305,78 @@
             const isVK = party.type === 'vk' || party.type === 'vkfinale';
             const isFinale = party.type === 'vkfinale';
 
-            // Get progress status
+            // Get progress status - sjekk både gammel og ny storage-nøkkel
             let statusText = 'Ikke startet';
             let statusClasses = isFinale ? 'bg-amber-200 text-amber-800' : (isVK ? 'bg-warm-100 text-warm-800' : 'bg-warm-100 text-warm-800');
+            let allDogsFinished = false;
+            let totalDogs = party.dogs;
+            let finishedDogs = 0;
 
-            const saved = localStorage.getItem('judgeData_' + assignedPartyId);
-            if (saved) {
+            // Sjekk UK/AK dommerkort storage (ny format)
+            const ukakStorageKey = 'dommerkort_ukak_' + assignedPartyId;
+            let ukakSaved = localStorage.getItem(ukakStorageKey);
+
+            // Prøv også å hente fra server
+            if (!ukakSaved) {
                 try {
-                    const dogs = JSON.parse(saved);
-                    const done = dogs.filter(d => d.status === 'done').length;
-                    const total = dogs.length;
-                    if (done > 0) {
-                        statusText = `${done}/${total} ferdig`;
-                        if (done === total) {
-                            statusClasses = 'bg-green-100 text-green-700';
-                        } else {
-                            statusClasses = 'bg-blue-100 text-blue-700';
+                    const resp = await fetch('/api/storage/' + ukakStorageKey);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            ukakSaved = JSON.stringify(data.value);
+                            localStorage.setItem(ukakStorageKey, ukakSaved);
                         }
                     }
                 } catch (e) {}
+            }
+
+            if (ukakSaved) {
+                try {
+                    const ukakData = JSON.parse(ukakSaved);
+                    if (ukakData.ferdigeDogs) {
+                        finishedDogs = Object.keys(ukakData.ferdigeDogs).length;
+                        // Hent faktisk antall hunder fra dogData eller bruk party.dogs
+                        const dogDataCount = Object.keys(ukakData.dogData || {}).length;
+                        if (dogDataCount > 0) totalDogs = Math.max(totalDogs, dogDataCount);
+
+                        if (finishedDogs > 0) {
+                            statusText = `${finishedDogs}/${totalDogs} ferdig`;
+                            if (finishedDogs >= totalDogs) {
+                                statusClasses = 'bg-green-100 text-green-700';
+                                statusText = 'Alle bedømt';
+                                allDogsFinished = true;
+                            } else {
+                                statusClasses = 'bg-blue-100 text-blue-700';
+                            }
+                        } else if (ukakData.currentSlipp > 1 || Object.keys(ukakData.dogData || {}).length > 0) {
+                            statusText = 'Pågår';
+                            statusClasses = 'bg-blue-100 text-blue-700';
+                        }
+                    }
+                } catch (e) {
+                    console.error('Feil ved parsing av ukak data:', e);
+                }
+            }
+
+            // Fallback: sjekk gammel format
+            if (!ukakSaved) {
+                const saved = localStorage.getItem('judgeData_' + assignedPartyId);
+                if (saved) {
+                    try {
+                        const dogs = JSON.parse(saved);
+                        const done = dogs.filter(d => d.status === 'done').length;
+                        const total = dogs.length;
+                        if (done > 0) {
+                            statusText = `${done}/${total} ferdig`;
+                            if (done === total) {
+                                statusClasses = 'bg-green-100 text-green-700';
+                                allDogsFinished = true;
+                            } else {
+                                statusClasses = 'bg-blue-100 text-blue-700';
+                            }
+                        }
+                    } catch (e) {}
+                }
             }
 
             // Determine colors based on party type
@@ -369,12 +422,32 @@
                         ${isVK ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
                     </div>
 
+                    ${allDogsFinished ? `
+                    <!-- Alle hunder er bedømt - vis kritikk-knapper -->
+                    <div class="space-y-3">
+                        <button onclick="goToFinalCritique()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Skriv kritikker
+                        </button>
+                        <button onclick="goToAssessment()" class="w-full bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            Se/endre bedømming
+                        </button>
+                    </div>
+                    ` : `
+                    <!-- Bedømming pågår eller ikke startet -->
                     <button onclick="goToAssessment()" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
                         </svg>
-                        Start bedømming
+                        ${finishedDogs > 0 ? 'Fortsett bedømming' : 'Start bedømming'}
                     </button>
+                    `}
                 </div>
             `;
         }

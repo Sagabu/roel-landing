@@ -224,11 +224,11 @@
 
                 <!-- KOMMENTAR -->
                 <div class="p-1.5 border-b border-bark-200">
-                    <label class="block text-[8px] font-bold text-bark-700 uppercase mb-0.5">Kommentar</label>
+                    <label class="block text-[8px] font-bold text-bark-700 uppercase mb-0.5">Kommentar (slipp <span class="dog1SlippNr">1</span>)</label>
                     <div class="flex gap-1 items-start">
                         <textarea id="dog1_kommentar" rows="2"
                             class="flex-1 px-2 py-1 rounded border border-bark-200 focus:border-bark-500 outline-none text-[10px] resize-none"
-                            placeholder="Kommentar til denne hunden..."></textarea>
+                            placeholder="Kommentar til dette slippet..."></textarea>
                         <button type="button" class="dictation-btn w-7 h-7 bg-warm-500 hover:bg-warm-600 text-white rounded-full flex items-center justify-center shadow transition flex-shrink-0"
                             data-target="dog1_kommentar" title="Trykk for å diktere">
                             <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
@@ -237,6 +237,8 @@
                             </svg>
                         </button>
                     </div>
+                    <!-- Tidligere kommentarer -->
+                    <div id="dog1_previous_comments" class="mt-1 text-[9px] italic text-bark-500 hidden"></div>
                 </div>
 
                 <!-- UØNSKET ADFERD -->
@@ -406,11 +408,11 @@
 
                 <!-- KOMMENTAR -->
                 <div class="p-1.5 border-b border-bark-200">
-                    <label class="block text-[8px] font-bold text-bark-700 uppercase mb-0.5">Kommentar</label>
+                    <label class="block text-[8px] font-bold text-bark-700 uppercase mb-0.5">Kommentar (slipp <span class="dog2SlippNr">1</span>)</label>
                     <div class="flex gap-1 items-start">
                         <textarea id="dog2_kommentar" rows="2"
                             class="flex-1 px-2 py-1 rounded border border-bark-200 focus:border-bark-500 outline-none text-[10px] resize-none"
-                            placeholder="Kommentar til denne hunden..."></textarea>
+                            placeholder="Kommentar til dette slippet..."></textarea>
                         <button type="button" class="dictation-btn w-7 h-7 bg-warm-500 hover:bg-warm-600 text-white rounded-full flex items-center justify-center shadow transition flex-shrink-0"
                             data-target="dog2_kommentar" title="Trykk for å diktere">
                             <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
@@ -419,6 +421,8 @@
                             </svg>
                         </button>
                     </div>
+                    <!-- Tidligere kommentarer -->
+                    <div id="dog2_previous_comments" class="mt-1 text-[9px] italic text-bark-500 hidden"></div>
                 </div>
 
                 <!-- UØNSKET ADFERD -->
@@ -957,11 +961,49 @@
                 if (el) el.value = sek[field] ?? '';
             });
 
-            // Premie, kommentar, uønsket adferd
+            // Premie, uønsket adferd
             document.getElementById(`dog${position}_premie`).value = data.premie ?? '';
-            document.getElementById(`dog${position}_kommentar`).value = data.kommentar ?? '';
             document.getElementById(`dog${position}_uonsket`).value = data.uonsketAdferd ?? '';
             document.getElementById(`dog${position}_ferdig`).checked = !!state.ferdigeDogs[dogNr];
+
+            // Kommentar for dette slippet
+            document.getElementById(`dog${position}_kommentar`).value = slippData.kommentar ?? '';
+
+            // Vis tidligere kommentarer fra andre slipp
+            showPreviousComments(position, dogNr);
+        }
+
+        function showPreviousComments(position, dogNr) {
+            const data = state.dogData[dogNr];
+            const container = document.getElementById(`dog${position}_previous_comments`);
+
+            if (!data?.slipps || !container) {
+                if (container) container.classList.add('hidden');
+                return;
+            }
+
+            // Finn alle kommentarer fra andre slipp (ikke nåværende)
+            const previousComments = [];
+            Object.keys(data.slipps).forEach(slippNr => {
+                if (parseInt(slippNr) !== state.currentSlipp && data.slipps[slippNr]?.kommentar) {
+                    previousComments.push({
+                        slipp: slippNr,
+                        kommentar: data.slipps[slippNr].kommentar
+                    });
+                }
+            });
+
+            if (previousComments.length === 0) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            // Vis tidligere kommentarer
+            container.innerHTML = previousComments
+                .sort((a, b) => parseInt(a.slipp) - parseInt(b.slipp))
+                .map(c => `<div class="mb-0.5"><span class="font-medium not-italic text-bark-600">Slipp ${c.slipp}:</span> ${c.kommentar}</div>`)
+                .join('');
+            container.classList.remove('hidden');
         }
 
         function saveDogData(position) {
@@ -971,12 +1013,15 @@
             }
             if (!state.dogData[dogNr].slipps) state.dogData[dogNr].slipps = {};
 
-            // Statistikk
-            const slippData = {};
+            // Statistikk + kommentar for dette slippet
+            const slippData = state.dogData[dogNr].slipps[state.currentSlipp] || {};
             STAT_FIELDS.forEach(field => {
                 const el = document.getElementById(`dog${position}_${field}`);
                 if (el && el.value) slippData[field] = parseInt(el.value);
             });
+            // Lagre kommentar per slipp
+            const kommentar = document.getElementById(`dog${position}_kommentar`).value || '';
+            if (kommentar) slippData.kommentar = kommentar;
             state.dogData[dogNr].slipps[state.currentSlipp] = slippData;
 
             // Fuglebehandling
@@ -1000,9 +1045,8 @@
                 if (el && el.value) state.dogData[dogNr].sekundering[field] = parseInt(el.value);
             });
 
-            // Premie, kommentar, uønsket adferd
+            // Premie, uønsket adferd
             state.dogData[dogNr].premie = document.getElementById(`dog${position}_premie`).value || null;
-            state.dogData[dogNr].kommentar = document.getElementById(`dog${position}_kommentar`).value || '';
             state.dogData[dogNr].uonsketAdferd = document.getElementById(`dog${position}_uonsket`).value || '';
         }
 
@@ -1142,6 +1186,9 @@
                 return;
             }
 
+            // Samle alle kommentarer fra alle slipp til én samlet kommentar
+            collectAllComments(dogNr);
+
             // Marker som ferdig
             state.ferdigeDogs[dogNr] = true;
             document.getElementById(`dog${position}_ferdig`).checked = true;
@@ -1150,6 +1197,26 @@
 
             // Sjekk om alle hunder er ferdig
             checkAllDogsFinished();
+        }
+
+        // Samle alle kommentarer fra alle slipp til én samlet kritikk-tekst
+        function collectAllComments(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data?.slipps) return;
+
+            const allComments = [];
+            Object.keys(data.slipps)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .forEach(slippNr => {
+                    if (data.slipps[slippNr]?.kommentar) {
+                        allComments.push(`Slipp ${slippNr}: ${data.slipps[slippNr].kommentar}`);
+                    }
+                });
+
+            // Lagre samlet kommentar for kritikk-skriving
+            if (allComments.length > 0) {
+                state.dogData[dogNr].samletKommentar = allComments.join('\n');
+            }
         }
 
         // Sjekk om alle hunder i partiet er ferdig bedømt

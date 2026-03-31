@@ -339,6 +339,58 @@
     </main>
 
     <script>
+        // Auth helper - sjekker innlogging og returnerer brukerinfo
+        async function checkAuth() {
+            // Sjekk FuglehundAuth først (fra auth.js)
+            if (typeof FuglehundAuth !== 'undefined' && FuglehundAuth.isLoggedIn()) {
+                const user = FuglehundAuth.getUser();
+                const phone = FuglehundAuth.getSessionPhone();
+                if (user || phone) {
+                    // Hent rolle fra brukerdata
+                    const rolle = user?.rolle || '';
+                    let role = 'deltaker';
+                    if (rolle.includes('admin') || rolle.includes('superadmin')) role = 'admin';
+                    else if (rolle.includes('dvk')) role = 'dvk';
+                    else if (rolle.includes('dommer')) role = 'dommer';
+                    else if (rolle.includes('proveleder')) role = 'admin';
+
+                    return {
+                        name: user ? `${user.fornavn || ''} ${user.etternavn || ''}`.trim() : '',
+                        telefon: phone || user?.telefon || '',
+                        role: role
+                    };
+                }
+            }
+
+            // Fallback: sjekk judgeSession
+            const judgeSession = localStorage.getItem('judgeSession');
+            if (judgeSession) {
+                try {
+                    const session = JSON.parse(judgeSession);
+                    return {
+                        name: session.name || '',
+                        telefon: session.phone || '',
+                        role: session.isDvk ? 'dvk' : (session.isNkkRep ? 'admin' : 'dommer')
+                    };
+                } catch {}
+            }
+
+            // Fallback: sjekk userProfile
+            const userProfile = localStorage.getItem('userProfile');
+            if (userProfile) {
+                try {
+                    const profile = JSON.parse(userProfile);
+                    return {
+                        name: profile.name || '',
+                        telefon: profile.phone || '',
+                        role: profile.role || 'deltaker'
+                    };
+                } catch {}
+            }
+
+            return null;
+        }
+
         // Kontrollpunkter fra offisielt FKF-skjema
         const kontrollpunkter = [
             { id: 'id_vaksine', navn: 'ID og vaksinasjonsattest', kategori: 'basis' },
@@ -373,8 +425,9 @@
                 return;
             }
 
-            // Sjekk at brukeren har DVK-rolle
-            if (user.role !== 'dvk' && user.role !== 'admin' && user.role !== 'superadmin') {
+            // Sjekk at brukeren har DVK-rolle eller admin-tilgang
+            const allowedRoles = ['dvk', 'admin', 'superadmin', 'proveleder', 'dommer'];
+            if (!allowedRoles.includes(user.role)) {
                 alert('Du har ikke tilgang til denne siden. Kontakt prøveleder hvis du mener dette er feil.');
                 window.location.href = 'profil.html';
                 return;

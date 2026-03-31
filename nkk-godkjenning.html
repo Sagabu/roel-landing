@@ -1026,20 +1026,24 @@
 
             // Oppdater også dommerkort_ukak_ formatet og synkroniser til server
             const storageKey = 'dommerkort_ukak_' + partyId;
+            const dogIdStr = String(dogId); // Konverter til streng for å matche nøkler i dogData
             try {
                 const token = localStorage.getItem('fuglehund_token');
                 const resp = await fetch('/api/storage/' + storageKey, {
                     headers: token ? { 'Authorization': 'Bearer ' + token } : {}
                 });
+                console.log('approveCritique - henter data for', storageKey, 'dogId:', dogId, 'dogIdStr:', dogIdStr);
                 if (resp.ok) {
                     const data = await resp.json();
-                    if (data.value && data.value.dogData && data.value.dogData[dogId]) {
-                        data.value.dogData[dogId].critiqueStatus = 'approved';
-                        data.value.dogData[dogId].approvedAt = dog.approvedAt;
-                        data.value.dogData[dogId].approvedBy = dog.approvedBy;
+                    console.log('approveCritique - data.value.dogData keys:', data.value?.dogData ? Object.keys(data.value.dogData) : 'ingen');
+                    if (data.value && data.value.dogData && data.value.dogData[dogIdStr]) {
+                        data.value.dogData[dogIdStr].critiqueStatus = 'approved';
+                        data.value.dogData[dogIdStr].approvedAt = dog.approvedAt;
+                        data.value.dogData[dogIdStr].approvedBy = dog.approvedBy;
 
+                        console.log('approveCritique - lagrer til server...');
                         // Lagre tilbake til server
-                        await fetch('/api/storage/' + storageKey, {
+                        const saveResp = await fetch('/api/storage/' + storageKey, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1047,9 +1051,12 @@
                             },
                             body: JSON.stringify({ value: data.value })
                         });
+                        console.log('approveCritique - server respons:', saveResp.status, saveResp.ok);
 
                         // Oppdater localStorage
                         localStorage.setItem(storageKey, JSON.stringify(data.value));
+                    } else {
+                        console.error('approveCritique - fant ikke dogData for dogIdStr:', dogIdStr);
                     }
                 }
             } catch (e) {

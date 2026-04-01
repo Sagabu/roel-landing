@@ -1791,10 +1791,31 @@
             document.getElementById('dualDog1Name').textContent = `${dog1.race} ${dog1.name}`;
             document.getElementById('dualDog2Name').textContent = `${dog2.race} ${dog2.name}`;
 
+            // Hent og vis nåværende rangering
+            const placed = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    const stats = formatDogStats(parseInt(nr));
+                    return { dog, plass: parseInt(plass), stats };
+                });
+
+            const rankingContainer = document.getElementById('dualModalRanking');
+            if (placed.length === 0) {
+                rankingContainer.innerHTML = '<div class="text-vk-400 italic text-xs">Ingen hunder rangert ennå</div>';
+            } else {
+                rankingContainer.innerHTML = placed.map(({ dog, plass, stats }) => {
+                    const statsHtml = stats ? `<span class="text-vk-400 ml-1 text-xs">${stats}</span>` : '';
+                    return `<div class="flex items-center">
+                        <span class="font-bold text-vk-600 w-6">${plass}.</span>
+                        <span>${dog.race} ${dog.name}</span>${statsHtml}
+                    </div>`;
+                }).join('');
+            }
+
             // Beregn gyldige plasseringer
-            const currentPlacements = Object.entries(state.plasseringer)
-                .filter(([nr, p]) => p !== 'avsluttet')
-                .length;
+            const currentPlacements = placed.length;
             const maxPlacement = currentPlacements + 2; // +2 for de to nye hundene
 
             // Bygg dropdown-options
@@ -1877,12 +1898,19 @@
 
     <!-- Dual Plassering Modal -->
     <div id="dualPlacementModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
             <div class="p-4 border-b border-vk-200">
                 <h2 class="text-lg font-bold font-serif text-vk-800 text-center">Velg plassering</h2>
                 <p class="text-xs text-vk-500 text-center mt-1">Begge hunder må ha en plassering</p>
             </div>
-            <div class="p-4 space-y-4">
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Nåværende rangering -->
+                <div class="bg-vk-50 p-3 rounded-lg border border-vk-200">
+                    <h3 class="text-xs font-bold text-vk-600 uppercase mb-2">Nåværende rangering</h3>
+                    <div id="dualModalRanking" class="space-y-1 text-sm max-h-32 overflow-y-auto">
+                        <!-- Fylles dynamisk -->
+                    </div>
+                </div>
                 <!-- Hund 1 -->
                 <div class="bg-vk-50 p-3 rounded-lg">
                     <label class="block text-sm font-bold text-vk-700 mb-2" id="dualDog1Name">Hund 1</label>

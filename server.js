@@ -541,6 +541,33 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_dvk_journaler_prove ON dvk_journaler(prove_id);
   CREATE INDEX IF NOT EXISTS idx_dvk_journaler_status ON dvk_journaler(status);
 
+  -- VK-bedømming (Vinnerklasse dommerkort)
+  CREATE TABLE IF NOT EXISTS vk_bedomming (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    parti TEXT NOT NULL,
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    vk_type TEXT DEFAULT '1dag' CHECK(vk_type IN ('1dag', 'kval', 'finale')),
+    current_slipp INTEGER DEFAULT 1,
+    current_round INTEGER DEFAULT 1,
+    plasseringer TEXT DEFAULT '{}',
+    tid_til_gode TEXT DEFAULT '{}',
+    dog_data TEXT DEFAULT '{}',
+    slipp_comments TEXT DEFAULT '{}',
+    slipp_dogs TEXT DEFAULT '{}',
+    round_pairings TEXT DEFAULT '{}',
+    opponents TEXT DEFAULT '{}',
+    judged_this_round TEXT DEFAULT '{}',
+    round_snapshots TEXT DEFAULT '{}',
+    premietildelinger TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'aktiv' CHECK(status IN ('aktiv', 'fullfort')),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, parti)
+  );
+  CREATE INDEX IF NOT EXISTS idx_vk_bedomming_prove ON vk_bedomming(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_vk_bedomming_dommer ON vk_bedomming(dommer_telefon);
+
   -- Dokumentarkiv (alle dokumenter knyttet til en prøve)
   CREATE TABLE IF NOT EXISTS prove_dokumenter (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8311,6 +8338,259 @@ app.delete("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
     autoBackup("klubb-dokument-slettet");
     return c.json({ success: true });
   } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============================================
+// VK-BEDØMMING API (Vinnerklasse dommerkort)
+// ============================================
+
+// Hent VK-bedømming for et parti
+app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT * FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ exists: false });
+    }
+
+    return c.json({
+      exists: true,
+      data: {
+        id: bedomming.id,
+        prove_id: bedomming.prove_id,
+        parti: bedomming.parti,
+        dommer_telefon: bedomming.dommer_telefon,
+        vk_type: bedomming.vk_type,
+        current_slipp: bedomming.current_slipp,
+        current_round: bedomming.current_round,
+        plasseringer: JSON.parse(bedomming.plasseringer || '{}'),
+        tid_til_gode: JSON.parse(bedomming.tid_til_gode || '{}'),
+        dog_data: JSON.parse(bedomming.dog_data || '{}'),
+        slipp_comments: JSON.parse(bedomming.slipp_comments || '{}'),
+        slipp_dogs: JSON.parse(bedomming.slipp_dogs || '{}'),
+        round_pairings: JSON.parse(bedomming.round_pairings || '{}'),
+        opponents: JSON.parse(bedomming.opponents || '{}'),
+        judged_this_round: JSON.parse(bedomming.judged_this_round || '{}'),
+        round_snapshots: JSON.parse(bedomming.round_snapshots || '{}'),
+        premietildelinger: JSON.parse(bedomming.premietildelinger || '{}'),
+        status: bedomming.status,
+        updated_at: bedomming.updated_at
+      }
+    });
+  } catch (err) {
+    console.error("VK-bedomming GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater VK-bedømming
+app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const body = await c.req.json();
+
+    // Sjekk om det finnes fra før
+    const existing = db.prepare(`
+      SELECT id FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (existing) {
+      // Oppdater
+      db.prepare(`
+        UPDATE vk_bedomming SET
+          dommer_telefon = ?,
+          vk_type = ?,
+          current_slipp = ?,
+          current_round = ?,
+          plasseringer = ?,
+          tid_til_gode = ?,
+          dog_data = ?,
+          slipp_comments = ?,
+          slipp_dogs = ?,
+          round_pairings = ?,
+          opponents = ?,
+          judged_this_round = ?,
+          round_snapshots = ?,
+          premietildelinger = ?,
+          status = ?,
+          updated_at = datetime('now')
+        WHERE prove_id = ? AND parti = ?
+      `).run(
+        body.dommer_telefon || null,
+        body.vk_type || '1dag',
+        body.current_slipp || 1,
+        body.current_round || 1,
+        JSON.stringify(body.plasseringer || {}),
+        JSON.stringify(body.tid_til_gode || {}),
+        JSON.stringify(body.dog_data || {}),
+        JSON.stringify(body.slipp_comments || {}),
+        JSON.stringify(body.slipp_dogs || {}),
+        JSON.stringify(body.round_pairings || {}),
+        JSON.stringify(body.opponents || {}),
+        JSON.stringify(body.judged_this_round || {}),
+        JSON.stringify(body.round_snapshots || {}),
+        JSON.stringify(body.premietildelinger || {}),
+        body.status || 'aktiv',
+        proveId,
+        parti
+      );
+    } else {
+      // Opprett ny
+      db.prepare(`
+        INSERT INTO vk_bedomming (
+          prove_id, parti, dommer_telefon, vk_type,
+          current_slipp, current_round, plasseringer, tid_til_gode,
+          dog_data, slipp_comments, slipp_dogs, round_pairings,
+          opponents, judged_this_round, round_snapshots, premietildelinger, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        proveId,
+        parti,
+        body.dommer_telefon || null,
+        body.vk_type || '1dag',
+        body.current_slipp || 1,
+        body.current_round || 1,
+        JSON.stringify(body.plasseringer || {}),
+        JSON.stringify(body.tid_til_gode || {}),
+        JSON.stringify(body.dog_data || {}),
+        JSON.stringify(body.slipp_comments || {}),
+        JSON.stringify(body.slipp_dogs || {}),
+        JSON.stringify(body.round_pairings || {}),
+        JSON.stringify(body.opponents || {}),
+        JSON.stringify(body.judged_this_round || {}),
+        JSON.stringify(body.round_snapshots || {}),
+        JSON.stringify(body.premietildelinger || {}),
+        body.status || 'aktiv'
+      );
+    }
+
+    autoBackup("vk-bedomming-oppdatert");
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("VK-bedomming PUT error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent live rangering for VK (offentlig tilgjengelig)
+app.get("/api/vk-rangering/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT plasseringer, premietildelinger, vk_type, current_round, status, updated_at
+      FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ exists: false });
+    }
+
+    // Hent partiliste for å få hundenavn - sortert slik at nr tilsvarer posisjon
+    const pameldinger = db.prepare(`
+      SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase,
+             b.fornavn || ' ' || b.etternavn as forer_navn
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+      ORDER BY p.id
+    `).all(proveId, parti);
+
+    // Bygg mapping fra nr til hundeinfo (nr er 1-basert indeks i partilisten)
+    const nrToHund = {};
+    pameldinger.forEach((p, idx) => {
+      nrToHund[idx + 1] = {
+        hund_id: p.hund_id,
+        hund_navn: p.hund_navn,
+        rase: p.rase,
+        forer: p.forer_navn
+      };
+    });
+
+    const plasseringer = JSON.parse(bedomming.plasseringer || '{}');
+    const premietildelinger = JSON.parse(bedomming.premietildelinger || '{}');
+
+    // Bygg rangering med hundeinfo - plasseringer bruker nr (startnummer) som nøkkel
+    const rangering = Object.entries(plasseringer)
+      .filter(([_, plass]) => plass !== 'avsluttet')
+      .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+      .map(([nr, plass]) => {
+        const hund = nrToHund[parseInt(nr)];
+        return {
+          plass: parseInt(plass),
+          nr: parseInt(nr),
+          hund_id: hund?.hund_id || null,
+          hund_navn: hund?.hund_navn || `Hund #${nr}`,
+          rase: hund?.rase || '',
+          forer: hund?.forer || '',
+          premie: premietildelinger[nr] || null
+        };
+      });
+
+    const avsluttet = Object.entries(plasseringer)
+      .filter(([_, plass]) => plass === 'avsluttet')
+      .map(([nr, _]) => {
+        const hund = nrToHund[parseInt(nr)];
+        return {
+          nr: parseInt(nr),
+          hund_id: hund?.hund_id || null,
+          hund_navn: hund?.hund_navn || `Hund #${nr}`,
+          rase: hund?.rase || '',
+          forer: hund?.forer || ''
+        };
+      });
+
+    return c.json({
+      exists: true,
+      vk_type: bedomming.vk_type,
+      current_round: bedomming.current_round,
+      status: bedomming.status,
+      updated_at: bedomming.updated_at,
+      rangering,
+      avsluttet
+    });
+  } catch (err) {
+    console.error("VK-rangering GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent partiliste for VK-bedømming (for dommer)
+app.get("/api/vk-partiliste/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const pameldinger = db.prepare(`
+      SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase, h.regnr,
+             b.fornavn || ' ' || b.etternavn as forer_navn, b.telefon as forer_telefon
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+      ORDER BY p.id
+    `).all(proveId, parti);
+
+    // Formater som partiliste
+    const partiliste = pameldinger.map((p, idx) => ({
+      nr: idx + 1,
+      hund_id: p.hund_id,
+      race: p.rase || '',
+      name: p.hund_navn,
+      regnr: p.regnr || '',
+      owner: p.forer_navn,
+      owner_telefon: p.forer_telefon
+    }));
+
+    return c.json({ partiliste });
+  } catch (err) {
+    console.error("VK-partiliste GET error:", err);
     return c.json({ error: err.message }, 500);
   }
 });

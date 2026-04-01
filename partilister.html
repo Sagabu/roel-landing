@@ -855,7 +855,7 @@
                                                 ${dog.forer && dog.forer !== dog.eier ? `<div class="text-bark-500 text-xs">Fører: ${dog.forer}</div>` : ''}
                                             </div>
                                             <div class="py-3 px-4 text-bark-600 font-medium">${dog.premie || '-'}</div>
-                                            ${isVK ? `<div class="py-3 px-4" id="status-${partyId}-${dog.id || i}">
+                                            ${isVK ? `<div class="py-3 px-4" id="status-${partyId}-${i + 1}">
                                                 <span class="text-bark-400 text-sm">-</span>
                                             </div>` : ''}
                                         </div>
@@ -889,86 +889,104 @@
             `;
         }
 
-        // Load and display live ranking for a party
+        // Load and display live ranking for a party from server
         async function loadPartyLiveRanking(party) {
             const partyId = party.id || party.name;
             const container = document.getElementById(`ranking-${partyId}`);
             if (!container) return;
 
-            // Try to get live data from localStorage (judgeData)
-            const key = `judgeData_${partyId.toLowerCase().replace(/[\s\/]+/g, '')}`;
-            const data = localStorage.getItem(key);
-
-            if (!data) {
-                container.innerHTML = `
-                    <div class="text-center py-6">
-                        <svg class="w-10 h-10 text-bark-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <p class="text-bark-400 text-sm">Venter på dømming</p>
-                    </div>
-                `;
-                return;
-            }
+            // Hent live rangering fra server
+            const currentProveId = proveId || 'demo';
 
             try {
-                const dogs = JSON.parse(data);
+                const response = await fetch(`/api/vk-rangering/${currentProveId}/${encodeURIComponent(partyId)}`);
+                const data = await response.json();
 
-                // Filter dogs with rankings/scores and sort by ranking
-                const rankedDogs = dogs
-                    .filter(d => d.rounds?.length > 0 || d.ranking || d.prize)
-                    .sort((a, b) => (a.ranking || 999) - (b.ranking || 999));
-
-                if (rankedDogs.length === 0) {
+                if (!data.exists || !data.rangering || data.rangering.length === 0) {
                     container.innerHTML = `
                         <div class="text-center py-6">
                             <svg class="w-10 h-10 text-bark-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            <p class="text-bark-400 text-sm">Dømming pågår...</p>
+                            <p class="text-bark-400 text-sm">${data.exists ? 'Dømming pågår...' : 'Venter på dømming'}</p>
+                            ${data.exists && data.current_round ? `<p class="text-xs text-bark-400 mt-1">Runde ${data.current_round}</p>` : ''}
                         </div>
                     `;
                     return;
                 }
 
+                // Vis VK-type badge
+                let vkTypeBadge = '';
+                if (data.vk_type === 'kval') vkTypeBadge = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Kvalifisering</span>';
+                else if (data.vk_type === 'finale') vkTypeBadge = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">Finale</span>';
+
                 // Render ranking list
                 container.innerHTML = `
+                    ${vkTypeBadge ? `<div class="mb-2 text-center">${vkTypeBadge}</div>` : ''}
                     <div class="space-y-2">
-                        ${rankedDogs.slice(0, 10).map((dog, i) => {
+                        ${data.rangering.map((dog, i) => {
                             const rankBg = i === 0 ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
                                            i === 1 ? 'bg-gray-100 text-gray-700 border-gray-300' :
                                            i === 2 ? 'bg-amber-100 text-amber-800 border-amber-300' :
                                            'bg-white text-bark-700 border-bark-200';
 
-                            const prizeLabel = dog.prize || (dog.ranking ? `#${dog.ranking}` : '-');
+                            const prizeLabel = dog.premie || `#${dog.plass}`;
 
                             return `
                                 <div class="flex items-center gap-3 p-2 rounded-lg border ${rankBg}">
-                                    <span class="w-6 h-6 flex items-center justify-center font-bold text-sm">${i + 1}</span>
+                                    <span class="w-6 h-6 flex items-center justify-center font-bold text-sm">${dog.plass}</span>
                                     <div class="flex-1 min-w-0">
-                                        <p class="font-medium text-sm truncate">${dog.name || dog.hundenavn || 'Ukjent'}</p>
-                                        <p class="text-xs opacity-70">${dog.handler || dog.forer || ''}</p>
+                                        <p class="font-medium text-sm truncate">${dog.hund_navn}</p>
+                                        <p class="text-xs opacity-70">${dog.rase} · ${dog.forer}</p>
                                     </div>
                                     <span class="text-xs font-medium px-2 py-1 bg-white/50 rounded">${prizeLabel}</span>
                                 </div>
                             `;
                         }).join('')}
                     </div>
-                    <p class="text-xs text-bark-400 mt-3 text-center">Oppdateres automatisk</p>
+                    ${data.avsluttet && data.avsluttet.length > 0 ? `
+                        <div class="mt-4 pt-3 border-t border-bark-200">
+                            <p class="text-xs font-medium text-bark-500 mb-2">Avsluttet (${data.avsluttet.length}):</p>
+                            <div class="space-y-1">
+                                ${data.avsluttet.slice(0, 3).map(dog => `
+                                    <p class="text-xs text-bark-500">${dog.rase} ${dog.hund_navn}</p>
+                                `).join('')}
+                                ${data.avsluttet.length > 3 ? `<p class="text-xs text-bark-400">+${data.avsluttet.length - 3} flere</p>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                    <p class="text-xs text-bark-400 mt-3 text-center flex items-center justify-center gap-1">
+                        <span class="w-2 h-2 bg-green-500 rounded-full live-dot"></span>
+                        Runde ${data.current_round || 1} · Oppdateres live
+                    </p>
                 `;
 
-                // Also update status in the main list
-                rankedDogs.forEach(dog => {
-                    const statusEl = document.getElementById(`status-${partyId}-${dog.id}`);
-                    if (statusEl && dog.rounds?.length > 0) {
-                        const lastRound = dog.rounds[dog.rounds.length - 1];
-                        const status = lastRound.completed ? 'Ferdig' : `Runde ${dog.rounds.length}`;
-                        statusEl.innerHTML = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">${status}</span>`;
+                // Update status in the main list for each ranked dog (using nr - startnummer)
+                data.rangering.forEach(dog => {
+                    const statusEl = document.getElementById(`status-${partyId}-${dog.nr}`);
+                    if (statusEl) {
+                        statusEl.innerHTML = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">#${dog.plass}</span>`;
                     }
                 });
 
+                // Mark avsluttet dogs
+                if (data.avsluttet) {
+                    data.avsluttet.forEach(dog => {
+                        const statusEl = document.getElementById(`status-${partyId}-${dog.nr}`);
+                        if (statusEl) {
+                            statusEl.innerHTML = `<span class="px-2 py-1 bg-bark-100 text-bark-500 rounded text-xs">Avsluttet</span>`;
+                        }
+                    });
+                }
+
             } catch (e) {
-                console.error('Error parsing live data:', e);
+                console.error('Error loading live ranking:', e);
+                // Fallback - vis feilmelding
+                container.innerHTML = `
+                    <div class="text-center py-6">
+                        <p class="text-bark-400 text-sm">Kunne ikke laste rangering</p>
+                    </div>
+                `;
             }
         }
 
@@ -1083,7 +1101,7 @@
         }
 
         // Refresh live rankings for VK parties only
-        function refreshLiveRankings() {
+        async function refreshLiveRankings() {
             // Kun oppdater VK-partier, ikke UK/AK
             const vkParties = allParties.filter(party => {
                 const partyDay = party.day || 1;
@@ -1092,9 +1110,8 @@
                 return party.type.startsWith('vk');
             });
 
-            vkParties.forEach(party => {
-                loadPartyLiveRanking(party);
-            });
+            // Oppdater alle VK-partier asynkront
+            await Promise.all(vkParties.map(party => loadPartyLiveRanking(party)));
         }
 
         // Initialize

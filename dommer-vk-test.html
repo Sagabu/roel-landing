@@ -458,6 +458,7 @@
             slippComments: {}, // { slippNr: "kommentar" } - felles kommentar per slipp
             roundPairings: {}, // { round: [[dog1, dog2], [dog3, dog4], ...] } - hvem som har møtt hvem per runde
             opponents: {}, // { dogNr: [motstanderNr, ...] } - alle motstandere en hund har møtt
+            judgedThisRound: {}, // { round: [dogNr, ...] } - hunder som er bedømt i denne runden
         };
 
         // Demo partiliste for VK
@@ -507,6 +508,7 @@
                     state.slippComments = parsed.slippComments || {};
                     state.roundPairings = parsed.roundPairings || {};
                     state.opponents = parsed.opponents || {};
+                    state.judgedThisRound = parsed.judgedThisRound || {};
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -524,7 +526,8 @@
                 dogData: state.dogData,
                 slippComments: state.slippComments,
                 roundPairings: state.roundPairings,
-                opponents: state.opponents
+                opponents: state.opponents,
+                judgedThisRound: state.judgedThisRound
             }));
         }
 
@@ -954,23 +957,29 @@
 
         // Finn neste ledige par (hunder som ikke er plassert eller avsluttet)
         function getNextAvailablePair() {
-            // Finn hunder som ikke er plassert, ikke har tid til gode, og ikke er avsluttet
+            // Hent liste over hunder som allerede er bedømt i denne runden
+            const judgedThisRound = state.judgedThisRound[state.currentRound] || [];
+
+            // Finn aktive hunder (ikke avsluttet) som ikke er bedømt denne runden ennå
             const availableDogs = partyList.filter(dog => {
                 const plass = state.plasseringer[dog.nr];
+                const isFinished = plass === 'avsluttet';
                 const hasTidTilGode = state.tidTilGode[dog.nr];
                 const isCurrentlySelected = dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2];
+                const alreadyJudgedThisRound = judgedThisRound.includes(dog.nr);
 
-                // Hund er tilgjengelig hvis den ikke er plassert, ikke har tid til gode, og ikke er valgt nå
-                return !plass && !hasTidTilGode && !isCurrentlySelected;
+                // Hund er tilgjengelig hvis den ikke er avsluttet, ikke har tid til gode,
+                // ikke er valgt nå, og ikke allerede bedømt denne runden
+                return !isFinished && !hasTidTilGode && !isCurrentlySelected && !alreadyJudgedThisRound;
             });
 
             // Returner de to første ledige hundene
             if (availableDogs.length >= 2) {
                 return [availableDogs[0].nr, availableDogs[1].nr];
             } else if (availableDogs.length === 1) {
-                // Bare én hund igjen - sjekk om det er hunder med tid til gode
+                // Bare én hund igjen - sjekk om det er hunder med tid til gode som ikke er bedømt
                 const ttgDogs = Object.entries(state.tidTilGode)
-                    .filter(([_, has]) => has)
+                    .filter(([nr, has]) => has && !judgedThisRound.includes(parseInt(nr)))
                     .map(([nr]) => parseInt(nr));
                 if (ttgDogs.length > 0) {
                     return [availableDogs[0].nr, ttgDogs[0]];
@@ -978,9 +987,9 @@
                 return [availableDogs[0].nr, null];
             }
 
-            // Ingen vanlige hunder igjen - sjekk tid til gode
+            // Ingen vanlige hunder igjen - sjekk tid til gode som ikke er bedømt denne runden
             const ttgDogs = Object.entries(state.tidTilGode)
-                .filter(([_, has]) => has)
+                .filter(([nr, has]) => has && !judgedThisRound.includes(parseInt(nr)))
                 .map(([nr]) => parseInt(nr));
 
             if (ttgDogs.length >= 2) {
@@ -1010,6 +1019,17 @@
                     state.roundPairings[state.currentRound] = [];
                 }
                 state.roundPairings[state.currentRound].push([currentDog1, currentDog2]);
+
+                // Marker hundene som bedømt i denne runden
+                if (!state.judgedThisRound[state.currentRound]) {
+                    state.judgedThisRound[state.currentRound] = [];
+                }
+                if (!state.judgedThisRound[state.currentRound].includes(currentDog1)) {
+                    state.judgedThisRound[state.currentRound].push(currentDog1);
+                }
+                if (!state.judgedThisRound[state.currentRound].includes(currentDog2)) {
+                    state.judgedThisRound[state.currentRound].push(currentDog2);
+                }
             }
 
             const [nextDog1, nextDog2] = getNextAvailablePair();

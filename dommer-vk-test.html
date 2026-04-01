@@ -1976,6 +1976,53 @@
             return parts.join(' ');
         }
 
+        // Formater statistikk inkludert nåværende (ulagrede) input-verdier
+        function formatDogStatsWithCurrentSlipp(dogNr) {
+            // Hent lagret statistikk
+            const stats = getDogStats(dogNr) || { fmr: 0, fur: 0, slatt: 0, sjanse: 0, ts: 0 };
+            let totalSlipptid = getTotalSlipptid(dogNr);
+
+            // Finn hvilken posisjon denne hunden er i (1 eller 2)
+            let position = null;
+            if (state.selectedDogs[1] === dogNr) position = 1;
+            else if (state.selectedDogs[2] === dogNr) position = 2;
+
+            // Legg til verdier fra nåværende input-felt hvis hunden er på skjermen
+            if (position) {
+                const currentFmr = parseInt(document.getElementById(`dog${position}_fmr`).value) || 0;
+                const currentFur = parseInt(document.getElementById(`dog${position}_fur`).value) || 0;
+                const currentSlat = parseInt(document.getElementById(`dog${position}_slat`).value) || 0;
+                const currentSjanse = parseInt(document.getElementById(`dog${position}_sjanse`).value) || 0;
+                const currentTs = parseInt(document.getElementById(`dog${position}_ts`).value) || 0;
+                const currentSlipptid = parseInt(document.getElementById(`dog${position}_slipptid`).value) || 0;
+
+                // Sjekk om dette slippet allerede er lagret (for å unngå dobbeltelling)
+                const alreadySaved = state.dogData[dogNr]?.slipps?.[state.currentSlipp];
+                if (!alreadySaved) {
+                    stats.fmr += currentFmr;
+                    stats.fur += currentFur;
+                    stats.slatt += currentSlat;
+                    stats.sjanse += currentSjanse;
+                    stats.ts += currentTs;
+                    totalSlipptid += currentSlipptid;
+                }
+            }
+
+            const parts = [];
+            if (stats.fmr > 0) parts.push(`${stats.fmr}xFMR`);
+            if (stats.fur > 0) parts.push(`${stats.fur}xFUR`);
+            if (stats.slatt > 0) parts.push(`${stats.slatt}xSlått`);
+            if (stats.sjanse > 0) parts.push(`${stats.sjanse}xSj`);
+            if (stats.ts > 0) parts.push(`${stats.ts}xTS`);
+
+            if (totalSlipptid > 0) {
+                const slipptidClass = totalSlipptid >= 60 ? 'text-green-600 font-bold' : '';
+                parts.push(`<span class="${slipptidClass}">${totalSlipptid}'</span>`);
+            }
+
+            return parts.join(' ');
+        }
+
         function renderLiveRankingModal() {
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
@@ -1988,7 +2035,8 @@
 
             dogsToPlaceInModal.forEach(dogNr => {
                 const dog = partyList.find(d => d.nr === dogNr);
-                const stats = formatDogStatsDetailed(dogNr);
+                // Bruk funksjonen som inkluderer nåværende ulagrede verdier
+                const stats = formatDogStatsWithCurrentSlipp(dogNr);
                 let prevPlass = '';
                 if (previousSnapshot) {
                     const prev = previousSnapshot.plasseringer[dogNr];

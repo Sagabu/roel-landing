@@ -1931,6 +1931,30 @@
             renderLiveRankingModal();
         }
 
+        // Formater total statistikk for plasserings-modal (mer detaljert)
+        function formatDogStatsDetailed(dogNr) {
+            const stats = getDogStats(dogNr);
+            const totalSlipptid = getTotalSlipptid(dogNr);
+
+            const parts = [];
+
+            if (stats) {
+                if (stats.fmr > 0) parts.push(`${stats.fmr}xFMR`);
+                if (stats.fur > 0) parts.push(`${stats.fur}xFUR`);
+                if (stats.slatt > 0) parts.push(`${stats.slatt}xSlått`);
+                if (stats.sjanse > 0) parts.push(`${stats.sjanse}xSj`);
+                if (stats.ts > 0) parts.push(`${stats.ts}xTS`);
+            }
+
+            // Vis slipptid
+            if (totalSlipptid > 0) {
+                const slipptidClass = totalSlipptid >= 60 ? 'text-green-600 font-bold' : '';
+                parts.push(`<span class="${slipptidClass}">${totalSlipptid}'</span>`);
+            }
+
+            return parts.join(' ');
+        }
+
         function renderLiveRankingModal() {
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
@@ -1943,7 +1967,7 @@
 
             dogsToPlaceInModal.forEach(dogNr => {
                 const dog = partyList.find(d => d.nr === dogNr);
-                const stats = formatDogStats(dogNr);
+                const stats = formatDogStatsDetailed(dogNr);
                 let prevPlass = '';
                 if (previousSnapshot) {
                     const prev = previousSnapshot.plasseringer[dogNr];
@@ -1951,12 +1975,12 @@
                 }
 
                 dogsHtml += `
-                    <div class="bg-amber-50 border-2 border-amber-300 p-3 rounded-lg flex items-center justify-between">
-                        <div>
+                    <div class="bg-amber-50 border-2 border-amber-300 p-3 rounded-lg">
+                        <div class="flex items-center justify-between">
                             <span class="font-bold text-amber-800">${dog.race} ${dog.name}</span>${prevPlass}
-                            ${stats ? `<span class="text-amber-600 ml-2 text-xs">${stats}</span>` : ''}
+                            <span class="text-amber-500 text-xs font-medium">Venter...</span>
                         </div>
-                        <span class="text-amber-500 text-xs font-medium">Venter...</span>
+                        ${stats ? `<div class="text-amber-700 text-xs mt-1 font-medium">${stats}</div>` : ''}
                     </div>
                 `;
             });
@@ -1986,16 +2010,18 @@
             // Vis eksisterende rangering med "sett inn"-knapper mellom
             liveRanking.forEach((dogNr, index) => {
                 const dog = partyList.find(d => d.nr === dogNr);
-                const stats = formatDogStats(dogNr);
+                const stats = formatDogStatsDetailed(dogNr);
                 const plass = index + 1;
                 const isNewDog = dogNr === dog1Nr || dogNr === dog2Nr;
 
                 listHtml += `
-                    <div class="flex items-center py-2 px-3 ${isNewDog ? 'bg-green-50 border-green-300' : 'bg-white border-vk-200'} border rounded-lg">
-                        <span class="font-bold text-vk-700 w-6">${plass}.</span>
-                        <span class="flex-1 text-sm">${dog.race} ${dog.name}</span>
-                        ${stats ? `<span class="text-vk-400 text-xs">${stats}</span>` : ''}
-                        ${isNewDog ? `<button onclick="removeDogFromRanking(${dogNr})" class="ml-2 text-red-400 hover:text-red-600 text-xs">✕</button>` : ''}
+                    <div class="py-2 px-3 ${isNewDog ? 'bg-green-50 border-green-300' : 'bg-white border-vk-200'} border rounded-lg">
+                        <div class="flex items-center">
+                            <span class="font-bold text-vk-700 w-6">${plass}.</span>
+                            <span class="flex-1 text-sm font-medium">${dog.race} ${dog.name}</span>
+                            ${isNewDog ? `<button onclick="removeDogFromRanking(${dogNr})" class="ml-2 text-red-400 hover:text-red-600 text-xs">✕</button>` : ''}
+                        </div>
+                        ${stats ? `<div class="text-vk-500 text-[10px] ml-6 mt-0.5">${stats}</div>` : ''}
                     </div>
                 `;
 

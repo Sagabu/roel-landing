@@ -2119,6 +2119,76 @@
             }
         }
 
+        function showFinishJudgingModal() {
+            // Vis endelig rangering
+            const rankingContainer = document.getElementById('finishJudgingRanking');
+            const ranked = getFullRanking();
+
+            let rankingHtml = '';
+            ranked.forEach((dog, idx) => {
+                const plass = state.plasseringer[dog.nr];
+                const isFinished = plass === 'avsluttet';
+                const stats = getDogStats(dog.nr);
+
+                if (!isFinished) {
+                    rankingHtml += `
+                        <div class="flex items-center justify-between py-1 px-2 rounded ${idx === 0 ? 'bg-forest-100 border border-forest-300' : 'bg-white'}">
+                            <span class="font-medium">${plass || '-'}. ${dog.name}</span>
+                            <span class="text-xs text-vk-500">${stats}</span>
+                        </div>
+                    `;
+                }
+            });
+
+            // Legg til avsluttede hunder
+            const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
+            if (finished.length > 0) {
+                rankingHtml += '<div class="mt-2 pt-2 border-t border-vk-200"><div class="text-xs text-vk-500 mb-1">Avsluttet:</div>';
+                finished.forEach(dog => {
+                    rankingHtml += `
+                        <div class="flex items-center py-1 px-2 text-vk-400">
+                            <span class="line-through">${dog.name}</span>
+                        </div>
+                    `;
+                });
+                rankingHtml += '</div>';
+            }
+
+            rankingContainer.innerHTML = rankingHtml;
+
+            // Vis modal
+            document.getElementById('finishJudgingModal').classList.remove('hidden');
+        }
+
+        function closeFinishJudgingModal() {
+            document.getElementById('finishJudgingModal').classList.add('hidden');
+        }
+
+        function finishJudgingWithCritiques() {
+            // Lagre at prøven er avsluttet
+            state.judgingFinished = true;
+            state.finishCritiquesLater = false;
+            saveToStorage();
+
+            closeFinishJudgingModal();
+            closeRoundCompleteModal();
+
+            // TODO: Naviger til kritikk-side eller vis kritikk-skjema
+            alert('Bedømming avsluttet! Kritikk-funksjonalitet kommer snart.\n\nResultatene er lagret.');
+        }
+
+        function finishJudgingLater() {
+            // Lagre at prøven er avsluttet, men kritikker skal fullføres senere
+            state.judgingFinished = true;
+            state.finishCritiquesLater = true;
+            saveToStorage();
+
+            closeFinishJudgingModal();
+            closeRoundCompleteModal();
+
+            alert('Bedømming avsluttet og lagret!\n\nDu kan fullføre kritikker senere fra dommerpanelet.');
+        }
+
         function confirmRound2Setup() {
             // Lagre oppsettet
             state.roundPairings[state.currentRound + 1] = [...round2Pairings];
@@ -2204,9 +2274,43 @@
                 </div>
             </div>
 
-            <div class="p-4 border-t border-vk-200">
+            <div class="p-4 border-t border-vk-200 space-y-3">
                 <button onclick="confirmRound2Setup()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
                     Bekreft oppsett og start runde <span id="confirmRoundNumber">2</span>
+                </button>
+                <button onclick="showFinishJudgingModal()" class="w-full bg-earth-600 hover:bg-earth-700 text-white font-bold py-3 rounded-xl transition">
+                    Avslutt bedømming og lagre dagens resultater
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Avslutt bedømming Modal -->
+    <div id="finishJudgingModal" class="hidden fixed inset-0 bg-black/50 z-[55] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-vk-200 bg-earth-600 text-white rounded-t-2xl">
+                <h2 class="text-xl font-bold font-serif text-center">Avslutt bedømming</h2>
+                <p class="text-earth-100 text-sm text-center mt-1">Dagens prøve er ferdig</p>
+            </div>
+            <div class="p-4">
+                <p class="text-vk-700 text-center mb-4">Ønsker du å fullføre kritikker for alle hunder nå, eller gjøre det senere?</p>
+
+                <div class="bg-vk-50 p-3 rounded-lg mb-4">
+                    <h3 class="text-xs font-bold text-vk-600 uppercase mb-2">Endelig rangering</h3>
+                    <div id="finishJudgingRanking" class="space-y-1 text-sm max-h-40 overflow-y-auto">
+                        <!-- Fylles dynamisk -->
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-vk-200 space-y-3">
+                <button onclick="finishJudgingWithCritiques()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                    Fullfør kritikker nå
+                </button>
+                <button onclick="finishJudgingLater()" class="w-full bg-vk-500 hover:bg-vk-600 text-white font-bold py-3 rounded-xl transition">
+                    Lagre og fullfør kritikker senere
+                </button>
+                <button onclick="closeFinishJudgingModal()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
+                    Avbryt
                 </button>
             </div>
         </div>

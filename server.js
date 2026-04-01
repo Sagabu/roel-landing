@@ -759,6 +759,50 @@ try {
   db.exec("CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_klubb ON prove_dokumenter(klubb_id)");
 } catch (e) { /* index already exists or column missing */ }
 
+// --- Performance indexes for frequently queried tables ---
+const performanceIndexes = [
+  // OTP - søkes ved innlogging
+  "CREATE INDEX IF NOT EXISTS idx_otp_telefon_used ON otp_codes(telefon, used)",
+  "CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_codes(expires_at)",
+
+  // Hunder - søkes ved navn, eier, rase
+  "CREATE INDEX IF NOT EXISTS idx_hunder_eier ON hunder(eier_telefon)",
+  "CREATE INDEX IF NOT EXISTS idx_hunder_navn ON hunder(navn)",
+  "CREATE INDEX IF NOT EXISTS idx_hunder_rase ON hunder(rase)",
+
+  // Kritikker - søkes ved hund, prøve, dommer
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_hund ON kritikker(hund_id)",
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_prove ON kritikker(prove_id)",
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_dommer ON kritikker(dommer_telefon)",
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_status ON kritikker(status)",
+
+  // Påmeldinger - søkes ved prøve, hund, eier
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_prove ON pameldinger(prove_id)",
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_hund ON pameldinger(hund_id)",
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_eier ON pameldinger(eier_telefon)",
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_status ON pameldinger(status)",
+
+  // Dommer-tildelinger - søkes ved prøve og dommer
+  "CREATE INDEX IF NOT EXISTS idx_dommer_tildelinger_prove ON dommer_tildelinger(prove_id)",
+  "CREATE INDEX IF NOT EXISTS idx_dommer_tildelinger_dommer ON dommer_tildelinger(dommer_telefon)",
+
+  // Prøver - søkes ved klubb og status
+  "CREATE INDEX IF NOT EXISTS idx_prover_klubb ON prover(klubb_id)",
+  "CREATE INDEX IF NOT EXISTS idx_prover_status ON prover(status)",
+  "CREATE INDEX IF NOT EXISTS idx_prover_dato ON prover(start_dato)",
+
+  // Resultater - søkes ved hund
+  "CREATE INDEX IF NOT EXISTS idx_resultater_hund ON resultater(hund_id)",
+
+  // Klubb-medlemmer - søkes ved klubb og telefon
+  "CREATE INDEX IF NOT EXISTS idx_klubb_medlemmer_klubb ON klubb_medlemmer(klubb_id)",
+  "CREATE INDEX IF NOT EXISTS idx_klubb_medlemmer_telefon ON klubb_medlemmer(telefon_normalized)",
+];
+
+for (const sql of performanceIndexes) {
+  try { db.exec(sql); } catch (e) { /* index already exists */ }
+}
+
 // Fix regnr NOT NULL constraint on existing databases (allow dogs without registration number)
 try {
   const tableInfo = db.prepare("PRAGMA table_info(hunder)").all();

@@ -746,21 +746,32 @@
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
 
-            // Sjekk om hundene mangler status (plassering, TTG eller avsluttet)
-            const dog1HasStatus = state.tidTilGode[dog1Nr] || state.plasseringer[dog1Nr];
-            const dog2HasStatus = state.tidTilGode[dog2Nr] || state.plasseringer[dog2Nr];
+            // I runde 2+ må vi sjekke om hundene har fått ny plassering i DENNE runden
+            // Ikke bare om de har en plassering fra før
+            const judgedThisRound = state.judgedThisRound[state.currentRound] || [];
+            const dog1JudgedThisRound = judgedThisRound.includes(dog1Nr);
+            const dog2JudgedThisRound = judgedThisRound.includes(dog2Nr);
 
-            // Hvis begge mangler status, vis plasserings-modal
-            if (!dog1HasStatus && !dog2HasStatus) {
+            // Sjekk om hundene mangler status for dette slippet
+            // TTG gjelder kun for dette slippet, men plassering kan være fra tidligere
+            const dog1HasNewStatus = state.tidTilGode[dog1Nr] ||
+                (dog1JudgedThisRound && state.plasseringer[dog1Nr]) ||
+                (state.currentRound === 1 && state.plasseringer[dog1Nr]);
+            const dog2HasNewStatus = state.tidTilGode[dog2Nr] ||
+                (dog2JudgedThisRound && state.plasseringer[dog2Nr]) ||
+                (state.currentRound === 1 && state.plasseringer[dog2Nr]);
+
+            // Hvis begge mangler status for dette slippet, vis plasserings-modal
+            if (!dog1HasNewStatus && !dog2HasNewStatus) {
                 openDualPlacementModal();
                 return;
             }
 
             // Hvis kun én mangler status, valider den
-            if (!dog1HasStatus) {
+            if (!dog1HasNewStatus) {
                 if (!validateAndSaveDog(1, true)) return;
             }
-            if (!dog2HasStatus) {
+            if (!dog2HasNewStatus) {
                 if (!validateAndSaveDog(2, true)) return;
             }
 
@@ -1878,33 +1889,83 @@
                 .map(([nr, plass]) => {
                     const dog = partyList.find(d => d.nr === parseInt(nr));
                     const stats = formatDogStats(parseInt(nr));
-                    return { dog, plass: parseInt(plass), stats };
+                    return { dog, plass: parseInt(plass), stats, dogNr: parseInt(nr) };
                 });
 
             const rankingContainer = document.getElementById('dualModalRanking');
-            if (placed.length === 0) {
-                rankingContainer.innerHTML = '<div class="text-vk-400 italic text-xs">Ingen hunder rangert ennå</div>';
+
+            // Sjekk om vi har en snapshot fra forrige runde (for sammenligning)
+            const previousRound = state.currentRound - 1;
+            const previousSnapshot = state.roundSnapshots[previousRound];
+
+            // Bygg HTML for nåværende rangering og evt. forrige runde
+            let rankingHtml = '';
+
+            if (state.currentRound > 1 && previousSnapshot) {
+                // Vis to kolonner: Nåværende og forrige runde
+                rankingHtml = '<div class="grid grid-cols-2 gap-2">';
+
+                // Nåværende rangering
+                rankingHtml += '<div><div class="text-[9px] text-vk-600 font-bold mb-1">Nåværende</div>';
+                if (placed.length === 0) {
+                    rankingHtml += '<div class="text-vk-400 italic text-xs">Ingen ennå</div>';
+                } else {
+                    placed.forEach(({ dog, plass, stats }) => {
+                        const statsHtml = stats ? `<span class="text-vk-400 ml-1">${stats}</span>` : '';
+                        rankingHtml += `<div class="text-xs py-0.5"><span class="font-bold">${plass}.</span> ${dog.name}${statsHtml}</div>`;
+                    });
+                }
+                rankingHtml += '</div>';
+
+                // Forrige rundes rangering (i kursiv)
+                rankingHtml += `<div class="border-l border-vk-200 pl-2"><div class="text-[9px] text-bark-500 font-bold mb-1 italic">Etter ${previousRound}. runde</div>`;
+                const prevPlaced = Object.entries(previousSnapshot.plasseringer)
+                    .filter(([_, p]) => p !== 'avsluttet')
+                    .sort((a, b) => parseInt(a[1]) - parseInt(b[1]));
+
+                prevPlaced.forEach(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    rankingHtml += `<div class="text-xs py-0.5 italic text-bark-500"><span class="font-bold">${plass}.</span> ${dog.name}</div>`;
+                });
+                rankingHtml += '</div></div>';
             } else {
-                rankingContainer.innerHTML = placed.map(({ dog, plass, stats }) => {
-                    const statsHtml = stats ? `<span class="text-vk-500 ml-2 text-xs font-medium">${stats}</span>` : '';
-                    return `<div class="flex items-center py-0.5">
-                        <span class="font-bold text-vk-700 w-6">${plass}.</span>
-                        <span class="flex-1">${dog.race} ${dog.name}</span>${statsHtml}
-                    </div>`;
-                }).join('');
+                // Kun nåværende rangering (runde 1)
+                if (placed.length === 0) {
+                    rankingHtml = '<div class="text-vk-400 italic text-xs">Ingen hunder rangert ennå</div>';
+                } else {
+                    rankingHtml = placed.map(({ dog, plass, stats }) => {
+                        const statsHtml = stats ? `<span class="text-vk-500 ml-2 text-xs font-medium">${stats}</span>` : '';
+                        return `<div class="flex items-center py-0.5">
+                            <span class="font-bold text-vk-700 w-6">${plass}.</span>
+                            <span class="flex-1">${dog.race} ${dog.name}</span>${statsHtml}
+                        </div>`;
+                    }).join('');
+                }
             }
+
+            rankingContainer.innerHTML = rankingHtml;
 
             // Hent statistikk for de to hundene som skal plasseres
             const dog1Stats = formatDogStats(dog1Nr);
             const dog2Stats = formatDogStats(dog2Nr);
 
-            // Oppdater hundenavn med statistikk
-            document.getElementById('dualDog1Name').innerHTML = `${dog1.race} ${dog1.name}${dog1Stats ? `<span class="text-vk-500 ml-2 text-xs font-normal">${dog1Stats}</span>` : ''}`;
-            document.getElementById('dualDog2Name').innerHTML = `${dog2.race} ${dog2.name}${dog2Stats ? `<span class="text-vk-500 ml-2 text-xs font-normal">${dog2Stats}</span>` : ''}`;
+            // Vis forrige plassering for disse hundene hvis vi er i runde 2+
+            let dog1PrevPlass = '';
+            let dog2PrevPlass = '';
+            if (previousSnapshot) {
+                const prev1 = previousSnapshot.plasseringer[dog1Nr];
+                const prev2 = previousSnapshot.plasseringer[dog2Nr];
+                if (prev1 && prev1 !== 'avsluttet') dog1PrevPlass = ` <span class="text-bark-400 italic text-[10px]">(var ${prev1}.)</span>`;
+                if (prev2 && prev2 !== 'avsluttet') dog2PrevPlass = ` <span class="text-bark-400 italic text-[10px]">(var ${prev2}.)</span>`;
+            }
 
-            // Beregn gyldige plasseringer
-            const currentPlacements = placed.length;
-            const maxPlacement = currentPlacements + 2; // +2 for de to nye hundene
+            // Oppdater hundenavn med statistikk og evt. forrige plassering
+            document.getElementById('dualDog1Name').innerHTML = `${dog1.race} ${dog1.name}${dog1PrevPlass}${dog1Stats ? `<span class="text-vk-500 ml-2 text-xs font-normal">${dog1Stats}</span>` : ''}`;
+            document.getElementById('dualDog2Name').innerHTML = `${dog2.race} ${dog2.name}${dog2PrevPlass}${dog2Stats ? `<span class="text-vk-500 ml-2 text-xs font-normal">${dog2Stats}</span>` : ''}`;
+
+            // Beregn gyldige plasseringer - i runde 2+ kan alle plasseringer velges
+            const totalActiveDogs = partyList.filter(d => state.plasseringer[d.nr] !== 'avsluttet').length;
+            const maxPlacement = totalActiveDogs;
 
             // Bygg dropdown-options
             let options = '<option value="">-- Velg --</option>';
@@ -2806,14 +2867,14 @@ Antall slipp: ${state.currentSlipp}
     <div id="dualPlacementModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
             <div class="p-4 border-b border-vk-200">
-                <h2 class="text-lg font-bold font-serif text-vk-800 text-center">Velg plassering</h2>
-                <p class="text-xs text-vk-500 text-center mt-1">Begge hunder må ha en plassering</p>
+                <h2 id="dualModalTitle" class="text-lg font-bold font-serif text-vk-800 text-center">Velg plassering</h2>
+                <p id="dualModalSubtitle" class="text-xs text-vk-500 text-center mt-1">Begge hunder må ha en plassering</p>
             </div>
             <div class="flex-1 overflow-y-auto p-4 space-y-4">
-                <!-- Nåværende rangering -->
+                <!-- Rangering -->
                 <div class="bg-vk-50 p-3 rounded-lg border border-vk-200">
-                    <h3 class="text-xs font-bold text-vk-600 uppercase mb-2">Nåværende rangering</h3>
-                    <div id="dualModalRanking" class="space-y-1 text-sm max-h-32 overflow-y-auto">
+                    <h3 id="dualModalRankingTitle" class="text-xs font-bold text-vk-600 uppercase mb-2">Rangering</h3>
+                    <div id="dualModalRanking" class="text-sm max-h-40 overflow-y-auto">
                         <!-- Fylles dynamisk -->
                     </div>
                 </div>

@@ -418,6 +418,9 @@ const FuglehundAuth = (function() {
 
   // Automatisk auth-guard basert på side
   function checkPageAccess() {
+    // Skip auth if SKIP_AUTH is set (for testing)
+    if (window.SKIP_AUTH === true) return true;
+
     const page = window.location.pathname.split('/').pop() || 'index.html';
     const requiredRole = PROTECTED_PAGES[page];
 

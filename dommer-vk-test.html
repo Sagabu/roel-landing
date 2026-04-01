@@ -1634,6 +1634,8 @@
             container.innerHTML = html;
         }
 
+        let pendingDogSelection = null; // Hund som venter på posisjonsvalg
+
         function selectDogFromModal(dogNr) {
             const dog = partyList.find(d => d.nr === dogNr);
 
@@ -1643,33 +1645,46 @@
                 return;
             }
 
-            // Bruk forhåndsvalgt posisjon, eller spør bruker
-            let position;
+            // Bruk forhåndsvalgt posisjon, eller vis valg-modal
             if (preselectedPosition) {
-                position = preselectedPosition;
+                completeSelectDog(dogNr, preselectedPosition);
             } else {
-                position = confirm(`Velg posisjon for ${dog.race} ${dog.name}:\n\nOK = Hund 1 (venstre)\nAvbryt = Hund 2 (høyre)`) ? 1 : 2;
+                // Vis modal for å velge posisjon
+                pendingDogSelection = dogNr;
+                openPositionSelectModal(dog);
             }
+        }
 
+        function openPositionSelectModal(selectedDog) {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            document.getElementById('posSelectNewDog').textContent = `${selectedDog.race} ${selectedDog.name}`;
+            document.getElementById('posSelectDog1Name').textContent = `${dog1.race} ${dog1.name}`;
+            document.getElementById('posSelectDog2Name').textContent = `${dog2.race} ${dog2.name}`;
+
+            document.getElementById('positionSelectModal').classList.remove('hidden');
+        }
+
+        function closePositionSelectModal() {
+            document.getElementById('positionSelectModal').classList.add('hidden');
+            pendingDogSelection = null;
+        }
+
+        function selectPosition(position) {
+            if (pendingDogSelection) {
+                completeSelectDog(pendingDogSelection, position);
+            }
+            closePositionSelectModal();
+        }
+
+        function completeSelectDog(dogNr, position) {
             // Lagre nåværende data
-            saveDogData(position);
-
-            // Sett ny hund
-            state.selectedDogs[position] = dogNr;
-            document.getElementById(`dog${position}Select`).value = dogNr;
-
-            // Fjern fra tid til gode hvis den var der
-            delete state.tidTilGode[dogNr];
-
-            // Oppdater visning
-            updateDogDisplays();
-            loadDogData(position);
-            updatePlacementDropdowns();
-            renderRankings();
-            renderPartyLists();
             saveToStorage();
 
-            // Lukk modal
+            // Lukk partiliste-modal
             closePartyListModal();
         }
 
@@ -1910,6 +1925,34 @@
             </div>
             <div id="partyListModalContent" class="flex-1 overflow-y-auto p-4 space-y-2">
                 <!-- Fylles dynamisk -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Posisjonsvalg Modal -->
+    <div id="positionSelectModal" class="hidden fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="p-4 border-b border-vk-200">
+                <h2 class="text-lg font-bold font-serif text-vk-800 text-center">Velg posisjon</h2>
+                <p class="text-sm text-vk-600 text-center mt-2">
+                    <span id="posSelectNewDog" class="font-bold">Ny hund</span>
+                </p>
+                <p class="text-xs text-vk-500 text-center mt-1">Hvilken hund skal byttes ut?</p>
+            </div>
+            <div class="p-4 space-y-3">
+                <button onclick="selectPosition(1)" class="w-full bg-vk-100 hover:bg-vk-200 border-2 border-vk-300 hover:border-vk-500 p-4 rounded-xl transition text-left">
+                    <div class="text-xs text-vk-500 uppercase font-bold mb-1">Erstatt venstre hund</div>
+                    <div class="text-base font-bold text-vk-800" id="posSelectDog1Name">Hund 1</div>
+                </button>
+                <button onclick="selectPosition(2)" class="w-full bg-vk-100 hover:bg-vk-200 border-2 border-vk-300 hover:border-vk-500 p-4 rounded-xl transition text-left">
+                    <div class="text-xs text-vk-500 uppercase font-bold mb-1">Erstatt høyre hund</div>
+                    <div class="text-base font-bold text-vk-800" id="posSelectDog2Name">Hund 2</div>
+                </button>
+            </div>
+            <div class="p-4 border-t border-vk-200">
+                <button onclick="closePositionSelectModal()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
+                    Avbryt
+                </button>
             </div>
         </div>
     </div>

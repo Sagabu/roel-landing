@@ -214,7 +214,7 @@
                     </div>
                 </div>
 
-                <!-- Plassering og Tid til gode -->
+                <!-- Plassering og Status -->
                 <div class="p-2 border-t border-bark-100">
                     <div class="grid grid-cols-2 gap-2">
                         <div>
@@ -241,15 +241,19 @@
                                 <option value="18">18. plass</option>
                                 <option value="19">19. plass</option>
                                 <option value="20">20. plass</option>
-                                <option value="tid_til_gode" class="text-amber-600">Tid til gode</option>
-                                <option value="avsluttet" class="text-red-600">Avslutt</option>
                             </select>
                         </div>
                         <div>
-                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Tid til gode</h4>
-                            <div class="flex items-center gap-1">
-                                <input type="checkbox" id="dog1_tidtilgode" onchange="setTidTilGode(1)" class="w-5 h-5 rounded border-amber-300 text-amber-500 focus:ring-amber-500">
-                                <label for="dog1_tidtilgode" class="text-xs text-bark-600">Har tid til gode</label>
+                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Status</h4>
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center gap-1">
+                                    <input type="checkbox" id="dog1_tidtilgode" onchange="setTidTilGode(1)" class="w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-500">
+                                    <label for="dog1_tidtilgode" class="text-[10px] text-amber-700 font-medium">Tid til gode</label>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <input type="checkbox" id="dog1_avslutt" onchange="setAvslutt(1)" class="w-4 h-4 rounded border-red-300 text-red-500 focus:ring-red-500">
+                                    <label for="dog1_avslutt" class="text-[10px] text-red-700 font-medium">Avslutt hund</label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -383,15 +387,19 @@
                                 <option value="18">18. plass</option>
                                 <option value="19">19. plass</option>
                                 <option value="20">20. plass</option>
-                                <option value="tid_til_gode" class="text-amber-600">Tid til gode</option>
-                                <option value="avsluttet" class="text-red-600">Avslutt</option>
                             </select>
                         </div>
                         <div>
-                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Tid til gode</h4>
-                            <div class="flex items-center gap-1">
-                                <input type="checkbox" id="dog2_tidtilgode" onchange="setTidTilGode(2)" class="w-5 h-5 rounded border-amber-300 text-amber-500 focus:ring-amber-500">
-                                <label for="dog2_tidtilgode" class="text-xs text-bark-600">Har tid til gode</label>
+                            <h4 class="text-[10px] font-bold text-bark-600 uppercase tracking-wider mb-1">Status</h4>
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center gap-1">
+                                    <input type="checkbox" id="dog2_tidtilgode" onchange="setTidTilGode(2)" class="w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-500">
+                                    <label for="dog2_tidtilgode" class="text-[10px] text-amber-700 font-medium">Tid til gode</label>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <input type="checkbox" id="dog2_avslutt" onchange="setAvslutt(2)" class="w-4 h-4 rounded border-red-300 text-red-500 focus:ring-red-500">
+                                    <label for="dog2_avslutt" class="text-[10px] text-red-700 font-medium">Avslutt hund</label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -596,12 +604,19 @@
 
                     // Update plassering dropdown
                     const plass = state.plasseringer[dogNr];
-                    document.getElementById(`dog${pos}_plassering`).value = plass || '';
+                    const isAvsluttet = plass === 'avsluttet';
+                    document.getElementById(`dog${pos}_plassering`).value = (plass && !isAvsluttet) ? plass : '';
 
                     // Update tid til gode checkbox
-                    const checkbox = document.getElementById(`dog${pos}_tidtilgode`);
-                    if (checkbox) {
-                        checkbox.checked = !!state.tidTilGode[dogNr];
+                    const ttgCheckbox = document.getElementById(`dog${pos}_tidtilgode`);
+                    if (ttgCheckbox) {
+                        ttgCheckbox.checked = !!state.tidTilGode[dogNr];
+                    }
+
+                    // Update avslutt checkbox
+                    const avsluttCheckbox = document.getElementById(`dog${pos}_avslutt`);
+                    if (avsluttCheckbox) {
+                        avsluttCheckbox.checked = isAvsluttet;
                     }
                 }
             });
@@ -715,9 +730,16 @@
         }
 
         function saveAll() {
-            // Valider begge hunder - de MÅ ha plassering eller TTG
+            // Valider begge hunder - de MÅ ha plassering, TTG eller avsluttet
             if (!validateAndSaveDog(1, true)) return;
             if (!validateAndSaveDog(2, true)) return;
+
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+
+            // Sjekk status før lagring
+            const dog1NeedNewDog = state.tidTilGode[dog1Nr] || state.plasseringer[dog1Nr] === 'avsluttet';
+            const dog2NeedNewDog = state.tidTilGode[dog2Nr] || state.plasseringer[dog2Nr] === 'avsluttet';
 
             saveSlippComment();
             saveDogData(1);
@@ -742,8 +764,20 @@
                 btn.classList.remove('bg-green-600');
                 btn.classList.add('bg-vk-600', 'hover:bg-vk-700');
 
-                // Automatisk gå til neste par
-                goToNextPair();
+                // Bestem hva som skal skje videre
+                if (dog1NeedNewDog && dog2NeedNewDog) {
+                    // Begge hunder må byttes - gå til neste par
+                    goToNextPair();
+                } else if (dog1NeedNewDog) {
+                    // Kun hund 1 må byttes - åpne partiliste for posisjon 1
+                    openPartyListModal(1);
+                } else if (dog2NeedNewDog) {
+                    // Kun hund 2 må byttes - åpne partiliste for posisjon 2
+                    openPartyListModal(2);
+                } else {
+                    // Ingen trenger å byttes (begge fikk plassering) - gå til neste par
+                    goToNextPair();
+                }
             }, 800);
         }
 
@@ -1115,14 +1149,41 @@
         function setTidTilGode(position) {
             const dogNr = state.selectedDogs[position];
             const checkbox = document.getElementById(`dog${position}_tidtilgode`);
+            const avsluttCheckbox = document.getElementById(`dog${position}_avslutt`);
 
             if (checkbox.checked) {
                 state.tidTilGode[dogNr] = true;
-                // Fjern plassering hvis den hadde en
+                // Fjern plassering og avslutt hvis den hadde en
                 delete state.plasseringer[dogNr];
                 document.getElementById(`dog${position}_plassering`).value = '';
+                // Fjern avslutt-hake
+                if (avsluttCheckbox) avsluttCheckbox.checked = false;
             } else {
                 delete state.tidTilGode[dogNr];
+            }
+
+            saveToStorage();
+            updatePlacementDropdowns();
+            renderRankings();
+            renderPartyLists();
+        }
+
+        function setAvslutt(position) {
+            const dogNr = state.selectedDogs[position];
+            const checkbox = document.getElementById(`dog${position}_avslutt`);
+            const ttgCheckbox = document.getElementById(`dog${position}_tidtilgode`);
+
+            if (checkbox.checked) {
+                state.plasseringer[dogNr] = 'avsluttet';
+                // Fjern tid til gode
+                delete state.tidTilGode[dogNr];
+                // Fjern plassering-valg
+                document.getElementById(`dog${position}_plassering`).value = '';
+                // Fjern TTG-hake
+                if (ttgCheckbox) ttgCheckbox.checked = false;
+            } else {
+                // Fjern avsluttet-status
+                delete state.plasseringer[dogNr];
             }
 
             saveToStorage();
@@ -1603,9 +1664,15 @@
             const dogNr = state.selectedDogs[position];
             const dog = partyList.find(d => d.nr === dogNr);
             const hasTTG = state.tidTilGode[dogNr];
+            const isAvsluttet = state.plasseringer[dogNr] === 'avsluttet';
             const hasPlacement = state.plasseringer[dogNr] && state.plasseringer[dogNr] !== 'avsluttet';
 
-            // Hvis hunden verken har TTG eller plassering, må vi spørre
+            // Hvis hunden er avsluttet eller har TTG eller plassering, er alt OK
+            if (isAvsluttet || hasTTG || hasPlacement) {
+                return true;
+            }
+
+            // Hvis hunden verken har TTG, avsluttet eller plassering, må vi spørre
             if (!hasTTG && !hasPlacement) {
                 // Beregn gyldige plasseringer
                 const currentPlacements = Object.entries(state.plasseringer)

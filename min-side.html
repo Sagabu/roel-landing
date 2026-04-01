@@ -1422,6 +1422,7 @@
                 const data = prefetchedDommerInfo || await fetch(`/api/brukere/${currentUser.phone}/dommer-info`).then(r => r.ok ? r.json() : null);
                 if (data?.isDommer && data.tildelinger?.length > 0) {
                     const tildeling = data.tildelinger[0];
+                    const isVK = tildeling.parti?.toLowerCase().includes('vk');
 
                     // Sett opp judgeSession for dommer-hjem.html
                     const judgeSession = {
@@ -1429,18 +1430,31 @@
                         phone: currentUser.phone,
                         isJudge: true,
                         assignedParty: tildeling.parti,
+                        assignedProve: tildeling.prove_id,
                         judgeRole: tildeling.dommerRolle,
                         loggedInAt: new Date().toISOString()
                     };
                     localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
+
+                    // Bygg riktig link basert på parti-type
+                    let assessmentLink;
+                    if (isVK) {
+                        const proveParam = tildeling.prove_id || 'demo';
+                        const partiParam = encodeURIComponent(tildeling.parti);
+                        assessmentLink = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}`;
+                    } else {
+                        assessmentLink = `dommer-ukak.html?party=${encodeURIComponent(tildeling.parti)}`;
+                    }
 
                     roles.push({
                         type: 'dommer',
                         label: 'Dommer',
                         description: `${tildeling.proveNavn} - Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
                         icon: 'clipboard',
-                        bgColor: 'bg-warm-500',
-                        link: 'dommer-hjem.html'
+                        bgColor: isVK ? 'bg-amber-600' : 'bg-warm-500',
+                        link: assessmentLink,
+                        showStartButton: true,
+                        partyType: isVK ? 'VK' : 'UK/AK'
                     });
                 }
             } catch (e) {
@@ -1491,25 +1505,53 @@
             // Vis roller-seksjonen hvis det finnes roller
             if (roles.length > 0) {
                 rolesSection.classList.remove('hidden');
-                rolesContainer.innerHTML = roles.map(role => `
-                    <a href="${role.link}" class="flex items-center justify-between p-4 ${role.bgColor} hover:opacity-90 rounded-xl transition text-white">
-                        <div class="flex items-center gap-4">
-                            <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                                ${getRoleIconWhite(role.icon)}
+                rolesContainer.innerHTML = roles.map(role => {
+                    if (role.type === 'dommer' && role.showStartButton) {
+                        // Spesiell visning for dommer med "Start bedømming"-knapp
+                        return `
+                            <div class="p-4 ${role.bgColor} rounded-xl text-white">
+                                <div class="flex items-center gap-4 mb-4">
+                                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                                        ${getRoleIconWhite(role.icon)}
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-lg">${role.label}</span>
+                                            <span class="text-xs bg-white/20 px-2 py-0.5 rounded">${role.partyType}</span>
+                                        </div>
+                                        <p class="text-white/80 text-sm">${role.description}</p>
+                                    </div>
+                                </div>
+                                <a href="${role.link}" class="block w-full bg-white text-${role.bgColor.replace('bg-', '')} hover:bg-white/90 font-bold py-3 px-4 rounded-lg text-center transition flex items-center justify-center gap-2" style="color: #92400e;">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                                    </svg>
+                                    Start bedømming
+                                </a>
                             </div>
-                            <div>
-                                <span class="font-bold text-lg">${role.label}</span>
-                                <p class="text-white/80 text-sm">${role.description}</p>
+                        `;
+                    }
+                    // Standard visning for andre roller
+                    return `
+                        <a href="${role.link}" class="flex items-center justify-between p-4 ${role.bgColor} hover:opacity-90 rounded-xl transition text-white">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                                    ${getRoleIconWhite(role.icon)}
+                                </div>
+                                <div>
+                                    <span class="font-bold text-lg">${role.label}</span>
+                                    <p class="text-white/80 text-sm">${role.description}</p>
+                                </div>
                             </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm font-medium">Åpne</span>
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                        </div>
-                    </a>
-                `).join('');
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium">Åpne</span>
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </div>
+                        </a>
+                    `;
+                }).join('');
             } else {
                 rolesSection.classList.add('hidden');
             }

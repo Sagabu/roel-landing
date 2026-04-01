@@ -213,6 +213,7 @@
         }
 
         let assignedPartyId = null;
+        let assignedProveId = null;
         let judgeRole = null;
         let judgeData = {};
 
@@ -266,6 +267,7 @@
 
             // Get assigned party from session (fallback)
             assignedPartyId = judgeData.assignedParty;
+            assignedProveId = judgeData.assignedProve;
             judgeRole = judgeData.judgeRole;
 
             // ALLTID hent oppdatert parti-info fra API for å sikre synkronisering
@@ -277,10 +279,12 @@
                         if (data.isDommer && data.tildelinger?.length > 0) {
                             const tildeling = data.tildelinger[0];
                             assignedPartyId = tildeling.parti;
+                            assignedProveId = tildeling.prove_id;
                             judgeRole = tildeling.dommerRolle;
 
                             // Update session with party info
                             judgeData.assignedParty = assignedPartyId;
+                            judgeData.assignedProve = assignedProveId;
                             judgeData.judgeRole = judgeRole;
                             localStorage.setItem('judgeSession', JSON.stringify(judgeData));
                         }
@@ -555,12 +559,16 @@
             // Update session with selected party info
             const sessionData = JSON.parse(localStorage.getItem('judgeSession') || '{}');
             sessionData.selectedParty = assignedPartyId;
+            sessionData.selectedProve = assignedProveId;
             localStorage.setItem('judgeSession', JSON.stringify(sessionData));
 
             // Navigate to correct assessment page based on party type
             const party = PARTIES[assignedPartyId];
             if (party && (party.type === 'vk' || party.type === 'vkfinale')) {
-                window.location.href = 'dommer-vk.html?party=' + assignedPartyId;
+                // VK-dommerkortet trenger prove og parti parametere for server-lagring
+                const proveParam = assignedProveId || 'demo';
+                const partiParam = encodeURIComponent(assignedPartyId);
+                window.location.href = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}`;
             } else {
                 // UK/AK parties use the new dommer-ukak.html
                 window.location.href = 'dommer-ukak.html?party=' + assignedPartyId;

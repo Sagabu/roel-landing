@@ -1950,20 +1950,13 @@
         }
 
         function generateNextRoundPairings() {
-            // Finn alle aktive hunder (ikke avsluttet)
+            // Finn alle aktive hunder (ikke avsluttet) - behold original rekkefølge fra partilisten
             const activeDogs = partyList.filter(dog => {
                 const plass = state.plasseringer[dog.nr];
                 return plass !== 'avsluttet';
             }).map(d => d.nr);
 
-            // Sorter etter plassering (beste først)
-            activeDogs.sort((a, b) => {
-                const plassA = state.plasseringer[a] ? parseInt(state.plasseringer[a]) : 999;
-                const plassB = state.plasseringer[b] ? parseInt(state.plasseringer[b]) : 999;
-                return plassA - plassB;
-            });
-
-            // Generer par: 1 vs 3, 2 vs 4, 5 vs 7, 6 vs 8, osv.
+            // Generer par basert på original partiliste: 1 vs 3, 2 vs 4, 3 vs 5, osv.
             // Men unngå at hunder møter tidligere motstandere
             round2Pairings = [];
             const used = new Set();
@@ -1975,22 +1968,19 @@
                 const previousOpponents = state.opponents[dog1] || [];
 
                 // Finn første tilgjengelige motstander som ikke er tidligere motstander
-                // Prøv først å matche med hund som er 2 plasser unna
+                // Prøv først å matche med hund som er 2 plasser unna i partilisten (1 vs 3, 2 vs 4)
                 let dog2 = null;
 
-                // Prioriter hund som er 2 plasser unna (1 vs 3, 2 vs 4, osv.)
-                for (let offset = 2; offset < activeDogs.length; offset++) {
-                    const candidateIdx = i + offset;
-                    if (candidateIdx >= activeDogs.length) break;
-
-                    const candidate = activeDogs[candidateIdx];
+                // Prioriter hund som er 2 plasser unna i partilisten
+                const targetIdx = i + 2;
+                if (targetIdx < activeDogs.length) {
+                    const candidate = activeDogs[targetIdx];
                     if (!used.has(candidate) && !previousOpponents.includes(candidate)) {
                         dog2 = candidate;
-                        break;
                     }
                 }
 
-                // Hvis ingen funnet med offset 2+, prøv alle tilgjengelige
+                // Hvis ikke mulig, prøv andre tilgjengelige (ikke tidligere motstandere)
                 if (!dog2) {
                     for (let j = i + 1; j < activeDogs.length; j++) {
                         const candidate = activeDogs[j];

@@ -749,8 +749,13 @@
 
         // Lagre kun én hund (uten å avslutte) - må ha plassering eller TTG
         function saveDogOnly(position) {
+            const dogNr = state.selectedDogs[position];
+
             // Valider at hunden har plassering eller TTG
             if (!validateAndSaveDog(position, true)) return;
+
+            // Sjekk om hunden fikk TTG (etter validering)
+            const gotTTG = state.tidTilGode[dogNr];
 
             saveSlippComment();
             saveDogData(position);
@@ -772,6 +777,11 @@
                 btn.textContent = originalText;
                 btn.classList.remove('bg-green-500');
                 btn.classList.add('bg-vk-500', 'hover:bg-vk-600');
+
+                // Hvis hunden fikk TTG, åpne partilisten for å velge ny hund
+                if (gotTTG) {
+                    openPartyListModal(position);
+                }
             }, 800);
         }
 
@@ -1441,14 +1451,30 @@
         document.addEventListener('DOMContentLoaded', init);
 
         // === PARTILISTE MODAL ===
-        function openPartyListModal() {
+        let preselectedPosition = null; // Forhåndsvalgt posisjon når modal åpnes fra TTG-lagring
+
+        function openPartyListModal(forPosition = null) {
+            preselectedPosition = forPosition;
             const modal = document.getElementById('partyListModal');
             modal.classList.remove('hidden');
+
+            // Oppdater tittel basert på om vi har en forhåndsvalgt posisjon
+            const titleEl = document.getElementById('partyListModalTitle');
+            const hintEl = document.getElementById('partyListModalHint');
+            if (forPosition) {
+                titleEl.textContent = `Velg ny hund ${forPosition}`;
+                hintEl.textContent = `Trykk på en hund for å sette den som Hund ${forPosition}.`;
+            } else {
+                titleEl.textContent = 'Partiliste';
+                hintEl.textContent = 'Trykk på en hund for å velge den til venstre eller høyre kort.';
+            }
+
             renderPartyListModal();
         }
 
         function closePartyListModal() {
             document.getElementById('partyListModal').classList.add('hidden');
+            preselectedPosition = null;
         }
 
         function renderPartyListModal() {
@@ -1534,7 +1560,6 @@
         }
 
         function selectDogFromModal(dogNr) {
-            // Spør hvilken posisjon hunden skal til
             const dog = partyList.find(d => d.nr === dogNr);
 
             // Sjekk om hunden allerede er valgt
@@ -1543,8 +1568,13 @@
                 return;
             }
 
-            // Velg posisjon
-            const position = confirm(`Velg posisjon for ${dog.race} ${dog.name}:\n\nOK = Hund 1 (venstre)\nAvbryt = Hund 2 (høyre)`) ? 1 : 2;
+            // Bruk forhåndsvalgt posisjon, eller spør bruker
+            let position;
+            if (preselectedPosition) {
+                position = preselectedPosition;
+            } else {
+                position = confirm(`Velg posisjon for ${dog.race} ${dog.name}:\n\nOK = Hund 1 (venstre)\nAvbryt = Hund 2 (høyre)`) ? 1 : 2;
+            }
 
             // Lagre nåværende data
             saveDogData(position);
@@ -1649,14 +1679,14 @@
     <div id="partyListModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
             <div class="flex items-center justify-between p-4 border-b border-vk-200">
-                <h2 class="text-lg font-bold font-serif text-vk-800">Partiliste</h2>
+                <h2 id="partyListModalTitle" class="text-lg font-bold font-serif text-vk-800">Partiliste</h2>
                 <button onclick="closePartyListModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-vk-100 transition">
                     <svg class="w-5 h-5 text-vk-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                 </button>
             </div>
-            <div class="p-4 text-xs text-vk-500 border-b border-vk-100">
+            <div id="partyListModalHint" class="p-4 text-xs text-vk-500 border-b border-vk-100">
                 Trykk på en hund for å velge den til venstre eller høyre kort.
             </div>
             <div id="partyListModalContent" class="flex-1 overflow-y-auto p-4 space-y-2">

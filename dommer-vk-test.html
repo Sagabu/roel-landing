@@ -88,7 +88,7 @@
                     </a>
                     <div>
                         <p class="font-bold font-serif text-sm">VK Dommerkort</p>
-                        <p class="text-bark-400 text-xs">Slipp <span id="currentSlipp">1</span></p>
+                        <p class="text-bark-400 text-xs">Runde <span id="currentRound">1</span> · Slipp <span id="currentSlipp">1</span></p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -469,11 +469,14 @@
         // State
         const state = {
             currentSlipp: 1,
+            currentRound: 1, // Nåværende runde (1, 2, 3, ...)
             selectedDogs: { 1: 1, 2: 2 }, // { position: dogNr }
             plasseringer: {}, // { dogNr: plassering }
             tidTilGode: {}, // { dogNr: true/false } - hunder som har tid til gode
             dogData: {}, // { dogNr: { slipps: { 1: { fmr, ... }, 2: {...} }, notater } }
             slippComments: {}, // { slippNr: "kommentar" } - felles kommentar per slipp
+            roundPairings: {}, // { round: [[dog1, dog2], [dog3, dog4], ...] } - hvem som har møtt hvem per runde
+            opponents: {}, // { dogNr: [motstanderNr, ...] } - alle motstandere en hund har møtt
         };
 
         // Demo partiliste for VK
@@ -515,11 +518,14 @@
                 try {
                     const parsed = JSON.parse(saved);
                     state.currentSlipp = parsed.currentSlipp || 1;
+                    state.currentRound = parsed.currentRound || 1;
                     state.selectedDogs = parsed.selectedDogs || { 1: 1, 2: 2 };
                     state.plasseringer = parsed.plasseringer || {};
                     state.tidTilGode = parsed.tidTilGode || {};
                     state.dogData = parsed.dogData || {};
                     state.slippComments = parsed.slippComments || {};
+                    state.roundPairings = parsed.roundPairings || {};
+                    state.opponents = parsed.opponents || {};
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -530,11 +536,14 @@
         function saveToStorage() {
             localStorage.setItem('dommertest_vk_dual', JSON.stringify({
                 currentSlipp: state.currentSlipp,
+                currentRound: state.currentRound,
                 selectedDogs: state.selectedDogs,
                 plasseringer: state.plasseringer,
                 tidTilGode: state.tidTilGode,
                 dogData: state.dogData,
-                slippComments: state.slippComments
+                slippComments: state.slippComments,
+                roundPairings: state.roundPairings,
+                opponents: state.opponents
             }));
         }
 
@@ -543,11 +552,14 @@
 
             localStorage.removeItem('dommertest_vk_dual');
             state.currentSlipp = 1;
+            state.currentRound = 1;
             state.selectedDogs = { 1: 1, 2: 2 };
             state.plasseringer = {};
             state.tidTilGode = {};
             state.dogData = {};
             state.slippComments = {};
+            state.roundPairings = {};
+            state.opponents = {};
 
             // Oppdater UI
             populateDogSelectors();
@@ -625,6 +637,7 @@
         function updateSlippLabels() {
             document.getElementById('slippLabel').textContent = state.currentSlipp;
             document.getElementById('currentSlipp').textContent = state.currentSlipp;
+            document.getElementById('currentRound').textContent = state.currentRound;
         }
 
         function loadDogData(position) {
@@ -999,11 +1012,30 @@
         }
 
         function goToNextPair() {
+            // Registrer motstandere for nåværende par
+            const currentDog1 = state.selectedDogs[1];
+            const currentDog2 = state.selectedDogs[2];
+            if (currentDog1 && currentDog2) {
+                if (!state.opponents[currentDog1]) state.opponents[currentDog1] = [];
+                if (!state.opponents[currentDog2]) state.opponents[currentDog2] = [];
+                if (!state.opponents[currentDog1].includes(currentDog2)) {
+                    state.opponents[currentDog1].push(currentDog2);
+                }
+                if (!state.opponents[currentDog2].includes(currentDog1)) {
+                    state.opponents[currentDog2].push(currentDog1);
+                }
+                // Lagre pairing for denne runden
+                if (!state.roundPairings[state.currentRound]) {
+                    state.roundPairings[state.currentRound] = [];
+                }
+                state.roundPairings[state.currentRound].push([currentDog1, currentDog2]);
+            }
+
             const [nextDog1, nextDog2] = getNextAvailablePair();
 
             if (nextDog1 === null && nextDog2 === null) {
-                // Ingen flere hunder - vis melding
-                alert('Alle hunder er bedømt eller avsluttet!');
+                // Runden er ferdig - vis runde-fullført modal
+                openRoundCompleteModal();
                 return;
             }
 
@@ -1902,7 +1934,293 @@
             // Gå til neste par
             setTimeout(() => goToNextPair(), 300);
         }
+
+        // === RUNDE FULLFØRT MODAL ===
+        let round2Pairings = []; // Foreslåtte par for runde 2
+
+        function openRoundCompleteModal() {
+            // Generer oppsett for neste runde
+            generateNextRoundPairings();
+            renderRoundCompleteModal();
+            document.getElementById('roundCompleteModal').classList.remove('hidden');
+        }
+
+        function closeRoundCompleteModal() {
+            document.getElementById('roundCompleteModal').classList.add('hidden');
+        }
+
+        function generateNextRoundPairings() {
+            // Finn alle aktive hunder (ikke avsluttet)
+            const activeDogs = partyList.filter(dog => {
+                const plass = state.plasseringer[dog.nr];
+                return plass !== 'avsluttet';
+            }).map(d => d.nr);
+
+            // Sorter etter plassering (beste først)
+            activeDogs.sort((a, b) => {
+                const plassA = state.plasseringer[a] ? parseInt(state.plasseringer[a]) : 999;
+                const plassB = state.plasseringer[b] ? parseInt(state.plasseringer[b]) : 999;
+                return plassA - plassB;
+            });
+
+            // Generer par: 1 vs 3, 2 vs 4, 5 vs 7, 6 vs 8, osv.
+            // Men unngå at hunder møter tidligere motstandere
+            round2Pairings = [];
+            const used = new Set();
+
+            for (let i = 0; i < activeDogs.length; i++) {
+                if (used.has(activeDogs[i])) continue;
+
+                const dog1 = activeDogs[i];
+                const previousOpponents = state.opponents[dog1] || [];
+
+                // Finn første tilgjengelige motstander som ikke er tidligere motstander
+                // Prøv først å matche med hund som er 2 plasser unna
+                let dog2 = null;
+
+                // Prioriter hund som er 2 plasser unna (1 vs 3, 2 vs 4, osv.)
+                for (let offset = 2; offset < activeDogs.length; offset++) {
+                    const candidateIdx = i + offset;
+                    if (candidateIdx >= activeDogs.length) break;
+
+                    const candidate = activeDogs[candidateIdx];
+                    if (!used.has(candidate) && !previousOpponents.includes(candidate)) {
+                        dog2 = candidate;
+                        break;
+                    }
+                }
+
+                // Hvis ingen funnet med offset 2+, prøv alle tilgjengelige
+                if (!dog2) {
+                    for (let j = i + 1; j < activeDogs.length; j++) {
+                        const candidate = activeDogs[j];
+                        if (!used.has(candidate) && !previousOpponents.includes(candidate)) {
+                            dog2 = candidate;
+                            break;
+                        }
+                    }
+                }
+
+                // Siste utvei: match med hvem som helst som er ledig
+                if (!dog2) {
+                    for (let j = i + 1; j < activeDogs.length; j++) {
+                        if (!used.has(activeDogs[j])) {
+                            dog2 = activeDogs[j];
+                            break;
+                        }
+                    }
+                }
+
+                if (dog2) {
+                    round2Pairings.push([dog1, dog2]);
+                    used.add(dog1);
+                    used.add(dog2);
+                }
+            }
+
+            // Hvis det er en hund til overs (oddetall), legg til som "bye"
+            const remaining = activeDogs.filter(d => !used.has(d));
+            if (remaining.length === 1) {
+                round2Pairings.push([remaining[0], null]); // null = bye
+            }
+        }
+
+        function renderRoundCompleteModal() {
+            const nextRound = state.currentRound + 1;
+            document.getElementById('roundCompleteTitle').textContent = `${state.currentRound}. runde fullført!`;
+            document.getElementById('nextRoundNumber').textContent = nextRound;
+
+            // Render rangering
+            const placed = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    const stats = formatDogStats(parseInt(nr));
+                    return { dog, plass: parseInt(plass), stats, nr: parseInt(nr) };
+                });
+
+            const rankingHtml = placed.map(({ dog, plass, stats }) => {
+                const statsHtml = stats ? `<span class="text-vk-500 ml-2 text-xs">${stats}</span>` : '';
+                return `<div class="flex items-center py-1 border-b border-vk-100 last:border-0">
+                    <span class="font-bold text-vk-700 w-8">${plass}.</span>
+                    <span class="flex-1">${dog.race} ${dog.name}</span>${statsHtml}
+                </div>`;
+            }).join('');
+
+            document.getElementById('roundCompleteRanking').innerHTML = rankingHtml || '<div class="text-vk-400 italic">Ingen rangerte hunder</div>';
+
+            // Render avsluttede hunder
+            const finished = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p === 'avsluttet')
+                .map(([nr]) => partyList.find(d => d.nr === parseInt(nr)));
+
+            if (finished.length > 0) {
+                document.getElementById('roundCompleteFinished').innerHTML = `
+                    <div class="text-xs font-bold text-red-600 uppercase mb-1">Avsluttet</div>
+                    ${finished.map(d => `<div class="text-sm text-red-700">${d.race} ${d.name}</div>`).join('')}
+                `;
+                document.getElementById('roundCompleteFinished').classList.remove('hidden');
+            } else {
+                document.getElementById('roundCompleteFinished').classList.add('hidden');
+            }
+
+            // Render runde 2 oppsett
+            renderRound2Pairings();
+        }
+
+        function renderRound2Pairings() {
+            const container = document.getElementById('round2PairingsContainer');
+
+            if (round2Pairings.length === 0) {
+                container.innerHTML = '<div class="text-vk-400 italic text-center py-4">Ingen flere par å sette opp</div>';
+                return;
+            }
+
+            container.innerHTML = round2Pairings.map((pair, idx) => {
+                const dog1 = partyList.find(d => d.nr === pair[0]);
+                const dog2 = pair[1] ? partyList.find(d => d.nr === pair[1]) : null;
+                const plass1 = state.plasseringer[pair[0]] || '-';
+                const plass2 = pair[1] ? (state.plasseringer[pair[1]] || '-') : '-';
+
+                return `<div class="bg-white border border-vk-200 rounded-lg p-3 flex items-center gap-2" data-pair-idx="${idx}">
+                    <div class="text-xs font-bold text-vk-400 w-6">Slipp ${idx + 1}</div>
+                    <div class="flex-1 flex items-center gap-2">
+                        <div class="flex-1 bg-vk-50 rounded p-2 text-center">
+                            <div class="text-xs text-vk-500">${plass1}. plass</div>
+                            <div class="font-medium text-sm">${dog1.race} ${dog1.name}</div>
+                        </div>
+                        <div class="text-vk-400 font-bold">vs</div>
+                        <div class="flex-1 bg-vk-50 rounded p-2 text-center">
+                            ${dog2 ? `
+                                <div class="text-xs text-vk-500">${plass2}. plass</div>
+                                <div class="font-medium text-sm">${dog2.race} ${dog2.name}</div>
+                            ` : `
+                                <div class="text-xs text-amber-500">Bye</div>
+                                <div class="font-medium text-sm text-amber-600">Ingen motstander</div>
+                            `}
+                        </div>
+                    </div>
+                    <button onclick="movePairUp(${idx})" class="p-1 hover:bg-vk-100 rounded ${idx === 0 ? 'opacity-30' : ''}" ${idx === 0 ? 'disabled' : ''}>
+                        <svg class="w-5 h-5 text-vk-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                    </button>
+                    <button onclick="movePairDown(${idx})" class="p-1 hover:bg-vk-100 rounded ${idx === round2Pairings.length - 1 ? 'opacity-30' : ''}" ${idx === round2Pairings.length - 1 ? 'disabled' : ''}>
+                        <svg class="w-5 h-5 text-vk-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                </div>`;
+            }).join('');
+        }
+
+        function movePairUp(idx) {
+            if (idx > 0) {
+                [round2Pairings[idx - 1], round2Pairings[idx]] = [round2Pairings[idx], round2Pairings[idx - 1]];
+                renderRound2Pairings();
+            }
+        }
+
+        function movePairDown(idx) {
+            if (idx < round2Pairings.length - 1) {
+                [round2Pairings[idx], round2Pairings[idx + 1]] = [round2Pairings[idx + 1], round2Pairings[idx]];
+                renderRound2Pairings();
+            }
+        }
+
+        function confirmRound2Setup() {
+            // Lagre oppsettet
+            state.roundPairings[state.currentRound + 1] = [...round2Pairings];
+
+            // Øk runde-nummer
+            state.currentRound++;
+
+            // Nullstill tid til gode for ny runde
+            state.tidTilGode = {};
+
+            // Sett første par for runde 2
+            if (round2Pairings.length > 0) {
+                const firstPair = round2Pairings[0];
+                state.selectedDogs[1] = firstPair[0];
+                state.selectedDogs[2] = firstPair[1] || firstPair[0]; // Hvis bye, vis samme hund
+
+                document.getElementById('dog1Select').value = firstPair[0];
+                document.getElementById('dog2Select').value = firstPair[1] || firstPair[0];
+
+                // Øk slipp-nummer
+                state.currentSlipp++;
+                updateSlippLabels();
+
+                // Oppdater runde-visning
+                document.getElementById('currentSlipp').textContent = state.currentSlipp;
+            }
+
+            // Lukk modal
+            closeRoundCompleteModal();
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+
+            // Nullstill input-feltene
+            [1, 2].forEach(pos => {
+                document.getElementById(`dog${pos}_fmr`).value = '';
+                document.getElementById(`dog${pos}_fur`).value = '';
+                document.getElementById(`dog${pos}_slat`).value = '';
+                document.getElementById(`dog${pos}_sjanse`).value = '';
+                document.getElementById(`dog${pos}_ts`).value = '';
+                document.getElementById(`dog${pos}_apport`).value = '';
+                document.getElementById(`dog${pos}_slipptid`).value = '';
+                document.getElementById(`dog${pos}_slipptid_info`).innerHTML = '';
+            });
+
+            saveToStorage();
+        }
     </script>
+
+    <!-- Runde Fullført Modal -->
+    <div id="roundCompleteModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-vk-200 bg-forest-600 text-white rounded-t-2xl">
+                <h2 id="roundCompleteTitle" class="text-xl font-bold font-serif text-center">1. runde fullført!</h2>
+                <p class="text-forest-100 text-sm text-center mt-1">Alle hunder er bedømt eller avsluttet</p>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+                <!-- Rangering -->
+                <div class="p-4 border-b border-vk-200">
+                    <h3 class="text-sm font-bold text-vk-700 uppercase mb-2">Nåværende rangering</h3>
+                    <div id="roundCompleteRanking" class="space-y-1 max-h-40 overflow-y-auto">
+                        <!-- Fylles dynamisk -->
+                    </div>
+                    <div id="roundCompleteFinished" class="mt-3 pt-3 border-t border-vk-100 hidden">
+                        <!-- Avsluttede hunder -->
+                    </div>
+                </div>
+
+                <!-- Runde 2 oppsett -->
+                <div class="p-4">
+                    <h3 class="text-sm font-bold text-vk-700 uppercase mb-2">Oppsett for runde <span id="nextRoundNumber">2</span></h3>
+                    <p class="text-xs text-vk-500 mb-3">Bruk pilene for å endre rekkefølgen på slippene</p>
+                    <div id="round2PairingsContainer" class="space-y-2">
+                        <!-- Fylles dynamisk -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-vk-200">
+                <button onclick="confirmRound2Setup()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                    Bekreft oppsett og start runde <span id="confirmRoundNumber">2</span>
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Dual Plassering Modal -->
     <div id="dualPlacementModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

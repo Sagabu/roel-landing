@@ -194,7 +194,9 @@
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5 apport-label">App</label>
-                            <input type="number" min="0" id="dog1_apport" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Apport">
+                            <div class="flex items-center justify-center h-9">
+                                <input type="checkbox" id="dog1_apport" class="w-6 h-6 rounded border-2 border-vk-300 text-forest-600 focus:ring-forest-500 cursor-pointer" title="Apport godkjent">
+                            </div>
                         </div>
                     </div>
                     <!-- Notater (erstatter DIV) -->
@@ -318,7 +320,9 @@
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5 apport-label">App</label>
-                            <input type="number" min="0" id="dog2_apport" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Apport">
+                            <div class="flex items-center justify-center h-9">
+                                <input type="checkbox" id="dog2_apport" class="w-6 h-6 rounded border-2 border-vk-300 text-forest-600 focus:ring-forest-500 cursor-pointer" title="Apport godkjent">
+                            </div>
                         </div>
                     </div>
                     <!-- Notater (erstatter DIV) -->
@@ -583,7 +587,7 @@
                 document.getElementById(`dog${pos}_slat`).value = '';
                 document.getElementById(`dog${pos}_sjanse`).value = '';
                 document.getElementById(`dog${pos}_ts`).value = '';
-                document.getElementById(`dog${pos}_apport`).value = '';
+                document.getElementById(`dog${pos}_apport`).checked = false;
                 document.getElementById(`dog${pos}_slipptid`).value = '';
                 document.getElementById(`dog${pos}_notater`).value = '';
                 document.getElementById(`dog${pos}_slipptid_info`).innerHTML = '';
@@ -655,13 +659,25 @@
             document.getElementById(`dog${position}_fur`).value = slippData.fur ?? '';
             document.getElementById(`dog${position}_slat`).value = slippData.slat ?? '';
             document.getElementById(`dog${position}_sjanse`).value = slippData.sjanse ?? '';
-            document.getElementById(`dog${position}_apport`).value = slippData.apport ?? '';
             document.getElementById(`dog${position}_ts`).value = slippData.ts ?? '';
             document.getElementById(`dog${position}_slipptid`).value = slippData.slipptid ?? '';
             document.getElementById(`dog${position}_notater`).value = data?.notater || '';
 
+            // Apport: Sjekk om hunden har godkjent apport fra tidligere slipp
+            const harApportFraTidligere = hasApportGodkjent(dogNr);
+            const apportCheckbox = document.getElementById(`dog${position}_apport`);
+            apportCheckbox.checked = slippData.apport || harApportFraTidligere;
+
             // Oppdater slipptid-visning
             updateSlipptidDisplay(position);
+        }
+
+        // Sjekk om hunden har fått godkjent apport i et tidligere slipp
+        function hasApportGodkjent(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return false;
+
+            return Object.values(data.slipps).some(slipp => slipp.apport === true);
         }
 
         function saveDogData(position) {
@@ -673,12 +689,14 @@
                 state.dogData[dogNr].slipps = {};
             }
 
+            const apportChecked = document.getElementById(`dog${position}_apport`).checked;
+
             state.dogData[dogNr].slipps[state.currentSlipp] = {
                 fmr: document.getElementById(`dog${position}_fmr`).value ? parseInt(document.getElementById(`dog${position}_fmr`).value) : null,
                 fur: document.getElementById(`dog${position}_fur`).value ? parseInt(document.getElementById(`dog${position}_fur`).value) : null,
                 slat: document.getElementById(`dog${position}_slat`).value ? parseInt(document.getElementById(`dog${position}_slat`).value) : null,
                 sjanse: document.getElementById(`dog${position}_sjanse`).value ? parseInt(document.getElementById(`dog${position}_sjanse`).value) : null,
-                apport: document.getElementById(`dog${position}_apport`).value ? parseInt(document.getElementById(`dog${position}_apport`).value) : null,
+                apport: apportChecked || null,
                 ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
                 slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : null
             };
@@ -1143,7 +1161,9 @@
                     document.getElementById(`dog${pos}_slat`).value = '';
                     document.getElementById(`dog${pos}_sjanse`).value = '';
                     document.getElementById(`dog${pos}_ts`).value = '';
-                    document.getElementById(`dog${pos}_apport`).value = '';
+                    // Apport: Behold avkrysning hvis godkjent tidligere
+                    const harApport = hasApportGodkjent(dogNr);
+                    document.getElementById(`dog${pos}_apport`).checked = harApport;
                     document.getElementById(`dog${pos}_slipptid`).value = '';
                 }
 
@@ -3003,14 +3023,17 @@ Antall slipp: ${state.currentSlipp}
             renderPartyLists();
             renderRankings();
 
-            // Nullstill input-feltene
+            // Nullstill input-feltene (men behold apport hvis allerede godkjent)
             [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
                 document.getElementById(`dog${pos}_fmr`).value = '';
                 document.getElementById(`dog${pos}_fur`).value = '';
                 document.getElementById(`dog${pos}_slat`).value = '';
                 document.getElementById(`dog${pos}_sjanse`).value = '';
                 document.getElementById(`dog${pos}_ts`).value = '';
-                document.getElementById(`dog${pos}_apport`).value = '';
+                // Apport: Behold avkrysning hvis godkjent tidligere
+                const harApport = hasApportGodkjent(dogNr);
+                document.getElementById(`dog${pos}_apport`).checked = harApport;
                 document.getElementById(`dog${pos}_slipptid`).value = '';
                 document.getElementById(`dog${pos}_slipptid_info`).innerHTML = '';
             });

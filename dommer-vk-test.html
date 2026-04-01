@@ -462,6 +462,8 @@
             tidTilGode: {}, // { dogNr: true/false } - hunder som har tid til gode
             dogData: {}, // { dogNr: { slipps: { 1: { fmr, ... }, 2: {...} }, notater } }
             slippComments: {}, // { slippNr: "kommentar" } - felles kommentar per slipp
+            slippDogs: {}, // { slippNr: [dogNr1, dogNr2] } - hvilke hunder som var i hvert slipp
+            slippRankings: {}, // { slippNr: [{dogNr, plass}, ...] } - rangering etter hvert slipp
             roundPairings: {}, // { round: [[dog1, dog2], [dog3, dog4], ...] } - hvem som har møtt hvem per runde
             opponents: {}, // { dogNr: [motstanderNr, ...] } - alle motstandere en hund har møtt
             judgedThisRound: {}, // { round: [dogNr, ...] } - hunder som er bedømt i denne runden
@@ -518,6 +520,8 @@
                     state.opponents = parsed.opponents || {};
                     state.judgedThisRound = parsed.judgedThisRound || {};
                     state.roundSnapshots = parsed.roundSnapshots || {};
+                    state.slippDogs = parsed.slippDogs || {};
+                    state.slippRankings = parsed.slippRankings || {};
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -537,7 +541,9 @@
                 roundPairings: state.roundPairings,
                 opponents: state.opponents,
                 judgedThisRound: state.judgedThisRound,
-                roundSnapshots: state.roundSnapshots
+                roundSnapshots: state.roundSnapshots,
+                slippDogs: state.slippDogs,
+                slippRankings: state.slippRankings
             }));
         }
 
@@ -965,6 +971,29 @@
             }
         }
 
+        // Lagre rangering etter et slipp
+        function saveSlippRanking(slippNr) {
+            const placed = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => ({ dogNr: parseInt(nr), plass: parseInt(plass) }));
+
+            const tidTilGode = Object.entries(state.tidTilGode)
+                .filter(([_, has]) => has)
+                .map(([nr]) => parseInt(nr));
+
+            const avsluttet = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p === 'avsluttet')
+                .map(([nr]) => parseInt(nr));
+
+            state.slippRankings[slippNr] = {
+                placed,
+                tidTilGode,
+                avsluttet,
+                round: state.currentRound
+            };
+        }
+
         // Finn neste ledige par (hunder som ikke er plassert eller avsluttet)
         function getNextAvailablePair() {
             // Hent liste over hunder som allerede er bedømt i denne runden
@@ -1040,6 +1069,12 @@
                 if (!state.judgedThisRound[state.currentRound].includes(currentDog2)) {
                     state.judgedThisRound[state.currentRound].push(currentDog2);
                 }
+
+                // Lagre hvilke hunder som var i dette slippet
+                state.slippDogs[state.currentSlipp] = [currentDog1, currentDog2];
+
+                // Lagre rangering etter dette slippet
+                saveSlippRanking(state.currentSlipp);
             }
 
             const [nextDog1, nextDog2] = getNextAvailablePair();
@@ -2331,13 +2366,13 @@
         }
 
         function exportJudgingReport() {
-            // Bygg komplett rapport
+            // Bygg kronologisk rapport - slipp for slipp
             const now = new Date();
             const dateStr = now.toLocaleDateString('nb-NO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
             const timeStr = now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 
-            // Rangering
-            const placed = Object.entries(state.plasseringer)
+            // Endelig rangering
+            const finalPlaced = Object.entries(state.plasseringer)
                 .filter(([_, p]) => p !== 'avsluttet')
                 .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
                 .map(([nr, plass]) => {
@@ -2345,70 +2380,114 @@
                     return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
                 });
 
-            const finished = Object.entries(state.plasseringer)
+            const finalFinished = Object.entries(state.plasseringer)
                 .filter(([_, p]) => p === 'avsluttet')
                 .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }));
 
-            let report = `
-VINNERKLASSE - BEDØMMINGSRAPPORT
+            let report = `VINNERKLASSE - BEDØMMINGSRAPPORT
 ================================
 Dato: ${dateStr}
 Tidspunkt: ${timeStr}
 Antall runder: ${state.currentRound}
+Antall slipp: ${state.currentSlipp}
 
-ENDELIG RANGERING
------------------
 `;
-            placed.forEach(({ dog, plass, dogNr }) => {
+
+            // Kronologisk gjennomgang - slipp for slipp
+            report += `KRONOLOGISK BEDØMMING\n`;
+            report += `=====================\n\n`;
+
+            const slippNumbers = Object.keys(state.slippDogs).map(n => parseInt(n)).sort((a, b) => a - b);
+            let currentRoundInReport = 0;
+
+            slippNumbers.forEach(slippNr => {
+                const dogs = state.slippDogs[slippNr];
+                const ranking = state.slippRankings[slippNr];
+                const comment = state.slippComments[slippNr];
+
+                // Sjekk om vi har startet en ny runde
+                if (ranking && ranking.round !== currentRoundInReport) {
+                    currentRoundInReport = ranking.round;
+                    report += `\n--- ${currentRoundInReport}. RUNDE ---\n\n`;
+                }
+
+                report += `SLIPP ${slippNr}\n`;
+                report += `---------\n`;
+
+                // Hunder i slippet
+                if (dogs && dogs.length > 0) {
+                    dogs.forEach(dogNr => {
+                        const dog = partyList.find(d => d.nr === dogNr);
+                        if (dog) {
+                            const slippData = state.dogData[dogNr]?.slipps?.[slippNr];
+                            report += `  ${dog.race} ${dog.name} (${dog.owner})\n`;
+                            if (slippData) {
+                                const parts = [];
+                                if (slippData.slipptid) parts.push(`${slippData.slipptid} min`);
+                                if (slippData.fmr) parts.push(`FMR: ${slippData.fmr}`);
+                                if (slippData.fur) parts.push(`FUR: ${slippData.fur}`);
+                                if (slippData.slat) parts.push(`Slått: ${slippData.slat}`);
+                                if (slippData.sjanse) parts.push(`Sj: ${slippData.sjanse}`);
+                                if (slippData.ts) parts.push(`TS: ${slippData.ts}`);
+                                if (slippData.apport) parts.push(`App: ${slippData.apport}`);
+                                if (parts.length > 0) {
+                                    report += `     → ${parts.join(', ')}\n`;
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Kommentar
+                if (comment && comment.trim()) {
+                    report += `  Kommentar: "${comment}"\n`;
+                }
+
+                // Rangering etter slippet
+                if (ranking && ranking.placed && ranking.placed.length > 0) {
+                    report += `  Rangering etter slipp ${slippNr}:\n`;
+                    ranking.placed.forEach(({ dogNr, plass }) => {
+                        const dog = partyList.find(d => d.nr === dogNr);
+                        report += `     ${plass}. ${dog.race} ${dog.name}\n`;
+                    });
+                    if (ranking.tidTilGode && ranking.tidTilGode.length > 0) {
+                        report += `     Tid til gode: `;
+                        report += ranking.tidTilGode.map(nr => {
+                            const dog = partyList.find(d => d.nr === nr);
+                            return dog ? dog.name : nr;
+                        }).join(', ');
+                        report += `\n`;
+                    }
+                }
+
+                report += `\n`;
+            });
+
+            // Endelig rangering
+            report += `\n=============================\n`;
+            report += `ENDELIG RANGERING\n`;
+            report += `=============================\n\n`;
+
+            finalPlaced.forEach(({ dog, plass, dogNr }) => {
                 const stats = formatDogStats(dogNr);
                 report += `${plass}. ${dog.race} ${dog.name} (${dog.owner})\n`;
                 report += `   Statistikk: ${stats || 'Ingen registrert'}\n`;
-
-                // Legg til notater hvis de finnes
                 const notater = state.dogData[dogNr]?.notater;
                 if (notater) {
                     report += `   Notater: ${notater}\n`;
                 }
-                report += '\n';
+                report += `\n`;
             });
 
-            if (finished.length > 0) {
-                report += `AVSLUTTEDE HUNDER\n-----------------\n`;
-                finished.forEach(({ dog, dogNr }) => {
+            if (finalFinished.length > 0) {
+                report += `\nAVSLUTTEDE HUNDER:\n`;
+                finalFinished.forEach(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr);
-                    report += `${dog.race} ${dog.name} (${dog.owner})\n`;
-                    report += `   Statistikk: ${stats || 'Ingen registrert'}\n\n`;
+                    report += `  ${dog.race} ${dog.name} - ${stats || 'Ingen statistikk'}\n`;
                 });
             }
 
-            // Slippkommentarer
-            const comments = Object.entries(state.slippComments).filter(([_, c]) => c && c.trim());
-            if (comments.length > 0) {
-                report += `\nSLIPPKOMMENTARER\n----------------\n`;
-                comments.sort((a, b) => parseInt(a[0]) - parseInt(b[0])).forEach(([slipp, comment]) => {
-                    report += `Slipp ${slipp}: ${comment}\n`;
-                });
-            }
-
-            // Rundehistorikk
-            const rounds = Object.keys(state.roundSnapshots).map(r => parseInt(r)).sort((a, b) => a - b);
-            if (rounds.length > 0) {
-                report += `\nRUNDEHISTORIKK\n--------------\n`;
-                rounds.forEach(round => {
-                    const snapshot = state.roundSnapshots[round];
-                    const roundPlaced = Object.entries(snapshot.plasseringer)
-                        .filter(([_, p]) => p !== 'avsluttet')
-                        .sort((a, b) => parseInt(a[1]) - parseInt(b[1]));
-
-                    report += `\nEtter ${round}. runde:\n`;
-                    roundPlaced.forEach(([nr, plass]) => {
-                        const dog = partyList.find(d => d.nr === parseInt(nr));
-                        report += `  ${plass}. ${dog.race} ${dog.name}\n`;
-                    });
-                });
-            }
-
-            report += `\n\n---\nGenerert av Fuglehundprøve VK Dommerkort\n`;
+            report += `\n---\nGenerert av Fuglehundprøve VK Dommerkort\n`;
 
             // Last ned som tekstfil
             const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
@@ -2423,11 +2502,11 @@ ENDELIG RANGERING
         }
 
         function exportJudgingReportHTML() {
-            // Bygg HTML-rapport som kan skrives ut eller lagres som PDF
+            // Bygg kronologisk HTML-rapport
             const now = new Date();
             const dateStr = now.toLocaleDateString('nb-NO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-            const placed = Object.entries(state.plasseringer)
+            const finalPlaced = Object.entries(state.plasseringer)
                 .filter(([_, p]) => p !== 'avsluttet')
                 .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
                 .map(([nr, plass]) => {
@@ -2435,11 +2514,9 @@ ENDELIG RANGERING
                     return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
                 });
 
-            const finished = Object.entries(state.plasseringer)
+            const finalFinished = Object.entries(state.plasseringer)
                 .filter(([_, p]) => p === 'avsluttet')
                 .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }));
-
-            const comments = Object.entries(state.slippComments).filter(([_, c]) => c && c.trim());
 
             let html = `<!DOCTYPE html>
 <html lang="no">
@@ -2447,76 +2524,128 @@ ENDELIG RANGERING
     <meta charset="UTF-8">
     <title>VK Bedømmingsrapport</title>
     <style>
-        body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 20px; color: #333; }
+        body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 20px; color: #333; line-height: 1.5; }
         h1 { color: #2d5016; border-bottom: 3px solid #2d5016; padding-bottom: 10px; }
-        h2 { color: #5c4033; margin-top: 30px; }
-        .date { color: #666; font-style: italic; }
-        .dog { margin: 15px 0; padding: 15px; background: #f8f5f0; border-left: 4px solid #2d5016; }
-        .dog-name { font-size: 1.1em; font-weight: bold; }
-        .dog-stats { color: #666; margin-top: 5px; }
-        .dog-notes { color: #8b4513; margin-top: 5px; font-style: italic; }
-        .finished { opacity: 0.6; border-left-color: #999; }
-        .comment { margin: 10px 0; padding: 10px; background: #fff8e1; border-radius: 5px; }
-        .comment-label { font-weight: bold; color: #f57c00; }
-        .round-history { background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; }
-        @media print { body { margin: 0; } }
+        h2 { color: #5c4033; margin-top: 30px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        h3 { color: #666; margin-top: 25px; }
+        .date { color: #666; font-style: italic; margin-bottom: 20px; }
+        .slipp { margin: 20px 0; padding: 15px; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
+        .slipp-header { font-weight: bold; color: #2d5016; font-size: 1.1em; margin-bottom: 10px; }
+        .slipp-dogs { margin: 10px 0; }
+        .slipp-dog { padding: 8px 12px; background: #fff; margin: 5px 0; border-left: 3px solid #2d5016; }
+        .slipp-dog-name { font-weight: bold; }
+        .slipp-dog-stats { color: #666; font-size: 0.9em; margin-top: 3px; }
+        .slipp-comment { background: #fff8e1; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 3px solid #f57c00; }
+        .slipp-ranking { background: #e8f5e9; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 0.9em; }
+        .round-divider { text-align: center; margin: 30px 0; padding: 10px; background: #2d5016; color: white; border-radius: 5px; }
+        .final-ranking { margin: 15px 0; padding: 15px; background: #f8f5f0; border-left: 4px solid #2d5016; }
+        .final-ranking .name { font-size: 1.1em; font-weight: bold; }
+        .final-ranking .stats { color: #666; margin-top: 5px; }
+        .final-ranking .notes { color: #8b4513; margin-top: 5px; font-style: italic; }
+        .finished { opacity: 0.7; }
+        @media print { body { margin: 0; } .slipp { break-inside: avoid; } }
     </style>
 </head>
 <body>
     <h1>Vinnerklasse - Bedømmingsrapport</h1>
-    <p class="date">${dateStr} | ${state.currentRound} runde(r)</p>
+    <p class="date">${dateStr} | ${state.currentRound} runde(r) | ${state.currentSlipp} slipp</p>
 
-    <h2>Endelig rangering</h2>
+    <h2>Kronologisk bedømming</h2>
 `;
 
-            placed.forEach(({ dog, plass, dogNr }) => {
+            // Kronologisk gjennomgang
+            const slippNumbers = Object.keys(state.slippDogs).map(n => parseInt(n)).sort((a, b) => a - b);
+            let currentRoundInReport = 0;
+
+            slippNumbers.forEach(slippNr => {
+                const dogs = state.slippDogs[slippNr];
+                const ranking = state.slippRankings[slippNr];
+                const comment = state.slippComments[slippNr];
+
+                // Ny runde-divider
+                if (ranking && ranking.round !== currentRoundInReport) {
+                    currentRoundInReport = ranking.round;
+                    html += `<div class="round-divider">${currentRoundInReport}. runde</div>`;
+                }
+
+                html += `<div class="slipp">`;
+                html += `<div class="slipp-header">Slipp ${slippNr}</div>`;
+
+                // Hunder i slippet
+                if (dogs && dogs.length > 0) {
+                    html += `<div class="slipp-dogs">`;
+                    dogs.forEach(dogNr => {
+                        const dog = partyList.find(d => d.nr === dogNr);
+                        if (dog) {
+                            const slippData = state.dogData[dogNr]?.slipps?.[slippNr];
+                            html += `<div class="slipp-dog">`;
+                            html += `<div class="slipp-dog-name">${dog.race} ${dog.name}</div>`;
+                            html += `<div style="font-size: 0.85em; color: #888;">Eier: ${dog.owner}</div>`;
+                            if (slippData) {
+                                const parts = [];
+                                if (slippData.slipptid) parts.push(`${slippData.slipptid} min`);
+                                if (slippData.fmr) parts.push(`FMR: ${slippData.fmr}`);
+                                if (slippData.fur) parts.push(`FUR: ${slippData.fur}`);
+                                if (slippData.slat) parts.push(`Slått: ${slippData.slat}`);
+                                if (slippData.sjanse) parts.push(`Sj: ${slippData.sjanse}`);
+                                if (slippData.ts) parts.push(`TS: ${slippData.ts}`);
+                                if (slippData.apport) parts.push(`App: ${slippData.apport}`);
+                                if (parts.length > 0) {
+                                    html += `<div class="slipp-dog-stats">${parts.join(' | ')}</div>`;
+                                }
+                            }
+                            html += `</div>`;
+                        }
+                    });
+                    html += `</div>`;
+                }
+
+                // Kommentar
+                if (comment && comment.trim()) {
+                    html += `<div class="slipp-comment"><strong>Kommentar:</strong> ${comment}</div>`;
+                }
+
+                // Rangering
+                if (ranking && ranking.placed && ranking.placed.length > 0) {
+                    html += `<div class="slipp-ranking"><strong>Rangering etter slipp ${slippNr}:</strong><br>`;
+                    ranking.placed.forEach(({ dogNr, plass }) => {
+                        const dog = partyList.find(d => d.nr === dogNr);
+                        html += `${plass}. ${dog.race} ${dog.name}<br>`;
+                    });
+                    if (ranking.tidTilGode && ranking.tidTilGode.length > 0) {
+                        html += `<em>Tid til gode: `;
+                        html += ranking.tidTilGode.map(nr => {
+                            const dog = partyList.find(d => d.nr === nr);
+                            return dog ? dog.name : nr;
+                        }).join(', ');
+                        html += `</em>`;
+                    }
+                    html += `</div>`;
+                }
+
+                html += `</div>`;
+            });
+
+            // Endelig rangering
+            html += `<h2>Endelig rangering</h2>`;
+
+            finalPlaced.forEach(({ dog, plass, dogNr }) => {
                 const stats = formatDogStats(dogNr);
                 const notater = state.dogData[dogNr]?.notater || '';
                 html += `
-    <div class="dog">
-        <div class="dog-name">${plass}. ${dog.race} ${dog.name}</div>
+    <div class="final-ranking">
+        <div class="name">${plass}. ${dog.race} ${dog.name}</div>
         <div>Eier: ${dog.owner}</div>
-        ${stats ? `<div class="dog-stats">Statistikk: ${stats}</div>` : ''}
-        ${notater ? `<div class="dog-notes">Notater: ${notater}</div>` : ''}
+        ${stats ? `<div class="stats">Statistikk: ${stats}</div>` : ''}
+        ${notater ? `<div class="notes">Notater: ${notater}</div>` : ''}
     </div>`;
             });
 
-            if (finished.length > 0) {
-                html += `<h2>Avsluttede hunder</h2>`;
-                finished.forEach(({ dog, dogNr }) => {
+            if (finalFinished.length > 0) {
+                html += `<h3>Avsluttede hunder</h3>`;
+                finalFinished.forEach(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr);
-                    html += `
-    <div class="dog finished">
-        <div class="dog-name">${dog.race} ${dog.name}</div>
-        <div>Eier: ${dog.owner}</div>
-        ${stats ? `<div class="dog-stats">Statistikk: ${stats}</div>` : ''}
-    </div>`;
-                });
-            }
-
-            if (comments.length > 0) {
-                html += `<h2>Slippkommentarer</h2>`;
-                comments.sort((a, b) => parseInt(a[0]) - parseInt(b[0])).forEach(([slipp, comment]) => {
-                    html += `<div class="comment"><span class="comment-label">Slipp ${slipp}:</span> ${comment}</div>`;
-                });
-            }
-
-            // Rundehistorikk
-            const rounds = Object.keys(state.roundSnapshots).map(r => parseInt(r)).sort((a, b) => a - b);
-            if (rounds.length > 0) {
-                html += `<h2>Rundehistorikk</h2>`;
-                rounds.forEach(round => {
-                    const snapshot = state.roundSnapshots[round];
-                    const roundPlaced = Object.entries(snapshot.plasseringer)
-                        .filter(([_, p]) => p !== 'avsluttet')
-                        .sort((a, b) => parseInt(a[1]) - parseInt(b[1]));
-
-                    html += `<div class="round-history"><strong>Etter ${round}. runde:</strong><br>`;
-                    roundPlaced.forEach(([nr, plass]) => {
-                        const dog = partyList.find(d => d.nr === parseInt(nr));
-                        html += `${plass}. ${dog.race} ${dog.name}<br>`;
-                    });
-                    html += `</div>`;
+                    html += `<div class="final-ranking finished">${dog.race} ${dog.name} - ${stats || 'Ingen statistikk'}</div>`;
                 });
             }
 
@@ -2526,7 +2655,7 @@ ENDELIG RANGERING
 </body>
 </html>`;
 
-            // Åpne i nytt vindu for utskrift/lagring
+            // Åpne i nytt vindu
             const printWindow = window.open('', '_blank');
             printWindow.document.write(html);
             printWindow.document.close();

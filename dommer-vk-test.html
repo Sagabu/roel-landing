@@ -92,6 +92,9 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <button onclick="openPartyListModal()" class="bg-vk-600 hover:bg-vk-700 px-2 py-1 rounded-lg text-xs font-medium transition" title="Vis partiliste">
+                        📋
+                    </button>
                     <button onclick="resetAll()" class="bg-red-500/80 hover:bg-red-600 px-2 py-1 rounded-lg text-xs font-medium transition" title="Nullstill alt">
                         ↺
                     </button>
@@ -705,6 +708,10 @@
         }
 
         function saveAll() {
+            // Valider begge hunder - de MÅ ha plassering eller TTG
+            if (!validateAndSaveDog(1, true)) return;
+            if (!validateAndSaveDog(2, true)) return;
+
             saveSlippComment();
             saveDogData(1);
             saveDogData(2);
@@ -713,6 +720,8 @@
             // Oppdater rangeringen umiddelbart etter lagring
             renderRankings();
             renderPartyLists();
+            updateDogDisplays();
+            updatePlacementDropdowns();
 
             // Visual feedback
             const btn = event.target;
@@ -731,14 +740,19 @@
             }, 800);
         }
 
-        // Lagre kun én hund (uten å avslutte)
+        // Lagre kun én hund (uten å avslutte) - må ha plassering eller TTG
         function saveDogOnly(position) {
+            // Valider at hunden har plassering eller TTG
+            if (!validateAndSaveDog(position, true)) return;
+
             saveSlippComment();
             saveDogData(position);
             saveToStorage();
 
             renderRankings();
             renderPartyLists();
+            updateDogDisplays();
+            updatePlacementDropdowns();
 
             // Visual feedback
             const btn = event.target;
@@ -1418,6 +1432,230 @@
 
         // Init
         document.addEventListener('DOMContentLoaded', init);
+
+        // === PARTILISTE MODAL ===
+        function openPartyListModal() {
+            const modal = document.getElementById('partyListModal');
+            modal.classList.remove('hidden');
+            renderPartyListModal();
+        }
+
+        function closePartyListModal() {
+            document.getElementById('partyListModal').classList.add('hidden');
+        }
+
+        function renderPartyListModal() {
+            const container = document.getElementById('partyListModalContent');
+
+            // Sorter hunder: rangerte først (etter plassering), deretter TTG, deretter aktive, til slutt avsluttede
+            const sortedDogs = [...partyList].sort((a, b) => {
+                const plassA = state.plasseringer[a.nr];
+                const plassB = state.plasseringer[b.nr];
+                const ttgA = state.tidTilGode[a.nr];
+                const ttgB = state.tidTilGode[b.nr];
+
+                // Rangerte først (sortert etter plassering)
+                if (plassA && plassA !== 'avsluttet' && (!plassB || plassB === 'avsluttet')) return -1;
+                if (plassB && plassB !== 'avsluttet' && (!plassA || plassA === 'avsluttet')) return 1;
+                if (plassA && plassA !== 'avsluttet' && plassB && plassB !== 'avsluttet') {
+                    return parseInt(plassA) - parseInt(plassB);
+                }
+
+                // TTG neste
+                if (ttgA && !ttgB) return -1;
+                if (ttgB && !ttgA) return 1;
+
+                // Avsluttede sist
+                if (plassA === 'avsluttet' && plassB !== 'avsluttet') return 1;
+                if (plassB === 'avsluttet' && plassA !== 'avsluttet') return -1;
+
+                return a.nr - b.nr;
+            });
+
+            let html = '';
+
+            sortedDogs.forEach(dog => {
+                const plass = state.plasseringer[dog.nr];
+                const hasTTG = state.tidTilGode[dog.nr];
+                const isSelected = dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2];
+                const isFinished = plass === 'avsluttet';
+                const isRanked = plass && plass !== 'avsluttet';
+                const totalSlipptid = getTotalSlipptid(dog.nr);
+                const stats = formatDogStats(dog.nr);
+
+                let statusBadge = '';
+                let rowClass = 'bg-white';
+                let canSelect = true;
+
+                if (isRanked) {
+                    statusBadge = `<span class="px-2 py-0.5 bg-vk-600 text-white text-xs rounded-full font-bold">${plass}. plass</span>`;
+                    rowClass = 'bg-vk-50';
+                } else if (hasTTG) {
+                    statusBadge = `<span class="px-2 py-0.5 bg-amber-500 text-white text-xs rounded-full font-bold">Tid til gode</span>`;
+                    rowClass = 'bg-amber-50';
+                } else if (isFinished) {
+                    statusBadge = `<span class="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full font-bold">Avsluttet</span>`;
+                    rowClass = 'bg-red-50 opacity-60';
+                    canSelect = false;
+                } else if (isSelected) {
+                    statusBadge = `<span class="px-2 py-0.5 bg-forest-500 text-white text-xs rounded-full font-bold">Aktiv</span>`;
+                    rowClass = 'bg-forest-50';
+                }
+
+                html += `
+                    <div class="${rowClass} p-3 rounded-lg border border-vk-200 ${canSelect ? 'cursor-pointer hover:border-vk-400' : ''}"
+                         ${canSelect ? `onclick="selectDogFromModal(${dog.nr})"` : ''}>
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-vk-700">${dog.nr}.</span>
+                                    <span class="font-semibold">${dog.race} ${dog.name}</span>
+                                </div>
+                                <div class="text-xs text-vk-500 mt-0.5">${dog.owner}</div>
+                                ${stats ? `<div class="text-xs text-vk-600 mt-1">${stats}</div>` : ''}
+                            </div>
+                            <div class="flex flex-col items-end gap-1">
+                                ${statusBadge}
+                                ${totalSlipptid > 0 ? `<span class="text-xs ${totalSlipptid >= 60 ? 'text-green-600 font-bold' : 'text-vk-500'}">${totalSlipptid} min</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function selectDogFromModal(dogNr) {
+            // Spør hvilken posisjon hunden skal til
+            const dog = partyList.find(d => d.nr === dogNr);
+
+            // Sjekk om hunden allerede er valgt
+            if (state.selectedDogs[1] === dogNr || state.selectedDogs[2] === dogNr) {
+                alert(`${dog.race} ${dog.name} er allerede aktiv!`);
+                return;
+            }
+
+            // Velg posisjon
+            const position = confirm(`Velg posisjon for ${dog.race} ${dog.name}:\n\nOK = Hund 1 (venstre)\nAvbryt = Hund 2 (høyre)`) ? 1 : 2;
+
+            // Lagre nåværende data
+            saveDogData(position);
+
+            // Sett ny hund
+            state.selectedDogs[position] = dogNr;
+            document.getElementById(`dog${position}Select`).value = dogNr;
+
+            // Fjern fra tid til gode hvis den var der
+            delete state.tidTilGode[dogNr];
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadDogData(position);
+            updatePlacementDropdowns();
+            renderRankings();
+            renderPartyLists();
+            saveToStorage();
+
+            // Lukk modal
+            closePartyListModal();
+        }
+
+        // === VALIDERING: Tvinge plassering ved lagring ===
+        function validateAndSaveDog(position, allowTTG = true) {
+            const dogNr = state.selectedDogs[position];
+            const dog = partyList.find(d => d.nr === dogNr);
+            const hasTTG = state.tidTilGode[dogNr];
+            const hasPlacement = state.plasseringer[dogNr] && state.plasseringer[dogNr] !== 'avsluttet';
+
+            // Hvis hunden verken har TTG eller plassering, må vi spørre
+            if (!hasTTG && !hasPlacement) {
+                // Beregn gyldige plasseringer
+                const currentPlacements = Object.entries(state.plasseringer)
+                    .filter(([nr, p]) => p !== 'avsluttet' && parseInt(nr) !== dogNr)
+                    .length;
+
+                // Vis valg-dialog
+                const choice = showPlacementDialog(dog, currentPlacements + 1, allowTTG);
+
+                if (choice === null) {
+                    return false; // Avbrutt
+                } else if (choice === 'ttg') {
+                    state.tidTilGode[dogNr] = true;
+                } else if (choice === 'finish') {
+                    state.plasseringer[dogNr] = 'avsluttet';
+                } else {
+                    // Plassering valgt - skyv ned andre
+                    const newPlass = parseInt(choice);
+                    const toShift = Object.entries(state.plasseringer)
+                        .filter(([nr, p]) => p !== 'avsluttet' && parseInt(p) >= newPlass && parseInt(nr) !== dogNr)
+                        .sort((a, b) => parseInt(b[1]) - parseInt(a[1]));
+
+                    toShift.forEach(([nr, p]) => {
+                        state.plasseringer[parseInt(nr)] = String(parseInt(p) + 1);
+                    });
+
+                    state.plasseringer[dogNr] = String(newPlass);
+                }
+            }
+
+            return true;
+        }
+
+        function showPlacementDialog(dog, maxPlacement, allowTTG) {
+            // Bygg opp valg-liste
+            let options = [];
+            for (let i = 1; i <= maxPlacement; i++) {
+                options.push(`${i} = ${i}. plass`);
+            }
+            if (allowTTG) {
+                options.push(`T = Tid til gode`);
+            }
+            options.push(`A = Avslutt hund`);
+
+            const message = `${dog.race} ${dog.name} må ha en plassering!\n\nVelg (skriv tall eller bokstav):\n${options.join('\n')}`;
+
+            const input = prompt(message);
+
+            if (input === null) return null;
+
+            const trimmed = input.trim().toUpperCase();
+
+            if (trimmed === 'T' && allowTTG) {
+                return 'ttg';
+            } else if (trimmed === 'A') {
+                return 'finish';
+            } else {
+                const num = parseInt(trimmed);
+                if (num >= 1 && num <= maxPlacement) {
+                    return String(num);
+                }
+            }
+
+            // Ugyldig valg - prøv igjen
+            alert('Ugyldig valg. Prøv igjen.');
+            return showPlacementDialog(dog, maxPlacement, allowTTG);
+        }
     </script>
+
+    <!-- Partiliste Modal -->
+    <div id="partyListModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div class="flex items-center justify-between p-4 border-b border-vk-200">
+                <h2 class="text-lg font-bold font-serif text-vk-800">Partiliste</h2>
+                <button onclick="closePartyListModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-vk-100 transition">
+                    <svg class="w-5 h-5 text-vk-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4 text-xs text-vk-500 border-b border-vk-100">
+                Trykk på en hund for å velge den til venstre eller høyre kort.
+            </div>
+            <div id="partyListModalContent" class="flex-1 overflow-y-auto p-4 space-y-2">
+                <!-- Fylles dynamisk -->
+            </div>
+        </div>
+    </div>
 </body>
 </html>

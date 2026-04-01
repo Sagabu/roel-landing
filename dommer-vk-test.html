@@ -33,6 +33,48 @@
         input[type="number"] { font-size: 14px; }
         input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
         .dog-card { min-height: calc(100vh - 60px); }
+
+        /* Zoom mode styles */
+        .zoom-mode .dog-panel { display: none; }
+        .zoom-mode .dog-panel.zoomed {
+            display: block;
+            width: 100%;
+            border-right: none;
+        }
+        .zoom-mode .dog-panel.zoomed .dog-card {
+            max-width: 500px;
+            margin: 0 auto;
+            min-height: auto;
+        }
+        .zoom-mode .dog-panel.zoomed .score-input { height: 52px; font-size: 20px; }
+        .zoom-mode .dog-panel.zoomed input[type="number"] { font-size: 20px; }
+        .zoom-mode .dog-panel.zoomed input[type="text"] { height: 40px; font-size: 16px; }
+        .zoom-mode .dog-panel.zoomed select { height: 52px; font-size: 18px; }
+        .zoom-mode .dog-panel.zoomed label { font-size: 12px; }
+        .zoom-mode .dog-panel.zoomed h4 { font-size: 13px; }
+        .zoom-mode .dog-panel.zoomed .text-\[10px\] { font-size: 13px; }
+        .zoom-mode .dog-panel.zoomed .text-\[9px\] { font-size: 12px; }
+        .zoom-mode .dog-panel.zoomed .text-xs { font-size: 15px; }
+        .zoom-mode .dog-panel.zoomed .text-sm { font-size: 17px; }
+        .zoom-mode .dog-panel.zoomed .grid-cols-6 { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .zoom-mode .dog-panel.zoomed .p-2 { padding: 12px; }
+        .zoom-mode .dog-panel.zoomed .gap-1 { gap: 8px; }
+        .zoom-mode .dog-panel.zoomed textarea { font-size: 16px; }
+
+        /* Swipe hint indicator */
+        .zoom-mode .dog-panel.zoomed::after {
+            content: '← swipe →';
+            display: block;
+            text-align: center;
+            padding: 8px;
+            color: #94a3b8;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        /* Zoom toggle button */
+        .zoom-btn { transition: all 0.2s; }
+        .zoom-btn.active { background: #059669; }
     </style>
 </head>
 <body class="bg-cream min-h-screen font-sans">
@@ -85,10 +127,24 @@
         </div>
     </div>
 
+    <!-- Zoom control bar -->
+    <div id="zoomBar" class="bg-vk-100 border-b border-vk-200 px-4 py-1.5 flex items-center justify-center gap-2 text-xs">
+        <span class="text-vk-600 font-medium">Zoom:</span>
+        <button onclick="toggleZoom(1)" id="zoomBtn1" class="zoom-btn px-3 py-1 bg-vk-600 hover:bg-vk-700 text-white rounded-lg transition">
+            Hund 1
+        </button>
+        <button onclick="toggleZoom(2)" id="zoomBtn2" class="zoom-btn px-3 py-1 bg-vk-600 hover:bg-vk-700 text-white rounded-lg transition">
+            Hund 2
+        </button>
+        <button onclick="toggleZoom(0)" id="zoomBtnBoth" class="zoom-btn active px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition">
+            Begge
+        </button>
+    </div>
+
     <!-- Two-column layout -->
-    <main class="flex">
+    <main id="mainContainer" class="flex">
         <!-- LEFT DOG (Hund 1) -->
-        <div class="w-1/2 border-r border-vk-300 dog-card overflow-y-auto p-2">
+        <div id="dogPanel1" class="dog-panel w-1/2 border-r border-vk-300 dog-card overflow-y-auto p-2">
             <div class="bg-white rounded-xl shadow-lg overflow-hidden">
 
                 <!-- Dog selector dropdown -->
@@ -223,7 +279,7 @@
         </div>
 
         <!-- RIGHT DOG (Hund 2) -->
-        <div class="w-1/2 dog-card overflow-y-auto p-2">
+        <div id="dogPanel2" class="dog-panel w-1/2 dog-card overflow-y-auto p-2">
             <div class="bg-white rounded-xl shadow-lg overflow-hidden">
 
                 <!-- Dog selector dropdown -->
@@ -1023,6 +1079,82 @@
                 }
             });
         }
+
+        // Zoom functionality
+        let currentZoom = 0; // 0 = both, 1 = dog1, 2 = dog2
+
+        function toggleZoom(position) {
+            const mainContainer = document.getElementById('mainContainer');
+            const panel1 = document.getElementById('dogPanel1');
+            const panel2 = document.getElementById('dogPanel2');
+            const btn1 = document.getElementById('zoomBtn1');
+            const btn2 = document.getElementById('zoomBtn2');
+            const btnBoth = document.getElementById('zoomBtnBoth');
+
+            // Reset all buttons
+            [btn1, btn2, btnBoth].forEach(btn => {
+                btn.classList.remove('active', 'bg-emerald-600', 'hover:bg-emerald-700');
+                btn.classList.add('bg-vk-600', 'hover:bg-vk-700');
+            });
+
+            currentZoom = position;
+
+            if (position === 0) {
+                // Show both
+                mainContainer.classList.remove('zoom-mode');
+                panel1.classList.remove('zoomed');
+                panel2.classList.remove('zoomed');
+                btnBoth.classList.remove('bg-vk-600', 'hover:bg-vk-700');
+                btnBoth.classList.add('active', 'bg-emerald-600', 'hover:bg-emerald-700');
+            } else if (position === 1) {
+                // Zoom hund 1
+                mainContainer.classList.add('zoom-mode');
+                panel1.classList.add('zoomed');
+                panel2.classList.remove('zoomed');
+                btn1.classList.remove('bg-vk-600', 'hover:bg-vk-700');
+                btn1.classList.add('active', 'bg-emerald-600', 'hover:bg-emerald-700');
+            } else if (position === 2) {
+                // Zoom hund 2
+                mainContainer.classList.add('zoom-mode');
+                panel1.classList.remove('zoomed');
+                panel2.classList.add('zoomed');
+                btn2.classList.remove('bg-vk-600', 'hover:bg-vk-700');
+                btn2.classList.add('active', 'bg-emerald-600', 'hover:bg-emerald-700');
+            }
+
+            // Scroll to top when zooming
+            if (position !== 0) {
+                window.scrollTo(0, 0);
+            }
+        }
+
+        // Swipe gestures for zoom navigation
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        function handleSwipeGesture() {
+            const swipeThreshold = 50;
+            const diff = touchStartX - touchEndX;
+
+            if (Math.abs(diff) < swipeThreshold) return;
+
+            if (currentZoom === 1 && diff > 0) {
+                // Swiped left while on dog1 -> go to dog2
+                toggleZoom(2);
+            } else if (currentZoom === 2 && diff < 0) {
+                // Swiped right while on dog2 -> go to dog1
+                toggleZoom(1);
+            }
+        }
+
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipeGesture();
+        });
 
         // Dictation
         let recognition = null;

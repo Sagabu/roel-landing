@@ -1935,17 +1935,8 @@
                 prevPlaced.forEach(([nr, plass]) => {
                     const dog = partyList.find(d => d.nr === parseInt(nr));
                     const dogNr = parseInt(nr);
-                    // Hent statistikk fra snapshot
-                    const snapshotData = previousSnapshot.dogData[dogNr];
-                    let stats = '';
-                    if (snapshotData) {
-                        const parts = [];
-                        if (snapshotData.fmr) parts.push(`FMR:${snapshotData.fmr}`);
-                        if (snapshotData.fur) parts.push(`FUR:${snapshotData.fur}`);
-                        if (snapshotData.slat) parts.push(`SL:${snapshotData.slat}`);
-                        if (snapshotData.ts) parts.push(`TS:${snapshotData.ts}`);
-                        stats = parts.join(' ');
-                    }
+                    // Hent summert statistikk fra snapshot
+                    const stats = formatSnapshotStats(previousSnapshot.dogData[dogNr]);
                     const statsHtml = stats ? `<span class="text-bark-400 ml-2 text-[10px]">${stats}</span>` : '';
                     prevHtml += `<div class="text-xs py-0.5"><span class="font-bold">${plass}.</span> ${dog.name}${statsHtml}</div>`;
                 });
@@ -1955,6 +1946,32 @@
             }
 
             renderLiveRankingModal();
+        }
+
+        // Formater statistikk fra snapshot dogData (summerer alle slipp)
+        function formatSnapshotStats(snapshotDogData) {
+            if (!snapshotDogData || !snapshotDogData.slipps) return '';
+
+            const totals = { fmr: 0, fur: 0, slatt: 0, sjanse: 0, ts: 0, slipptid: 0 };
+
+            Object.values(snapshotDogData.slipps).forEach(slipp => {
+                if (slipp.fmr) totals.fmr += slipp.fmr;
+                if (slipp.fur) totals.fur += slipp.fur;
+                if (slipp.slat) totals.slatt += slipp.slat;
+                if (slipp.sjanse) totals.sjanse += slipp.sjanse;
+                if (slipp.ts) totals.ts += slipp.ts;
+                if (slipp.slipptid) totals.slipptid += slipp.slipptid;
+            });
+
+            const parts = [];
+            if (totals.fmr > 0) parts.push(`${totals.fmr}xFMR`);
+            if (totals.fur > 0) parts.push(`${totals.fur}xFUR`);
+            if (totals.slatt > 0) parts.push(`${totals.slatt}xSlått`);
+            if (totals.sjanse > 0) parts.push(`${totals.sjanse}xSj`);
+            if (totals.ts > 0) parts.push(`${totals.ts}xTS`);
+            if (totals.slipptid > 0) parts.push(`${totals.slipptid}'`);
+
+            return parts.join(' ');
         }
 
         // Formater total statistikk for plasserings-modal (mer detaljert)

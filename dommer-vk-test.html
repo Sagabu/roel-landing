@@ -730,14 +730,28 @@
         }
 
         function saveAll() {
-            // Valider begge hunder - de MÅ ha plassering, TTG eller avsluttet
-            if (!validateAndSaveDog(1, true)) return;
-            if (!validateAndSaveDog(2, true)) return;
-
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
 
-            // Sjekk status før lagring
+            // Sjekk om hundene mangler status (plassering, TTG eller avsluttet)
+            const dog1HasStatus = state.tidTilGode[dog1Nr] || state.plasseringer[dog1Nr];
+            const dog2HasStatus = state.tidTilGode[dog2Nr] || state.plasseringer[dog2Nr];
+
+            // Hvis begge mangler status, vis plasserings-modal
+            if (!dog1HasStatus && !dog2HasStatus) {
+                openDualPlacementModal();
+                return;
+            }
+
+            // Hvis kun én mangler status, valider den
+            if (!dog1HasStatus) {
+                if (!validateAndSaveDog(1, true)) return;
+            }
+            if (!dog2HasStatus) {
+                if (!validateAndSaveDog(2, true)) return;
+            }
+
+            // Sjekk status etter evt. validering
             const dog1NeedNewDog = state.tidTilGode[dog1Nr] || state.plasseringer[dog1Nr] === 'avsluttet';
             const dog2NeedNewDog = state.tidTilGode[dog2Nr] || state.plasseringer[dog2Nr] === 'avsluttet';
 
@@ -1740,7 +1754,145 @@
             alert('Ugyldig valg. Prøv igjen.');
             return showPlacementDialog(dog, maxPlacement, allowTTG);
         }
+
+        // === DUAL PLASSERING MODAL ===
+        function openDualPlacementModal() {
+            const modal = document.getElementById('dualPlacementModal');
+            modal.classList.remove('hidden');
+            renderDualPlacementModal();
+        }
+
+        function closeDualPlacementModal() {
+            document.getElementById('dualPlacementModal').classList.add('hidden');
+        }
+
+        function renderDualPlacementModal() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            // Oppdater hundenavn
+            document.getElementById('dualDog1Name').textContent = `${dog1.race} ${dog1.name}`;
+            document.getElementById('dualDog2Name').textContent = `${dog2.race} ${dog2.name}`;
+
+            // Beregn gyldige plasseringer
+            const currentPlacements = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet')
+                .length;
+            const maxPlacement = currentPlacements + 2; // +2 for de to nye hundene
+
+            // Bygg dropdown-options
+            let options = '<option value="">-- Velg --</option>';
+            for (let i = 1; i <= maxPlacement; i++) {
+                options += `<option value="${i}">${i}. plass</option>`;
+            }
+
+            document.getElementById('dualDog1Placement').innerHTML = options;
+            document.getElementById('dualDog2Placement').innerHTML = options;
+        }
+
+        function saveDualPlacements() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1Placement = document.getElementById('dualDog1Placement').value;
+            const dog2Placement = document.getElementById('dualDog2Placement').value;
+
+            // Valider at begge har valgt
+            if (!dog1Placement || !dog2Placement) {
+                alert('Begge hunder må ha en plassering!');
+                return;
+            }
+
+            const plass1 = parseInt(dog1Placement);
+            const plass2 = parseInt(dog2Placement);
+
+            // Valider at de ikke har samme plassering
+            if (plass1 === plass2) {
+                alert('Hundene kan ikke ha samme plassering!');
+                return;
+            }
+
+            // Bestem rekkefølge - laveste plassering først
+            const firstDog = plass1 < plass2 ? { nr: dog1Nr, plass: plass1 } : { nr: dog2Nr, plass: plass2 };
+            const secondDog = plass1 < plass2 ? { nr: dog2Nr, plass: plass2 } : { nr: dog1Nr, plass: plass1 };
+
+            // Skyv ned eksisterende plasseringer for første hund
+            const toShift1 = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && parseInt(p) >= firstDog.plass)
+                .sort((a, b) => parseInt(b[1]) - parseInt(a[1]));
+
+            toShift1.forEach(([nr, p]) => {
+                state.plasseringer[parseInt(nr)] = String(parseInt(p) + 1);
+            });
+
+            state.plasseringer[firstDog.nr] = String(firstDog.plass);
+
+            // Skyv ned for andre hund (justert plass pga første hund)
+            const adjustedSecondPlass = secondDog.plass > firstDog.plass ? secondDog.plass : secondDog.plass + 1;
+
+            const toShift2 = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && parseInt(p) >= adjustedSecondPlass && parseInt(nr) !== firstDog.nr)
+                .sort((a, b) => parseInt(b[1]) - parseInt(a[1]));
+
+            toShift2.forEach(([nr, p]) => {
+                state.plasseringer[parseInt(nr)] = String(parseInt(p) + 1);
+            });
+
+            state.plasseringer[secondDog.nr] = String(adjustedSecondPlass);
+
+            // Lukk modal
+            closeDualPlacementModal();
+
+            // Lagre og fortsett
+            saveSlippComment();
+            saveDogData(1);
+            saveDogData(2);
+            saveToStorage();
+
+            renderRankings();
+            renderPartyLists();
+            updateDogDisplays();
+            updatePlacementDropdowns();
+
+            // Gå til neste par
+            setTimeout(() => goToNextPair(), 300);
+        }
     </script>
+
+    <!-- Dual Plassering Modal -->
+    <div id="dualPlacementModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="p-4 border-b border-vk-200">
+                <h2 class="text-lg font-bold font-serif text-vk-800 text-center">Velg plassering</h2>
+                <p class="text-xs text-vk-500 text-center mt-1">Begge hunder må ha en plassering</p>
+            </div>
+            <div class="p-4 space-y-4">
+                <!-- Hund 1 -->
+                <div class="bg-vk-50 p-3 rounded-lg">
+                    <label class="block text-sm font-bold text-vk-700 mb-2" id="dualDog1Name">Hund 1</label>
+                    <select id="dualDog1Placement" class="w-full h-12 px-3 rounded-lg border border-vk-300 bg-white text-base font-medium">
+                        <option value="">-- Velg plassering --</option>
+                    </select>
+                </div>
+                <!-- Hund 2 -->
+                <div class="bg-vk-50 p-3 rounded-lg">
+                    <label class="block text-sm font-bold text-vk-700 mb-2" id="dualDog2Name">Hund 2</label>
+                    <select id="dualDog2Placement" class="w-full h-12 px-3 rounded-lg border border-vk-300 bg-white text-base font-medium">
+                        <option value="">-- Velg plassering --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="p-4 border-t border-vk-200 flex gap-2">
+                <button onclick="closeDualPlacementModal()" class="flex-1 bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
+                    Avbryt
+                </button>
+                <button onclick="saveDualPlacements()" class="flex-1 bg-vk-600 hover:bg-vk-700 text-white font-bold py-3 rounded-xl transition">
+                    Lagre
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Partiliste Modal -->
     <div id="partyListModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

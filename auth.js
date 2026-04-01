@@ -41,7 +41,8 @@ const FuglehundAuth = (function() {
 
   // Sjekk om bruker er innlogget
   function isLoggedIn() {
-    // Sjekk JWT token først
+    // Sjekk JWT token - INGEN fallback til localStorage
+    // LocalStorage kan manipuleres av brukeren, JWT kan ikke
     const token = getToken();
     if (token) {
       try {
@@ -49,101 +50,41 @@ const FuglehundAuth = (function() {
         const exp = payload.exp * 1000;
         if (Date.now() < exp) return true;
       } catch {
-        // Ugyldig token
+        // Ugyldig token - fjern det
+        localStorage.removeItem(TOKEN_KEY);
       }
     }
 
-    // Fallback: sjekk alle session-typer
-    return !!getSessionPhone();
+    // Ingen gyldig JWT = ikke innlogget
+    return false;
   }
 
-  // Sjekk rolle
+  // Sjekk rolle - KUN basert på JWT-verifisert brukerinfo
+  // INGEN fallback til localStorage da dette kan manipuleres
   function hasRole(rolle) {
-    // Sjekk JWT bruker først
+    // Sjekk først at bruker er innlogget med gyldig JWT
+    if (!isLoggedIn()) return false;
+
+    // Hent brukerinfo fra JWT (lagret ved innlogging)
     const user = getUser();
-    if (user) {
-      const roller = (user.rolle || '').split(',').map(r => r.trim());
-      if (rolle === 'admin') {
-        // Admin-rolle gis til admin, proveleder og klubbleder
-        return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
-      }
-      if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
-      if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
-      if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
-      if (rolle === 'proveleder') return roller.includes('proveleder') || roller.includes('admin');
-      return true;
+    if (!user) return false;
+
+    // Hvis rolle er null (bare krever innlogging), er vi allerede OK
+    if (rolle === null) return true;
+
+    const roller = (user.rolle || '').split(',').map(r => r.trim());
+
+    // Sjekk spesifikke roller
+    if (rolle === 'admin') {
+      // Admin-rolle gis til admin, proveleder og klubbleder
+      return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
     }
+    if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
+    if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
+    if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
+    if (rolle === 'proveleder') return roller.includes('proveleder') || roller.includes('admin');
 
-    // Fallback: sjekk judgeSession for dommer-rolle
-    if (rolle === 'dommer') {
-      const judgeSession = localStorage.getItem('judgeSession');
-      if (judgeSession) {
-        try {
-          const session = JSON.parse(judgeSession);
-          if (session.isJudge || session.assignedParty) return true;
-        } catch {}
-      }
-    }
-
-    // Fallback: sjekk userSession for roller
-    const userSession = localStorage.getItem('userSession');
-    if (userSession) {
-      // Hvis rolle er null (bare krever innlogging), godta det
-      if (rolle === null) return true;
-
-      try {
-        const session = JSON.parse(userSession);
-
-        // Sjekk om bruker har nkkrep-rolle fra API-data
-        if (rolle === 'nkkrep') {
-          if (session.trials?.some(t => t.roles?.some(r => r.type === 'nkkrep'))) {
-            return true;
-          }
-        }
-
-        // Sjekk om bruker har proveleder/klubbleder-rolle fra API-data (gir admin-tilgang)
-        if (rolle === 'admin' || rolle === 'proveleder') {
-          if (session.trials?.some(t => t.roles?.some(r =>
-            r.type === 'proveleder' || r.type === 'klubbleder'
-          ))) {
-            return true;
-          }
-          if (session.isTrialAdmin) {
-            return true;
-          }
-        }
-
-        // Sjekk klubbleder separat
-        if (rolle === 'klubbleder') {
-          if (session.trials?.some(t => t.roles?.some(r => r.type === 'klubbleder'))) {
-            return true;
-          }
-        }
-      } catch {}
-    }
-
-    // Fallback: sjekk userProfile for roller (legacy)
-    const userProfile = localStorage.getItem('userProfile');
-    if (userProfile) {
-      try {
-        const profile = JSON.parse(userProfile);
-        if (rolle === null && profile.phone) return true;
-
-        // Sjekk rolle-felt direkte (fra eldre innlogginger)
-        if (profile.role) {
-          const roller = profile.role.split(',').map(r => r.trim());
-          if (rolle === 'admin') {
-            if (roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder')) {
-              return true;
-            }
-          }
-          if (rolle === 'proveleder' && roller.includes('proveleder')) return true;
-          if (rolle === 'klubbleder' && roller.includes('klubbleder')) return true;
-          if (rolle === 'nkkrep' && roller.includes('nkkrep')) return true;
-        }
-      } catch {}
-    }
-
+    // Ukjent rolle - avvis
     return false;
   }
 

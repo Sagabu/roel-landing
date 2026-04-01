@@ -21,8 +21,22 @@ const jwt = require("jsonwebtoken");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH ? join(__dirname, process.env.DB_PATH) : join(__dirname, "fuglehund.db");
 const PORT = Number(process.env.PORT || 8889);
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-not-for-production";
+// JWT_SECRET MÅ settes i produksjon - ingen default verdi tillatt
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error("❌ KRITISK FEIL: JWT_SECRET må settes i produksjon!");
+    console.error("   Legg til JWT_SECRET i .env eller som miljøvariabel.");
+    console.error("   Eksempel: JWT_SECRET=$(openssl rand -hex 32)");
+    process.exit(1);
+  } else {
+    console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt - bruker USIKKER dev-verdi!");
+    console.warn("   Dette er IKKE trygt for produksjon!");
+  }
+}
+const JWT_SECRET_FINAL = JWT_SECRET || "DEV-ONLY-INSECURE-SECRET-DO-NOT-USE-IN-PRODUCTION";
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
@@ -42,9 +56,6 @@ const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
 const smsProvider = twilioConfigured ? "twilio" : (sveveConfigured ? "sveve" : "dev");
 
 // Warn if using default secret
-if (!process.env.JWT_SECRET) {
-  console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt i .env - bruker usikker dev-secret!");
-}
 if (SITE_PIN) {
   console.log("🔒 Site-lock aktivert med PIN");
 }
@@ -1077,13 +1088,13 @@ function generateToken(bruker) {
     rolle: bruker.rolle,
     navn: `${bruker.fornavn} ${bruker.etternavn}`
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, JWT_SECRET_FINAL, { expiresIn: JWT_EXPIRES_IN });
 }
 
 // Verifiser JWT token
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET_FINAL);
   } catch (err) {
     return null;
   }
@@ -1211,14 +1222,23 @@ function generateOTP() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-const otpAttempts = new Map();
+// Hash OTP-kode for sikker lagring i database
+function hashOTP(code, telefon) {
+  // Bruker telefon som salt for å forhindre rainbow table angrep
+  return createHash('sha256').update(code + telefon).digest('hex');
+}
+
+// Rate limiting lagret i database (overlever restart)
 function checkOTPRate(telefon) {
   const now = Date.now();
-  const attempts = otpAttempts.get(telefon) || [];
-  const recent = attempts.filter(t => now - t < 10 * 60 * 1000);
-  if (recent.length >= 5) return false;
-  recent.push(now);
-  otpAttempts.set(telefon, recent);
+  const tenMinutesAgo = new Date(now - 10 * 60 * 1000).toISOString();
+
+  // Tell forsøk siste 10 minutter fra database
+  const countResult = db.prepare(
+    "SELECT COUNT(*) as count FROM otp_codes WHERE telefon = ? AND created_at > ?"
+  ).get(telefon, tenMinutesAgo);
+
+  if (countResult.count >= 5) return false;
   return true;
 }
 
@@ -1544,8 +1564,9 @@ app.post("/api/auth/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din innloggingskode for Fuglehundprøve: ${code}`);
 
@@ -1570,9 +1591,11 @@ app.post("/api/auth/verify-code-only", async (c) => {
   const isTestBypass = (telefon === "90852833" && code === "1234") ||
                        (telefon.startsWith("9990") && code === "000000");
 
+  // Hash koden før sammenligning (OTP lagres hashet i databasen)
+  const codeHash = hashOTP(code, telefon);
   const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1600,9 +1623,11 @@ app.post("/api/auth/verify-code", async (c) => {
   const isTestBypass = (telefon === "90852833" && code === "1234") ||
                        (telefon.startsWith("9990") && code === "000000");
 
+  // Hash koden før sammenligning
+  const codeHash = hashOTP(code, telefon);
   const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1750,8 +1775,9 @@ app.post("/api/auth/register/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din verifiseringskode for Fuglehundprøve: ${code}`);
 
@@ -1785,10 +1811,11 @@ app.post("/api/auth/register/verify", async (c) => {
     return c.json({ error: "Fornavn og etternavn er påkrevd" }, 400);
   }
 
-  // Verifiser OTP
+  // Verifiser OTP (hash koden først)
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1864,7 +1891,7 @@ app.post("/api/auth/register/verify", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -1934,7 +1961,7 @@ app.post("/api/auth/login-password", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -1972,8 +1999,9 @@ app.post("/api/auth/reverify/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din verifiseringskode for Fuglehundprøve: ${code}`);
 
@@ -1994,9 +2022,10 @@ app.post("/api/auth/reverify/verify", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -2022,7 +2051,7 @@ app.post("/api/auth/reverify/verify", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2068,8 +2097,9 @@ app.post("/api/auth/forgot-password/send-code", async (c) => {
 
   // Generer ny kode
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din kode for å tilbakestille passord: ${code}`);
 
@@ -2090,9 +2120,10 @@ app.post("/api/auth/forgot-password/verify-code", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
+  const kodeHash = hashOTP(kode, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, kode);
+  ).get(telefon, kodeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -2162,7 +2193,7 @@ app.post("/api/auth/forgot-password/reset", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2258,8 +2289,9 @@ app.post("/api/auth/klubb/register/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Verifiseringskode for ${klubbNavn}: ${code}`);
 
@@ -2286,9 +2318,10 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
     return c.json({ error: "Alle påkrevde felt må fylles ut" }, 400);
   }
 
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -2364,7 +2397,7 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
       navn: klubb.navn,
       type: "klubb"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2426,7 +2459,7 @@ app.post("/api/auth/klubb/login", async (c) => {
       navn: klubb.navn,
       type: "klubb"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2461,8 +2494,9 @@ app.post("/api/auth/klubb/reverify/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Verifiseringskode for ${klubb.navn}: ${code}`);
 
@@ -2486,9 +2520,10 @@ app.post("/api/auth/klubb/reverify/verify", async (c) => {
 
   const telefon = klubb.admin_telefon;
 
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -2503,7 +2538,7 @@ app.post("/api/auth/klubb/reverify/verify", async (c) => {
       navn: klubb.navn,
       type: "klubb"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -7223,17 +7258,44 @@ app.get("/", (c) => serveWithShim(join(__dirname, "index.html"), c));
 // Clean URL for undersøkelse landingsside
 app.get("/undersokelse", (c) => serveWithShim(join(__dirname, "undersokelse.html"), c));
 
-// Clean URL for dommer-testside
-app.get("/dommertest", (c) => serveWithShim(join(__dirname, "dommertest.html"), c));
+// Clean URL for dommer-testsider
+// BLOKKERT I PRODUKSJON - disse sidene hopper over autentisering
+const blockTestPagesInProd = (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.text("Test-sider er deaktivert i produksjon", 403);
+  }
+  return null;
+};
 
-// Clean URL for VK dommer-testside
-app.get("/dommertestvk", (c) => serveWithShim(join(__dirname, "dommer-vk-test.html"), c));
+app.get("/dommertest", (c) => {
+  const blocked = blockTestPagesInProd(c);
+  if (blocked) return blocked;
+  return serveWithShim(join(__dirname, "dommertest.html"), c);
+});
 
-// Clean URL for UK/AK todelt dommer-testside
-app.get("/dommertestukak", (c) => serveWithShim(join(__dirname, "dommer-ukak-dual.html"), c));
+app.get("/dommertestvk", (c) => {
+  const blocked = blockTestPagesInProd(c);
+  if (blocked) return blocked;
+  return serveWithShim(join(__dirname, "dommer-vk-test.html"), c);
+});
+
+app.get("/dommertestukak", (c) => {
+  const blocked = blockTestPagesInProd(c);
+  if (blocked) return blocked;
+  return serveWithShim(join(__dirname, "dommer-ukak-dual.html"), c);
+});
+
+// Test-filer som blokkeres i produksjon
+const TEST_PAGES = ['dommer-vk-test.html', 'dommer-ukak-test.html', 'dommertest.html'];
 
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");
+
+  // Blokker test-sider i produksjon
+  if (process.env.NODE_ENV === 'production' && TEST_PAGES.includes(page)) {
+    return c.text("Test-sider er deaktivert i produksjon", 403);
+  }
+
   const isAdmin = ADMIN_PAGES.includes(page);
   return serveWithShim(join(__dirname, page), c, isAdmin);
 });

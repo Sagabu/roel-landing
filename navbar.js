@@ -52,6 +52,7 @@
         'dommer-ukak.html',
         'dommer-vk.html',
         'dommer-vk-test.html',
+        'dommertestvk',
         'dommer-ukak-dual.html',
         'prove-arkiv.html',
         'superadmin.html'

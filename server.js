@@ -571,7 +571,7 @@ db.exec(`
     judged_this_round TEXT DEFAULT '{}',
     round_snapshots TEXT DEFAULT '{}',
     premietildelinger TEXT DEFAULT '{}',
-    status TEXT DEFAULT 'aktiv' CHECK(status IN ('aktiv', 'fullfort')),
+    status TEXT DEFAULT 'aktiv' CHECK(status IN ('aktiv', 'fullfort', 'innsendt', 'godkjent')),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(prove_id, parti)
@@ -749,6 +749,10 @@ const migrations = [
   // Kilde og NKK-id for hunder
   "ALTER TABLE hunder ADD COLUMN kilde TEXT DEFAULT 'manuell'",
   "ALTER TABLE hunder ADD COLUMN nkk_id TEXT DEFAULT NULL",
+  // VK godkjenningsflyt
+  "ALTER TABLE vk_bedomming ADD COLUMN submitted_at TEXT DEFAULT NULL",
+  "ALTER TABLE vk_bedomming ADD COLUMN approved_at TEXT DEFAULT NULL",
+  "ALTER TABLE vk_bedomming ADD COLUMN approved_by TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -8584,6 +8588,104 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
   }
 });
 
+// Send inn VK-bedømming for godkjenning
+app.post("/api/vk-bedomming/:proveId/:parti/send-inn", async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    // Sjekk at bedømming finnes og er fullført
+    const bedomming = db.prepare(`
+      SELECT id, status, dommer_telefon FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+    }
+
+    if (bedomming.status !== 'fullfort') {
+      return c.json({ error: "VK-bedømming må være fullført før innsending" }, 400);
+    }
+
+    // Oppdater status til innsendt
+    db.prepare(`
+      UPDATE vk_bedomming
+      SET status = 'innsendt', submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE prove_id = ? AND parti = ?
+    `).run(proveId, parti);
+
+    // Varsle NKK-rep om ny innsending
+    const prove = db.prepare("SELECT nkkrep_telefon, navn FROM prover WHERE id = ?").get(proveId);
+    if (prove?.nkkrep_telefon) {
+      const dommer = db.prepare("SELECT fornavn, etternavn FROM brukere WHERE telefon = ?").get(bedomming.dommer_telefon);
+      const dommerNavn = dommer ? `${dommer.fornavn} ${dommer.etternavn}` : 'Dommer';
+
+      await sendSMS(prove.nkkrep_telefon,
+        `VK-bedømming fra ${dommerNavn} (parti ${parti}) er klar for godkjenning. Prøve: ${prove.navn}. Logg inn på fuglehundprove.no/nkk-godkjenning.html`,
+        { type: 'vk_godkjenning' }
+      );
+    }
+
+    autoBackup("vk-bedomming-innsendt");
+    return c.json({ success: true, message: "VK-bedømming sendt inn for godkjenning" });
+  } catch (err) {
+    console.error("VK-bedomming send-inn error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Godkjenn VK-bedømming (kun NKK-rep/admin)
+app.post("/api/vk-bedomming/:proveId/:parti/godkjenn", requireAdmin, async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const user = c.get('user');
+
+    const bedomming = db.prepare(`
+      SELECT id, status FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+    }
+
+    if (bedomming.status !== 'innsendt') {
+      return c.json({ error: "VK-bedømming må være innsendt før godkjenning" }, 400);
+    }
+
+    // Oppdater til godkjent
+    db.prepare(`
+      UPDATE vk_bedomming
+      SET status = 'godkjent', approved_at = datetime('now'), approved_by = ?, updated_at = datetime('now')
+      WHERE prove_id = ? AND parti = ?
+    `).run(user?.telefon || 'admin', proveId, parti);
+
+    autoBackup("vk-bedomming-godkjent");
+    return c.json({ success: true, message: "VK-bedømming godkjent" });
+  } catch (err) {
+    console.error("VK-bedomming godkjenn error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent innsendte VK-bedømminger for godkjenning
+app.get("/api/vk-bedomming/innsendte", (c) => {
+  try {
+    const innsendte = db.prepare(`
+      SELECT vb.*, p.navn as prove_navn, p.sted,
+             b.fornavn || ' ' || b.etternavn as dommer_navn
+      FROM vk_bedomming vb
+      JOIN prover p ON vb.prove_id = p.id
+      LEFT JOIN brukere b ON vb.dommer_telefon = b.telefon
+      WHERE vb.status = 'innsendt'
+      ORDER BY vb.submitted_at DESC
+    `).all();
+
+    return c.json(innsendte);
+  } catch (err) {
+    console.error("VK-bedomming innsendte error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // Hent live rangering for VK (offentlig tilgjengelig)
 app.get("/api/vk-rangering/:proveId/:parti", (c) => {
   try {
@@ -8664,6 +8766,194 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
     });
   } catch (err) {
     console.error("VK-rangering GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent live rangering for UK/AK (offentlig tilgjengelig)
+// Rangerer basert på kritikker - høyeste premie først, deretter etter jaktlyst+viltfinnerevne
+app.get("/api/ukak-rangering/:proveId/:parti/:klasse", (c) => {
+  try {
+    const { proveId, parti, klasse } = c.req.param();
+
+    // Valider klasse
+    if (!['UK', 'AK'].includes(klasse.toUpperCase())) {
+      return c.json({ error: "Klasse må være UK eller AK" }, 400);
+    }
+
+    // Hent alle kritikker for dette partiet
+    const kritikker = db.prepare(`
+      SELECT k.*, h.navn as hund_navn, h.rase,
+             b.fornavn || ' ' || b.etternavn as forer_navn
+      FROM kritikker k
+      JOIN hunder h ON k.hund_id = h.id
+      LEFT JOIN pameldinger p ON k.hund_id = p.hund_id AND k.prove_id = p.prove_id
+      LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE k.prove_id = ? AND k.parti = ? AND k.klasse = ?
+      ORDER BY k.id
+    `).all(proveId, parti, klasse.toUpperCase());
+
+    if (kritikker.length === 0) {
+      return c.json({ exists: false, rangering: [] });
+    }
+
+    // Premie-ranking (lavere = bedre)
+    const premieRank = {
+      '1. premie': 1, '1.': 1, '1': 1,
+      '2. premie': 2, '2.': 2, '2': 2,
+      '3. premie': 3, '3.': 3, '3': 3,
+      '0': 4, '0.': 4, '': 5, null: 5
+    };
+
+    // Beregn rangering
+    const rangering = kritikker.map(k => {
+      // Beregn poengsum basert på jaktegenskaper
+      const jaktlyst = k.jaktlyst || 0;
+      const viltfinnerevne = k.presisjon || 0; // presisjon brukes som viltfinnerevne
+      const poeng = jaktlyst + viltfinnerevne;
+
+      // Sjekk om det er 1. AK (ren hund)
+      const erRen = k.makker_stand === 0 && k.sjanse === 0 && k.tomstand === 0 && k.godkjent_reising === 1;
+      const erForsteAK = erRen && (k.slipptid || 0) >= 60;
+
+      return {
+        hund_id: k.hund_id,
+        hund_navn: k.hund_navn || `Hund #${k.hund_id}`,
+        rase: k.rase || '',
+        forer: k.forer_navn || '',
+        premie: k.premie || '',
+        premieRank: premieRank[k.premie] || 5,
+        poeng,
+        jaktlyst,
+        viltfinnerevne,
+        slipptid: k.slipptid || 0,
+        erForsteAK,
+        status: k.status || 'draft'
+      };
+    })
+    // Sorter: premie først (lavest rank = best), deretter poeng (høyest = best)
+    .sort((a, b) => {
+      if (a.premieRank !== b.premieRank) return a.premieRank - b.premieRank;
+      return b.poeng - a.poeng;
+    })
+    // Legg til plassering
+    .map((r, idx) => ({ ...r, plass: idx + 1 }));
+
+    return c.json({
+      exists: true,
+      klasse: klasse.toUpperCase(),
+      parti,
+      updated_at: kritikker[0]?.submitted_at || kritikker[0]?.dato,
+      rangering
+    });
+  } catch (err) {
+    console.error("UK/AK-rangering GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent samlet rangering for hele prøven (alle klasser, alle partier)
+app.get("/api/prove-resultater/:proveId", (c) => {
+  try {
+    const { proveId } = c.req.param();
+
+    // Hent alle kritikker for prøven
+    const kritikker = db.prepare(`
+      SELECT k.*, h.navn as hund_navn, h.rase, h.regnr,
+             b.fornavn || ' ' || b.etternavn as forer_navn
+      FROM kritikker k
+      JOIN hunder h ON k.hund_id = h.id
+      LEFT JOIN pameldinger p ON k.hund_id = p.hund_id AND k.prove_id = p.prove_id
+      LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE k.prove_id = ? AND k.status = 'submitted'
+      ORDER BY k.klasse, k.parti, k.id
+    `).all(proveId);
+
+    // Hent VK-resultater
+    const vkBedomming = db.prepare(`
+      SELECT vb.*, p.hund_id, h.navn as hund_navn, h.rase,
+             b.fornavn || ' ' || b.etternavn as forer_navn
+      FROM vk_bedomming vb
+      LEFT JOIN pameldinger p ON vb.prove_id = p.prove_id AND vb.parti = p.parti AND p.klasse = 'VK'
+      LEFT JOIN hunder h ON p.hund_id = h.id
+      LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE vb.prove_id = ? AND vb.status = 'ferdig'
+    `).all(proveId);
+
+    // Premie-ranking
+    const premieRank = {
+      'CERT': 0, 'CK': 0.5,
+      '1. premie': 1, '1.': 1, '1': 1,
+      '2. premie': 2, '2.': 2, '2': 2,
+      '3. premie': 3, '3.': 3, '3': 3,
+      '0': 4, '': 5, null: 5
+    };
+
+    // Prosesser UK/AK-kritikker
+    const ukakResultater = kritikker.map(k => {
+      const jaktlyst = k.jaktlyst || 0;
+      const viltfinnerevne = k.presisjon || 0;
+      const erRen = k.makker_stand === 0 && k.sjanse === 0 && k.tomstand === 0 && k.godkjent_reising === 1;
+      const erForsteAK = erRen && (k.slipptid || 0) >= 60 && k.klasse === 'AK';
+
+      return {
+        hund_id: k.hund_id,
+        hund_navn: k.hund_navn,
+        rase: k.rase,
+        regnr: k.regnr,
+        forer: k.forer_navn,
+        klasse: k.klasse,
+        parti: k.parti,
+        premie: k.premie || '',
+        premieRank: premieRank[k.premie] || 5,
+        poeng: jaktlyst + viltfinnerevne,
+        slipptid: k.slipptid,
+        erForsteAK
+      };
+    });
+
+    // Grupper etter klasse
+    const resultater = {
+      UK: ukakResultater.filter(r => r.klasse === 'UK').sort((a, b) => a.premieRank - b.premieRank || b.poeng - a.poeng),
+      AK: ukakResultater.filter(r => r.klasse === 'AK').sort((a, b) => a.premieRank - b.premieRank || b.poeng - a.poeng),
+      VK: [] // Fylles fra vk_bedomming
+    };
+
+    // Prosesser VK-resultater
+    vkBedomming.forEach(vb => {
+      const plasseringer = JSON.parse(vb.plasseringer || '{}');
+      const premietildelinger = JSON.parse(vb.premietildelinger || '{}');
+
+      Object.entries(premietildelinger).forEach(([nr, premie]) => {
+        if (premie) {
+          resultater.VK.push({
+            hund_id: vb.hund_id,
+            hund_navn: vb.hund_navn || `VK Hund`,
+            rase: vb.rase,
+            forer: vb.forer_navn,
+            klasse: 'VK',
+            parti: vb.parti,
+            premie,
+            premieRank: premieRank[premie] || 5,
+            plass: parseInt(plasseringer[nr]) || null
+          });
+        }
+      });
+    });
+
+    resultater.VK.sort((a, b) => a.premieRank - b.premieRank || (a.plass || 99) - (b.plass || 99));
+
+    return c.json({
+      proveId,
+      resultater,
+      antall: {
+        UK: resultater.UK.length,
+        AK: resultater.AK.length,
+        VK: resultater.VK.length
+      }
+    });
+  } catch (err) {
+    console.error("Prove-resultater GET error:", err);
     return c.json({ error: err.message }, 500);
   }
 });

@@ -195,7 +195,7 @@ const FuglehundAuth = (function() {
       if (kobleResp.ok) {
         const kobleResult = await kobleResp.json();
         if (kobleResult.linked > 0) {
-          console.log('Koblet hunder til brukerprofil:', kobleResult);
+          // Hunder koblet til brukerprofil
         }
       }
     } catch (err) {

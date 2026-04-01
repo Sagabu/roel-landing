@@ -332,6 +332,46 @@
                                 <p class="text-sm text-bark-500 mt-2">Klar for opprykk</p>
                             </div>
                         </div>
+
+                        <!-- Kritikk-status (sanntid) -->
+                        <div class="mt-6 bg-gradient-to-r from-forest-50 to-warm-50 rounded-xl p-5 border border-forest-200">
+                            <div class="flex items-center justify-between mb-4">
+                                <h4 class="font-semibold text-forest-800 flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Kritikk-status (oppdateres automatisk)
+                                </h4>
+                                <button onclick="refreshKritikkDashboard()" class="text-sm text-forest-600 hover:text-forest-800 flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                    </svg>
+                                    Oppdater
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-4 gap-4 text-center">
+                                <div class="bg-white/80 rounded-lg p-3">
+                                    <p class="text-2xl font-bold text-bark-800" id="dashKritikkTotal">0</p>
+                                    <p class="text-xs text-bark-500">Totalt</p>
+                                </div>
+                                <div class="bg-white/80 rounded-lg p-3">
+                                    <p class="text-2xl font-bold text-amber-600" id="dashKritikkVentende">0</p>
+                                    <p class="text-xs text-bark-500">Venter NKK-rep</p>
+                                </div>
+                                <div class="bg-white/80 rounded-lg p-3">
+                                    <p class="text-2xl font-bold text-green-600" id="dashKritikkGodkjent">0</p>
+                                    <p class="text-xs text-bark-500">Godkjent</p>
+                                </div>
+                                <div class="bg-white/80 rounded-lg p-3">
+                                    <p class="text-2xl font-bold text-forest-600" id="dashKritikkProsent">0%</p>
+                                    <p class="text-xs text-bark-500">Fullført</p>
+                                </div>
+                            </div>
+                            <div id="dashKritikkBar" class="mt-3 h-2 bg-bark-200 rounded-full overflow-hidden">
+                                <div id="dashKritikkProgress" class="h-full bg-gradient-to-r from-green-500 to-forest-500 transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                            <p id="dashKritikkSistOppdatert" class="text-xs text-bark-400 mt-2 text-right">Sist oppdatert: -</p>
+                        </div>
                     </div>
                 </section>
 
@@ -5227,24 +5267,48 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadKritikkStats();
             populateDagSelect();
+            refreshKritikkDashboard();
+            // Auto-oppdater dashboard hvert 30. sekund
+            setInterval(refreshKritikkDashboard, 30000);
         });
 
-        // Last inn kritikk-statistikk
-        async function loadKritikkStats() {
+        // Sanntids kritikk-dashboard
+        async function refreshKritikkDashboard() {
             try {
-                // Hent kritikker fra database og localStorage
                 const kritikker = await getAllKritikkerFromStorage();
 
                 const total = kritikker.length;
                 const godkjente = kritikker.filter(k => k.critiqueStatus === 'approved').length;
                 const ventende = kritikker.filter(k => k.critiqueStatus === 'submitted').length;
+                const prosent = total > 0 ? Math.round((godkjente / total) * 100) : 0;
 
+                // Oppdater dashboard-elementer
+                const dashTotal = document.getElementById('dashKritikkTotal');
+                const dashVentende = document.getElementById('dashKritikkVentende');
+                const dashGodkjent = document.getElementById('dashKritikkGodkjent');
+                const dashProsent = document.getElementById('dashKritikkProsent');
+                const dashProgress = document.getElementById('dashKritikkProgress');
+                const dashSist = document.getElementById('dashKritikkSistOppdatert');
+
+                if (dashTotal) dashTotal.textContent = total;
+                if (dashVentende) dashVentende.textContent = ventende;
+                if (dashGodkjent) dashGodkjent.textContent = godkjente;
+                if (dashProsent) dashProsent.textContent = prosent + '%';
+                if (dashProgress) dashProgress.style.width = prosent + '%';
+                if (dashSist) dashSist.textContent = 'Sist oppdatert: ' + new Date().toLocaleTimeString('no-NO');
+
+                // Oppdater også de gamle elementene
                 document.getElementById('totalKritikker').textContent = total;
                 document.getElementById('godkjenteKritikker').textContent = godkjente;
                 document.getElementById('ventendeKritikker').textContent = ventende;
             } catch (e) {
-                console.error('Feil ved lasting av kritikk-statistikk:', e);
+                console.error('Feil ved oppdatering av kritikk-dashboard:', e);
             }
+        }
+
+        // Last inn kritikk-statistikk (legacy)
+        async function loadKritikkStats() {
+            await refreshKritikkDashboard();
         }
 
         // Hent alle kritikker fra database og localStorage
@@ -5517,6 +5581,24 @@
             alert(`✅ Eksportert ${kritikker.length} kritikker til ${fileName}`);
         }
 
+        // Raseklubb-kontaktinfo
+        const RASEKLUBB_KONTAKT = {
+            'Irsk Setter': { klubb: 'NISK', epost: 'nisk@fuglehund.no' },
+            'Engelsk Setter': { klubb: 'NESK', epost: 'nesk@fuglehund.no' },
+            'Gordon Setter': { klubb: 'NGSK', epost: 'ngsk@fuglehund.no' },
+            'Pointer': { klubb: 'NPK', epost: 'npk@fuglehund.no' },
+            'Korthåret Vorsteh': { klubb: 'NKV', epost: 'nkv@fuglehund.no' },
+            'Deutsch Kurzhaar': { klubb: 'NKV', epost: 'nkv@fuglehund.no' },
+            'Strihåret Vorsteh': { klubb: 'NSV', epost: 'nsv@fuglehund.no' },
+            'Deutsch Drahthaar': { klubb: 'NSV', epost: 'nsv@fuglehund.no' },
+            'Langhåret Vorsteh': { klubb: 'NLV', epost: 'nlv@fuglehund.no' },
+            'Weimaraner': { klubb: 'NWK', epost: 'nwk@fuglehund.no' },
+            'Vizsla': { klubb: 'NVK', epost: 'nvk@fuglehund.no' },
+            'Breton': { klubb: 'NBK', epost: 'nbk@fuglehund.no' },
+            'Kleiner Münsterländer': { klubb: 'NKMK', epost: 'nkmk@fuglehund.no' },
+            'Grosser Münsterländer': { klubb: 'NGMK', epost: 'ngmk@fuglehund.no' }
+        };
+
         // Eksporter kritikker per rase (ZIP med separate filer)
         async function exportKritikkerPerRase() {
             const kritikker = await getAllKritikkerFromStorage();
@@ -5583,6 +5665,23 @@
                 zip.file(`Kritikker_${safeRaseName}.xlsx`, xlsxData);
             }
 
+            // Lag oversikts-fil med raseklubber
+            const oversiktRows = raser.map(rase => {
+                const kontakt = RASEKLUBB_KONTAKT[rase] || { klubb: 'Ukjent', epost: '-' };
+                return {
+                    'Rase': rase,
+                    'Antall kritikker': perRase[rase].length,
+                    'Raseklubb': kontakt.klubb,
+                    'Epost': kontakt.epost,
+                    'Fil': `Kritikker_${rase.replace(/[\/\\:*?"<>|]/g, '_')}.xlsx`
+                };
+            });
+            const oversiktWs = XLSX.utils.json_to_sheet(oversiktRows);
+            const oversiktWb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(oversiktWb, oversiktWs, 'Oversikt');
+            const oversiktData = XLSX.write(oversiktWb, { bookType: 'xlsx', type: 'array' });
+            zip.file('00_Oversikt_Raseklubber.xlsx', oversiktData);
+
             // Generer og last ned ZIP
             const content = await zip.generateAsync({ type: 'blob' });
             const link = document.createElement('a');
@@ -5591,7 +5690,15 @@
             link.click();
             URL.revokeObjectURL(link.href);
 
-            alert(`✅ Eksportert kritikker for ${raser.length} raser til ZIP-fil`);
+            // Vis detaljert melding
+            let melding = `✅ Eksportert kritikker for ${raser.length} raser til ZIP-fil\n\n`;
+            melding += 'Raser inkludert:\n';
+            raser.forEach(rase => {
+                const kontakt = RASEKLUBB_KONTAKT[rase] || { klubb: '-', epost: '-' };
+                melding += `• ${rase}: ${perRase[rase].length} kritikker (${kontakt.klubb})\n`;
+            });
+            melding += '\nOversiktsfil med e-postadresser er inkludert i ZIP.';
+            alert(melding);
         }
 
         // Hjelpefunksjon: Oversett status

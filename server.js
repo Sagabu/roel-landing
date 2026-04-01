@@ -1894,8 +1894,11 @@ app.post("/api/auth/login-password", async (c) => {
     }, 200);
   }
 
-  // Oppdater siste innlogging
+  // Oppdater siste innlogging og logg vellykket pålogging
   db.prepare("UPDATE brukere SET siste_innlogging = datetime('now') WHERE telefon = ?").run(telefon);
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_innlogget", JSON.stringify({ telefon, rolle: bruker.rolle || 'deltaker', metode: 'passord' })
+  );
 
   const token = jwt.sign(
     {
@@ -1979,8 +1982,11 @@ app.post("/api/auth/reverify/verify", async (c) => {
     return c.json({ error: "Bruker ikke funnet" }, 404);
   }
 
-  // Oppdater siste innlogging
+  // Oppdater siste innlogging og logg vellykket pålogging
   db.prepare("UPDATE brukere SET siste_innlogging = datetime('now') WHERE telefon = ?").run(telefon);
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_innlogget", JSON.stringify({ telefon, rolle: bruker.rolle || 'deltaker', metode: 'sms_otp' })
+  );
 
   const token = jwt.sign(
     {
@@ -2672,6 +2678,74 @@ app.get("/api/stats", (c) => {
   const klubbCount = db.prepare("SELECT COUNT(*) as n FROM klubber").get().n;
   const proveCount = db.prepare("SELECT COUNT(*) as n FROM prover").get().n;
   return c.json({ kvEntries: kvCount, adminLogEntries: logCount, trial, brukere: brukerCount, hunder: hundCount, klubber: klubbCount, prover: proveCount });
+});
+
+// Sanntids prøve-dashboard statistikk for prøveleder
+app.get("/api/stats/prove/:proveId", (c) => {
+  const proveId = c.req.param("proveId");
+
+  // Prøve-info
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+
+  // Kritikk-statistikk
+  const kritikkStats = db.prepare(`
+    SELECT
+      COUNT(*) as totalt,
+      SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as utkast,
+      SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as innsendt,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as godkjent
+    FROM kritikker
+    WHERE prove_id = ?
+  `).get(proveId);
+
+  // Premiefordeling
+  const premiefordeling = db.prepare(`
+    SELECT premie, klasse, COUNT(*) as antall
+    FROM kritikker
+    WHERE prove_id = ? AND premie IS NOT NULL AND premie != ''
+    GROUP BY premie, klasse
+    ORDER BY klasse, premie
+  `).all(proveId);
+
+  // Siste aktivitet
+  const sisteAktivitet = db.prepare(`
+    SELECT k.*, h.navn as hund_navn, h.regnr
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    WHERE k.prove_id = ?
+    ORDER BY k.updated_at DESC
+    LIMIT 10
+  `).all(proveId);
+
+  // Per-parti statistikk
+  const partiStats = db.prepare(`
+    SELECT
+      parti,
+      COUNT(*) as antall_kritikker,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as godkjente,
+      SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as ventende
+    FROM kritikker
+    WHERE prove_id = ?
+    GROUP BY parti
+  `).all(proveId);
+
+  // DVK-kontroller
+  const dvkStats = db.prepare(`
+    SELECT COUNT(*) as antall,
+           SUM(CASE WHEN tiltak_advarsel = 1 OR tiltak_diskvalifikasjon = 1 THEN 1 ELSE 0 END) as alvorlige
+    FROM dvk_kontroller
+    WHERE prove_id = ?
+  `).get(proveId);
+
+  return c.json({
+    prove,
+    kritikker: kritikkStats,
+    premiefordeling,
+    sisteAktivitet,
+    partiStats,
+    dvk: dvkStats,
+    oppdatert: new Date().toISOString()
+  });
 });
 
 // Dommer-statistikk for superadmin
@@ -7103,7 +7177,7 @@ function serveWithShim(filePath, c, isAdmin = false) {
   if (isAdmin) {
     injected += `<script src="/admin-lock.js"></script>\n`;
   }
-  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/navbar.js" defer></script>`;
+  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/error-handler.js"></script>\n<script src="/navbar.js" defer></script>`;
 
   if (html.includes("<head>")) {
     html = html.replace("<head>", `<head>\n${injected}`);

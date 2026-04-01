@@ -414,11 +414,38 @@
         </div>
     </main>
 
-    <!-- Lagre-knapp (fast nederst) -->
+    <!-- Lagre-knapper (fast nederst) -->
     <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-vk-200 p-2 z-40">
-        <button onclick="saveAll()" class="w-full bg-vk-600 hover:bg-vk-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
-            Lagre begge hunder
-        </button>
+        <!-- Rad 1: Individuelle knapper for hver hund -->
+        <div class="flex gap-2 mb-2">
+            <!-- Hund 1 knapper -->
+            <div class="flex-1 flex flex-col gap-1">
+                <button onclick="saveDogOnly(1)" class="w-full bg-vk-500 hover:bg-vk-600 text-white font-medium py-2 rounded-lg text-xs transition">
+                    Lagre hund 1
+                </button>
+                <button onclick="saveDogAndFinish(1)" class="w-full bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-lg text-xs transition">
+                    Lagre + avslutt hund 1
+                </button>
+            </div>
+            <!-- Hund 2 knapper -->
+            <div class="flex-1 flex flex-col gap-1">
+                <button onclick="saveDogOnly(2)" class="w-full bg-vk-500 hover:bg-vk-600 text-white font-medium py-2 rounded-lg text-xs transition">
+                    Lagre hund 2
+                </button>
+                <button onclick="saveDogAndFinish(2)" class="w-full bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-lg text-xs transition">
+                    Lagre + avslutt hund 2
+                </button>
+            </div>
+        </div>
+        <!-- Rad 2: Knapper for begge hunder -->
+        <div class="flex gap-2">
+            <button onclick="saveAll()" class="flex-1 bg-vk-600 hover:bg-vk-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
+                Lagre begge hunder
+            </button>
+            <button onclick="saveAllAndFinishBoth()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
+                Lagre + avslutt begge
+            </button>
+        </div>
     </div>
 
     <script>
@@ -703,6 +730,154 @@
                 // Automatisk gå til neste par
                 goToNextPair();
             }, 800);
+        }
+
+        // Lagre kun én hund (uten å avslutte)
+        function saveDogOnly(position) {
+            saveSlippComment();
+            saveDogData(position);
+            saveToStorage();
+
+            renderRankings();
+            renderPartyLists();
+
+            // Visual feedback
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Lagret!';
+            btn.classList.remove('bg-vk-500', 'hover:bg-vk-600');
+            btn.classList.add('bg-green-500');
+
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-500');
+                btn.classList.add('bg-vk-500', 'hover:bg-vk-600');
+            }, 800);
+        }
+
+        // Lagre én hund og avslutt den
+        function saveDogAndFinish(position) {
+            const dogNr = state.selectedDogs[position];
+            const dog = partyList.find(d => d.nr === dogNr);
+
+            if (!confirm(`Er du sikker på at du vil avslutte ${dog.race} ${dog.name}?`)) {
+                return;
+            }
+
+            saveSlippComment();
+            saveDogData(position);
+
+            // Sett hunden som avsluttet
+            state.plasseringer[dogNr] = 'avsluttet';
+            delete state.tidTilGode[dogNr];
+
+            saveToStorage();
+
+            renderRankings();
+            renderPartyLists();
+            updateDogDisplays();
+            updatePlacementDropdowns();
+
+            // Visual feedback
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Avsluttet!';
+            btn.classList.remove('bg-red-500', 'hover:bg-red-600');
+            btn.classList.add('bg-gray-500');
+
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-gray-500');
+                btn.classList.add('bg-red-500', 'hover:bg-red-600');
+
+                // Finn ny hund til denne posisjonen
+                loadNextDogForPosition(position);
+            }, 800);
+        }
+
+        // Lagre begge hunder og avslutt begge
+        function saveAllAndFinishBoth() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            if (!confirm(`Er du sikker på at du vil avslutte begge hunder?\n\n• ${dog1.race} ${dog1.name}\n• ${dog2.race} ${dog2.name}`)) {
+                return;
+            }
+
+            saveSlippComment();
+            saveDogData(1);
+            saveDogData(2);
+
+            // Sett begge som avsluttet
+            state.plasseringer[dog1Nr] = 'avsluttet';
+            state.plasseringer[dog2Nr] = 'avsluttet';
+            delete state.tidTilGode[dog1Nr];
+            delete state.tidTilGode[dog2Nr];
+
+            saveToStorage();
+
+            renderRankings();
+            renderPartyLists();
+            updateDogDisplays();
+            updatePlacementDropdowns();
+
+            // Visual feedback
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ Begge avsluttet!';
+            btn.classList.remove('bg-red-600', 'hover:bg-red-700');
+            btn.classList.add('bg-gray-600');
+
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-gray-600');
+                btn.classList.add('bg-red-600', 'hover:bg-red-700');
+
+                // Gå til neste par
+                goToNextPair();
+            }, 800);
+        }
+
+        // Last inn neste tilgjengelige hund for en gitt posisjon
+        function loadNextDogForPosition(position) {
+            const otherPosition = position === 1 ? 2 : 1;
+            const otherDogNr = state.selectedDogs[otherPosition];
+
+            // Finn tilgjengelige hunder (ikke plassert, ikke avsluttet, ikke den andre hunden)
+            const availableDogs = partyList.filter(dog => {
+                const plass = state.plasseringer[dog.nr];
+                const isOtherDog = dog.nr === otherDogNr;
+                return !plass && !isOtherDog;
+            });
+
+            // Prioriter hunder som ikke har tid til gode
+            const regularDogs = availableDogs.filter(d => !state.tidTilGode[d.nr]);
+            const ttgDogs = availableDogs.filter(d => state.tidTilGode[d.nr]);
+
+            let nextDog = null;
+            if (regularDogs.length > 0) {
+                nextDog = regularDogs[0];
+            } else if (ttgDogs.length > 0) {
+                nextDog = ttgDogs[0];
+                // Fjern fra tid til gode siden den nå er aktiv
+                delete state.tidTilGode[nextDog.nr];
+            }
+
+            if (nextDog) {
+                state.selectedDogs[position] = nextDog.nr;
+                document.getElementById(`dog${position}Select`).value = nextDog.nr;
+                updateDogDisplays();
+                loadDogData(position);
+                updatePlacementDropdowns();
+                renderRankings();
+                renderPartyLists();
+                saveToStorage();
+            } else {
+                // Ingen flere hunder tilgjengelig
+                alert('Ingen flere hunder tilgjengelig for denne posisjonen.');
+            }
         }
 
         // Finn neste ledige par (hunder som ikke er plassert eller avsluttet)

@@ -1689,12 +1689,29 @@ app.post("/api/auth/verify-code", async (c) => {
   let bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
 
   // Sjekk om dette er en FKF-godkjent dommer
+  // Først prøv match på telefonnummer
   const normalized = normalizePhone(telefon);
-  const fkfDommer = db.prepare(`
+  let fkfDommer = db.prepare(`
     SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost, linked_bruker_telefon
     FROM fkf_godkjente_dommere
     WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
   `).get(normalized, normalized);
+
+  // Hvis ingen telefon-match og bruker finnes, prøv match på navn
+  if (!fkfDommer && bruker && bruker.fornavn && bruker.etternavn) {
+    fkfDommer = db.prepare(`
+      SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost, linked_bruker_telefon
+      FROM fkf_godkjente_dommere
+      WHERE aktiv = 1
+        AND linked_bruker_telefon IS NULL
+        AND LOWER(fornavn) = LOWER(?)
+        AND LOWER(etternavn) = LOWER(?)
+    `).get(bruker.fornavn.trim(), bruker.etternavn.trim());
+
+    if (fkfDommer) {
+      console.log(`[Auto-dommer] Matchet på navn ved innlogging: ${bruker.fornavn} ${bruker.etternavn} -> FKF-dommer ID ${fkfDommer.id}`);
+    }
+  }
 
   if (bruker) {
     // Sjekk om eksisterende bruker mangler dommer-rolle men er FKF-godkjent
@@ -1904,12 +1921,29 @@ app.post("/api/auth/register/verify", async (c) => {
   console.log(`[Register] Bruker fra DB: ${bruker ? bruker.telefon : 'IKKE FUNNET'}`);
 
   // Sjekk om dette er en FKF-godkjent dommer
+  // Først prøv match på telefonnummer
   const normalized = normalizePhone(telefon);
-  const fkfDommer = db.prepare(`
+  let fkfDommer = db.prepare(`
     SELECT id, fornavn, etternavn, linked_bruker_telefon
     FROM fkf_godkjente_dommere
     WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
   `).get(normalized, normalized);
+
+  // Hvis ingen telefon-match, prøv match på navn (for dommere med kun fastnummer)
+  if (!fkfDommer && fornavn && etternavn) {
+    fkfDommer = db.prepare(`
+      SELECT id, fornavn, etternavn, linked_bruker_telefon
+      FROM fkf_godkjente_dommere
+      WHERE aktiv = 1
+        AND linked_bruker_telefon IS NULL
+        AND LOWER(fornavn) = LOWER(?)
+        AND LOWER(etternavn) = LOWER(?)
+    `).get(fornavn.trim(), etternavn.trim());
+
+    if (fkfDommer) {
+      console.log(`[Auto-dommer] Matchet på navn: ${fornavn} ${etternavn} -> FKF-dommer ID ${fkfDommer.id}`);
+    }
+  }
 
   let isFkfDommer = false;
   if (fkfDommer) {

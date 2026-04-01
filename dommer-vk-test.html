@@ -110,14 +110,20 @@
         </div>
     </header>
 
-    <!-- Partiliste-knapp -->
+    <!-- Partiliste og rangeringshistorikk -->
     <div class="bg-vk-50 border-b border-vk-200 px-4 py-2">
-        <button onclick="openPartyListModal()" class="w-full bg-vk-600 hover:bg-vk-700 text-white font-medium py-2 rounded-lg text-sm transition flex items-center justify-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-            </svg>
-            Vis partiliste
-        </button>
+        <div class="flex gap-2 flex-wrap">
+            <button onclick="openPartyListModal()" class="flex-1 min-w-[120px] bg-vk-600 hover:bg-vk-700 text-white font-medium py-2 rounded-lg text-sm transition flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                </svg>
+                Partiliste
+            </button>
+            <!-- Rangeringshistorikk-knapper (vises etter hver fullført runde) -->
+            <div id="roundHistoryButtons" class="flex gap-2 flex-wrap">
+                <!-- Fylles dynamisk med JavaScript -->
+            </div>
+        </div>
     </div>
 
     <!-- Two-column layout -->
@@ -459,6 +465,7 @@
             roundPairings: {}, // { round: [[dog1, dog2], [dog3, dog4], ...] } - hvem som har møtt hvem per runde
             opponents: {}, // { dogNr: [motstanderNr, ...] } - alle motstandere en hund har møtt
             judgedThisRound: {}, // { round: [dogNr, ...] } - hunder som er bedømt i denne runden
+            roundSnapshots: {}, // { round: { plasseringer: {...}, dogData: {...} } } - snapshot av rangering etter hver runde
         };
 
         // Demo partiliste for VK
@@ -483,6 +490,7 @@
             updatePlacementDropdowns();
             renderPartyLists();
             renderRankings();
+            renderRoundHistoryButtons();
             setupDictation();
         }
 
@@ -509,6 +517,7 @@
                     state.roundPairings = parsed.roundPairings || {};
                     state.opponents = parsed.opponents || {};
                     state.judgedThisRound = parsed.judgedThisRound || {};
+                    state.roundSnapshots = parsed.roundSnapshots || {};
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -527,7 +536,8 @@
                 slippComments: state.slippComments,
                 roundPairings: state.roundPairings,
                 opponents: state.opponents,
-                judgedThisRound: state.judgedThisRound
+                judgedThisRound: state.judgedThisRound,
+                roundSnapshots: state.roundSnapshots
             }));
         }
 
@@ -1942,10 +1952,138 @@
         let round2Pairings = []; // Foreslåtte par for runde 2
 
         function openRoundCompleteModal() {
+            // Lagre snapshot av nåværende rangering for denne runden
+            saveRoundSnapshot(state.currentRound);
+
             // Generer oppsett for neste runde
             generateNextRoundPairings();
             renderRoundCompleteModal();
             document.getElementById('roundCompleteModal').classList.remove('hidden');
+
+            // Oppdater rangeringshistorikk-knapper
+            renderRoundHistoryButtons();
+        }
+
+        function saveRoundSnapshot(roundNumber) {
+            // Lagre en kopi av plasseringer og statistikk for denne runden
+            state.roundSnapshots[roundNumber] = {
+                plasseringer: JSON.parse(JSON.stringify(state.plasseringer)),
+                dogData: JSON.parse(JSON.stringify(state.dogData)),
+                slippComments: JSON.parse(JSON.stringify(state.slippComments)),
+                timestamp: new Date().toISOString()
+            };
+            saveToStorage();
+        }
+
+        function renderRoundHistoryButtons() {
+            const container = document.getElementById('roundHistoryButtons');
+            if (!container) return;
+
+            const completedRounds = Object.keys(state.roundSnapshots).map(r => parseInt(r)).sort((a, b) => a - b);
+
+            if (completedRounds.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = completedRounds.map(round => `
+                <button onclick="showRoundSnapshot(${round})" class="min-w-[100px] bg-bark-600 hover:bg-bark-700 text-white font-medium py-2 px-3 rounded-lg text-sm transition flex items-center justify-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                    ${round}. runde
+                </button>
+            `).join('');
+        }
+
+        function showRoundSnapshot(roundNumber) {
+            const snapshot = state.roundSnapshots[roundNumber];
+            if (!snapshot) return;
+
+            // Bygg rangering fra snapshot
+            const placed = Object.entries(snapshot.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
+                });
+
+            const finished = Object.entries(snapshot.plasseringer)
+                .filter(([_, p]) => p === 'avsluttet')
+                .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }));
+
+            // Vis i en modal
+            let html = `
+                <div class="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" id="snapshotModal" onclick="if(event.target===this)this.remove()">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+                        <div class="p-4 border-b border-vk-200 bg-bark-600 text-white rounded-t-2xl">
+                            <h2 class="text-xl font-bold font-serif text-center">Rangering etter ${roundNumber}. runde</h2>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4">
+                            <div class="space-y-1">
+            `;
+
+            if (placed.length === 0) {
+                html += '<div class="text-vk-400 italic">Ingen rangerte hunder</div>';
+            } else {
+                placed.forEach(({ dog, plass, dogNr }) => {
+                    const stats = getSnapshotDogStats(dogNr, snapshot.dogData);
+                    html += `<div class="flex justify-between items-center py-1 px-2 rounded bg-vk-50">
+                        <span><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dog.name}</span>
+                        <span class="text-xs text-vk-500">${stats}</span>
+                    </div>`;
+                });
+            }
+
+            if (finished.length > 0) {
+                html += '<div class="mt-3 pt-3 border-t border-vk-200"><div class="text-xs text-vk-500 mb-1">Avsluttet:</div>';
+                finished.forEach(({ dog }) => {
+                    html += `<div class="text-vk-400 line-through py-1">${dog.race} ${dog.name}</div>`;
+                });
+                html += '</div>';
+            }
+
+            html += `
+                            </div>
+                        </div>
+                        <div class="p-4 border-t border-vk-200">
+                            <button onclick="document.getElementById('snapshotModal').remove()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
+                                Lukk
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+
+        function getSnapshotDogStats(dogNr, dogData) {
+            const data = dogData[dogNr];
+            if (!data || !data.slipps) return '';
+
+            let totalSlipptid = 0;
+            const stats = { fmr: 0, fur: 0, slatt: 0, sjanse: 0, ts: 0 };
+
+            Object.values(data.slipps).forEach(slipp => {
+                if (slipp.slipptid) totalSlipptid += slipp.slipptid;
+                if (slipp.fmr) stats.fmr += slipp.fmr;
+                if (slipp.fur) stats.fur += slipp.fur;
+                if (slipp.slat) stats.slatt += slipp.slat;
+                if (slipp.sjanse) stats.sjanse += slipp.sjanse;
+                if (slipp.ts) stats.ts += slipp.ts;
+            });
+
+            const parts = [];
+            if (totalSlipptid > 0) parts.push(`${totalSlipptid}'`);
+            if (stats.fmr > 0) parts.push(stats.fmr > 1 ? `${stats.fmr}xFMR` : 'FMR');
+            if (stats.fur > 0) parts.push(stats.fur > 1 ? `${stats.fur}xFUR` : 'FUR');
+            if (stats.slatt > 0) parts.push(stats.slatt > 1 ? `${stats.slatt}xSlått` : 'Slått');
+            if (stats.sjanse > 0) parts.push(stats.sjanse > 1 ? `${stats.sjanse}xSj` : 'Sj');
+            if (stats.ts > 0) parts.push(stats.ts > 1 ? `${stats.ts}xTS` : 'TS');
+
+            return parts.join(' ');
         }
 
         function closeRoundCompleteModal() {
@@ -2192,6 +2330,208 @@
             alert('Bedømming avsluttet og lagret!\n\nDu kan fullføre kritikker senere fra dommerpanelet.');
         }
 
+        function exportJudgingReport() {
+            // Bygg komplett rapport
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('nb-NO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            const timeStr = now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+
+            // Rangering
+            const placed = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
+                });
+
+            const finished = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p === 'avsluttet')
+                .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }));
+
+            let report = `
+VINNERKLASSE - BEDØMMINGSRAPPORT
+================================
+Dato: ${dateStr}
+Tidspunkt: ${timeStr}
+Antall runder: ${state.currentRound}
+
+ENDELIG RANGERING
+-----------------
+`;
+            placed.forEach(({ dog, plass, dogNr }) => {
+                const stats = formatDogStats(dogNr);
+                report += `${plass}. ${dog.race} ${dog.name} (${dog.owner})\n`;
+                report += `   Statistikk: ${stats || 'Ingen registrert'}\n`;
+
+                // Legg til notater hvis de finnes
+                const notater = state.dogData[dogNr]?.notater;
+                if (notater) {
+                    report += `   Notater: ${notater}\n`;
+                }
+                report += '\n';
+            });
+
+            if (finished.length > 0) {
+                report += `AVSLUTTEDE HUNDER\n-----------------\n`;
+                finished.forEach(({ dog, dogNr }) => {
+                    const stats = formatDogStats(dogNr);
+                    report += `${dog.race} ${dog.name} (${dog.owner})\n`;
+                    report += `   Statistikk: ${stats || 'Ingen registrert'}\n\n`;
+                });
+            }
+
+            // Slippkommentarer
+            const comments = Object.entries(state.slippComments).filter(([_, c]) => c && c.trim());
+            if (comments.length > 0) {
+                report += `\nSLIPPKOMMENTARER\n----------------\n`;
+                comments.sort((a, b) => parseInt(a[0]) - parseInt(b[0])).forEach(([slipp, comment]) => {
+                    report += `Slipp ${slipp}: ${comment}\n`;
+                });
+            }
+
+            // Rundehistorikk
+            const rounds = Object.keys(state.roundSnapshots).map(r => parseInt(r)).sort((a, b) => a - b);
+            if (rounds.length > 0) {
+                report += `\nRUNDEHISTORIKK\n--------------\n`;
+                rounds.forEach(round => {
+                    const snapshot = state.roundSnapshots[round];
+                    const roundPlaced = Object.entries(snapshot.plasseringer)
+                        .filter(([_, p]) => p !== 'avsluttet')
+                        .sort((a, b) => parseInt(a[1]) - parseInt(b[1]));
+
+                    report += `\nEtter ${round}. runde:\n`;
+                    roundPlaced.forEach(([nr, plass]) => {
+                        const dog = partyList.find(d => d.nr === parseInt(nr));
+                        report += `  ${plass}. ${dog.race} ${dog.name}\n`;
+                    });
+                });
+            }
+
+            report += `\n\n---\nGenerert av Fuglehundprøve VK Dommerkort\n`;
+
+            // Last ned som tekstfil
+            const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `VK-Rapport-${now.toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function exportJudgingReportHTML() {
+            // Bygg HTML-rapport som kan skrives ut eller lagres som PDF
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('nb-NO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            const placed = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => {
+                    const dog = partyList.find(d => d.nr === parseInt(nr));
+                    return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
+                });
+
+            const finished = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p === 'avsluttet')
+                .map(([nr]) => ({ dog: partyList.find(d => d.nr === parseInt(nr)), dogNr: parseInt(nr) }));
+
+            const comments = Object.entries(state.slippComments).filter(([_, c]) => c && c.trim());
+
+            let html = `<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <title>VK Bedømmingsrapport</title>
+    <style>
+        body { font-family: Georgia, serif; max-width: 800px; margin: 40px auto; padding: 20px; color: #333; }
+        h1 { color: #2d5016; border-bottom: 3px solid #2d5016; padding-bottom: 10px; }
+        h2 { color: #5c4033; margin-top: 30px; }
+        .date { color: #666; font-style: italic; }
+        .dog { margin: 15px 0; padding: 15px; background: #f8f5f0; border-left: 4px solid #2d5016; }
+        .dog-name { font-size: 1.1em; font-weight: bold; }
+        .dog-stats { color: #666; margin-top: 5px; }
+        .dog-notes { color: #8b4513; margin-top: 5px; font-style: italic; }
+        .finished { opacity: 0.6; border-left-color: #999; }
+        .comment { margin: 10px 0; padding: 10px; background: #fff8e1; border-radius: 5px; }
+        .comment-label { font-weight: bold; color: #f57c00; }
+        .round-history { background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        @media print { body { margin: 0; } }
+    </style>
+</head>
+<body>
+    <h1>Vinnerklasse - Bedømmingsrapport</h1>
+    <p class="date">${dateStr} | ${state.currentRound} runde(r)</p>
+
+    <h2>Endelig rangering</h2>
+`;
+
+            placed.forEach(({ dog, plass, dogNr }) => {
+                const stats = formatDogStats(dogNr);
+                const notater = state.dogData[dogNr]?.notater || '';
+                html += `
+    <div class="dog">
+        <div class="dog-name">${plass}. ${dog.race} ${dog.name}</div>
+        <div>Eier: ${dog.owner}</div>
+        ${stats ? `<div class="dog-stats">Statistikk: ${stats}</div>` : ''}
+        ${notater ? `<div class="dog-notes">Notater: ${notater}</div>` : ''}
+    </div>`;
+            });
+
+            if (finished.length > 0) {
+                html += `<h2>Avsluttede hunder</h2>`;
+                finished.forEach(({ dog, dogNr }) => {
+                    const stats = formatDogStats(dogNr);
+                    html += `
+    <div class="dog finished">
+        <div class="dog-name">${dog.race} ${dog.name}</div>
+        <div>Eier: ${dog.owner}</div>
+        ${stats ? `<div class="dog-stats">Statistikk: ${stats}</div>` : ''}
+    </div>`;
+                });
+            }
+
+            if (comments.length > 0) {
+                html += `<h2>Slippkommentarer</h2>`;
+                comments.sort((a, b) => parseInt(a[0]) - parseInt(b[0])).forEach(([slipp, comment]) => {
+                    html += `<div class="comment"><span class="comment-label">Slipp ${slipp}:</span> ${comment}</div>`;
+                });
+            }
+
+            // Rundehistorikk
+            const rounds = Object.keys(state.roundSnapshots).map(r => parseInt(r)).sort((a, b) => a - b);
+            if (rounds.length > 0) {
+                html += `<h2>Rundehistorikk</h2>`;
+                rounds.forEach(round => {
+                    const snapshot = state.roundSnapshots[round];
+                    const roundPlaced = Object.entries(snapshot.plasseringer)
+                        .filter(([_, p]) => p !== 'avsluttet')
+                        .sort((a, b) => parseInt(a[1]) - parseInt(b[1]));
+
+                    html += `<div class="round-history"><strong>Etter ${round}. runde:</strong><br>`;
+                    roundPlaced.forEach(([nr, plass]) => {
+                        const dog = partyList.find(d => d.nr === parseInt(nr));
+                        html += `${plass}. ${dog.race} ${dog.name}<br>`;
+                    });
+                    html += `</div>`;
+                });
+            }
+
+            html += `
+    <hr style="margin-top: 40px;">
+    <p style="color: #999; font-size: 0.9em;">Generert av Fuglehundprøve VK Dommerkort</p>
+</body>
+</html>`;
+
+            // Åpne i nytt vindu for utskrift/lagring
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(html);
+            printWindow.document.close();
+        }
+
         function confirmRound2Setup() {
             // Lagre oppsettet
             state.roundPairings[state.currentRound + 1] = [...round2Pairings];
@@ -2312,6 +2652,20 @@
                 <button onclick="finishJudgingLater()" class="w-full bg-vk-500 hover:bg-vk-600 text-white font-bold py-3 rounded-xl transition">
                     Lagre og fullfør kritikker senere
                 </button>
+                <div class="flex gap-2">
+                    <button onclick="exportJudgingReportHTML()" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white font-medium py-2 rounded-xl transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                        </svg>
+                        Skriv ut / PDF
+                    </button>
+                    <button onclick="exportJudgingReport()" class="flex-1 bg-bark-500 hover:bg-bark-600 text-white font-medium py-2 rounded-xl transition flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        Last ned TXT
+                    </button>
+                </div>
                 <button onclick="closeFinishJudgingModal()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
                     Avbryt
                 </button>

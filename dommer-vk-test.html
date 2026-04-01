@@ -468,6 +468,8 @@
             opponents: {}, // { dogNr: [motstanderNr, ...] } - alle motstandere en hund har møtt
             judgedThisRound: {}, // { round: [dogNr, ...] } - hunder som er bedømt i denne runden
             roundSnapshots: {}, // { round: { plasseringer: {...}, dogData: {...} } } - snapshot av rangering etter hver runde
+            vkType: '1dag', // '1dag', 'kval', 'finale'
+            premietildelinger: {}, // { dogNr: 'premie' } - tildelte premier
         };
 
         // Demo partiliste for VK
@@ -522,6 +524,8 @@
                     state.roundSnapshots = parsed.roundSnapshots || {};
                     state.slippDogs = parsed.slippDogs || {};
                     state.slippRankings = parsed.slippRankings || {};
+                    state.vkType = parsed.vkType || '1dag';
+                    state.premietildelinger = parsed.premietildelinger || {};
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -543,7 +547,9 @@
                 judgedThisRound: state.judgedThisRound,
                 roundSnapshots: state.roundSnapshots,
                 slippDogs: state.slippDogs,
-                slippRankings: state.slippRankings
+                slippRankings: state.slippRankings,
+                vkType: state.vkType,
+                premietildelinger: state.premietildelinger
             }));
         }
 
@@ -2473,62 +2479,172 @@
             }
         }
 
+        // Hent premier basert på VK-type
+        function getPremierForType(vkType) {
+            const premierByType = {
+                '1dag': [
+                    { value: '1vk', label: '1. VK' },
+                    { value: '1vk_ck', label: '1. VK m/CK' },
+                    { value: '2vk', label: '2. VK' },
+                    { value: '2vk_ck', label: '2. VK m/CK' },
+                    { value: '3vk', label: '3. VK' },
+                    { value: '4vk', label: '4. VK' },
+                    { value: '5vk', label: '5. VK' },
+                    { value: '6vk', label: '6. VK' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ],
+                'kval': [
+                    { value: '1vk_kval', label: '1. VK kval' },
+                    { value: '1vk_ck_kval', label: '1. VK m/CK kval' },
+                    { value: '2vk_kval', label: '2. VK kval' },
+                    { value: '2vk_ck_kval', label: '2. VK m/CK kval' },
+                    { value: '3vk_kval', label: '3. VK kval' },
+                    { value: '4vk_kval', label: '4. VK kval' },
+                    { value: '5vk_kval', label: '5. VK kval' },
+                    { value: '6vk_kval', label: '6. VK kval' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ],
+                'finale': [
+                    { value: '1vk_finale', label: '1. VK finale' },
+                    { value: '1vk_ck_finale', label: '1. VK finale m/CK' },
+                    { value: '1vk_cacit_finale', label: '1. VK finale m/CACIT' },
+                    { value: '2vk_finale', label: '2. VK finale' },
+                    { value: '2vk_ck_finale', label: '2. VK finale m/CK' },
+                    { value: '2vk_rescacit_finale', label: '2. VK finale m/res.CACIT' },
+                    { value: '3vk_finale', label: '3. VK finale' },
+                    { value: '4vk_finale', label: '4. VK finale' },
+                    { value: '5vk_finale', label: '5. VK finale' },
+                    { value: '6vk_finale', label: '6. VK finale' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ]
+            };
+            return premierByType[vkType] || premierByType['1dag'];
+        }
+
+        // Sjekk om hund har fuglearbeid (FMR eller FUR)
+        function hasFuglearbeid(dogNr) {
+            const stats = getDogStats(dogNr);
+            return stats && (stats.fmr > 0 || stats.fur > 0);
+        }
+
         function showFinishJudgingModal() {
-            // Vis endelig rangering
-            const rankingContainer = document.getElementById('finishJudgingRanking');
-            const ranked = getFullRanking();
+            // Sett VK-type dropdown
+            document.getElementById('vkTypeSelect').value = state.vkType;
 
-            let rankingHtml = '';
-            ranked.forEach((dog, idx) => {
-                const plass = state.plasseringer[dog.nr];
-                const isFinished = plass === 'avsluttet';
-                const stats = getDogStats(dog.nr);
-
-                if (!isFinished) {
-                    rankingHtml += `
-                        <div class="flex items-center justify-between py-1 px-2 rounded ${idx === 0 ? 'bg-forest-100 border border-forest-300' : 'bg-white'}">
-                            <span class="font-medium">${plass || '-'}. ${dog.name}</span>
-                            <span class="text-xs text-vk-500">${stats}</span>
-                        </div>
-                    `;
-                }
-            });
-
-            // Legg til avsluttede hunder
-            const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
-            if (finished.length > 0) {
-                rankingHtml += '<div class="mt-2 pt-2 border-t border-vk-200"><div class="text-xs text-vk-500 mb-1">Avsluttet:</div>';
-                finished.forEach(dog => {
-                    rankingHtml += `
-                        <div class="flex items-center py-1 px-2 text-vk-400">
-                            <span class="line-through">${dog.name}</span>
-                        </div>
-                    `;
-                });
-                rankingHtml += '</div>';
-            }
-
-            rankingContainer.innerHTML = rankingHtml;
+            // Render premie-liste
+            renderPremieRankingList();
 
             // Vis modal
             document.getElementById('finishJudgingModal').classList.remove('hidden');
         }
 
-        function closeFinishJudgingModal() {
-            document.getElementById('finishJudgingModal').classList.add('hidden');
+        function updateVkType() {
+            state.vkType = document.getElementById('vkTypeSelect').value;
+            saveToStorage();
+            renderPremieRankingList();
         }
 
-        function finishJudgingWithCritiques() {
-            // Lagre at prøven er avsluttet
+        function renderPremieRankingList() {
+            const container = document.getElementById('premieRankingList');
+            const premier = getPremierForType(state.vkType);
+
+            // Hent rangerte hunder
+            const ranked = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => ({
+                    dog: partyList.find(d => d.nr === parseInt(nr)),
+                    plass: parseInt(plass),
+                    dogNr: parseInt(nr)
+                }));
+
+            let html = '';
+
+            ranked.forEach(({ dog, plass, dogNr }) => {
+                const stats = formatDogStatsDetailed(dogNr);
+                const harFuglearbeid = hasFuglearbeid(dogNr);
+                const currentPremie = state.premietildelinger[dogNr] || '';
+
+                // Bygg options for premie-dropdown
+                let optionsHtml = '<option value="">-- Velg premie --</option>';
+                premier.forEach(p => {
+                    const selected = currentPremie === p.value ? 'selected' : '';
+                    optionsHtml += `<option value="${p.value}" ${selected}>${p.label}</option>`;
+                });
+
+                html += `
+                    <div class="bg-white border ${harFuglearbeid ? 'border-forest-300' : 'border-vk-200'} rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-vk-700">${plass}.</span>
+                                <span class="font-medium">${dog.race} ${dog.name}</span>
+                            </div>
+                            ${harFuglearbeid ? '<span class="text-[10px] bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full">Fuglearbeid</span>' : '<span class="text-[10px] bg-vk-100 text-vk-500 px-2 py-0.5 rounded-full">Uten fugl</span>'}
+                        </div>
+                        <div class="text-[10px] text-vk-500 mb-2">${stats || 'Ingen statistikk'}</div>
+                        ${harFuglearbeid ? `
+                            <select onchange="setPremie(${dogNr}, this.value)" class="w-full h-9 px-2 rounded border border-vk-300 bg-white text-sm">
+                                ${optionsHtml}
+                            </select>
+                        ` : '<div class="text-xs text-vk-400 italic">Kan ikke tildeles premie uten fuglearbeid</div>'}
+                    </div>
+                `;
+            });
+
+            // Avsluttede hunder
+            const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
+            if (finished.length > 0) {
+                html += '<div class="mt-3 pt-3 border-t border-vk-200">';
+                html += '<div class="text-xs font-bold text-vk-500 uppercase mb-2">Avsluttet</div>';
+                finished.forEach(dog => {
+                    html += `
+                        <div class="flex items-center py-1 px-2 text-vk-400 text-sm">
+                            <span class="line-through">${dog.race} ${dog.name}</span>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function setPremie(dogNr, premie) {
+            if (premie) {
+                state.premietildelinger[dogNr] = premie;
+            } else {
+                delete state.premietildelinger[dogNr];
+            }
+            saveToStorage();
+        }
+
+        function confirmPremier() {
+            // Sjekk at alle hunder med fuglearbeid har fått premie
+            const rankedWithFuglearbeid = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && hasFuglearbeid(parseInt(nr)))
+                .map(([nr, _]) => parseInt(nr));
+
+            const missingPremie = rankedWithFuglearbeid.filter(nr => !state.premietildelinger[nr]);
+
+            if (missingPremie.length > 0) {
+                const dogs = missingPremie.map(nr => partyList.find(d => d.nr === nr).name).join(', ');
+                if (!confirm(`Følgende hunder med fuglearbeid mangler premie:\n\n${dogs}\n\nVil du fortsette likevel?`)) {
+                    return;
+                }
+            }
+
+            // Lagre og avslutt
             state.judgingFinished = true;
-            state.finishCritiquesLater = false;
             saveToStorage();
 
             closeFinishJudgingModal();
             closeRoundCompleteModal();
 
-            // TODO: Naviger til kritikk-side eller vis kritikk-skjema
-            alert('Bedømming avsluttet! Kritikk-funksjonalitet kommer snart.\n\nResultatene er lagret.');
+            alert('Bedømming avsluttet!\n\nResultater og premier er lagret.');
+        }
+
+        function closeFinishJudgingModal() {
+            document.getElementById('finishJudgingModal').classList.add('hidden');
         }
 
         function finishJudgingLater() {
@@ -2944,29 +3060,35 @@ Antall slipp: ${state.currentSlipp}
         </div>
     </div>
 
-    <!-- Avslutt bedømming Modal -->
+    <!-- Premietildeling Modal -->
     <div id="finishJudgingModal" class="hidden fixed inset-0 bg-black/50 z-[55] flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div class="p-4 border-b border-vk-200 bg-earth-600 text-white rounded-t-2xl">
-                <h2 class="text-xl font-bold font-serif text-center">Avslutt bedømming</h2>
-                <p class="text-earth-100 text-sm text-center mt-1">Dagens prøve er ferdig</p>
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-vk-200 bg-forest-700 text-white rounded-t-2xl">
+                <h2 class="text-xl font-bold font-serif text-center">Premietildeling</h2>
+                <p class="text-forest-100 text-sm text-center mt-1">Tildel premier til hundene med fuglearbeid</p>
             </div>
-            <div class="p-4">
-                <p class="text-vk-700 text-center mb-4">Ønsker du å fullføre kritikker for alle hunder nå, eller gjøre det senere?</p>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- VK Type velger -->
+                <div class="bg-vk-50 p-3 rounded-lg border border-vk-200">
+                    <label class="block text-xs font-bold text-vk-600 uppercase mb-2">Type VK</label>
+                    <select id="vkTypeSelect" onchange="updateVkType()" class="w-full h-10 px-3 rounded-lg border border-vk-300 bg-white text-sm font-medium">
+                        <option value="1dag">1-dags VK</option>
+                        <option value="kval">VK Kvalifisering</option>
+                        <option value="finale">VK Finale</option>
+                    </select>
+                </div>
 
-                <div class="bg-vk-50 p-3 rounded-lg mb-4">
-                    <h3 class="text-xs font-bold text-vk-600 uppercase mb-2">Endelig rangering</h3>
-                    <div id="finishJudgingRanking" class="space-y-1 text-sm max-h-40 overflow-y-auto">
+                <!-- Rangering med premie-valg -->
+                <div class="bg-vk-50 p-3 rounded-lg border border-vk-200">
+                    <h3 class="text-xs font-bold text-vk-600 uppercase mb-2">Rangering og premier</h3>
+                    <div id="premieRankingList" class="space-y-2 max-h-[50vh] overflow-y-auto">
                         <!-- Fylles dynamisk -->
                     </div>
                 </div>
             </div>
             <div class="p-4 border-t border-vk-200 space-y-3">
-                <button onclick="finishJudgingWithCritiques()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
-                    Fullfør kritikker nå
-                </button>
-                <button onclick="finishJudgingLater()" class="w-full bg-vk-500 hover:bg-vk-600 text-white font-bold py-3 rounded-xl transition">
-                    Lagre og fullfør kritikker senere
+                <button onclick="confirmPremier()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                    Bekreft premier og avslutt
                 </button>
                 <div class="flex gap-2">
                     <button onclick="exportJudgingReportHTML()" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white font-medium py-2 rounded-xl transition flex items-center justify-center gap-2">

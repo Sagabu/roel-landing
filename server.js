@@ -6360,6 +6360,50 @@ app.post("/api/kritikker", requireDommer, async (c) => {
     }
   }
 
+  // DUPLIKATSJEKK: Sjekk om det allerede finnes kritikk for denne hunden DENNE DAGEN
+  // En hund kan ha flere kritikker per prøve (flere dager), men kun én per dag
+  const kritikkDato = body.dato || new Date().toISOString().split('T')[0];
+  const existingKritikk = db.prepare(`
+    SELECT id, dommer_telefon, status FROM kritikker
+    WHERE (hund_id = ? OR (hund_id IS NULL AND prove_id = ? AND parti = ?))
+    AND dato = ?
+    AND prove_id = ?
+  `).get(hund_id, body.prove_id, body.parti, kritikkDato, body.prove_id);
+
+  if (existingKritikk) {
+    // Kritikk finnes allerede for denne dagen
+    if (existingKritikk.dommer_telefon === dommer_telefon) {
+      // Samme dommer - oppdater eksisterende kritikk i stedet
+      console.log(`[Kritikk] Oppdaterer eksisterende kritikk ${existingKritikk.id} for hund ${hund_id} på dato ${kritikkDato}`);
+      db.prepare(`
+        UPDATE kritikker SET
+          presisjon = ?, reising = ?, godkjent_reising = ?,
+          stand_m = ?, stand_u = ?, tomstand = ?, makker_stand = ?, sjanse = ?, slipptid = ?,
+          jaktlyst = ?, fart = ?, selvstendighet = ?, soksbredde = ?, reviering = ?, samarbeid = ?,
+          sek_spontan = ?, sek_forbi = ?, apport = ?, rapport_spontan = ?,
+          adferd = ?, premie = ?, kritikk_tekst = ?,
+          status = ?, submitted_at = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
+        body.stand_m, body.stand_u, body.tomstand, body.makker_stand, body.sjanse, body.slipptid,
+        body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+        body.sek_spontan || 0, body.sek_forbi || 0, body.apport, body.rapport_spontan ? 1 : 0,
+        body.adferd || '', body.premie, body.kritikk_tekst,
+        body.status || 'submitted', new Date().toISOString(),
+        existingKritikk.id
+      );
+      return c.json({ id: existingKritikk.id, ok: true, updated: true });
+    } else {
+      // Annen dommer har allerede kritikk for denne hunden denne dagen
+      return c.json({
+        error: "Duplikat kritikk",
+        message: `Hunden har allerede en kritikk for denne dagen (${kritikkDato}). En hund kan kun ha én kritikk per dag i samme prøve.`,
+        existing_id: existingKritikk.id
+      }, 409);
+    }
+  }
+
   const result = db.prepare(`
     INSERT INTO kritikker (
       hund_id, prove_id, dommer_telefon, dato, klasse, parti, sted,

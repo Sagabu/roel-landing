@@ -58,6 +58,9 @@
         </div>
     </header>
 
+    <!-- Offline Indicator -->
+    <div id="offlineIndicator" class="hidden fixed top-16 left-0 right-0 bg-amber-100 border-b border-amber-200 py-2 px-4 text-amber-800 text-sm font-medium text-center z-40"></div>
+
     <!-- Main Content -->
     <main class="max-w-4xl mx-auto px-4 py-6">
         <!-- Info Box -->
@@ -963,7 +966,8 @@
 
             // Check if it's a 1. premie
             const is1Premie = premie.startsWith('1.');
-            const is1AK = premie === '1. AK';
+            const is1AK = premie === '1.AK' || premie === '1. AK';
+            const is1UK = premie === '1.UK' || premie === '1. UK';
 
             if (is1Premie) {
                 // 1. premie requirements: 60+ min slipptid AND stand AND godkjent reis
@@ -977,15 +981,17 @@
                     errors.push('Mangler godkjent reis (kreves for 1. premie)');
                 }
 
-                // Additional "ren" warnings for 1. AK (VK-qualification)
-                if (is1AK) {
+                // Additional "ren" warnings for 1. AK (VK-qualification) and 1. UK
+                if (is1AK || is1UK) {
+                    const klasseNavn = is1AK ? '1. AK' : '1. UK';
                     if (makkerStand > 0) {
-                        warnings.push(`Makkerstand registrert (${makkerStand}) - hunden bør være "ren" for 1. AK`);
+                        warnings.push(`Makkerstand registrert (${makkerStand}) - hunden bør være "ren" for ${klasseNavn}`);
                     }
                     if (sjanse > 0) {
-                        warnings.push(`Sjanse på fugl registrert (${sjanse}) - hunden bør være "ren" for 1. AK`);
+                        warnings.push(`Sjanse på fugl registrert (${sjanse}) - hunden bør være "ren" for ${klasseNavn}`);
                     }
-                    if (tomstand > 0) {
+                    if (tomstand > 0 && is1AK) {
+                        // Tomstand-krav gjelder primært for 1. AK
                         warnings.push(`Tomstand registrert (${tomstand}) - hunden bør være "ren" for 1. AK`);
                     }
                 }
@@ -1413,6 +1419,116 @@
             if (btnText) btnText.textContent = 'Dikter';
             if (status) status.classList.add('hidden');
         }
+
+        // ======================================
+        // Service Worker & Offline Support
+        // ======================================
+
+        // Registrer Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => {
+                    console.log('[Dommer] Service Worker registrert');
+
+                    // Lytt etter sync-meldinger fra SW
+                    navigator.serviceWorker.addEventListener('message', event => {
+                        if (event.data.type === 'SYNC_COMPLETE') {
+                            console.log('[Dommer] Sync fullført:', event.data);
+                            if (event.data.success > 0) {
+                                showOfflineToast(`${event.data.success} kritikk(er) synkronisert til serveren`);
+                            }
+                            updateOfflineIndicator();
+                        }
+                    });
+                })
+                .catch(err => console.warn('[Dommer] SW registrering feilet:', err));
+        }
+
+        // Sjekk online/offline-status
+        function updateOfflineIndicator() {
+            const indicator = document.getElementById('offlineIndicator');
+            if (!indicator) return;
+
+            if (!navigator.onLine) {
+                indicator.classList.remove('hidden');
+                indicator.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                        <span>Offline - kritikker lagres lokalt</span>
+                    </div>
+                `;
+            } else {
+                // Sjekk om det er ventende kritikker i køen
+                checkPendingQueue().then(count => {
+                    if (count > 0) {
+                        indicator.classList.remove('hidden');
+                        indicator.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                <span>${count} kritikk(er) synkroniseres...</span>
+                            </div>
+                        `;
+                        // Trigger sync
+                        if (navigator.serviceWorker.controller) {
+                            navigator.serviceWorker.controller.postMessage('syncNow');
+                        }
+                    } else {
+                        indicator.classList.add('hidden');
+                    }
+                });
+            }
+        }
+
+        async function checkPendingQueue() {
+            try {
+                const db = await new Promise((resolve, reject) => {
+                    const request = indexedDB.open('fuglehund-offline', 1);
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('pending-requests')) {
+                            db.createObjectStore('pending-requests', { keyPath: 'id', autoIncrement: true });
+                        }
+                    };
+                });
+                const tx = db.transaction('pending-requests', 'readonly');
+                const store = tx.objectStore('pending-requests');
+                return new Promise(resolve => {
+                    const countReq = store.count();
+                    countReq.onsuccess = () => resolve(countReq.result);
+                    countReq.onerror = () => resolve(0);
+                });
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        function showOfflineToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-xl shadow-lg z-50 flex items-center gap-2';
+            toast.innerHTML = `
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                ${message}
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        // Lytt på online/offline-events
+        window.addEventListener('online', () => {
+            console.log('[Dommer] Tilkoblet');
+            updateOfflineIndicator();
+        });
+        window.addEventListener('offline', () => {
+            console.log('[Dommer] Frakoblet');
+            updateOfflineIndicator();
+        });
+
+        // Sjekk ved oppstart
+        document.addEventListener('DOMContentLoaded', updateOfflineIndicator);
     </script>
 </body>
 </html>

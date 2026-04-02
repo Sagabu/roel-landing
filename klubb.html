@@ -165,7 +165,7 @@
                             class="w-full px-4 py-2 rounded-xl border border-bark-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                     </div>
 
-                    <!-- Vipps-nummer -->
+                    <!-- Vipps-betaling -->
                     <div class="md:col-span-2">
                         <div class="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
                             <div class="flex items-start gap-3">
@@ -174,11 +174,57 @@
                                         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                     </svg>
                                 </div>
-                                <div class="flex-1">
-                                    <label class="block text-sm font-semibold text-orange-800 mb-1">Vipps-nummer (bedrift)</label>
-                                    <p class="text-xs text-orange-600 mb-3">6-sifret Vipps-nummer for å motta betalinger fra deltakere (parkering, loddsalg, etc.)</p>
-                                    <input type="text" id="settingsVipps" placeholder="123456" maxlength="6" pattern="[0-9]{5,6}" inputmode="numeric"
-                                        class="w-full max-w-xs px-4 py-2 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none bg-white">
+                                <div class="flex-1 space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-semibold text-orange-800 mb-1">Vipps-nummer (bedrift)</label>
+                                        <p class="text-xs text-orange-600 mb-2">5-6 sifret Vipps-nummer for å motta betalinger fra deltakere</p>
+                                        <input type="text" id="settingsVipps" placeholder="123456" maxlength="6" pattern="[0-9]{5,6}" inputmode="numeric"
+                                            class="w-full max-w-xs px-4 py-2 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none bg-white">
+                                    </div>
+
+                                    <!-- Vipps API-integrasjon (valgfritt) -->
+                                    <div class="pt-3 border-t border-orange-200">
+                                        <button type="button" onclick="toggleVippsApiSection()" class="flex items-center gap-2 text-sm text-orange-700 hover:text-orange-800 font-medium">
+                                            <svg id="vippsApiChevron" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                            </svg>
+                                            Avansert: Vipps Business API (valgfritt)
+                                        </button>
+
+                                        <div id="vippsApiSection" class="hidden mt-3 p-4 bg-white rounded-lg border border-orange-100 space-y-4">
+                                            <div class="text-xs text-bark-600 mb-3">
+                                                <p class="font-medium mb-1">Med Vipps Business API får du:</p>
+                                                <ul class="list-disc list-inside space-y-1 text-bark-500">
+                                                    <li>Automatisk oppdatering av betalingsstatus i sanntid</li>
+                                                    <li>Slipper manuell avmerking av hvem som har betalt</li>
+                                                </ul>
+                                                <p class="mt-2"><strong>Krever:</strong> Vipps bedriftskonto med ePayment-avtale. Hent API-nøkler fra <a href="https://portal.vipps.no" target="_blank" class="underline text-orange-600">portal.vipps.no</a></p>
+                                            </div>
+
+                                            <div>
+                                                <label class="block text-xs font-medium text-bark-600 mb-1">Client ID</label>
+                                                <input type="text" id="settingsVippsClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                                    class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:ring-2 focus:ring-orange-500 text-sm font-mono">
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-medium text-bark-600 mb-1">Client Secret</label>
+                                                <input type="password" id="settingsVippsClientSecret" placeholder="••••••••••••••••"
+                                                    class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:ring-2 focus:ring-orange-500 text-sm font-mono">
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-medium text-bark-600 mb-1">Subscription Key (Ocp-Apim-Subscription-Key)</label>
+                                                <input type="text" id="settingsVippsSubKey" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                                    class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:ring-2 focus:ring-orange-500 text-sm font-mono">
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-medium text-bark-600 mb-1">Merchant Serial Number (MSN)</label>
+                                                <input type="text" id="settingsVippsMsn" placeholder="123456"
+                                                    class="w-full max-w-xs px-3 py-2 rounded-lg border border-bark-200 focus:ring-2 focus:ring-orange-500 text-sm font-mono">
+                                            </div>
+
+                                            <div id="vippsApiStatus" class="hidden text-sm p-2 rounded-lg"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -415,6 +461,18 @@
                 vippsInput.value = club.vipps_nummer;
             }
 
+            // Populate Vipps API-felter (hvis konfigurert)
+            if (club.vipps_client_id) {
+                document.getElementById('settingsVippsClientId').value = club.vipps_client_id;
+                document.getElementById('settingsVippsSubKey').value = club.vipps_subscription_key || '';
+                document.getElementById('settingsVippsMsn').value = club.vipps_merchant_serial || '';
+                // Vis API-seksjonen hvis den er konfigurert
+                document.getElementById('vippsApiSection').classList.remove('hidden');
+                document.getElementById('vippsApiChevron').classList.add('rotate-90');
+                // Vis status
+                showVippsApiStatus(true);
+            }
+
             // Update title
             document.title = `${club.navn || 'Min Klubb'} - Fuglehundprøve`;
         }
@@ -431,23 +489,41 @@
             const nettside = document.getElementById('settingsNettside')?.value?.trim() || null;
             const adresse = document.getElementById('settingsAdresse')?.value?.trim() || null;
 
+            // Vipps API-felter (valgfritt)
+            const vippsClientId = document.getElementById('settingsVippsClientId')?.value?.trim() || null;
+            const vippsClientSecret = document.getElementById('settingsVippsClientSecret')?.value?.trim() || null;
+            const vippsSubKey = document.getElementById('settingsVippsSubKey')?.value?.trim() || null;
+            const vippsMsn = document.getElementById('settingsVippsMsn')?.value?.trim() || null;
+
             // Validate Vipps-nummer (5-6 digits)
             if (vippsNummer && !/^\d{5,6}$/.test(vippsNummer)) {
                 alert('Vipps-nummer må være 5-6 siffer');
                 return;
             }
 
+            // Bestem API-modus basert på om API-nøkler er fylt ut
+            const vippsApiModus = (vippsClientId && vippsSubKey && vippsMsn) ? 'api' : 'enkel';
+
             try {
+                const body = {
+                    vipps_nummer: vippsNummer,
+                    epost: epost,
+                    telefon: telefon,
+                    nettside: nettside,
+                    adresse: adresse,
+                    vipps_api_modus: vippsApiModus
+                };
+
+                // Bare inkluder API-felter hvis de er fylt ut
+                if (vippsClientId) body.vipps_client_id = vippsClientId;
+                if (vippsClientSecret) body.vipps_client_secret = vippsClientSecret;
+                if (vippsSubKey) body.vipps_subscription_key = vippsSubKey;
+                if (vippsMsn) body.vipps_merchant_serial = vippsMsn;
+
                 const resp = await fetch(`/api/klubber/${currentClubId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        vipps_nummer: vippsNummer,
-                        epost: epost,
-                        telefon: telefon,
-                        nettside: nettside,
-                        adresse: adresse
-                    })
+                    body: JSON.stringify(body)
                 });
 
                 if (resp.ok) {
@@ -455,6 +531,11 @@
                     currentClubData = updated;
                     populateClubData(updated);
                     showToast('Innstillinger lagret!');
+
+                    // Vis API-status hvis API er konfigurert
+                    if (vippsApiModus === 'api') {
+                        showVippsApiStatus(true);
+                    }
                 } else {
                     const err = await resp.json();
                     alert('Feil: ' + (err.error || 'Kunne ikke lagre'));
@@ -462,6 +543,24 @@
             } catch (e) {
                 console.error('Feil ved lagring:', e);
                 alert('Nettverksfeil ved lagring');
+            }
+        }
+
+        function toggleVippsApiSection() {
+            const section = document.getElementById('vippsApiSection');
+            const chevron = document.getElementById('vippsApiChevron');
+            section.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-90');
+        }
+
+        function showVippsApiStatus(configured) {
+            const statusEl = document.getElementById('vippsApiStatus');
+            if (configured) {
+                statusEl.classList.remove('hidden');
+                statusEl.className = 'text-sm p-2 rounded-lg bg-green-50 text-green-700';
+                statusEl.innerHTML = '✓ Business API er konfigurert. Betalingsstatus oppdateres automatisk.';
+            } else {
+                statusEl.classList.add('hidden');
             }
         }
 

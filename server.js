@@ -758,6 +758,14 @@ const migrations = [
   "ALTER TABLE klubber ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN logo TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
+  // Vipps ePayment API-integrasjon for klubber
+  "ALTER TABLE klubber ADD COLUMN vipps_client_id TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_client_secret TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_subscription_key TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_merchant_serial TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_api_modus TEXT DEFAULT 'enkel'",  // 'enkel' eller 'api'
+  // Vipps payment reference for mottakere (for å kunne sjekke status via API)
+  "ALTER TABLE vipps_mottakere ADD COLUMN vipps_reference TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -3414,6 +3422,12 @@ app.put("/api/klubber/:id", async (c) => {
   if (body.nettside !== undefined) { updates.push("nettside = ?"); params.push(body.nettside); }
   if (body.adresse !== undefined) { updates.push("adresse = ?"); params.push(body.adresse); }
   if (body.sted !== undefined) { updates.push("sted = ?"); params.push(body.sted); }
+  // Vipps Business API-felter
+  if (body.vipps_client_id !== undefined) { updates.push("vipps_client_id = ?"); params.push(body.vipps_client_id); }
+  if (body.vipps_client_secret !== undefined) { updates.push("vipps_client_secret = ?"); params.push(body.vipps_client_secret); }
+  if (body.vipps_subscription_key !== undefined) { updates.push("vipps_subscription_key = ?"); params.push(body.vipps_subscription_key); }
+  if (body.vipps_merchant_serial !== undefined) { updates.push("vipps_merchant_serial = ?"); params.push(body.vipps_merchant_serial); }
+  if (body.vipps_api_modus !== undefined) { updates.push("vipps_api_modus = ?"); params.push(body.vipps_api_modus); }
   if (body.logo !== undefined) {
     updates.push("logo = ?");
     params.push(body.logo);

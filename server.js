@@ -4367,6 +4367,15 @@ app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
     return c.json({ error: "Mangler påkrevde felt" }, 400);
   }
 
+  // Hent klubbnavn fra prøven
+  const prove = db.prepare(`
+    SELECT p.navn as prove_navn, k.navn as klubb_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+  const klubbNavn = prove?.klubb_navn || 'Klubben';
+
   // Opprett forespørsel
   const result = db.prepare(`
     INSERT INTO vipps_foresporsler (prove_id, opprettet_av, beskrivelse, belop, vipps_nummer)
@@ -4387,7 +4396,7 @@ app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
 
   // Generer Vipps-lenke og SMS-melding
   const vippsLenke = `https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`;
-  const smsMelding = `Hei! Vennligst betal ${belop} kr for "${beskrivelse}". Trykk her: ${vippsLenke}`;
+  const smsMelding = `Hei fra ${klubbNavn}! Vennligst betal ${belop} kr for "${beskrivelse}". Trykk her: ${vippsLenke}`;
 
   // Send SMS automatisk hvis send_sms=true
   let smsSendt = 0;

@@ -4357,11 +4357,11 @@ app.get("/api/superadmin/sms-export", (c) => {
 // VIPPS-FORESPØRSLER API
 // ============================================
 
-// Opprett ny Vipps-forespørsel
+// Opprett ny Vipps-forespørsel (med valgfri automatisk SMS-utsending)
 app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
-  const { opprettet_av, beskrivelse, belop, vipps_nummer, mottakere } = body;
+  const { opprettet_av, beskrivelse, belop, vipps_nummer, mottakere, send_sms } = body;
 
   if (!opprettet_av || !beskrivelse || !belop || !vipps_nummer || !mottakere?.length) {
     return c.json({ error: "Mangler påkrevde felt" }, 400);
@@ -4385,17 +4385,47 @@ app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
     insertMottaker.run(foresporselId, m.telefon, m.navn);
   }
 
-  // Generer Vipps-lenker for hver mottaker
-  const vippsLenker = mottakere.map(m => ({
-    telefon: m.telefon,
-    navn: m.navn,
-    lenke: `https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`
-  }));
+  // Generer Vipps-lenke og SMS-melding
+  const vippsLenke = `https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`;
+  const smsMelding = `Hei! Vennligst betal ${belop} kr for "${beskrivelse}". Trykk her: ${vippsLenke}`;
+
+  // Send SMS automatisk hvis send_sms=true
+  let smsSendt = 0;
+  let smsFeil = [];
+
+  if (send_sms) {
+    console.log(`[Vipps] Sender SMS til ${mottakere.length} mottakere for "${beskrivelse}"`);
+
+    for (const m of mottakere) {
+      if (!m.telefon) continue;
+
+      try {
+        // Formater telefonnummer
+        let phone = m.telefon.replace(/\s/g, '');
+        if (!phone.startsWith('+')) {
+          phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
+        }
+
+        await sendSMS(phone, smsMelding);
+        smsSendt++;
+      } catch (err) {
+        console.error(`[Vipps SMS] Feil til ${m.telefon}:`, err.message);
+        smsFeil.push({ telefon: m.telefon, feil: err.message });
+      }
+    }
+
+    console.log(`[Vipps] SMS-utsending fullført: ${smsSendt}/${mottakere.length} sendt`);
+  }
 
   return c.json({
     id: foresporselId,
-    vipps_lenker: vippsLenker,
-    melding: `Vennligst betal ${belop} kr for ${beskrivelse}: https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`
+    beskrivelse,
+    belop,
+    antall_mottakere: mottakere.length,
+    sms_sendt: smsSendt,
+    sms_feil: smsFeil,
+    vipps_lenke: vippsLenke,
+    melding: smsMelding
   });
 });
 

@@ -659,8 +659,8 @@
                     <div class="px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-200">
                         <div class="flex items-center justify-between">
                             <div>
-                                <h2 class="text-xl font-bold font-serif text-orange-800">Vipps-forespørsler</h2>
-                                <p class="text-sm text-orange-600">Send betalingsforespørsler til deltakere (parkering, loddsalg, etc.)</p>
+                                <h2 class="text-xl font-bold font-serif text-orange-800">Vipps-betaling</h2>
+                                <p class="text-sm text-orange-600">Send betalingsforespørsler direkte til partier eller enkeltpersoner</p>
                             </div>
                             <button onclick="openVippsModal()" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -684,6 +684,45 @@
                         </div>
                     </div>
 
+                    <!-- Hurtig-utsending til partier -->
+                    <div id="vippsQuickSend" class="px-6 py-4 border-b border-bark-100">
+                        <h3 class="font-semibold text-bark-700 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            Hurtig-utsending
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Velg type og beløp -->
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-xs text-bark-500 mb-1 block">Type</label>
+                                    <select id="vippsQuickType" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:ring-2 focus:ring-orange-500 text-sm">
+                                        <option value="Parkering">Parkering</option>
+                                        <option value="Jegermiddag">Jegermiddag</option>
+                                        <option value="Startavgift">Startavgift</option>
+                                        <option value="Loddsalg">Loddsalg</option>
+                                        <option value="VK-finale">VK-finale</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs text-bark-500 mb-1 block">Beløp</label>
+                                    <div class="flex gap-2">
+                                        <input type="number" id="vippsQuickBelop" value="100" min="1" class="flex-1 px-3 py-2 rounded-lg border border-bark-200 focus:ring-2 focus:ring-orange-500 text-sm">
+                                        <span class="px-3 py-2 text-bark-500 text-sm">kr</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Parti-knapper (genereres dynamisk) -->
+                            <div>
+                                <label class="text-xs text-bark-500 mb-1 block">Send til parti (SMS sendes automatisk)</label>
+                                <div id="vippsQuickPartiButtons" class="flex flex-wrap gap-2">
+                                    <p class="text-sm text-bark-400 italic">Last opp deltakere for å se partier</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Vipps forespørsler liste -->
                     <div id="vippsContent" class="p-6">
                         <div id="vippsEmptyState" class="text-center py-8">
@@ -693,7 +732,7 @@
                                 </svg>
                             </div>
                             <h3 class="text-lg font-semibold text-bark-700 mb-2">Ingen forespørsler sendt</h3>
-                            <p class="text-bark-500 mb-4">Opprett en ny Vipps-forespørsel for å kreve inn betaling fra deltakere</p>
+                            <p class="text-bark-500 mb-4">Bruk hurtig-utsending ovenfor eller opprett en tilpasset forespørsel</p>
                         </div>
 
                         <div id="vippsList" class="hidden space-y-4">
@@ -6896,6 +6935,178 @@
 
             // Last forespørsler uansett
             await loadVippsForesporsler();
+
+            // Bygg hurtig-utsending parti-knapper
+            buildVippsQuickPartiButtons();
+        }
+
+        // Bygg parti-knapper for hurtig-utsending
+        function buildVippsQuickPartiButtons() {
+            const container = document.getElementById('vippsQuickPartiButtons');
+            if (!container) return;
+
+            const participants = typeof uploadedParticipants !== 'undefined' ? uploadedParticipants : [];
+
+            if (participants.length === 0) {
+                container.innerHTML = '<p class="text-sm text-bark-400 italic">Last opp deltakere for å se partier</p>';
+                return;
+            }
+
+            // Finn unike partier
+            const partier = [...new Set(participants.map(p => p.party || p.parti).filter(Boolean))].sort();
+
+            if (partier.length === 0) {
+                container.innerHTML = '<p class="text-sm text-bark-400 italic">Ingen partier funnet i deltakerlisten</p>';
+                return;
+            }
+
+            let html = '';
+            partier.forEach(parti => {
+                const antall = participants.filter(p => (p.party || p.parti) === parti).length;
+                html += `
+                    <button onclick="sendVippsQuickTilParti('${parti}')"
+                        class="flex items-center gap-2 px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-800 rounded-lg font-medium text-sm transition group">
+                        <svg class="w-4 h-4 text-orange-500 group-hover:text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                        </svg>
+                        Parti ${parti}
+                        <span class="text-xs bg-orange-200 px-1.5 py-0.5 rounded">${antall}</span>
+                    </button>
+                `;
+            });
+
+            // Legg til "alle deltakere" knapp
+            html += `
+                <button onclick="sendVippsQuickTilAlle()"
+                    class="flex items-center gap-2 px-4 py-2 bg-bark-100 hover:bg-bark-200 text-bark-700 rounded-lg font-medium text-sm transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                    Alle (${participants.length})
+                </button>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Hurtig-utsending til et spesifikt parti
+        async function sendVippsQuickTilParti(parti) {
+            if (!vippsKlubbNummer) {
+                alert('Klubbens Vipps-nummer er ikke konfigurert. Gå til klubbinnstillinger først.');
+                return;
+            }
+
+            const type = document.getElementById('vippsQuickType').value;
+            const belop = parseInt(document.getElementById('vippsQuickBelop').value) || 100;
+
+            const participants = typeof uploadedParticipants !== 'undefined' ? uploadedParticipants : [];
+            const partiDeltakere = participants.filter(p => (p.party || p.parti) === parti);
+
+            if (partiDeltakere.length === 0) {
+                alert('Ingen deltakere funnet i parti ' + parti);
+                return;
+            }
+
+            const beskrivelse = `${type} - Parti ${parti}`;
+
+            // Bekreft
+            if (!confirm(`Send ${type} (${belop} kr) til ${partiDeltakere.length} deltakere i Parti ${parti}?\n\nSMS sendes automatisk til alle mottakere.`)) {
+                return;
+            }
+
+            await sendVippsWithSMS(beskrivelse, belop, partiDeltakere);
+        }
+
+        // Hurtig-utsending til alle deltakere
+        async function sendVippsQuickTilAlle() {
+            if (!vippsKlubbNummer) {
+                alert('Klubbens Vipps-nummer er ikke konfigurert. Gå til klubbinnstillinger først.');
+                return;
+            }
+
+            const type = document.getElementById('vippsQuickType').value;
+            const belop = parseInt(document.getElementById('vippsQuickBelop').value) || 100;
+
+            const participants = typeof uploadedParticipants !== 'undefined' ? uploadedParticipants : [];
+
+            if (participants.length === 0) {
+                alert('Ingen deltakere lastet opp');
+                return;
+            }
+
+            if (!confirm(`Send ${type} (${belop} kr) til ALLE ${participants.length} deltakere?\n\nSMS sendes automatisk til alle mottakere.`)) {
+                return;
+            }
+
+            await sendVippsWithSMS(type, belop, participants);
+        }
+
+        // Felles funksjon som sender Vipps-forespørsel OG SMS automatisk
+        async function sendVippsWithSMS(beskrivelse, belop, deltakere) {
+            const userPhone = localStorage.getItem('userPhone') || '';
+            const urlParams = new URLSearchParams(window.location.search);
+            const proveId = urlParams.get('trial') || localStorage.getItem('currentTrialId') || 'ukjent';
+
+            // Generer Vipps-lenke
+            const vippsLenke = `https://qr.vipps.no/28/2/01/031/${vippsKlubbNummer}?v=1&s=${belop}`;
+            const smsMelding = `Hei! Vennligst betal ${belop} kr for "${beskrivelse}". Trykk her: ${vippsLenke}`;
+
+            const mottakere = deltakere.map(p => ({
+                telefon: p.phone || p.telefon || '',
+                navn: p.name || `${p.fornavn || ''} ${p.etternavn || ''}`.trim() || 'Ukjent'
+            })).filter(m => m.telefon);
+
+            if (mottakere.length === 0) {
+                alert('Ingen gyldige telefonnumre funnet');
+                return;
+            }
+
+            // Vis loading-state
+            const quickSendDiv = document.getElementById('vippsQuickSend');
+            const originalContent = quickSendDiv.innerHTML;
+            quickSendDiv.innerHTML = `
+                <div class="flex items-center justify-center gap-3 py-8">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+                    <span class="text-bark-600">Sender SMS til ${mottakere.length} mottakere...</span>
+                </div>
+            `;
+
+            try {
+                // 1. Opprett forespørsel i databasen
+                const resp = await fetch(`/api/prover/${proveId}/vipps-foresporsler`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        opprettet_av: userPhone,
+                        beskrivelse: beskrivelse,
+                        belop: belop,
+                        vipps_nummer: vippsKlubbNummer,
+                        mottakere: mottakere,
+                        send_sms: true  // Ny parameter - be serveren sende SMS
+                    })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.error || 'Kunne ikke opprette forespørsel');
+                }
+
+                const result = await resp.json();
+
+                // Gjenopprett innhold og oppdater
+                quickSendDiv.innerHTML = originalContent;
+                buildVippsQuickPartiButtons();
+                await loadVippsForesporsler();
+
+                // Vis suksessmelding
+                alert(`✅ Sendt!\n\n${mottakere.length} SMS-er sendt med betalingslenke for "${beskrivelse}" (${belop} kr).\n\nDu kan følge betalingsstatusen i listen nedenfor.`);
+
+            } catch (e) {
+                console.error('Feil ved Vipps hurtig-utsending:', e);
+                quickSendDiv.innerHTML = originalContent;
+                buildVippsQuickPartiButtons();
+                alert('Feil ved utsending: ' + e.message);
+            }
         }
 
         async function loadVippsForesporsler() {

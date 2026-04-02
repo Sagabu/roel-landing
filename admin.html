@@ -7119,6 +7119,29 @@
             }
         }
 
+        // Slett én mottaker fra en Vipps-forespørsel
+        async function slettVippsMottaker(foresporselId, telefon, navn) {
+            if (!confirm(`Fjerne ${navn} fra denne forespørselen?`)) {
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/vipps-foresporsler/${foresporselId}/mottakere/${telefon}`, {
+                    method: 'DELETE'
+                });
+
+                if (!resp.ok) {
+                    throw new Error('Kunne ikke fjerne mottakeren');
+                }
+
+                await loadVippsForesporsler();
+
+            } catch (e) {
+                console.error('Feil ved sletting av Vipps-mottaker:', e);
+                alert('Feil: ' + e.message);
+            }
+        }
+
         async function loadVippsForesporsler() {
             const urlParams = new URLSearchParams(window.location.search);
             const proveId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
@@ -7219,6 +7242,13 @@
                                             ? `<span class="text-xs text-green-600">Betalt ${m.betalt_dato ? new Date(m.betalt_dato).toLocaleDateString('no-NO') : ''}</span>`
                                             : `<span class="text-xs text-bark-400">Venter</span>`
                                         }
+                                        <button onclick="slettVippsMottaker(${f.id}, '${m.deltaker_telefon}', '${m.deltaker_navn.replace(/'/g, "\\'")}')"
+                                            class="w-6 h-6 rounded-full bg-bark-100 hover:bg-red-100 text-bark-400 hover:text-red-600 flex items-center justify-center transition"
+                                            title="Fjern mottaker">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                            </svg>
+                                        </button>
                                     </div>
                                 </div>
                             `).join('') || '<p class="p-4 text-bark-500 text-center">Ingen mottakere</p>'}

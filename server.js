@@ -4513,6 +4513,25 @@ app.put("/api/vipps-foresporsler/:id/mottakere/:telefon", async (c) => {
   return c.json({ success: true });
 });
 
+// Slett én mottaker fra en Vipps-forespørsel
+app.delete("/api/vipps-foresporsler/:id/mottakere/:telefon", (c) => {
+  const foresporselId = c.req.param("id");
+  const telefon = c.req.param("telefon");
+
+  // Sjekk om det er flere mottakere igjen
+  const count = db.prepare("SELECT COUNT(*) as count FROM vipps_mottakere WHERE foresporsel_id = ?").get(foresporselId);
+
+  if (count.count <= 1) {
+    // Hvis dette er siste mottaker, slett hele forespørselen
+    db.prepare("DELETE FROM vipps_foresporsler WHERE id = ?").run(foresporselId);
+  } else {
+    // Slett bare denne mottakeren
+    db.prepare("DELETE FROM vipps_mottakere WHERE foresporsel_id = ? AND deltaker_telefon = ?").run(foresporselId, telefon);
+  }
+
+  return c.json({ success: true });
+});
+
 // Slett en Vipps-forespørsel
 app.delete("/api/vipps-foresporsler/:id", (c) => {
   const id = c.req.param("id");

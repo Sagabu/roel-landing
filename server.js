@@ -4406,15 +4406,20 @@ app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
           phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
         }
 
-        await sendSMS(phone, smsMelding);
-        smsSendt++;
+        const smsResult = await sendSMS(phone, smsMelding, { type: 'vipps' });
+        if (smsResult.success) {
+          smsSendt++;
+        } else {
+          console.error(`[Vipps SMS] Feil til ${m.telefon}:`, smsResult.error);
+          smsFeil.push({ telefon: m.telefon, feil: smsResult.error || 'Ukjent feil' });
+        }
       } catch (err) {
-        console.error(`[Vipps SMS] Feil til ${m.telefon}:`, err.message);
+        console.error(`[Vipps SMS] Exception til ${m.telefon}:`, err.message);
         smsFeil.push({ telefon: m.telefon, feil: err.message });
       }
     }
 
-    console.log(`[Vipps] SMS-utsending fullført: ${smsSendt}/${mottakere.length} sendt`);
+    console.log(`[Vipps] SMS-utsending fullført: ${smsSendt}/${mottakere.length} sendt${smsFeil.length > 0 ? `, ${smsFeil.length} feilet` : ''}`);
   }
 
   return c.json({

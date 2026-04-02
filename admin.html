@@ -7095,6 +7095,30 @@
             }
         }
 
+        // Slett en Vipps-forespørsel
+        async function slettVippsForespørsel(id, beskrivelse) {
+            if (!confirm(`Er du sikker på at du vil slette forespørselen?\n\n"${beskrivelse}"\n\nDette kan ikke angres.`)) {
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/vipps-foresporsler/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (!resp.ok) {
+                    throw new Error('Kunne ikke slette forespørselen');
+                }
+
+                // Oppdater listen
+                await loadVippsForesporsler();
+
+            } catch (e) {
+                console.error('Feil ved sletting av Vipps-forespørsel:', e);
+                alert('Feil: ' + e.message);
+            }
+        }
+
         async function loadVippsForesporsler() {
             const urlParams = new URLSearchParams(window.location.search);
             const proveId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
@@ -7166,7 +7190,13 @@
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                     </svg>
-                                    Eksporter CSV
+                                    Eksporter
+                                </button>
+                                <button onclick="slettVippsForespørsel(${f.id}, '${f.beskrivelse.replace(/'/g, "\\'")}')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                    Slett
                                 </button>
                             </div>
                         </div>

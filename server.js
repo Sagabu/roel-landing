@@ -4563,6 +4563,346 @@ app.delete("/api/vipps-foresporsler/:id", (c) => {
 });
 
 // ============================================
+// VIPPS ePAYMENT API INTEGRASJON
+// ============================================
+
+// Cache for Vipps access tokens per klubb (MSN)
+const vippsTokenCache = new Map();
+
+// Hent Vipps access token for en klubb
+async function getVippsAccessToken(klubb) {
+  const cacheKey = klubb.vipps_merchant_serial;
+  const cached = vippsTokenCache.get(cacheKey);
+
+  // Bruk cached token hvis den er gyldig (med 5 min margin)
+  if (cached && cached.expiresAt > Date.now() + 300000) {
+    return cached.token;
+  }
+
+  const baseUrl = process.env.VIPPS_ENV === 'production'
+    ? 'https://api.vipps.no'
+    : 'https://apitest.vipps.no';
+
+  try {
+    const response = await fetch(`${baseUrl}/accesstoken/get`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'client_id': klubb.vipps_client_id,
+        'client_secret': klubb.vipps_client_secret,
+        'Ocp-Apim-Subscription-Key': klubb.vipps_subscription_key,
+        'Merchant-Serial-Number': klubb.vipps_merchant_serial
+      },
+      body: ''
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('[Vipps] Token-feil:', err);
+      throw new Error('Kunne ikke hente Vipps access token');
+    }
+
+    const data = await response.json();
+    const expiresIn = parseInt(data.expires_in) || 3600;
+
+    // Cache token
+    vippsTokenCache.set(cacheKey, {
+      token: data.access_token,
+      expiresAt: Date.now() + (expiresIn * 1000)
+    });
+
+    return data.access_token;
+  } catch (err) {
+    console.error('[Vipps] Token-exception:', err.message);
+    throw err;
+  }
+}
+
+// Opprett Vipps ePayment betaling for én mottaker
+async function createVippsPayment(klubb, mottaker, belop, beskrivelse, returnUrl) {
+  const accessToken = await getVippsAccessToken(klubb);
+
+  const baseUrl = process.env.VIPPS_ENV === 'production'
+    ? 'https://api.vipps.no'
+    : 'https://apitest.vipps.no';
+
+  // Generer unik referanse
+  const reference = `fp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Formater telefonnummer (Vipps krever format 47XXXXXXXX)
+  let phoneNumber = mottaker.telefon.replace(/\s/g, '').replace(/^\+/, '');
+  if (!phoneNumber.startsWith('47')) {
+    phoneNumber = '47' + phoneNumber;
+  }
+
+  const payload = {
+    amount: {
+      currency: 'NOK',
+      value: belop * 100  // Vipps bruker øre
+    },
+    paymentMethod: {
+      type: 'WALLET'
+    },
+    customer: {
+      phoneNumber: phoneNumber
+    },
+    reference: reference,
+    returnUrl: returnUrl,
+    userFlow: 'WEB_REDIRECT',
+    paymentDescription: beskrivelse
+  };
+
+  try {
+    const response = await fetch(`${baseUrl}/epayment/v1/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'Ocp-Apim-Subscription-Key': klubb.vipps_subscription_key,
+        'Merchant-Serial-Number': klubb.vipps_merchant_serial,
+        'Idempotency-Key': reference,
+        'Vipps-System-Name': 'Fuglehundprove',
+        'Vipps-System-Version': '1.0.0'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      console.error('[Vipps ePayment] Feil:', err);
+      throw new Error(err.title || err.message || 'Vipps-feil');
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      reference: reference,
+      redirectUrl: data.redirectUrl
+    };
+  } catch (err) {
+    console.error('[Vipps ePayment] Exception:', err.message);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+// Sjekk betalingsstatus for en Vipps-betaling
+async function checkVippsPaymentStatus(klubb, reference) {
+  const accessToken = await getVippsAccessToken(klubb);
+
+  const baseUrl = process.env.VIPPS_ENV === 'production'
+    ? 'https://api.vipps.no'
+    : 'https://apitest.vipps.no';
+
+  try {
+    const response = await fetch(`${baseUrl}/epayment/v1/payments/${reference}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Ocp-Apim-Subscription-Key': klubb.vipps_subscription_key,
+        'Merchant-Serial-Number': klubb.vipps_merchant_serial
+      }
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.title || 'Kunne ikke hente status');
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      state: data.state,  // CREATED, AUTHORIZED, TERMINATED, EXPIRED, etc.
+      aggregate: data.aggregate  // authorizedAmount, capturedAmount, etc.
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+// API: Opprett Vipps ePayment forespørsel (Business API-modus)
+app.post("/api/prover/:id/vipps-epayment", async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { opprettet_av, beskrivelse, belop, mottakere } = body;
+
+  if (!opprettet_av || !beskrivelse || !belop || !mottakere?.length) {
+    return c.json({ error: "Mangler påkrevde felt" }, 400);
+  }
+
+  // Hent prøve og klubb
+  const prove = db.prepare(`
+    SELECT p.*, k.*
+    FROM prover p
+    JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk at klubben har API-konfigurasjon
+  if (!prove.vipps_client_id || !prove.vipps_merchant_serial) {
+    return c.json({ error: "Klubben har ikke konfigurert Vipps Business API" }, 400);
+  }
+
+  // Opprett forespørsel i database
+  const result = db.prepare(`
+    INSERT INTO vipps_foresporsler (prove_id, opprettet_av, beskrivelse, belop, vipps_nummer)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(proveId, opprettet_av, beskrivelse, belop, prove.vipps_merchant_serial);
+
+  const foresporselId = result.lastInsertRowid;
+
+  // Return URL for Vipps (dit brukeren sendes etter betaling)
+  const baseUrl = process.env.BASE_URL || 'https://fuglehundprove.no';
+  const returnUrl = `${baseUrl}/vipps-callback.html?fid=${foresporselId}`;
+
+  // Opprett betalinger for hver mottaker
+  const insertMottaker = db.prepare(`
+    INSERT INTO vipps_mottakere (foresporsel_id, deltaker_telefon, deltaker_navn, vipps_reference)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  let suksess = 0;
+  let feil = [];
+
+  for (const m of mottakere) {
+    const paymentResult = await createVippsPayment(
+      prove,  // Klubb-data
+      m,
+      belop,
+      `${beskrivelse} - ${prove.klubb_navn || 'Fuglehundprøve'}`,
+      returnUrl
+    );
+
+    if (paymentResult.success) {
+      insertMottaker.run(foresporselId, m.telefon, m.navn, paymentResult.reference);
+      suksess++;
+
+      // Send SMS med Vipps-lenke
+      if (m.telefon) {
+        let phone = m.telefon.replace(/\s/g, '');
+        if (!phone.startsWith('+')) {
+          phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
+        }
+        const smsMsg = `Hei fra ${prove.klubb_navn || 'klubben'}! Betal ${belop} kr for "${beskrivelse}". Trykk her: ${paymentResult.redirectUrl}`;
+        await sendSMS(phone, smsMsg, { type: 'vipps_epayment' });
+      }
+    } else {
+      // Legg til mottaker uten referanse (mislykket)
+      insertMottaker.run(foresporselId, m.telefon, m.navn, null);
+      feil.push({ telefon: m.telefon, feil: paymentResult.error });
+    }
+  }
+
+  console.log(`[Vipps ePayment] Opprettet ${suksess}/${mottakere.length} betalinger for "${beskrivelse}"`);
+
+  return c.json({
+    id: foresporselId,
+    beskrivelse,
+    belop,
+    antall_mottakere: mottakere.length,
+    suksess: suksess,
+    feil: feil
+  });
+});
+
+// API: Sjekk og oppdater betalingsstatus for alle ventende mottakere i en forespørsel
+app.post("/api/vipps-foresporsler/:id/sjekk-status", async (c) => {
+  const foresporselId = c.req.param("id");
+
+  // Hent forespørsel med klubb-data
+  const foresporsel = db.prepare(`
+    SELECT vf.*, p.klubb_id, k.*
+    FROM vipps_foresporsler vf
+    JOIN prover p ON vf.prove_id = p.id
+    JOIN klubber k ON p.klubb_id = k.id
+    WHERE vf.id = ?
+  `).get(foresporselId);
+
+  if (!foresporsel) {
+    return c.json({ error: "Forespørsel ikke funnet" }, 404);
+  }
+
+  if (!foresporsel.vipps_client_id) {
+    return c.json({ error: "Klubben bruker ikke Business API" }, 400);
+  }
+
+  // Hent ventende mottakere med vipps_reference
+  const ventende = db.prepare(`
+    SELECT * FROM vipps_mottakere
+    WHERE foresporsel_id = ? AND status = 'venter' AND vipps_reference IS NOT NULL
+  `).all(foresporselId);
+
+  let oppdatert = 0;
+
+  for (const m of ventende) {
+    const status = await checkVippsPaymentStatus(foresporsel, m.vipps_reference);
+
+    if (status.success) {
+      // AUTHORIZED eller CAPTURED betyr betalt
+      if (status.state === 'AUTHORIZED' || status.state === 'CAPTURED') {
+        db.prepare(`
+          UPDATE vipps_mottakere
+          SET status = 'betalt', betalt_dato = datetime('now'), notert_av = 'vipps_api'
+          WHERE id = ?
+        `).run(m.id);
+        oppdatert++;
+      } else if (status.state === 'TERMINATED' || status.state === 'EXPIRED') {
+        db.prepare(`
+          UPDATE vipps_mottakere SET status = 'kansellert' WHERE id = ?
+        `).run(m.id);
+      }
+    }
+  }
+
+  return c.json({
+    sjekket: ventende.length,
+    oppdatert: oppdatert
+  });
+});
+
+// Webhook-endepunkt for Vipps (mottar statusoppdateringer automatisk)
+app.post("/api/vipps/webhook", async (c) => {
+  const body = await c.req.json();
+
+  console.log('[Vipps Webhook] Mottatt:', JSON.stringify(body).substring(0, 500));
+
+  // Vipps sender reference i webhook-payload
+  const reference = body.reference;
+  const state = body.state || body.pspReference;
+
+  if (!reference) {
+    return c.json({ received: true });
+  }
+
+  // Finn mottaker med denne referansen
+  const mottaker = db.prepare(`
+    SELECT * FROM vipps_mottakere WHERE vipps_reference = ?
+  `).get(reference);
+
+  if (mottaker && mottaker.status === 'venter') {
+    if (state === 'AUTHORIZED' || state === 'CAPTURED' || state === 'SALE') {
+      db.prepare(`
+        UPDATE vipps_mottakere
+        SET status = 'betalt', betalt_dato = datetime('now'), notert_av = 'vipps_webhook'
+        WHERE id = ?
+      `).run(mottaker.id);
+      console.log(`[Vipps Webhook] Oppdatert mottaker ${mottaker.id} til betalt`);
+    }
+  }
+
+  return c.json({ received: true });
+});
+
+// ============================================
 // DOMMER-TILDELINGER API
 // ============================================
 

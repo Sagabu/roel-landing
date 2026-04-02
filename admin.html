@@ -7126,8 +7126,13 @@
 
         // Send forespørsler med SMS
         async function vippsSendForesporsler() {
-            if (!vippsKlubbNummer) {
+            // Sjekk konfigurasjon basert på modus
+            if (vippsModus === 'enkel' && !vippsKlubbNummer) {
                 alert('Klubbens Vipps-nummer er ikke konfigurert.');
+                return;
+            }
+            if (vippsModus === 'api' && !vippsApiConfig) {
+                alert('Klubbens Vipps Business API er ikke konfigurert.');
                 return;
             }
 
@@ -7145,7 +7150,8 @@
 
             // Bekreft
             const total = vippsValgteMottakere.length * belop;
-            if (!confirm(`Send betalingsforespørsel?\n\n${beskrivelse}\n${belop} kr x ${vippsValgteMottakere.length} = ${total.toLocaleString('no-NO')} kr\n\nSMS sendes automatisk til alle mottakere.`)) {
+            const modusInfo = vippsModus === 'api' ? '\n\n📱 Betalingsstatus oppdateres automatisk.' : '\n\nSMS sendes automatisk til alle mottakere.';
+            if (!confirm(`Send betalingsforespørsel?\n\n${beskrivelse}\n${belop} kr x ${vippsValgteMottakere.length} = ${total.toLocaleString('no-NO')} kr${modusInfo}`)) {
                 return;
             }
 
@@ -7162,17 +7168,28 @@
             const proveId = urlParams.get('trial') || localStorage.getItem('currentTrialId') || 'ukjent';
 
             try {
-                const resp = await fetch(`/api/prover/${proveId}/vipps-foresporsler`, {
+                // Velg riktig API-endepunkt basert på modus
+                const endpoint = vippsModus === 'api'
+                    ? `/api/prover/${proveId}/vipps-epayment`
+                    : `/api/prover/${proveId}/vipps-foresporsler`;
+
+                const payload = {
+                    opprettet_av: userPhone,
+                    beskrivelse: beskrivelse,
+                    belop: belop,
+                    mottakere: vippsValgteMottakere
+                };
+
+                // Enkel modus trenger vipps_nummer og send_sms
+                if (vippsModus === 'enkel') {
+                    payload.vipps_nummer = vippsKlubbNummer;
+                    payload.send_sms = true;
+                }
+
+                const resp = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        opprettet_av: userPhone,
-                        beskrivelse: beskrivelse,
-                        belop: belop,
-                        vipps_nummer: vippsKlubbNummer,
-                        mottakere: vippsValgteMottakere,
-                        send_sms: true
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!resp.ok) {
@@ -7191,7 +7208,12 @@
                 vippsOppdaterValgteMottakere();
                 await loadVippsForesporsler();
 
-                alert(`✅ Sendt!\n\n${result.sms_sendt} SMS-er sendt med betalingslenke.\n\nDu kan følge betalingsstatusen nedenfor.`);
+                // Tilpasset melding basert på modus
+                if (vippsModus === 'api') {
+                    alert(`✅ Vipps-betalinger opprettet!\n\n${result.suksess}/${result.antall_mottakere} betalinger sendt.\n\nBetalingsstatus oppdateres automatisk.`);
+                } else {
+                    alert(`✅ Sendt!\n\n${result.sms_sendt} SMS-er sendt med betalingslenke.\n\nDu kan følge betalingsstatusen nedenfor.`);
+                }
 
             } catch (e) {
                 console.error('Feil ved Vipps-utsending:', e);
@@ -7222,6 +7244,33 @@
 
             } catch (e) {
                 console.error('Feil ved sletting av Vipps-forespørsel:', e);
+                alert('Feil: ' + e.message);
+            }
+        }
+
+        // Sjekk betalingsstatus via Vipps API (Business API-modus)
+        async function vippsSjekkStatus(foresporselId) {
+            try {
+                const resp = await fetch(`/api/vipps-foresporsler/${foresporselId}/sjekk-status`, {
+                    method: 'POST'
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.error || 'Kunne ikke sjekke status');
+                }
+
+                const result = await resp.json();
+                await loadVippsForesporsler();
+
+                if (result.oppdatert > 0) {
+                    alert(`✅ ${result.oppdatert} betaling(er) oppdatert!`);
+                } else {
+                    alert('Ingen nye betalinger registrert ennå.');
+                }
+
+            } catch (e) {
+                console.error('Feil ved statussjekk:', e);
                 alert('Feil: ' + e.message);
             }
         }
@@ -7308,6 +7357,14 @@
                             </div>
                             <!-- Handlingsknapper -->
                             <div class="flex flex-wrap gap-2">
+                                ${f.mottakere?.some(m => m.vipps_reference) && !alleBetalt ? `
+                                    <button onclick="vippsSjekkStatus(${f.id})" class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                        Oppdater status
+                                    </button>
+                                ` : ''}
                                 ${!alleBetalt ? `
                                     <button onclick="markerAlleVippsBetalt(${f.id})" class="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1.5 rounded-lg transition flex items-center gap-1">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

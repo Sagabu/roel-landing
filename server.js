@@ -753,6 +753,11 @@ const migrations = [
   "ALTER TABLE vk_bedomming ADD COLUMN submitted_at TEXT DEFAULT NULL",
   "ALTER TABLE vk_bedomming ADD COLUMN approved_at TEXT DEFAULT NULL",
   "ALTER TABLE vk_bedomming ADD COLUMN approved_by TEXT DEFAULT NULL",
+  // Logo for klubber og prøver (lagres som base64 i database for persistens)
+  "ALTER TABLE klubber ADD COLUMN logo TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN logo TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -3409,6 +3414,11 @@ app.put("/api/klubber/:id", async (c) => {
   if (body.nettside !== undefined) { updates.push("nettside = ?"); params.push(body.nettside); }
   if (body.adresse !== undefined) { updates.push("adresse = ?"); params.push(body.adresse); }
   if (body.sted !== undefined) { updates.push("sted = ?"); params.push(body.sted); }
+  if (body.logo !== undefined) {
+    updates.push("logo = ?");
+    params.push(body.logo);
+    updates.push("logo_oppdatert = datetime('now')");
+  }
 
   if (updates.length === 0) return c.json({ error: "Ingen felt å oppdatere" }, 400);
 
@@ -3417,6 +3427,67 @@ app.put("/api/klubber/:id", async (c) => {
 
   const updated = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
   return c.json(updated);
+});
+
+// Last opp logo for klubb (FormData)
+app.post("/api/klubber/:id/logo", async (c) => {
+  const id = c.req.param("id");
+
+  const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
+  if (!klubb) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get("logo");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "Ingen fil mottatt" }, 400);
+    }
+
+    // Sjekk filtype
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!["png", "jpg", "jpeg", "svg", "webp"].includes(ext)) {
+      return c.json({ error: "Ugyldig filformat. Bruk PNG, JPG, SVG eller WebP." }, 400);
+    }
+
+    // Konverter til base64 og lagre i database
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = `data:image/${ext === 'svg' ? 'svg+xml' : ext};base64,${buffer.toString('base64')}`;
+
+    db.prepare(`
+      UPDATE klubber
+      SET logo = ?, logo_oppdatert = datetime('now')
+      WHERE id = ?
+    `).run(base64, id);
+
+    console.log(`[Klubb-logo] Lastet opp logo for klubb ${id} (${(buffer.length / 1024).toFixed(1)} KB)`);
+
+    return c.json({
+      success: true,
+      message: "Logo lastet opp og lagret i database",
+      size: buffer.length
+    });
+  } catch (err) {
+    console.error("[Klubb-logo] Feil:", err);
+    return c.json({ error: "Feil ved opplasting: " + err.message }, 500);
+  }
+});
+
+// Hent logo for klubb
+app.get("/api/klubber/:id/logo", (c) => {
+  const id = c.req.param("id");
+
+  const klubb = db.prepare("SELECT logo FROM klubber WHERE id = ?").get(id);
+  if (!klubb) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  if (!klubb.logo) {
+    return c.json({ error: "Ingen logo lastet opp" }, 404);
+  }
+
+  return c.json({
+    logo: klubb.logo,
+    hasLogo: true
+  });
 });
 
 // ============================================
@@ -5219,6 +5290,12 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
       sets.push("partier = ?");
       vals.push(JSON.stringify(body.partier));
     }
+    // Logo (base64)
+    if ('logo' in body) {
+      sets.push("logo = ?");
+      vals.push(body.logo);
+      sets.push("logo_oppdatert = datetime('now')");
+    }
 
     if (sets.length > 0) {
       vals.push(id);
@@ -5240,6 +5317,80 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
     console.error("Feil ved oppdatering av prøve:", err);
     return c.json({ error: err.message }, 500);
   }
+});
+
+// Last opp logo for prøve (FormData)
+app.post("/api/prover/:id/logo", async (c) => {
+  const id = c.req.param("id");
+
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get("logo");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "Ingen fil mottatt" }, 400);
+    }
+
+    // Sjekk filtype
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!["png", "jpg", "jpeg", "svg", "webp"].includes(ext)) {
+      return c.json({ error: "Ugyldig filformat. Bruk PNG, JPG, SVG eller WebP." }, 400);
+    }
+
+    // Konverter til base64 og lagre i database
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = `data:image/${ext === 'svg' ? 'svg+xml' : ext};base64,${buffer.toString('base64')}`;
+
+    db.prepare(`
+      UPDATE prover
+      SET logo = ?, logo_oppdatert = datetime('now')
+      WHERE id = ?
+    `).run(base64, id);
+
+    console.log(`[Prøve-logo] Lastet opp logo for prøve ${id} (${(buffer.length / 1024).toFixed(1)} KB)`);
+
+    return c.json({
+      success: true,
+      message: "Logo lastet opp og lagret i database",
+      size: buffer.length
+    });
+  } catch (err) {
+    console.error("[Prøve-logo] Feil:", err);
+    return c.json({ error: "Feil ved opplasting: " + err.message }, 500);
+  }
+});
+
+// Hent logo for prøve
+app.get("/api/prover/:id/logo", (c) => {
+  const id = c.req.param("id");
+
+  const prove = db.prepare("SELECT logo FROM prover WHERE id = ?").get(id);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  if (!prove.logo) {
+    // Fallback: sjekk om klubben har logo
+    const proveData = db.prepare("SELECT klubb_id FROM prover WHERE id = ?").get(id);
+    if (proveData?.klubb_id) {
+      const klubb = db.prepare("SELECT logo FROM klubber WHERE id = ?").get(proveData.klubb_id);
+      if (klubb?.logo) {
+        return c.json({
+          logo: klubb.logo,
+          hasLogo: true,
+          source: "klubb"
+        });
+      }
+    }
+    return c.json({ error: "Ingen logo lastet opp" }, 404);
+  }
+
+  return c.json({
+    logo: prove.logo,
+    hasLogo: true,
+    source: "prove"
+  });
 });
 
 // Slett prøve
@@ -6330,6 +6481,85 @@ app.post("/api/hunder/:id/aversjonsbevis/godkjenn", (c) => {
   `).run(id);
 
   return c.json({ success: true, message: "Aversjonsbevis godkjent" });
+});
+
+// ============================================
+// EIERBEVIS API
+// ============================================
+
+// Last opp eierbevis for en hund
+app.post("/api/hunder/:id/eierbevis", async (c) => {
+  const id = c.req.param("id");
+
+  // Sjekk at hunden finnes
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const body = await c.req.json();
+  const { bilde, dato } = body;
+
+  if (!bilde) {
+    return c.json({ error: "Bilde er påkrevd" }, 400);
+  }
+
+  // Sjekk at bildet er base64 og ikke for stort (maks 5MB)
+  const base64Data = bilde.replace(/^data:image\/[a-z]+;base64,/, "");
+  const sizeInBytes = (base64Data.length * 3) / 4;
+  const maxSize = 5 * 1024 * 1024; // 5MB
+
+  if (sizeInBytes > maxSize) {
+    return c.json({ error: "Bildet er for stort. Maks 5MB tillatt." }, 400);
+  }
+
+  // Sjekk at det er et gyldig bilde-format
+  if (!bilde.match(/^data:image\/(jpeg|jpg|png|gif|webp);base64,/)) {
+    return c.json({ error: "Ugyldig bildeformat. Bruk JPEG, PNG, GIF eller WebP." }, 400);
+  }
+
+  db.prepare(`
+    UPDATE hunder
+    SET eierbevis = ?,
+        eierbevis_dato = ?
+    WHERE id = ?
+  `).run(bilde, dato || new Date().toISOString().slice(0, 10), id);
+
+  console.log(`[Eierbevis] Lastet opp for hund ${id} (${hund.navn})`);
+
+  return c.json({
+    success: true,
+    message: "Eierbevis lastet opp og lagret."
+  });
+});
+
+// Hent eierbevis for en hund
+app.get("/api/hunder/:id/eierbevis", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare(`
+    SELECT id, navn, regnr, eierbevis, eierbevis_dato
+    FROM hunder WHERE id = ?
+  `).get(id);
+
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  return c.json({
+    harEierbevis: !!hund.eierbevis,
+    bilde: hund.eierbevis,
+    dato: hund.eierbevis_dato
+  });
+});
+
+// Slett eierbevis
+app.delete("/api/hunder/:id/eierbevis", (c) => {
+  const id = c.req.param("id");
+
+  db.prepare(`
+    UPDATE hunder
+    SET eierbevis = NULL,
+        eierbevis_dato = NULL
+    WHERE id = ?
+  `).run(id);
+
+  return c.json({ success: true });
 });
 
 // ============================================

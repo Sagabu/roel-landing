@@ -4974,26 +4974,87 @@
         const adminLogo = document.getElementById('adminLogo');
         const adminLogoPlaceholder = document.getElementById('adminLogoPlaceholder');
 
-        // Load saved logo from localStorage
-        const savedLogo = localStorage.getItem('clubLogo');
-        if (savedLogo) {
-            adminLogo.src = savedLogo;
-            adminLogo.classList.remove('hidden');
-            adminLogoPlaceholder.classList.add('hidden');
+        // Load saved logo from database (prøve eller klubb)
+        async function loadProveOrKlubbLogo() {
+            const proveId = localStorage.getItem('currentTrialId');
+            if (!proveId) return;
+
+            try {
+                // Prøv først prøve-logo
+                const resp = await fetch(`/api/prover/${proveId}/logo`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.logo) {
+                        adminLogo.src = data.logo;
+                        adminLogo.classList.remove('hidden');
+                        adminLogoPlaceholder.classList.add('hidden');
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.log('Ingen lagret logo funnet');
+            }
         }
+        loadProveOrKlubbLogo();
 
         adminLogoArea.addEventListener('click', () => adminLogoInput.click());
 
-        adminLogoInput.addEventListener('change', (e) => {
+        adminLogoInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file) {
+            const proveId = localStorage.getItem('currentTrialId');
+
+            if (file && proveId) {
+                // Vis loading
+                adminLogoPlaceholder.innerHTML = '<div class="animate-pulse text-warm-500 text-xs">Laster opp...</div>';
+                adminLogoPlaceholder.classList.remove('hidden');
+                adminLogo.classList.add('hidden');
+
+                try {
+                    // Last opp til database via API
+                    const formData = new FormData();
+                    formData.append('logo', file);
+
+                    const resp = await fetch(`/api/prover/${proveId}/logo`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!resp.ok) {
+                        const err = await resp.json();
+                        throw new Error(err.error || 'Opplasting feilet');
+                    }
+
+                    // Vis logoen lokalt
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        adminLogo.src = event.target.result;
+                        adminLogo.classList.remove('hidden');
+                        adminLogoPlaceholder.classList.add('hidden');
+                    };
+                    reader.readAsDataURL(file);
+
+                    if (typeof FuglehundToast !== 'undefined') {
+                        FuglehundToast.success('Logo lastet opp og lagret i database');
+                    }
+                } catch (err) {
+                    console.error('Logo upload feilet:', err);
+                    adminLogoPlaceholder.innerHTML = `
+                        <svg class="w-10 h-10 text-warm-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <span class="text-xs text-warm-400">Last opp</span>
+                    `;
+                    if (typeof FuglehundToast !== 'undefined') {
+                        FuglehundToast.error(err.message || 'Kunne ikke laste opp logo');
+                    }
+                }
+            } else if (file) {
+                // Fallback hvis ingen prøve er valgt - vis lokalt
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    const dataUrl = event.target.result;
-                    adminLogo.src = dataUrl;
+                    adminLogo.src = event.target.result;
                     adminLogo.classList.remove('hidden');
                     adminLogoPlaceholder.classList.add('hidden');
-                    localStorage.setItem('clubLogo', dataUrl);
                 };
                 reader.readAsDataURL(file);
             }
@@ -5017,7 +5078,9 @@
             const trialLocation = document.getElementById('trialLocation').value || '';
             const trialDate = document.getElementById('trialDateFrom').value || '';
             const trialJudges = document.getElementById('trialJudges').value || '';
-            const clubLogo = localStorage.getItem('clubLogo');
+            // Hent logo fra adminLogo img-elementet (som allerede er lastet fra database)
+            const adminLogoEl = document.getElementById('adminLogo');
+            const clubLogo = (adminLogoEl && !adminLogoEl.classList.contains('hidden')) ? adminLogoEl.src : null;
 
             // Format date in Norwegian
             let formattedDate = '';

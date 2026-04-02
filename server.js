@@ -1513,10 +1513,11 @@ app.post("/api/auth/login", async (c) => {
       return c.json({ error: "Feil kode" }, 401);
     }
   } else {
-    // I produksjon: Verifiser mot OTP-tabellen
+    // I produksjon: Verifiser mot OTP-tabellen (koder er hashet)
+    const kodeHash = hashOTP(kode, telefon);
     const otp = db.prepare(
       "SELECT rowid FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-    ).get(telefon, kode);
+    ).get(telefon, kodeHash);
 
     if (!otp) {
       return c.json({ error: "Feil kode" }, 401);

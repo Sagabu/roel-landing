@@ -92,6 +92,19 @@
             </div>
         </div>
 
+        <!-- Kritikker som venter på min bekreftelse (som meddommer) -->
+        <div id="meddommerBekreftSection" class="hidden mb-6">
+            <h2 class="text-lg font-semibold text-purple-700 mb-3 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Venter på din bekreftelse
+            </h2>
+            <div id="meddommerKritikkListe" class="space-y-3">
+                <!-- Fylles dynamisk -->
+            </div>
+        </div>
+
         <!-- Dog List -->
         <h2 class="text-lg font-semibold text-bark-700 mb-3">Hunder</h2>
         <div id="dogList" class="space-y-3">
@@ -342,6 +355,32 @@
         </div>
     </div>
 
+    <!-- Meddommer Valg Modal -->
+    <div id="meddommerModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6">
+            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold font-serif text-bark-800 mb-2 text-center">Velg meddommer</h3>
+            <p class="text-bark-600 mb-4 text-center text-sm">
+                Kritikken må bekreftes av en meddommer før den sendes til NKK-representant.
+            </p>
+            <div id="meddommerListe" class="space-y-2 mb-4">
+                <!-- Fylles dynamisk -->
+            </div>
+            <div class="flex gap-2">
+                <button onclick="sendDirekteTilNKK()" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition text-sm">
+                    Send direkte til NKK
+                </button>
+                <button onclick="hideMeddommerModal()" class="px-4 py-3 bg-bark-100 hover:bg-bark-200 text-bark-700 rounded-xl transition">
+                    Avbryt
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Return for Edit Modal -->
     <div id="returnModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6">
@@ -378,6 +417,11 @@
             dogs: [],
             currentDogId: null
         };
+
+        // Multi-dommer variabler
+        let dommerTelefon = null;
+        let partiDommere = [];
+        let proveId = null;
 
         // Party configurations
         const PARTIES = {
@@ -477,6 +521,8 @@
 
             const sessionData = JSON.parse(session);
             state.judgeName = sessionData.name || 'Dommer';
+            dommerTelefon = sessionData.phone || null;
+            proveId = sessionData.assignedProve || localStorage.getItem('currentTrialId') || null;
 
             // Get party from URL
             const urlParams = new URLSearchParams(window.location.search);
@@ -563,11 +609,164 @@
                 console.error('Feil i loadDogInfoFromAPI:', e);
             }
 
+            // Hent liste over dommere for dette partiet (for meddommer-flyt)
+            await loadPartiDommere();
+
+            // Hent kritikker som venter på min bekreftelse (som meddommer)
+            await loadVentendeKritikker();
+
             console.log('Kaller renderDogList...');
             renderDogList();
             updateProgress();
             document.body.classList.remove('auth-loading');
         })();
+
+        // Hent dommere i partiet for meddommer-bekreftelse
+        async function loadPartiDommere() {
+            if (!proveId || !state.party) return;
+
+            try {
+                const response = await fetch(`/api/parti-dommere/${proveId}/${state.party}`);
+                const data = await response.json();
+                partiDommere = data.dommere || [];
+                console.log('Parti-dommere:', partiDommere);
+            } catch (err) {
+                console.warn('Kunne ikke hente parti-dommere:', err);
+                partiDommere = [];
+            }
+        }
+
+        // Sjekk om det er flere dommere i partiet
+        function harMeddommer() {
+            return partiDommere.length > 1;
+        }
+
+        // Hent meddommere (alle dommere unntatt meg selv)
+        function getMeddommere() {
+            return partiDommere.filter(d => d.dommer_telefon !== dommerTelefon);
+        }
+
+        // Kritikker som venter på min bekreftelse (jeg er meddommer)
+        let ventendeKritikker = [];
+
+        async function loadVentendeKritikker() {
+            if (!dommerTelefon) return;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                if (!token) return;
+
+                const response = await fetch(`/api/kritikker/venter-meddommer/${dommerTelefon}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    ventendeKritikker = data.kritikker || [];
+                    renderVentendeKritikker();
+                }
+            } catch (err) {
+                console.warn('Kunne ikke laste ventende kritikker:', err);
+            }
+        }
+
+        function renderVentendeKritikker() {
+            const section = document.getElementById('meddommerBekreftSection');
+            const liste = document.getElementById('meddommerKritikkListe');
+
+            if (!ventendeKritikker || ventendeKritikker.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            section.classList.remove('hidden');
+
+            liste.innerHTML = ventendeKritikker.map(k => `
+                <div class="bg-purple-50 rounded-xl border-2 border-purple-200 p-4">
+                    <div class="flex items-start justify-between mb-3">
+                        <div>
+                            <p class="font-bold text-purple-800">${k.hund_navn || 'Ukjent hund'}</p>
+                            <p class="text-sm text-purple-600">${k.klasse} • ${k.prove_navn || 'Prøve'}</p>
+                        </div>
+                        <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">${k.premie || 'Ingen premie'}</span>
+                    </div>
+                    <div class="bg-white rounded-lg p-3 mb-3 border border-purple-100">
+                        <p class="text-xs text-purple-500 mb-1">Kritikktekst:</p>
+                        <p class="text-sm text-bark-700">${k.kritikk_tekst || 'Ingen tekst'}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="bekreftKritikk(${k.id})" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg transition text-sm">
+                            Bekreft
+                        </button>
+                        <button onclick="avvisKritikk(${k.id})" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-2 rounded-lg transition text-sm">
+                            Send tilbake
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function bekreftKritikk(kritikkId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                if (!token) return;
+
+                const response = await fetch(`/api/kritikker/${kritikkId}/bekreft-meddommer`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+
+                if (response.ok) {
+                    // Fjern fra listen og oppdater visning
+                    ventendeKritikker = ventendeKritikker.filter(k => k.id !== kritikkId);
+                    renderVentendeKritikker();
+
+                    alert('Kritikken er bekreftet og sendt til NKK-representant.');
+                } else {
+                    const error = await response.json();
+                    alert('Feil: ' + (error.error || 'Kunne ikke bekrefte kritikk'));
+                }
+            } catch (err) {
+                console.error('Feil ved bekreftelse:', err);
+                alert('Nettverksfeil ved bekreftelse');
+            }
+        }
+
+        async function avvisKritikk(kritikkId) {
+            const kommentar = prompt('Skriv en kommentar til dommeren om hva som bør endres:');
+            if (kommentar === null) return; // Avbrutt
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                if (!token) return;
+
+                const response = await fetch(`/api/kritikker/${kritikkId}/avvis-meddommer`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ kommentar: kommentar })
+                });
+
+                if (response.ok) {
+                    // Fjern fra listen og oppdater visning
+                    ventendeKritikker = ventendeKritikker.filter(k => k.id !== kritikkId);
+                    renderVentendeKritikker();
+
+                    alert('Kritikken er sendt tilbake til dommeren for endring.');
+                } else {
+                    const error = await response.json();
+                    alert('Feil: ' + (error.error || 'Kunne ikke avvise kritikk'));
+                }
+            } catch (err) {
+                console.error('Feil ved avvisning:', err);
+                alert('Nettverksfeil ved avvisning');
+            }
+        }
 
         // Render dog list
         function renderDogList() {
@@ -589,8 +788,11 @@
                     statusBadge = '<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">Godkjent</span>';
                     statusColor = 'border-green-300 bg-green-50';
                 } else if (critiqueStatus === 'submitted') {
-                    statusBadge = '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Venter godkjenning</span>';
+                    statusBadge = '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">Venter NKK-rep</span>';
                     statusColor = 'border-blue-300 bg-blue-50';
+                } else if (critiqueStatus === 'venter_meddommer') {
+                    statusBadge = '<span class="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">Venter meddommer</span>';
+                    statusColor = 'border-purple-300 bg-purple-50';
                 } else if (critiqueStatus === 'returned') {
                     statusBadge = '<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">Trenger endring</span>';
                     statusColor = 'border-amber-300 bg-amber-50';
@@ -1200,8 +1402,65 @@
                 }
             }
 
+            // Sjekk om det er flere dommere i partiet - da må meddommer bekrefte
+            if (harMeddommer()) {
+                // Lagre kritikk-data midlertidig for meddommer-valg
+                state.pendingCritique = {
+                    dog: dog,
+                    critiqueText: critiqueText,
+                    premie: premie
+                };
+
+                // Vis meddommer-valg modal
+                showMeddommerModal();
+                return;
+            }
+
+            // Ingen meddommer - send direkte til NKK
+            await finalizeCritique(dog, critiqueText, premie, null);
+        }
+
+        // Vis meddommer-valg modal
+        function showMeddommerModal() {
+            const liste = document.getElementById('meddommerListe');
+            const meddommere = getMeddommere();
+
+            liste.innerHTML = meddommere.map(d => `
+                <button onclick="velgMeddommer('${d.dommer_telefon}')"
+                        class="w-full bg-bark-50 hover:bg-blue-50 border-2 border-bark-200 hover:border-blue-500 p-4 rounded-xl transition text-left">
+                    <div class="font-medium text-bark-800">${d.dommer_navn || 'Dommer'}</div>
+                    <div class="text-sm text-bark-500">${d.dommer_telefon}</div>
+                </button>
+            `).join('');
+
+            document.getElementById('meddommerModal').classList.remove('hidden');
+        }
+
+        function hideMeddommerModal() {
+            document.getElementById('meddommerModal').classList.add('hidden');
+            state.pendingCritique = null;
+        }
+
+        async function velgMeddommer(meddommerTelefon) {
+            if (!state.pendingCritique) return;
+
+            const { dog, critiqueText, premie } = state.pendingCritique;
+            await finalizeCritique(dog, critiqueText, premie, meddommerTelefon);
+            hideMeddommerModal();
+        }
+
+        async function sendDirekteTilNKK() {
+            if (!state.pendingCritique) return;
+
+            const { dog, critiqueText, premie } = state.pendingCritique;
+            await finalizeCritique(dog, critiqueText, premie, null);
+            hideMeddommerModal();
+        }
+
+        // Fullfør kritikk og send til server
+        async function finalizeCritique(dog, critiqueText, premie, meddommerTelefon) {
             // === KRITISK: Lagre kritikk til database via /api/kritikker ===
-            await saveKritikkToDatabase(dog, critiqueText, premie);
+            const kritikkId = await saveKritikkToDatabase(dog, critiqueText, premie, meddommerTelefon);
 
             hideModal();
             renderDogList();
@@ -1211,28 +1470,35 @@
             const activeDogs = state.dogs.filter(d => !d.knocked);
             const allSubmitted = activeDogs.every(d => d.critiqueStatus === 'submitted' || d.critiqueStatus === 'approved');
 
-            // Send SMS notification to NKK-rep when all critiques are submitted
-            if (allSubmitted) {
+            // Send SMS notification to NKK-rep when all critiques are submitted (og ingen venter på meddommer)
+            const noneWaitingMeddommer = activeDogs.every(d => d.critiqueStatus !== 'venter_meddommer');
+            if (allSubmitted && noneWaitingMeddommer) {
                 notifyNkkRep(activeDogs.length);
             }
 
             // Show success
-            document.getElementById('successMessage').textContent =
-                `Kritikken for ${dog.name} er sendt til NKK-representant for godkjenning.`;
+            if (meddommerTelefon) {
+                const meddommer = partiDommere.find(d => d.dommer_telefon === meddommerTelefon);
+                document.getElementById('successMessage').textContent =
+                    `Kritikken for ${dog.name} er sendt til ${meddommer?.dommer_navn || 'meddommer'} for bekreftelse.`;
+            } else {
+                document.getElementById('successMessage').textContent =
+                    `Kritikken for ${dog.name} er sendt til NKK-representant for godkjenning.`;
+            }
             document.getElementById('successModal').classList.remove('hidden');
         }
 
         // Lagre kritikk til database via API
-        async function saveKritikkToDatabase(dog, critiqueText, premie) {
+        async function saveKritikkToDatabase(dog, critiqueText, premie, meddommerTelefon = null) {
             try {
                 const token = localStorage.getItem('fuglehund_token');
                 if (!token) {
                     console.warn('Ingen token - kritikk lagres kun lokalt');
-                    return;
+                    return null;
                 }
 
                 // Hent prøve-ID fra localStorage
-                const proveId = localStorage.getItem('currentTrialId') || '';
+                const currentProveId = proveId || localStorage.getItem('currentTrialId') || '';
 
                 // Hent hund-info - vi bruker regnr for å finne hund_id på serveren
                 const regnr = dog.regnr || dog.regNr || '';
@@ -1241,9 +1507,18 @@
                 const stats = dog.stats || {};
                 const rawData = dog.rawData || {};
 
+                // Bestem status basert på om meddommer er valgt
+                let kritikkStatus = 'submitted';
+                if (meddommerTelefon) {
+                    kritikkStatus = 'venter_meddommer';
+                    dog.critiqueStatus = 'venter_meddommer';
+                } else {
+                    dog.critiqueStatus = 'submitted';
+                }
+
                 const kritikkData = {
                     // Identifikasjon
-                    prove_id: proveId,
+                    prove_id: currentProveId,
                     hund_regnr: regnr, // Server kan slå opp hund_id fra dette
                     hund_navn: dog.name || '',
 
@@ -1278,8 +1553,11 @@
                     premie: premie || '',
                     kritikk_tekst: critiqueText || '',
 
+                    // Meddommer (hvis valgt)
+                    meddommer_telefon: meddommerTelefon || null,
+
                     // Status
-                    status: 'submitted'
+                    status: kritikkStatus
                 };
 
                 const response = await fetch('/api/kritikker', {
@@ -1296,12 +1574,15 @@
                     console.log('Kritikk lagret i database med ID:', result.id);
                     // Lagre kritikk-ID på hunden for senere referanse
                     dog.kritikkId = result.id;
+                    return result.id;
                 } else {
                     const error = await response.json();
                     console.error('Feil ved lagring av kritikk:', error);
+                    return null;
                 }
             } catch (err) {
                 console.error('Kunne ikke lagre kritikk til database:', err);
+                return null;
             }
         }
 

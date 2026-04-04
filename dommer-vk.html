@@ -108,6 +108,11 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <!-- Live-rangering status indikator -->
+                    <button id="liveRangeringStatus" onclick="showLiveRangeringInfo()" class="hidden bg-forest-600 hover:bg-forest-700 px-2 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1" title="Live-rangering status">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+                        <span id="liveRangeringStatusText">Synk</span>
+                    </button>
                     <button onclick="resetAll()" class="bg-red-500/80 hover:bg-red-600 px-2 py-1 rounded-lg text-xs font-medium transition" title="Nullstill alt">
                         ↺
                     </button>
@@ -527,6 +532,20 @@
         const proveId = urlParams.get('prove') || 'demo';
         const parti = urlParams.get('parti') || 'VK';
 
+        // Hent dommer-info fra session
+        let dommerTelefon = null;
+        let dommerNavn = null;
+        let liveRangeringEier = null;
+        let partiDommere = [];
+
+        try {
+            const judgeSession = JSON.parse(localStorage.getItem('judgeSession') || '{}');
+            dommerTelefon = judgeSession.phone || null;
+            dommerNavn = judgeSession.name || null;
+        } catch (e) {
+            console.warn('Kunne ikke lese judgeSession:', e);
+        }
+
         // Partiliste - lastes fra server
         let partyList = [];
 
@@ -546,6 +565,8 @@
             await loadPartyList();
             // Last bedømmingsdata fra server
             await loadFromServer();
+            // Sjekk live-rangering status for multi-dommer
+            await checkLiveRangeringStatus();
 
             populateDogSelectors();
             updateDogDisplays();
@@ -591,6 +612,142 @@
             state.slippComments[state.currentSlipp] = document.getElementById('slippComment').value;
         }
 
+        // =============================================
+        // Live-rangering eier (multi-dommer support)
+        // =============================================
+
+        async function checkLiveRangeringStatus() {
+            if (proveId === 'demo' || !dommerTelefon) {
+                return; // Demo-modus eller ingen innlogget dommer
+            }
+
+            try {
+                // Hent liste over dommere for dette partiet
+                const dommerResp = await fetch(`/api/parti-dommere/${proveId}/${parti}`);
+                const dommerData = await dommerResp.json();
+                partiDommere = dommerData.dommere || [];
+
+                // Hvis bare én dommer, ingen valg nødvendig
+                if (partiDommere.length <= 1) {
+                    return;
+                }
+
+                // Hent live-rangering eier status
+                const eierResp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/live-eier`);
+                const eierData = await eierResp.json();
+
+                if (eierData.eier_valgt) {
+                    liveRangeringEier = eierData.live_rangering_eier;
+                    updateLiveRangeringStatusUI();
+                } else {
+                    // Ingen eier valgt - vis valg-modal
+                    showLiveRangeringValgModal();
+                }
+            } catch (err) {
+                console.error('Feil ved sjekk av live-rangering status:', err);
+            }
+        }
+
+        function showLiveRangeringValgModal() {
+            const modal = document.getElementById('liveRangeringModal');
+            const liste = document.getElementById('liveRangeringDommerListe');
+
+            liste.innerHTML = partiDommere.map(d => `
+                <button onclick="velgLiveRangeringEier('${d.dommer_telefon}')"
+                        class="w-full bg-vk-100 hover:bg-forest-100 border-2 border-vk-300 hover:border-forest-500 p-4 rounded-xl transition text-left ${d.dommer_telefon === dommerTelefon ? 'ring-2 ring-forest-500' : ''}">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="font-bold text-vk-800">${d.dommer_navn || d.dommer_telefon}</div>
+                            <div class="text-sm text-vk-600">${d.dommer_telefon}</div>
+                        </div>
+                        ${d.dommer_telefon === dommerTelefon ? '<span class="bg-forest-600 text-white text-xs px-2 py-1 rounded-full">Deg</span>' : ''}
+                    </div>
+                </button>
+            `).join('');
+
+            modal.classList.remove('hidden');
+        }
+
+        async function velgLiveRangeringEier(telefon) {
+            if (proveId === 'demo') return;
+
+            try {
+                const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/set-live-eier`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ eier_telefon: telefon })
+                });
+
+                const result = await resp.json();
+
+                if (resp.status === 409) {
+                    // Allerede valgt av noen andre
+                    alert(`Live-rangering eier er allerede valgt: ${result.eier}`);
+                    liveRangeringEier = result.eier;
+                } else if (result.success) {
+                    liveRangeringEier = result.live_rangering_eier;
+                } else {
+                    alert('Kunne ikke velge live-rangering eier: ' + (result.error || 'Ukjent feil'));
+                    return;
+                }
+
+                document.getElementById('liveRangeringModal').classList.add('hidden');
+                updateLiveRangeringStatusUI();
+            } catch (err) {
+                console.error('Feil ved valg av live-rangering eier:', err);
+                alert('Nettverksfeil ved valg av eier');
+            }
+        }
+
+        function updateLiveRangeringStatusUI() {
+            const statusBtn = document.getElementById('liveRangeringStatus');
+            const statusText = document.getElementById('liveRangeringStatusText');
+
+            if (!liveRangeringEier || partiDommere.length <= 1) {
+                statusBtn.classList.add('hidden');
+                return;
+            }
+
+            statusBtn.classList.remove('hidden');
+
+            const erJegEier = liveRangeringEier === dommerTelefon;
+            if (erJegEier) {
+                statusBtn.classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
+                statusBtn.classList.add('bg-forest-600', 'hover:bg-forest-700');
+                statusText.textContent = 'Synk';
+                statusBtn.title = 'Du synkroniserer live-rangeringen';
+            } else {
+                statusBtn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
+                statusBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
+                statusText.textContent = 'Lokal';
+                statusBtn.title = 'Dine endringer lagres kun lokalt. ' + liveRangeringEier + ' synkroniserer.';
+            }
+        }
+
+        function showLiveRangeringInfo() {
+            if (!liveRangeringEier) return;
+
+            const erJegEier = liveRangeringEier === dommerTelefon;
+            const eierNavn = partiDommere.find(d => d.dommer_telefon === liveRangeringEier)?.dommer_navn || liveRangeringEier;
+
+            if (erJegEier) {
+                alert('Du er ansvarlig for å synkronisere live-rangeringen til serveren.\n\nDine endringer lagres automatisk og er synlige for andre.');
+            } else {
+                alert(`${eierNavn} synkroniserer live-rangeringen.\n\nDine notater og endringer lagres kun lokalt på din enhet.`);
+            }
+        }
+
+        function erJegLiveEier() {
+            // Returner true hvis:
+            // - Det er demo-modus
+            // - Det er bare én dommer
+            // - Jeg er valgt som eier
+            if (proveId === 'demo') return true;
+            if (partiDommere.length <= 1) return true;
+            return liveRangeringEier === dommerTelefon;
+        }
+
+        // =============================================
         // Last bedømmingsdata fra server
         async function loadFromServer() {
             if (proveId === 'demo') {
@@ -695,8 +852,8 @@
                 premietildelinger: state.premietildelinger
             }));
 
-            // Lagre til server hvis ikke demo
-            if (proveId !== 'demo') {
+            // Lagre til server hvis ikke demo OG jeg er live-rangering eier
+            if (proveId !== 'demo' && erJegLiveEier()) {
                 try {
                     await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
@@ -3453,6 +3610,26 @@ Antall slipp: ${state.currentSlipp}
                 <button onclick="closePositionSelectModal()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
                     Avbryt
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live-rangering eier modal -->
+    <div id="liveRangeringModal" class="hidden fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-vk-200">
+                <h2 class="text-lg font-bold font-serif text-vk-800 text-center">Hvem synkroniserer rangeringen?</h2>
+                <p class="text-sm text-vk-600 text-center mt-2">
+                    Denne partiet har flere dommere. Velg hvem som skal være ansvarlig for å synkronisere live-rangeringen.
+                </p>
+            </div>
+            <div id="liveRangeringDommerListe" class="p-4 space-y-2">
+                <!-- Fylles dynamisk -->
+            </div>
+            <div class="p-4 border-t border-vk-200 bg-vk-50 rounded-b-2xl">
+                <p class="text-xs text-vk-500 text-center">
+                    <strong>Merk:</strong> Alle dommere kan føre sine egne notater, men kun én synkroniserer rangeringen til serveren.
+                </p>
             </div>
         </div>
     </div>

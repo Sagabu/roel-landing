@@ -640,6 +640,7 @@
 
                 if (eierData.eier_valgt) {
                     liveRangeringEier = eierData.live_rangering_eier;
+                    inkluderSlippKommentarer = eierData.inkluder_slipp_kommentarer || false;
                     updateLiveRangeringStatusUI();
                 } else {
                     // Ingen eier valgt - vis valg-modal
@@ -670,14 +671,24 @@
             modal.classList.remove('hidden');
         }
 
+        // Innstilling for om slipp-kommentarer skal inkluderes i live-rangering
+        let inkluderSlippKommentarer = false;
+
         async function velgLiveRangeringEier(telefon) {
             if (proveId === 'demo') return;
+
+            // Hent checkbox-verdi for slipp-kommentarer
+            const inkluderCheckbox = document.getElementById('inkluderSlippKommentar');
+            inkluderSlippKommentarer = inkluderCheckbox ? inkluderCheckbox.checked : false;
 
             try {
                 const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/set-live-eier`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ eier_telefon: telefon })
+                    body: JSON.stringify({
+                        eier_telefon: telefon,
+                        inkluder_slipp_kommentarer: inkluderSlippKommentarer
+                    })
                 });
 
                 const result = await resp.json();
@@ -888,25 +899,7 @@
 
         // Lagre til server (og localStorage som backup)
         async function saveToStorage() {
-            const dataToSave = {
-                current_slipp: state.currentSlipp,
-                current_round: state.currentRound,
-                selected_dogs: state.selectedDogs,
-                plasseringer: state.plasseringer,
-                tid_til_gode: state.tidTilGode,
-                dog_data: state.dogData,
-                slipp_comments: state.slippComments,
-                round_pairings: state.roundPairings,
-                opponents: state.opponents,
-                judged_this_round: state.judgedThisRound,
-                round_snapshots: state.roundSnapshots,
-                slipp_dogs: state.slippDogs,
-                slipp_rankings: state.slippRankings,
-                vk_type: state.vkType,
-                premietildelinger: state.premietildelinger
-            };
-
-            // Alltid lagre til localStorage som backup
+            // Alltid lagre ALT til localStorage som backup (inkl. notater)
             localStorage.setItem('dommertest_vk_dual', JSON.stringify({
                 currentSlipp: state.currentSlipp,
                 currentRound: state.currentRound,
@@ -926,12 +919,58 @@
             }));
 
             // Lagre live-rangering til server hvis ikke demo OG jeg er live-rangering eier
+            // VIKTIG: Kun rangering publiseres - IKKE individuelle notater
             if (proveId !== 'demo' && erJegLiveEier()) {
+                // Filtrer dogData for å kun inkludere statistikk, IKKE notater
+                const filteredDogData = {};
+                for (const [hundNr, data] of Object.entries(state.dogData)) {
+                    if (!data) continue;
+                    filteredDogData[hundNr] = {
+                        // Statistikk som vises i rangering
+                        slipps: {},
+                        // IKKE inkluder: notater
+                    };
+                    // Kopier slipp-statistikk uten kommentarer/notater
+                    if (data.slipps) {
+                        for (const [slippNr, slipp] of Object.entries(data.slipps)) {
+                            filteredDogData[hundNr].slipps[slippNr] = {
+                                slipptid: slipp.slipptid || 0,
+                                fmr: slipp.fmr || 0,
+                                fur: slipp.fur || 0,
+                                slat: slipp.slat || 0,
+                                sjanse: slipp.sjanse || 0,
+                                ts: slipp.ts || 0,
+                                apport: slipp.apport || false
+                                // IKKE inkluder: notater, kommentar
+                            };
+                        }
+                    }
+                }
+
+                const liveData = {
+                    current_slipp: state.currentSlipp,
+                    current_round: state.currentRound,
+                    selected_dogs: state.selectedDogs,
+                    plasseringer: state.plasseringer,
+                    tid_til_gode: state.tidTilGode,
+                    dog_data: filteredDogData,
+                    // Slipp-kommentarer KUN hvis valgt
+                    slipp_comments: inkluderSlippKommentarer ? state.slippComments : {},
+                    round_pairings: state.roundPairings,
+                    opponents: state.opponents,
+                    judged_this_round: state.judgedThisRound,
+                    round_snapshots: state.roundSnapshots,
+                    slipp_dogs: state.slippDogs,
+                    slipp_rankings: state.slippRankings,
+                    vk_type: state.vkType,
+                    premietildelinger: state.premietildelinger
+                };
+
                 try {
                     await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(dataToSave)
+                        body: JSON.stringify(liveData)
                     });
                 } catch (err) {
                     console.error('Feil ved lagring til server:', err);
@@ -3774,9 +3813,18 @@ Antall slipp: ${state.currentSlipp}
             <div id="liveRangeringDommerListe" class="p-4 space-y-2">
                 <!-- Fylles dynamisk -->
             </div>
+            <div class="p-4 border-t border-vk-100">
+                <label class="flex items-center gap-3 p-3 bg-vk-50 rounded-xl cursor-pointer hover:bg-vk-100 transition">
+                    <input type="checkbox" id="inkluderSlippKommentar" class="w-5 h-5 rounded border-vk-300 text-forest-600 focus:ring-forest-500">
+                    <div>
+                        <p class="text-sm font-medium text-vk-800">Inkluder slipp-kommentarer</p>
+                        <p class="text-xs text-vk-500">Felles kommentarer per slipp (f.eks. terreng, vær)</p>
+                    </div>
+                </label>
+            </div>
             <div class="p-4 border-t border-vk-200 bg-vk-50 rounded-b-2xl">
                 <p class="text-xs text-vk-500 text-center">
-                    <strong>Merk:</strong> Alle dommere kan føre sine egne notater, men kun én synkroniserer rangeringen til serveren.
+                    <strong>Merk:</strong> Kun rangeringen publiseres live. Individuelle notater forblir private.
                 </p>
             </div>
         </div>

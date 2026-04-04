@@ -806,6 +806,8 @@ const migrations = [
   "ALTER TABLE vipps_mottakere ADD COLUMN vipps_reference TEXT DEFAULT NULL",
   // Flerdommersstøtte: hvem eier live-rangeringen i VK
   "ALTER TABLE vk_bedomming ADD COLUMN live_rangering_eier TEXT DEFAULT NULL",
+  // Innstilling for om slipp-kommentarer skal inkluderes i live-rangering
+  "ALTER TABLE vk_bedomming ADD COLUMN inkluder_slipp_kommentarer INTEGER DEFAULT 0",
   // Kritikk-bekreftelse fra meddommer
   "ALTER TABLE kritikker ADD COLUMN meddommer_telefon TEXT DEFAULT NULL",
   "ALTER TABLE kritikker ADD COLUMN meddommer_bekreftet_at TEXT DEFAULT NULL",
@@ -9661,23 +9663,31 @@ app.post("/api/vk-bedomming/:proveId/:parti/set-live-eier", requireAuth, async (
       return c.json({ error: "Live-rangering eier er allerede valgt", eier: existing.live_rangering_eier }, 409);
     }
 
-    // Sett live-eier
+    // Sett live-eier og innstillinger
     const eierTelefon = body.eier_telefon || user.telefon;
+    const inkluderSlippKommentarer = body.inkluder_slipp_kommentarer ? 1 : 0;
 
     if (existing) {
       db.prepare(`
-        UPDATE vk_bedomming SET live_rangering_eier = ?, updated_at = datetime('now')
+        UPDATE vk_bedomming SET
+          live_rangering_eier = ?,
+          inkluder_slipp_kommentarer = ?,
+          updated_at = datetime('now')
         WHERE prove_id = ? AND parti = ?
-      `).run(eierTelefon, proveId, parti);
+      `).run(eierTelefon, inkluderSlippKommentarer, proveId, parti);
     } else {
       // Opprett ny vk_bedomming rad med live-eier
       db.prepare(`
-        INSERT INTO vk_bedomming (prove_id, parti, dommer_telefon, live_rangering_eier)
-        VALUES (?, ?, ?, ?)
-      `).run(proveId, parti, user.telefon, eierTelefon);
+        INSERT INTO vk_bedomming (prove_id, parti, dommer_telefon, live_rangering_eier, inkluder_slipp_kommentarer)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(proveId, parti, user.telefon, eierTelefon, inkluderSlippKommentarer);
     }
 
-    return c.json({ success: true, live_rangering_eier: eierTelefon });
+    return c.json({
+      success: true,
+      live_rangering_eier: eierTelefon,
+      inkluder_slipp_kommentarer: inkluderSlippKommentarer === 1
+    });
   } catch (err) {
     console.error("Set live-eier error:", err);
     return c.json({ error: err.message }, 500);
@@ -9690,16 +9700,18 @@ app.get("/api/vk-bedomming/:proveId/:parti/live-eier", (c) => {
     const { proveId, parti } = c.req.param();
 
     const bedomming = db.prepare(`
-      SELECT live_rangering_eier, dommer_telefon FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+      SELECT live_rangering_eier, dommer_telefon, inkluder_slipp_kommentarer
+      FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
     if (!bedomming) {
-      return c.json({ eier_valgt: false, live_rangering_eier: null });
+      return c.json({ eier_valgt: false, live_rangering_eier: null, inkluder_slipp_kommentarer: false });
     }
 
     return c.json({
       eier_valgt: !!bedomming.live_rangering_eier,
-      live_rangering_eier: bedomming.live_rangering_eier
+      live_rangering_eier: bedomming.live_rangering_eier,
+      inkluder_slipp_kommentarer: bedomming.inkluder_slipp_kommentarer === 1
     });
   } catch (err) {
     console.error("Get live-eier error:", err);

@@ -563,10 +563,12 @@
         async function init() {
             // Last partiliste fra server
             await loadPartyList();
-            // Last bedømmingsdata fra server
+            // Last bedømmingsdata fra server (live-rangering fra eier)
             await loadFromServer();
             // Sjekk live-rangering status for multi-dommer
             await checkLiveRangeringStatus();
+            // Last dommerens egne notater fra server (merge med eksisterende data)
+            await loadDommerNotaterFromServer();
 
             populateDogSelectors();
             updateDogDisplays();
@@ -733,7 +735,7 @@
             if (erJegEier) {
                 alert('Du er ansvarlig for å synkronisere live-rangeringen til serveren.\n\nDine endringer lagres automatisk og er synlige for andre.');
             } else {
-                alert(`${eierNavn} synkroniserer live-rangeringen.\n\nDine notater og endringer lagres kun lokalt på din enhet.`);
+                alert(`${eierNavn} synkroniserer live-rangeringen.\n\nDine notater og bedømminger lagres trygt til serveren og vil være tilgjengelige når du skal skrive kritikker.`);
             }
         }
 
@@ -745,6 +747,77 @@
             if (proveId === 'demo') return true;
             if (partiDommere.length <= 1) return true;
             return liveRangeringEier === dommerTelefon;
+        }
+
+        // Last dommerens egne notater fra server og merge med eksisterende data
+        async function loadDommerNotaterFromServer() {
+            if (proveId === 'demo' || !dommerTelefon) return;
+
+            const token = localStorage.getItem('fuglehund_token');
+            if (!token) return;
+
+            try {
+                const response = await fetch(`/api/dommer-notater/${proveId}/${parti}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const notater = data.notater || [];
+
+                if (notater.length === 0) return;
+
+                console.log('Lastet dommer-notater fra server:', notater.length, 'poster');
+
+                // Merge notater inn i state.dogData
+                for (const notat of notater) {
+                    // Finn hund-nr fra partilisten basert på hund_id
+                    const hund = partyList.find(p => p.hund_id === notat.hund_id);
+                    const hundNr = hund?.nr || notat.hund_id;
+
+                    // Opprett dogData for hunden hvis den ikke finnes
+                    if (!state.dogData[hundNr]) {
+                        state.dogData[hundNr] = { slipps: {} };
+                    }
+
+                    const slippNr = notat.slipp_nr || 1;
+
+                    // Slipp 0 = generelle notater
+                    if (slippNr === 0) {
+                        state.dogData[hundNr].notater = notat.notater || state.dogData[hundNr].notater || '';
+                    } else {
+                        // Opprett slipp-data hvis den ikke finnes
+                        if (!state.dogData[hundNr].slipps[slippNr]) {
+                            state.dogData[hundNr].slipps[slippNr] = {};
+                        }
+
+                        const slipp = state.dogData[hundNr].slipps[slippNr];
+
+                        // Merge server-data inn (server har prioritet hvis lokal er tom)
+                        slipp.slipptid = slipp.slipptid || notat.slipptid || 0;
+                        slipp.stand_m = slipp.stand_m || notat.stand_m || 0;
+                        slipp.stand_u = slipp.stand_u || notat.stand_u || 0;
+                        slipp.tomstand = slipp.tomstand || notat.tomstand || 0;
+                        slipp.makker_stand = slipp.makker_stand || notat.makker_stand || 0;
+                        slipp.sjanse = slipp.sjanse || notat.sjanse || 0;
+                        slipp.jaktlyst = slipp.jaktlyst || notat.jaktlyst;
+                        slipp.fart = slipp.fart || notat.fart;
+                        slipp.selvstendighet = slipp.selvstendighet || notat.selvstendighet;
+                        slipp.soksbredde = slipp.soksbredde || notat.soksbredde;
+                        slipp.reviering = slipp.reviering || notat.reviering;
+                        slipp.samarbeid = slipp.samarbeid || notat.samarbeid;
+                        slipp.presisjon = slipp.presisjon || notat.presisjon;
+                        slipp.reising = slipp.reising || notat.reising;
+                        slipp.apport = slipp.apport || (notat.apport ? true : false);
+                        slipp.notater = slipp.notater || notat.notater || '';
+                    }
+                }
+
+                console.log('Dommer-notater merget inn i state.dogData');
+            } catch (err) {
+                console.warn('Kunne ikke laste dommer-notater fra server:', err);
+            }
         }
 
         // =============================================
@@ -852,7 +925,7 @@
                 premietildelinger: state.premietildelinger
             }));
 
-            // Lagre til server hvis ikke demo OG jeg er live-rangering eier
+            // Lagre live-rangering til server hvis ikke demo OG jeg er live-rangering eier
             if (proveId !== 'demo' && erJegLiveEier()) {
                 try {
                     await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
@@ -862,6 +935,81 @@
                     });
                 } catch (err) {
                     console.error('Feil ved lagring til server:', err);
+                }
+            }
+
+            // ALLTID lagre dommerens egne notater til server (uavhengig av live-eier status)
+            // Dette sikrer at alle dommere har tilgang til sine notater når de kommer ned fra fjellet
+            if (proveId !== 'demo' && dommerTelefon) {
+                await saveDommerNotaterToServer();
+            }
+        }
+
+        // Lagre dommerens individuelle notater til server
+        async function saveDommerNotaterToServer() {
+            const token = localStorage.getItem('fuglehund_token');
+            if (!token) return;
+
+            // Gå gjennom alle hunder med data og lagre til serveren
+            for (const [hundNr, dogData] of Object.entries(state.dogData)) {
+                if (!dogData) continue;
+
+                // Finn hund-ID fra partilisten
+                const hund = partyList.find(p => p.nr === parseInt(hundNr));
+                const hundId = hund?.hund_id || hundNr;
+
+                // Lagre for hvert slipp
+                const slipps = dogData.slipps || {};
+                for (const [slippNr, slippData] of Object.entries(slipps)) {
+                    try {
+                        await fetch(`/api/dommer-notater/${proveId}/${parti}/${hundId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
+                                slipp_nr: parseInt(slippNr),
+                                slipptid: slippData.slipptid || 0,
+                                stand_m: slippData.stand_m || 0,
+                                stand_u: slippData.stand_u || 0,
+                                tomstand: slippData.tomstand || 0,
+                                makker_stand: slippData.makker_stand || 0,
+                                sjanse: slippData.sjanse || 0,
+                                jaktlyst: slippData.jaktlyst || null,
+                                fart: slippData.fart || null,
+                                selvstendighet: slippData.selvstendighet || null,
+                                soksbredde: slippData.soksbredde || null,
+                                reviering: slippData.reviering || null,
+                                samarbeid: slippData.samarbeid || null,
+                                presisjon: slippData.presisjon || null,
+                                reising: slippData.reising || null,
+                                apport: slippData.apport ? 1 : 0,
+                                notater: slippData.notater || dogData.notater || ''
+                            })
+                        });
+                    } catch (err) {
+                        console.warn(`Kunne ikke lagre notater for hund ${hundNr} slipp ${slippNr}:`, err);
+                    }
+                }
+
+                // Lagre også generelle notater for hunden (slipp 0 = generelt)
+                if (dogData.notater) {
+                    try {
+                        await fetch(`/api/dommer-notater/${proveId}/${parti}/${hundId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
+                                slipp_nr: 0,
+                                notater: dogData.notater
+                            })
+                        });
+                    } catch (err) {
+                        console.warn(`Kunne ikke lagre generelle notater for hund ${hundNr}:`, err);
+                    }
                 }
             }
         }

@@ -579,6 +579,44 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_vk_bedomming_prove ON vk_bedomming(prove_id);
   CREATE INDEX IF NOT EXISTS idx_vk_bedomming_dommer ON vk_bedomming(dommer_telefon);
 
+  -- Dommer-notater (individuelle notater per dommer, per hund, per slipp)
+  -- Tillater at hver dommer i et parti har sine egne notater
+  CREATE TABLE IF NOT EXISTS dommer_notater (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    parti TEXT NOT NULL,
+    hund_id INTEGER REFERENCES hunder(id),
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    slipp_nr INTEGER DEFAULT 1,
+    -- Statistikk for dette slippet
+    slipptid INTEGER DEFAULT 0,
+    stand_m INTEGER DEFAULT 0,
+    stand_u INTEGER DEFAULT 0,
+    tomstand INTEGER DEFAULT 0,
+    makker_stand INTEGER DEFAULT 0,
+    sjanse INTEGER DEFAULT 0,
+    -- Egenskaper (1-6 skala)
+    jaktlyst INTEGER DEFAULT NULL,
+    fart INTEGER DEFAULT NULL,
+    selvstendighet INTEGER DEFAULT NULL,
+    soksbredde INTEGER DEFAULT NULL,
+    reviering INTEGER DEFAULT NULL,
+    samarbeid INTEGER DEFAULT NULL,
+    -- Fuglebehandling
+    presisjon INTEGER DEFAULT NULL,
+    reising INTEGER DEFAULT NULL,
+    apport INTEGER DEFAULT NULL,
+    -- Notater
+    notater TEXT DEFAULT '',
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, parti, hund_id, dommer_telefon, slipp_nr)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dommer_notater_prove ON dommer_notater(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dommer_notater_parti ON dommer_notater(prove_id, parti);
+  CREATE INDEX IF NOT EXISTS idx_dommer_notater_dommer ON dommer_notater(dommer_telefon);
+
   -- Dokumentarkiv (alle dokumenter knyttet til en prøve)
   CREATE TABLE IF NOT EXISTS prove_dokumenter (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -766,6 +804,11 @@ const migrations = [
   "ALTER TABLE klubber ADD COLUMN vipps_api_modus TEXT DEFAULT 'enkel'",  // 'enkel' eller 'api'
   // Vipps payment reference for mottakere (for å kunne sjekke status via API)
   "ALTER TABLE vipps_mottakere ADD COLUMN vipps_reference TEXT DEFAULT NULL",
+  // Flerdommersstøtte: hvem eier live-rangeringen i VK
+  "ALTER TABLE vk_bedomming ADD COLUMN live_rangering_eier TEXT DEFAULT NULL",
+  // Kritikk-bekreftelse fra meddommer
+  "ALTER TABLE kritikker ADD COLUMN meddommer_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN meddommer_bekreftet_at TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -9481,6 +9524,310 @@ app.get("/api/vk-partiliste/:proveId/:parti", (c) => {
     return c.json({ partiliste });
   } catch (err) {
     console.error("VK-partiliste GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============ DOMMER-NOTATER API (individuelle notater per dommer) ============
+
+// Hent dommerens notater for et parti
+app.get("/api/dommer-notater/:proveId/:parti", requireAuth, (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const user = c.get('user');
+    const dommer_telefon = user?.telefon;
+
+    if (!dommer_telefon) {
+      return c.json({ error: "Ikke autentisert" }, 401);
+    }
+
+    const notater = db.prepare(`
+      SELECT * FROM dommer_notater
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+      ORDER BY hund_id, slipp_nr
+    `).all(proveId, parti, dommer_telefon);
+
+    return c.json({ notater });
+  } catch (err) {
+    console.error("Dommer-notater GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater dommerens notater for en hund
+app.put("/api/dommer-notater/:proveId/:parti/:hundId", requireAuth, async (c) => {
+  try {
+    const { proveId, parti, hundId } = c.req.param();
+    const body = await c.req.json();
+    const user = c.get('user');
+    const dommer_telefon = user?.telefon;
+
+    if (!dommer_telefon) {
+      return c.json({ error: "Ikke autentisert" }, 401);
+    }
+
+    const slipp_nr = body.slipp_nr || 1;
+
+    // Sjekk om det finnes fra før
+    const existing = db.prepare(`
+      SELECT id FROM dommer_notater
+      WHERE prove_id = ? AND parti = ? AND hund_id = ? AND dommer_telefon = ? AND slipp_nr = ?
+    `).get(proveId, parti, hundId, dommer_telefon, slipp_nr);
+
+    if (existing) {
+      // Oppdater
+      db.prepare(`
+        UPDATE dommer_notater SET
+          slipptid = ?, stand_m = ?, stand_u = ?, tomstand = ?, makker_stand = ?, sjanse = ?,
+          jaktlyst = ?, fart = ?, selvstendighet = ?, soksbredde = ?, reviering = ?, samarbeid = ?,
+          presisjon = ?, reising = ?, apport = ?, notater = ?,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        body.slipptid || 0, body.stand_m || 0, body.stand_u || 0, body.tomstand || 0, body.makker_stand || 0, body.sjanse || 0,
+        body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+        body.presisjon, body.reising, body.apport, body.notater || '',
+        existing.id
+      );
+    } else {
+      // Opprett ny
+      db.prepare(`
+        INSERT INTO dommer_notater (
+          prove_id, parti, hund_id, dommer_telefon, slipp_nr,
+          slipptid, stand_m, stand_u, tomstand, makker_stand, sjanse,
+          jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
+          presisjon, reising, apport, notater
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        proveId, parti, hundId, dommer_telefon, slipp_nr,
+        body.slipptid || 0, body.stand_m || 0, body.stand_u || 0, body.tomstand || 0, body.makker_stand || 0, body.sjanse || 0,
+        body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+        body.presisjon, body.reising, body.apport, body.notater || ''
+      );
+    }
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Dommer-notater PUT error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent alle dommere på et parti (for å vise hvem som er meddommer)
+app.get("/api/parti-dommere/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const dommere = db.prepare(`
+      SELECT dt.dommer_telefon, dt.dommer_rolle, b.fornavn, b.etternavn
+      FROM dommer_tildelinger dt
+      JOIN brukere b ON dt.dommer_telefon = b.telefon
+      WHERE dt.prove_id = ? AND dt.parti = ?
+      ORDER BY dt.dommer_rolle
+    `).all(proveId, parti);
+
+    return c.json({ dommere });
+  } catch (err) {
+    console.error("Parti-dommere GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============ LIVE-RANGERING EIER (VK) ============
+
+// Sett hvem som eier live-rangeringen for et VK-parti
+app.post("/api/vk-bedomming/:proveId/:parti/set-live-eier", requireAuth, async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const body = await c.req.json();
+    const user = c.get('user');
+
+    // Sjekk at brukeren er en av dommerne på partiet
+    const dommer = db.prepare(`
+      SELECT dommer_telefon FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+    `).get(proveId, parti, user?.telefon);
+
+    if (!dommer) {
+      return c.json({ error: "Du er ikke tildelt dette partiet" }, 403);
+    }
+
+    // Sjekk om live-eier allerede er satt
+    const existing = db.prepare(`
+      SELECT live_rangering_eier FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (existing && existing.live_rangering_eier) {
+      return c.json({ error: "Live-rangering eier er allerede valgt", eier: existing.live_rangering_eier }, 409);
+    }
+
+    // Sett live-eier
+    const eierTelefon = body.eier_telefon || user.telefon;
+
+    if (existing) {
+      db.prepare(`
+        UPDATE vk_bedomming SET live_rangering_eier = ?, updated_at = datetime('now')
+        WHERE prove_id = ? AND parti = ?
+      `).run(eierTelefon, proveId, parti);
+    } else {
+      // Opprett ny vk_bedomming rad med live-eier
+      db.prepare(`
+        INSERT INTO vk_bedomming (prove_id, parti, dommer_telefon, live_rangering_eier)
+        VALUES (?, ?, ?, ?)
+      `).run(proveId, parti, user.telefon, eierTelefon);
+    }
+
+    return c.json({ success: true, live_rangering_eier: eierTelefon });
+  } catch (err) {
+    console.error("Set live-eier error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent live-rangering eier status
+app.get("/api/vk-bedomming/:proveId/:parti/live-eier", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT live_rangering_eier, dommer_telefon FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ eier_valgt: false, live_rangering_eier: null });
+    }
+
+    return c.json({
+      eier_valgt: !!bedomming.live_rangering_eier,
+      live_rangering_eier: bedomming.live_rangering_eier
+    });
+  } catch (err) {
+    console.error("Get live-eier error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============ MEDDOMMER-BEKREFTELSE FOR KRITIKKER ============
+
+// Hent kritikker som venter på meddommer-bekreftelse
+app.get("/api/kritikker/venter-meddommer/:telefon", requireAuth, (c) => {
+  try {
+    const telefon = c.req.param("telefon");
+
+    const kritikker = db.prepare(`
+      SELECT k.*, h.navn as hund_navn, h.rase, p.navn as prove_navn
+      FROM kritikker k
+      JOIN hunder h ON k.hund_id = h.id
+      JOIN prover p ON k.prove_id = p.id
+      WHERE k.meddommer_telefon = ? AND k.status = 'venter_meddommer'
+      ORDER BY k.created_at DESC
+    `).all(telefon);
+
+    return c.json({ kritikker });
+  } catch (err) {
+    console.error("Kritikker venter-meddommer GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Send kritikk til meddommer for bekreftelse
+app.post("/api/kritikker/:kritikkId/send-til-meddommer", requireAuth, async (c) => {
+  try {
+    const kritikkId = c.req.param("kritikkId");
+    const body = await c.req.json();
+    const user = c.get('user');
+
+    const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(kritikkId);
+    if (!kritikk) {
+      return c.json({ error: "Kritikk ikke funnet" }, 404);
+    }
+
+    // Verifiser at bruker er dommer på kritikken
+    if (kritikk.dommer_telefon !== user?.telefon) {
+      return c.json({ error: "Du har ikke tilgang til denne kritikken" }, 403);
+    }
+
+    // Oppdater kritikken med meddommer og status
+    db.prepare(`
+      UPDATE kritikker SET
+        meddommer_telefon = ?,
+        status = 'venter_meddommer',
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(body.meddommer_telefon, kritikkId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Send til meddommer error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Meddommer bekrefter kritikk
+app.post("/api/kritikker/:kritikkId/bekreft-meddommer", requireAuth, async (c) => {
+  try {
+    const kritikkId = c.req.param("kritikkId");
+    const user = c.get('user');
+
+    const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(kritikkId);
+    if (!kritikk) {
+      return c.json({ error: "Kritikk ikke funnet" }, 404);
+    }
+
+    // Verifiser at bruker er meddommer på kritikken
+    if (kritikk.meddommer_telefon !== user?.telefon) {
+      return c.json({ error: "Du er ikke meddommer på denne kritikken" }, 403);
+    }
+
+    if (kritikk.status !== 'venter_meddommer') {
+      return c.json({ error: "Kritikken venter ikke på meddommer-bekreftelse" }, 400);
+    }
+
+    // Oppdater kritikken til submitted (sendt til NKK-rep)
+    db.prepare(`
+      UPDATE kritikker SET
+        meddommer_bekreftet_at = datetime('now'),
+        status = 'submitted',
+        submitted_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(kritikkId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Bekreft meddommer error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Meddommer avviser kritikk (sender tilbake til dommer)
+app.post("/api/kritikker/:kritikkId/avvis-meddommer", requireAuth, async (c) => {
+  try {
+    const kritikkId = c.req.param("kritikkId");
+    const body = await c.req.json();
+    const user = c.get('user');
+
+    const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(kritikkId);
+    if (!kritikk) {
+      return c.json({ error: "Kritikk ikke funnet" }, 404);
+    }
+
+    if (kritikk.meddommer_telefon !== user?.telefon) {
+      return c.json({ error: "Du er ikke meddommer på denne kritikken" }, 403);
+    }
+
+    // Send tilbake til dommer med kommentar
+    db.prepare(`
+      UPDATE kritikker SET
+        status = 'draft',
+        nkk_comment = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(body.kommentar || 'Avvist av meddommer', kritikkId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Avvis meddommer error:", err);
     return c.json({ error: err.message }, 500);
   }
 });

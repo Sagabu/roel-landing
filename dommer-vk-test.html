@@ -2123,7 +2123,8 @@
                 if (placedInRound.length === 0) return '';
 
                 const rankingHtml = placedInRound.map(({ dog, plass, dogNr }) => {
-                    const stats = formatDogStats(dogNr, false); // Vis FMR/FUR etc, men ikke slipptid
+                    // Bruk snapshot.dogData for å beregne stats fra det tidspunktet
+                    const stats = formatDogStatsFromSnapshot(dogNr, snapshot.dogData);
                     const statsHtml = stats ? `<span class="text-bark-400 ml-1">${stats}</span>` : '';
                     return `<div class="text-bark-600"><span class="font-bold">${plass}.</span> ${dog.race} ${dog.name}${statsHtml}</div>`;
                 }).join('');
@@ -2135,6 +2136,33 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        // Formater statistikk fra snapshot-data (brukes i rundehistorikk)
+        function formatDogStatsFromSnapshot(dogNr, snapshotDogData) {
+            if (!snapshotDogData || !snapshotDogData[dogNr] || !snapshotDogData[dogNr].slipps) {
+                return '';
+            }
+
+            const data = snapshotDogData[dogNr];
+            const stats = { fmr: 0, fur: 0, slatt: 0, sjanse: 0, ts: 0 };
+
+            Object.values(data.slipps).forEach(slipp => {
+                if (slipp.fmr) stats.fmr += slipp.fmr;
+                if (slipp.fur) stats.fur += slipp.fur;
+                if (slipp.slat) stats.slatt += slipp.slat;
+                if (slipp.sjanse) stats.sjanse += slipp.sjanse;
+                if (slipp.ts) stats.ts += slipp.ts;
+            });
+
+            const parts = [];
+            if (stats.fmr > 0) parts.push(stats.fmr > 1 ? `${stats.fmr}xFMR` : 'FMR');
+            if (stats.fur > 0) parts.push(stats.fur > 1 ? `${stats.fur}xFUR` : 'FUR');
+            if (stats.slatt > 0) parts.push(stats.slatt > 1 ? `${stats.slatt}xSlått` : 'Slått');
+            if (stats.sjanse > 0) parts.push(stats.sjanse > 1 ? `${stats.sjanse}xSj` : 'Sj');
+            if (stats.ts > 0) parts.push(stats.ts > 1 ? `${stats.ts}xTS` : 'TS');
+
+            return parts.join(' ');
         }
 
         // Zoom functionality

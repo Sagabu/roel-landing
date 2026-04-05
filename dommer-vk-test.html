@@ -35,6 +35,17 @@
         input[type="number"] { font-size: 14px; }
         input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
 
+        /* Mobile touch-targets: minimum 44x44px for accessibility */
+        @media (max-width: 768px) {
+            input[type="number"], input[type="text"], select, button {
+                min-height: 44px;
+            }
+            .score-input {
+                min-height: 44px;
+                font-size: 16px; /* Prevents iOS zoom on focus */
+            }
+        }
+
         /* Zoom mode styles */
         .zoom-mode .dog-panel { display: none; }
         .zoom-mode .dog-panel.zoomed {
@@ -99,6 +110,11 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
+                    <!-- Live-rangering status indikator -->
+                    <button id="liveRangeringStatus" onclick="showLiveRangeringInfo()" class="hidden bg-forest-600 hover:bg-forest-700 px-2 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1" title="Live-rangering status">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+                        <span id="liveRangeringStatusText">Synk</span>
+                    </button>
                     <button onclick="resetAll()" class="bg-red-500/80 hover:bg-red-600 px-2 py-1 rounded-lg text-xs font-medium transition" title="Nullstill alt">
                         ↺
                     </button>
@@ -169,7 +185,7 @@
                 <!-- Statistikk -->
                 <div class="p-2 bg-vk-50">
                     <h4 class="text-[10px] font-bold text-vk-700 uppercase tracking-wider mb-2">Statistikk</h4>
-                    <div class="grid grid-cols-6 gap-1">
+                    <div class="grid grid-cols-4 gap-1 mb-2">
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FMR</label>
                             <input type="number" min="0" id="dog1_fmr" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
@@ -178,6 +194,16 @@
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FUR</label>
                             <input type="number" min="0" id="dog1_fur" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
                         </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St m/M</label>
+                            <input type="number" min="0" id="dog1_stand_m_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St u/M</label>
+                            <input type="number" min="0" id="dog1_stand_u_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand u/makker">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1">
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Slått</label>
                             <input type="number" min="0" id="dog1_slat" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
@@ -194,6 +220,26 @@
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5 apport-label">App</label>
                             <div class="flex items-center justify-center h-9">
                                 <input type="checkbox" id="dog1_apport" class="w-6 h-6 rounded border-2 border-vk-300 text-forest-600 focus:ring-forest-500 cursor-pointer" title="Apport godkjent">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Fuglebehandling -->
+                    <div class="mt-2 pt-2 border-t border-vk-100">
+                        <h4 class="text-[9px] font-bold text-warm-700 uppercase tracking-wider mb-1">Fuglebehandling</h4>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="text-center">
+                                <label class="block text-[8px] text-warm-600 mb-0.5">Presisjon</label>
+                                <input type="number" min="1" max="4" id="dog1_presisjon" class="w-full h-7 text-center text-xs font-medium rounded border border-warm-200 focus:border-warm-500 outline-none bg-warm-50" placeholder="1-4" title="Presisjon (1-4)">
+                            </div>
+                            <div class="text-center">
+                                <label class="block text-[8px] text-warm-600 mb-0.5">Reising</label>
+                                <input type="number" min="1" max="6" id="dog1_reising" class="w-full h-7 text-center text-xs font-medium rounded border border-warm-200 focus:border-warm-500 outline-none bg-warm-50" placeholder="1-6" title="Reising (1-6)">
+                            </div>
+                            <div class="flex items-center justify-center">
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="checkbox" id="dog1_godkjent_reis" class="w-5 h-5 rounded border-warm-300 text-warm-600 focus:ring-warm-500">
+                                    <span class="text-[8px] font-medium text-warm-700">Godk. reis</span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -325,7 +371,7 @@
                 <!-- Statistikk -->
                 <div class="p-2 bg-vk-50">
                     <h4 class="text-[10px] font-bold text-vk-700 uppercase tracking-wider mb-2">Statistikk</h4>
-                    <div class="grid grid-cols-6 gap-1">
+                    <div class="grid grid-cols-4 gap-1 mb-2">
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FMR</label>
                             <input type="number" min="0" id="dog2_fmr" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
@@ -334,6 +380,16 @@
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">FUR</label>
                             <input type="number" min="0" id="dog2_fur" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
                         </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St m/M</label>
+                            <input type="number" min="0" id="dog2_stand_m_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
+                        </div>
+                        <div class="text-center">
+                            <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St u/M</label>
+                            <input type="number" min="0" id="dog2_stand_u_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand u/makker">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1">
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">Slått</label>
                             <input type="number" min="0" id="dog2_slat" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-">
@@ -350,6 +406,26 @@
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5 apport-label">App</label>
                             <div class="flex items-center justify-center h-9">
                                 <input type="checkbox" id="dog2_apport" class="w-6 h-6 rounded border-2 border-vk-300 text-forest-600 focus:ring-forest-500 cursor-pointer" title="Apport godkjent">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Fuglebehandling -->
+                    <div class="mt-2 pt-2 border-t border-vk-100">
+                        <h4 class="text-[9px] font-bold text-warm-700 uppercase tracking-wider mb-1">Fuglebehandling</h4>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="text-center">
+                                <label class="block text-[8px] text-warm-600 mb-0.5">Presisjon</label>
+                                <input type="number" min="1" max="4" id="dog2_presisjon" class="w-full h-7 text-center text-xs font-medium rounded border border-warm-200 focus:border-warm-500 outline-none bg-warm-50" placeholder="1-4" title="Presisjon (1-4)">
+                            </div>
+                            <div class="text-center">
+                                <label class="block text-[8px] text-warm-600 mb-0.5">Reising</label>
+                                <input type="number" min="1" max="6" id="dog2_reising" class="w-full h-7 text-center text-xs font-medium rounded border border-warm-200 focus:border-warm-500 outline-none bg-warm-50" placeholder="1-6" title="Reising (1-6)">
+                            </div>
+                            <div class="flex items-center justify-center">
+                                <label class="flex items-center gap-1 cursor-pointer">
+                                    <input type="checkbox" id="dog2_godkjent_reis" class="w-5 h-5 rounded border-warm-300 text-warm-600 focus:ring-warm-500">
+                                    <span class="text-[8px] font-medium text-warm-700">Godk. reis</span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -518,6 +594,20 @@
         const proveId = urlParams.get('prove') || 'demo';
         const parti = urlParams.get('parti') || 'VK';
 
+        // Hent dommer-info fra session
+        let dommerTelefon = null;
+        let dommerNavn = null;
+        let liveRangeringEier = null;
+        let partiDommere = [];
+
+        try {
+            const judgeSession = JSON.parse(localStorage.getItem('judgeSession') || '{}');
+            dommerTelefon = judgeSession.phone || null;
+            dommerNavn = judgeSession.name || null;
+        } catch (e) {
+            console.warn('Kunne ikke lese judgeSession:', e);
+        }
+
         // Partiliste - lastes fra server
         let partyList = [];
 
@@ -535,8 +625,12 @@
         async function init() {
             // Last partiliste fra server
             await loadPartyList();
-            // Last bedømmingsdata fra server
+            // Last bedømmingsdata fra server (live-rangering fra eier)
             await loadFromServer();
+            // Sjekk live-rangering status for multi-dommer
+            await checkLiveRangeringStatus();
+            // Last dommerens egne notater fra server (merge med eksisterende data)
+            await loadDommerNotaterFromServer();
 
             populateDogSelectors();
             updateDogDisplays();
@@ -582,6 +676,224 @@
             state.slippComments[state.currentSlipp] = document.getElementById('slippComment').value;
         }
 
+        // =============================================
+        // Live-rangering eier (multi-dommer support)
+        // =============================================
+
+        async function checkLiveRangeringStatus() {
+            if (proveId === 'demo' || !dommerTelefon) {
+                return; // Demo-modus eller ingen innlogget dommer
+            }
+
+            try {
+                // Hent liste over dommere for dette partiet
+                const dommerResp = await fetch(`/api/parti-dommere/${proveId}/${parti}`);
+                const dommerData = await dommerResp.json();
+                partiDommere = dommerData.dommere || [];
+
+                // Hvis bare én dommer, ingen valg nødvendig
+                if (partiDommere.length <= 1) {
+                    return;
+                }
+
+                // Hent live-rangering eier status
+                const eierResp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/live-eier`);
+                const eierData = await eierResp.json();
+
+                if (eierData.eier_valgt) {
+                    liveRangeringEier = eierData.live_rangering_eier;
+                    inkluderSlippKommentarer = eierData.inkluder_slipp_kommentarer || false;
+                    updateLiveRangeringStatusUI();
+                } else {
+                    // Ingen eier valgt - vis valg-modal
+                    showLiveRangeringValgModal();
+                }
+            } catch (err) {
+                console.error('Feil ved sjekk av live-rangering status:', err);
+            }
+        }
+
+        function showLiveRangeringValgModal() {
+            const modal = document.getElementById('liveRangeringModal');
+            const liste = document.getElementById('liveRangeringDommerListe');
+
+            liste.innerHTML = partiDommere.map(d => `
+                <button onclick="velgLiveRangeringEier('${d.dommer_telefon}')"
+                        class="w-full bg-vk-100 hover:bg-forest-100 border-2 border-vk-300 hover:border-forest-500 p-4 rounded-xl transition text-left ${d.dommer_telefon === dommerTelefon ? 'ring-2 ring-forest-500' : ''}">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="font-bold text-vk-800">${d.dommer_navn || d.dommer_telefon}</div>
+                            <div class="text-sm text-vk-600">${d.dommer_telefon}</div>
+                        </div>
+                        ${d.dommer_telefon === dommerTelefon ? '<span class="bg-forest-600 text-white text-xs px-2 py-1 rounded-full">Deg</span>' : ''}
+                    </div>
+                </button>
+            `).join('');
+
+            modal.classList.remove('hidden');
+        }
+
+        // Innstilling for om slipp-kommentarer skal inkluderes i live-rangering
+        let inkluderSlippKommentarer = false;
+
+        async function velgLiveRangeringEier(telefon) {
+            if (proveId === 'demo') return;
+
+            // Hent checkbox-verdi for slipp-kommentarer
+            const inkluderCheckbox = document.getElementById('inkluderSlippKommentar');
+            inkluderSlippKommentarer = inkluderCheckbox ? inkluderCheckbox.checked : false;
+
+            try {
+                const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/set-live-eier`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        eier_telefon: telefon,
+                        inkluder_slipp_kommentarer: inkluderSlippKommentarer
+                    })
+                });
+
+                const result = await resp.json();
+
+                if (resp.status === 409) {
+                    // Allerede valgt av noen andre
+                    alert(`Live-rangering eier er allerede valgt: ${result.eier}`);
+                    liveRangeringEier = result.eier;
+                } else if (result.success) {
+                    liveRangeringEier = result.live_rangering_eier;
+                } else {
+                    alert('Kunne ikke velge live-rangering eier: ' + (result.error || 'Ukjent feil'));
+                    return;
+                }
+
+                document.getElementById('liveRangeringModal').classList.add('hidden');
+                updateLiveRangeringStatusUI();
+            } catch (err) {
+                console.error('Feil ved valg av live-rangering eier:', err);
+                alert('Nettverksfeil ved valg av eier');
+            }
+        }
+
+        function updateLiveRangeringStatusUI() {
+            const statusBtn = document.getElementById('liveRangeringStatus');
+            const statusText = document.getElementById('liveRangeringStatusText');
+
+            if (!liveRangeringEier || partiDommere.length <= 1) {
+                statusBtn.classList.add('hidden');
+                return;
+            }
+
+            statusBtn.classList.remove('hidden');
+
+            const erJegEier = liveRangeringEier === dommerTelefon;
+            if (erJegEier) {
+                statusBtn.classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
+                statusBtn.classList.add('bg-forest-600', 'hover:bg-forest-700');
+                statusText.textContent = 'Synk';
+                statusBtn.title = 'Du synkroniserer live-rangeringen';
+            } else {
+                statusBtn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
+                statusBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
+                statusText.textContent = 'Lokal';
+                statusBtn.title = 'Dine endringer lagres kun lokalt. ' + liveRangeringEier + ' synkroniserer.';
+            }
+        }
+
+        function showLiveRangeringInfo() {
+            if (!liveRangeringEier) return;
+
+            const erJegEier = liveRangeringEier === dommerTelefon;
+            const eierNavn = partiDommere.find(d => d.dommer_telefon === liveRangeringEier)?.dommer_navn || liveRangeringEier;
+
+            if (erJegEier) {
+                alert('Du er ansvarlig for å synkronisere live-rangeringen til serveren.\n\nDine endringer lagres automatisk og er synlige for andre.');
+            } else {
+                alert(`${eierNavn} synkroniserer live-rangeringen.\n\nDine notater og bedømminger lagres trygt til serveren og vil være tilgjengelige når du skal skrive kritikker.`);
+            }
+        }
+
+        function erJegLiveEier() {
+            // Returner true hvis:
+            // - Det er demo-modus
+            // - Det er bare én dommer
+            // - Jeg er valgt som eier
+            if (proveId === 'demo') return true;
+            if (partiDommere.length <= 1) return true;
+            return liveRangeringEier === dommerTelefon;
+        }
+
+        // Last dommerens egne notater fra server og merge med eksisterende data
+        async function loadDommerNotaterFromServer() {
+            if (proveId === 'demo' || !dommerTelefon) return;
+
+            const token = localStorage.getItem('fuglehund_token');
+            if (!token) return;
+
+            try {
+                const response = await fetch(`/api/dommer-notater/${proveId}/${parti}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const notater = data.notater || [];
+
+                if (notater.length === 0) return;
+
+                console.log('Lastet dommer-notater fra server:', notater.length, 'poster');
+
+                // Merge notater inn i state.dogData
+                for (const notat of notater) {
+                    // Finn hund-nr fra partilisten basert på hund_id
+                    const hund = partyList.find(p => p.hund_id === notat.hund_id);
+                    const hundNr = hund?.nr || notat.hund_id;
+
+                    // Opprett dogData for hunden hvis den ikke finnes
+                    if (!state.dogData[hundNr]) {
+                        state.dogData[hundNr] = { slipps: {} };
+                    }
+
+                    const slippNr = notat.slipp_nr || 1;
+
+                    // Slipp 0 = generelle notater
+                    if (slippNr === 0) {
+                        state.dogData[hundNr].notater = notat.notater || state.dogData[hundNr].notater || '';
+                    } else {
+                        // Opprett slipp-data hvis den ikke finnes
+                        if (!state.dogData[hundNr].slipps[slippNr]) {
+                            state.dogData[hundNr].slipps[slippNr] = {};
+                        }
+
+                        const slipp = state.dogData[hundNr].slipps[slippNr];
+
+                        // Merge server-data inn (server har prioritet hvis lokal er tom)
+                        slipp.slipptid = slipp.slipptid || notat.slipptid || 0;
+                        slipp.stand_m = slipp.stand_m || notat.stand_m || 0;
+                        slipp.stand_u = slipp.stand_u || notat.stand_u || 0;
+                        slipp.tomstand = slipp.tomstand || notat.tomstand || 0;
+                        slipp.makker_stand = slipp.makker_stand || notat.makker_stand || 0;
+                        slipp.sjanse = slipp.sjanse || notat.sjanse || 0;
+                        slipp.jaktlyst = slipp.jaktlyst || notat.jaktlyst;
+                        slipp.fart = slipp.fart || notat.fart;
+                        slipp.selvstendighet = slipp.selvstendighet || notat.selvstendighet;
+                        slipp.soksbredde = slipp.soksbredde || notat.soksbredde;
+                        slipp.reviering = slipp.reviering || notat.reviering;
+                        slipp.samarbeid = slipp.samarbeid || notat.samarbeid;
+                        slipp.presisjon = slipp.presisjon || notat.presisjon;
+                        slipp.reising = slipp.reising || notat.reising;
+                        slipp.apport = slipp.apport || (notat.apport ? true : false);
+                        slipp.notater = slipp.notater || notat.notater || '';
+                    }
+                }
+
+                console.log('Dommer-notater merget inn i state.dogData');
+            } catch (err) {
+                console.warn('Kunne ikke laste dommer-notater fra server:', err);
+            }
+        }
+
+        // =============================================
         // Last bedømmingsdata fra server
         async function loadFromServer() {
             if (proveId === 'demo') {
@@ -649,25 +961,7 @@
 
         // Lagre til server (og localStorage som backup)
         async function saveToStorage() {
-            const dataToSave = {
-                current_slipp: state.currentSlipp,
-                current_round: state.currentRound,
-                selected_dogs: state.selectedDogs,
-                plasseringer: state.plasseringer,
-                tid_til_gode: state.tidTilGode,
-                dog_data: state.dogData,
-                slipp_comments: state.slippComments,
-                round_pairings: state.roundPairings,
-                opponents: state.opponents,
-                judged_this_round: state.judgedThisRound,
-                round_snapshots: state.roundSnapshots,
-                slipp_dogs: state.slippDogs,
-                slipp_rankings: state.slippRankings,
-                vk_type: state.vkType,
-                premietildelinger: state.premietildelinger
-            };
-
-            // Alltid lagre til localStorage som backup
+            // Alltid lagre ALT til localStorage som backup (inkl. notater)
             localStorage.setItem('dommertest_vk_dual', JSON.stringify({
                 currentSlipp: state.currentSlipp,
                 currentRound: state.currentRound,
@@ -686,16 +980,137 @@
                 premietildelinger: state.premietildelinger
             }));
 
-            // Lagre til server hvis ikke demo
-            if (proveId !== 'demo') {
+            // Lagre live-rangering til server hvis ikke demo OG jeg er live-rangering eier
+            // VIKTIG: Kun rangering publiseres - IKKE individuelle notater
+            if (proveId !== 'demo' && erJegLiveEier()) {
+                // Filtrer dogData for å kun inkludere statistikk, IKKE notater
+                const filteredDogData = {};
+                for (const [hundNr, data] of Object.entries(state.dogData)) {
+                    if (!data) continue;
+                    filteredDogData[hundNr] = {
+                        // Statistikk som vises i rangering
+                        slipps: {},
+                        // IKKE inkluder: notater
+                    };
+                    // Kopier slipp-statistikk uten kommentarer/notater
+                    if (data.slipps) {
+                        for (const [slippNr, slipp] of Object.entries(data.slipps)) {
+                            filteredDogData[hundNr].slipps[slippNr] = {
+                                slipptid: slipp.slipptid || 0,
+                                fmr: slipp.fmr || 0,
+                                fur: slipp.fur || 0,
+                                slat: slipp.slat || 0,
+                                sjanse: slipp.sjanse || 0,
+                                ts: slipp.ts || 0,
+                                apport: slipp.apport || false
+                                // IKKE inkluder: notater, kommentar
+                            };
+                        }
+                    }
+                }
+
+                const liveData = {
+                    current_slipp: state.currentSlipp,
+                    current_round: state.currentRound,
+                    selected_dogs: state.selectedDogs,
+                    plasseringer: state.plasseringer,
+                    tid_til_gode: state.tidTilGode,
+                    dog_data: filteredDogData,
+                    // Slipp-kommentarer KUN hvis valgt
+                    slipp_comments: inkluderSlippKommentarer ? state.slippComments : {},
+                    round_pairings: state.roundPairings,
+                    opponents: state.opponents,
+                    judged_this_round: state.judgedThisRound,
+                    round_snapshots: state.roundSnapshots,
+                    slipp_dogs: state.slippDogs,
+                    slipp_rankings: state.slippRankings,
+                    vk_type: state.vkType,
+                    premietildelinger: state.premietildelinger
+                };
+
                 try {
                     await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(dataToSave)
+                        body: JSON.stringify(liveData)
                     });
                 } catch (err) {
                     console.error('Feil ved lagring til server:', err);
+                }
+            }
+
+            // ALLTID lagre dommerens egne notater til server (uavhengig av live-eier status)
+            // Dette sikrer at alle dommere har tilgang til sine notater når de kommer ned fra fjellet
+            if (proveId !== 'demo' && dommerTelefon) {
+                await saveDommerNotaterToServer();
+            }
+        }
+
+        // Lagre dommerens individuelle notater til server
+        async function saveDommerNotaterToServer() {
+            const token = localStorage.getItem('fuglehund_token');
+            if (!token) return;
+
+            // Gå gjennom alle hunder med data og lagre til serveren
+            for (const [hundNr, dogData] of Object.entries(state.dogData)) {
+                if (!dogData) continue;
+
+                // Finn hund-ID fra partilisten
+                const hund = partyList.find(p => p.nr === parseInt(hundNr));
+                const hundId = hund?.hund_id || hundNr;
+
+                // Lagre for hvert slipp
+                const slipps = dogData.slipps || {};
+                for (const [slippNr, slippData] of Object.entries(slipps)) {
+                    try {
+                        await fetch(`/api/dommer-notater/${proveId}/${parti}/${hundId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
+                                slipp_nr: parseInt(slippNr),
+                                slipptid: slippData.slipptid || 0,
+                                stand_m: slippData.stand_m || 0,
+                                stand_u: slippData.stand_u || 0,
+                                tomstand: slippData.tomstand || 0,
+                                makker_stand: slippData.makker_stand || 0,
+                                sjanse: slippData.sjanse || 0,
+                                jaktlyst: slippData.jaktlyst || null,
+                                fart: slippData.fart || null,
+                                selvstendighet: slippData.selvstendighet || null,
+                                soksbredde: slippData.soksbredde || null,
+                                reviering: slippData.reviering || null,
+                                samarbeid: slippData.samarbeid || null,
+                                presisjon: slippData.presisjon || null,
+                                reising: slippData.reising || null,
+                                apport: slippData.apport ? 1 : 0,
+                                notater: slippData.notater || dogData.notater || ''
+                            })
+                        });
+                    } catch (err) {
+                        console.warn(`Kunne ikke lagre notater for hund ${hundNr} slipp ${slippNr}:`, err);
+                    }
+                }
+
+                // Lagre også generelle notater for hunden (slipp 0 = generelt)
+                if (dogData.notater) {
+                    try {
+                        await fetch(`/api/dommer-notater/${proveId}/${parti}/${hundId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
+                                slipp_nr: 0,
+                                notater: dogData.notater
+                            })
+                        });
+                    } catch (err) {
+                        console.warn(`Kunne ikke lagre generelle notater for hund ${hundNr}:`, err);
+                    }
                 }
             }
         }
@@ -3444,6 +3859,35 @@ Antall slipp: ${state.currentSlipp}
                 <button onclick="closePositionSelectModal()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
                     Avbryt
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live-rangering eier modal -->
+    <div id="liveRangeringModal" class="hidden fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-vk-200">
+                <h2 class="text-lg font-bold font-serif text-vk-800 text-center">Hvem synkroniserer rangeringen?</h2>
+                <p class="text-sm text-vk-600 text-center mt-2">
+                    Denne partiet har flere dommere. Velg hvem som skal være ansvarlig for å synkronisere live-rangeringen.
+                </p>
+            </div>
+            <div id="liveRangeringDommerListe" class="p-4 space-y-2">
+                <!-- Fylles dynamisk -->
+            </div>
+            <div class="p-4 border-t border-vk-100">
+                <label class="flex items-center gap-3 p-3 bg-vk-50 rounded-xl cursor-pointer hover:bg-vk-100 transition">
+                    <input type="checkbox" id="inkluderSlippKommentar" class="w-5 h-5 rounded border-vk-300 text-forest-600 focus:ring-forest-500">
+                    <div>
+                        <p class="text-sm font-medium text-vk-800">Inkluder slipp-kommentarer</p>
+                        <p class="text-xs text-vk-500">Felles kommentarer per slipp (f.eks. terreng, vær)</p>
+                    </div>
+                </label>
+            </div>
+            <div class="p-4 border-t border-vk-200 bg-vk-50 rounded-b-2xl">
+                <p class="text-xs text-vk-500 text-center">
+                    <strong>Merk:</strong> Kun rangeringen publiseres live. Individuelle notater forblir private.
+                </p>
             </div>
         </div>
     </div>

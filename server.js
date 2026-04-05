@@ -8351,8 +8351,9 @@ app.get("/dommertestukak", (c) => {
   return serveWithShim(join(__dirname, "dommer-ukak-dual.html"), c);
 });
 
-// Test-filer som blokkeres i produksjon
-const TEST_PAGES = ['dommer-vk-test.html', 'dommer-ukak-test.html', 'dommertest.html'];
+// Test-filer som blokkeres i produksjon (unntatt demo-sider for salg/visning)
+const TEST_PAGES = ['dommer-ukak-test.html', 'dommertest.html'];
+// dommer-vk-test.html er tillatt for demo-formål
 
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");

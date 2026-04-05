@@ -550,6 +550,11 @@
                         <h5 class="text-[9px] font-bold text-red-600 uppercase">Avsluttet</h5>
                         <div id="shared_finishedList" class="text-[10px] text-red-700"></div>
                     </div>
+                    <!-- Historikk fra tidligere runder (kun synlig fra runde 2+) -->
+                    <div id="roundHistorySection" class="hidden">
+                        <h4 class="text-[10px] font-bold text-bark-600 uppercase mb-1">Tidligere runder</h4>
+                        <div id="roundHistoryList" class="space-y-2 text-[10px]"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1983,14 +1988,15 @@
         }
 
         // Formater statistikk som kort tekst (f.eks. "2xFMR FUR 65'" - kun "2x" hvis mer enn 1)
-        function formatDogStats(dogNr) {
+        // showSlipptid: om true vises slipptid, ellers kun FMR/FUR etc
+        function formatDogStats(dogNr, showSlipptid = true) {
             const stats = getDogStats(dogNr);
             const totalSlipptid = getTotalSlipptid(dogNr);
 
             const parts = [];
 
-            // Vis slipptid først (viktig for VK)
-            if (totalSlipptid > 0) {
+            // Vis slipptid først (viktig for VK) - kun hvis showSlipptid er true
+            if (showSlipptid && totalSlipptid > 0) {
                 const slipptidClass = totalSlipptid >= 60 ? 'text-green-600' : '';
                 parts.push(`<span class="${slipptidClass}">${totalSlipptid}'</span>`);
             }
@@ -2041,7 +2047,7 @@
                 rankContainer.innerHTML = '<span class="text-bark-400 italic">Ingen ennå</span>';
             } else {
                 rankContainer.innerHTML = placed.map(({ dog, plass, dogNr }) => {
-                    const stats = formatDogStats(dogNr);
+                    const stats = formatDogStats(dogNr, false); // Vis FMR/FUR etc, men ikke slipptid
                     const statsHtml = stats ? `<span class="text-vk-500 ml-1">${stats}</span>` : '';
                     return `<div><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dog.name}${statsHtml}</div>`;
                 }).join('');
@@ -2051,7 +2057,7 @@
             if (tidTilGodeDogs.length > 0) {
                 tidTilGodeSection.classList.remove('hidden');
                 tidTilGodeList.innerHTML = tidTilGodeDogs.map(({ dog, dogNr }) => {
-                    const stats = formatDogStats(dogNr);
+                    const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for TTG
                     const statsHtml = stats ? `<span class="text-amber-500 ml-1">${stats}</span>` : '';
                     return `<div class="cursor-pointer hover:bg-amber-100 px-1 rounded flex items-center gap-1" onclick="hentTilbakeTTG(${dog.nr}, 1)">
                         <span class="text-amber-600">↩</span> ${dog.race} ${dog.name}${statsHtml}
@@ -2065,13 +2071,68 @@
             if (finished.length > 0) {
                 finishedSection.classList.remove('hidden');
                 finishedList.innerHTML = finished.map(({ dog, dogNr }) => {
-                    const stats = formatDogStats(dogNr);
+                    const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for avsluttede
                     const statsHtml = stats ? `<span class="text-red-400 ml-1">${stats}</span>` : '';
                     return `<div>${dog.race} ${dog.name}${statsHtml}</div>`;
                 }).join('');
             } else {
                 finishedSection.classList.add('hidden');
             }
+
+            // Historikk fra tidligere runder (kun synlig fra runde 2+)
+            renderRoundHistory();
+        }
+
+        // Vis rangeringshistorikk fra tidligere runder
+        function renderRoundHistory() {
+            const historySection = document.getElementById('roundHistorySection');
+            const historyList = document.getElementById('roundHistoryList');
+
+            if (!historySection || !historyList) return;
+
+            // Hent fullførte runder fra snapshots
+            const completedRounds = Object.keys(state.roundSnapshots)
+                .map(r => parseInt(r))
+                .sort((a, b) => a - b);
+
+            // Vis kun hvis vi er i runde 2+ og har historikk
+            if (state.currentRound <= 1 || completedRounds.length === 0) {
+                historySection.classList.add('hidden');
+                return;
+            }
+
+            historySection.classList.remove('hidden');
+
+            // Bygg HTML for hver tidligere runde
+            historyList.innerHTML = completedRounds.map(round => {
+                const snapshot = state.roundSnapshots[round];
+                if (!snapshot || !snapshot.plasseringer) return '';
+
+                // Sorter plasserte hunder
+                const placedInRound = Object.entries(snapshot.plasseringer)
+                    .filter(([_, p]) => p !== 'avsluttet')
+                    .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                    .map(([nr, plass]) => {
+                        const dog = partyList.find(d => d.nr === parseInt(nr));
+                        return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
+                    })
+                    .filter(item => item.dog);
+
+                if (placedInRound.length === 0) return '';
+
+                const rankingHtml = placedInRound.map(({ dog, plass, dogNr }) => {
+                    const stats = formatDogStats(dogNr, false); // Vis FMR/FUR etc, men ikke slipptid
+                    const statsHtml = stats ? `<span class="text-bark-400 ml-1">${stats}</span>` : '';
+                    return `<div class="text-bark-600"><span class="font-bold">${plass}.</span> ${dog.race} ${dog.name}${statsHtml}</div>`;
+                }).join('');
+
+                return `
+                    <div class="border-l-2 border-bark-300 pl-2">
+                        <h5 class="text-[9px] font-bold text-bark-500 uppercase mb-0.5">Runde ${round}</h5>
+                        ${rankingHtml}
+                    </div>
+                `;
+            }).join('');
         }
 
         // Zoom functionality

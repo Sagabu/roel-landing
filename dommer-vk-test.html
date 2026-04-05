@@ -1687,21 +1687,38 @@
 
             const [nextDog1, nextDog2] = getNextAvailablePair();
 
-            if (nextDog1 === null && nextDog2 === null) {
-                // Sjekk om det er hunder med tid til gode - runden kan ikke avsluttes da
-                const dogsWithTidTilGode = Object.entries(state.tidTilGode)
-                    .filter(([_, hasTTG]) => hasTTG)
-                    .map(([dogNr, _]) => parseInt(dogNr));
+            // Sjekk om det er hunder med tid til gode
+            const dogsWithTidTilGode = Object.entries(state.tidTilGode)
+                .filter(([_, hasTTG]) => hasTTG)
+                .map(([dogNr, _]) => parseInt(dogNr));
 
+            if (nextDog1 === null && nextDog2 === null) {
+                // Ingen flere par - sjekk tid til gode
                 if (dogsWithTidTilGode.length > 0) {
-                    // Vis advarsel - kan ikke avslutte runden
-                    showTidTilGodeWarning(dogsWithTidTilGode);
+                    // Vis valg-modal - dommeren MÅ håndtere tid til gode
+                    showTidTilGodeChoice(dogsWithTidTilGode, true);
                     return;
                 }
 
                 // Runden er ferdig - vis runde-fullført modal
                 openRoundCompleteModal();
                 return;
+            }
+
+            // Det finnes flere par, men sjekk om dette var siste "vanlige" par
+            // og det er hunder med tid til gode som bør få ekstra slipp
+            if (dogsWithTidTilGode.length > 0) {
+                // Sjekk om neste par inneholder hunder som IKKE har tid til gode
+                // Hvis ja, spør dommeren om de vil gi TTG-hundene ekstra tid først
+                const nextPairHasTTG = dogsWithTidTilGode.includes(nextDog1) || dogsWithTidTilGode.includes(nextDog2);
+
+                if (!nextPairHasTTG) {
+                    // Neste par er vanlige hunder, men det er TTG-hunder som venter
+                    // Vis valg til dommeren
+                    state.pendingNextPair = [nextDog1, nextDog2];
+                    showTidTilGodeChoice(dogsWithTidTilGode, false);
+                    return;
+                }
             }
 
             // Øk slipp-nummer
@@ -2835,20 +2852,37 @@
             setTimeout(() => goToNextPair(), 300);
         }
 
-        // === TID TIL GODE ADVARSEL ===
-        function showTidTilGodeWarning(dogsWithTTG) {
+        // === TID TIL GODE VALG ===
+        let ttgChoiceIsLastPair = false;
+        let ttgDogsForChoice = [];
+
+        function showTidTilGodeChoice(dogsWithTTG, isLastPair) {
+            ttgChoiceIsLastPair = isLastPair;
+            ttgDogsForChoice = dogsWithTTG;
+
             const dogNames = dogsWithTTG.map(dogNr => {
                 const dog = state.dogs.find(d => d.nr === dogNr);
                 return dog ? `${dog.nr}. ${dog.navn}` : `Hund ${dogNr}`;
             });
 
-            const modal = document.getElementById('tidTilGodeWarningModal');
-            const listEl = document.getElementById('ttgWarningDogList');
+            const modal = document.getElementById('tidTilGodeChoiceModal');
+            const listEl = document.getElementById('ttgChoiceDogList');
+            const titleEl = document.getElementById('ttgChoiceTitle');
+            const descEl = document.getElementById('ttgChoiceDesc');
+
+            // Oppdater tittel basert på situasjon
+            if (isLastPair) {
+                titleEl.textContent = `Runde ${state.currentRound} nesten ferdig`;
+                descEl.textContent = 'Følgende hunder har tid til gode. Vil du sette opp et ekstra slipp?';
+            } else {
+                titleEl.textContent = 'Hunder med tid til gode';
+                descEl.textContent = 'Følgende hunder har tid til gode. Vil du gi dem ekstra slipptid nå?';
+            }
 
             listEl.innerHTML = dogNames.map(name => `
                 <li class="flex items-center gap-2 p-2 bg-amber-50 rounded-lg">
                     <svg class="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <span class="font-medium text-amber-800">${name}</span>
                 </li>
@@ -2857,8 +2891,160 @@
             modal.classList.remove('hidden');
         }
 
-        function closeTidTilGodeWarning() {
-            document.getElementById('tidTilGodeWarningModal').classList.add('hidden');
+        function closeTidTilGodeChoice() {
+            document.getElementById('tidTilGodeChoiceModal').classList.add('hidden');
+        }
+
+        // Bruker velger JA - sett opp ekstra slipp for TTG-hunder
+        function ttgChoiceYes() {
+            closeTidTilGodeChoice();
+
+            // Øk slipp-nummer
+            state.currentSlipp++;
+            updateSlippLabels();
+
+            // Åpne partiliste-modal for å velge hunder manuelt
+            openManualDogSelectModal(ttgDogsForChoice);
+        }
+
+        // Bruker velger NEI - fortsett uten ekstra slipp
+        function ttgChoiceNo() {
+            closeTidTilGodeChoice();
+
+            if (ttgChoiceIsLastPair) {
+                // Fjern tid til gode status fra alle og avslutt runden
+                ttgDogsForChoice.forEach(dogNr => {
+                    delete state.tidTilGode[dogNr];
+                });
+                saveToStorage();
+                openRoundCompleteModal();
+            } else {
+                // Fortsett til neste par som planlagt
+                if (state.pendingNextPair) {
+                    const [nextDog1, nextDog2] = state.pendingNextPair;
+                    state.pendingNextPair = null;
+
+                    // Øk slipp-nummer
+                    state.currentSlipp++;
+                    updateSlippLabels();
+
+                    // Sett nye hunder
+                    state.selectedDogs[1] = nextDog1;
+                    document.getElementById('dog1Select').value = nextDog1;
+                    delete state.tidTilGode[nextDog1];
+
+                    state.selectedDogs[2] = nextDog2;
+                    document.getElementById('dog2Select').value = nextDog2;
+                    delete state.tidTilGode[nextDog2];
+
+                    // Oppdater visning
+                    updateDogDisplays();
+                    loadSlippComment();
+                    loadDogData(1);
+                    loadDogData(2);
+                    updatePlacementDropdowns();
+                    renderPartyLists();
+                    renderRankings();
+                    saveToStorage();
+                }
+            }
+        }
+
+        // === MANUELL HUNDEVALG FOR EKSTRA SLIPP ===
+        function openManualDogSelectModal(suggestedDogs) {
+            const modal = document.getElementById('manualDogSelectModal');
+            const dog1Select = document.getElementById('manualDog1Select');
+            const dog2Select = document.getElementById('manualDog2Select');
+
+            // Finn tilgjengelige hunder (ikke avsluttet)
+            const availableDogs = state.dogs.filter(dog => {
+                const isFinished = state.plasseringer[dog.nr] === 'avsluttet';
+                return !isFinished;
+            });
+
+            // Bygg options - marker TTG-hunder
+            const buildOptions = (selectedNr = null) => {
+                return '<option value="">-- Velg hund --</option>' + availableDogs.map(dog => {
+                    const isTTG = suggestedDogs.includes(dog.nr);
+                    const ttgLabel = isTTG ? ' ⏱️ (tid til gode)' : '';
+                    const selected = dog.nr === selectedNr ? 'selected' : '';
+                    return `<option value="${dog.nr}" ${selected}>${dog.nr}. ${dog.navn}${ttgLabel}</option>`;
+                }).join('');
+            };
+
+            dog1Select.innerHTML = buildOptions(suggestedDogs[0] || null);
+            dog2Select.innerHTML = buildOptions(suggestedDogs[1] || suggestedDogs[0] || null);
+
+            // Forhåndsvelg TTG-hunder hvis mulig
+            if (suggestedDogs.length >= 1) {
+                dog1Select.value = suggestedDogs[0];
+            }
+            if (suggestedDogs.length >= 2) {
+                dog2Select.value = suggestedDogs[1];
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeManualDogSelectModal() {
+            document.getElementById('manualDogSelectModal').classList.add('hidden');
+        }
+
+        function confirmManualDogSelect() {
+            const dog1Nr = parseInt(document.getElementById('manualDog1Select').value);
+            const dog2Nr = parseInt(document.getElementById('manualDog2Select').value);
+
+            if (!dog1Nr || !dog2Nr) {
+                alert('Du må velge to hunder');
+                return;
+            }
+
+            if (dog1Nr === dog2Nr) {
+                alert('Du må velge to forskjellige hunder');
+                return;
+            }
+
+            closeManualDogSelectModal();
+
+            // Sett de valgte hundene som aktive
+            state.selectedDogs[1] = dog1Nr;
+            document.getElementById('dog1Select').value = dog1Nr;
+            delete state.tidTilGode[dog1Nr];
+
+            state.selectedDogs[2] = dog2Nr;
+            document.getElementById('dog2Select').value = dog2Nr;
+            delete state.tidTilGode[dog2Nr];
+
+            // Oppdater visning
+            updateDogDisplays();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+
+            // Nullstill input-feltene for nye hunder
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const data = state.dogData[dogNr];
+                const slippData = data?.slipps?.[state.currentSlipp];
+
+                if (!slippData) {
+                    document.getElementById(`dog${pos}_fmr`).value = '';
+                    document.getElementById(`dog${pos}_fur`).value = '';
+                    document.getElementById(`dog${pos}_slat`).value = '';
+                    document.getElementById(`dog${pos}_sjanse`).value = '';
+                    document.getElementById(`dog${pos}_ts`).value = '';
+                    const harApport = hasApportGodkjent(dogNr);
+                    document.getElementById(`dog${pos}_apport`).checked = harApport;
+                    document.getElementById(`dog${pos}_slipptid`).value = '';
+                }
+
+                updateSlipptidDisplay(pos);
+            });
+
+            saveToStorage();
         }
 
         // === RUNDE FULLFØRT MODAL ===
@@ -3717,31 +3903,69 @@ Antall slipp: ${state.currentSlipp}
         }
     </script>
 
-    <!-- Tid til Gode Advarsel Modal -->
-    <div id="tidTilGodeWarningModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <!-- Tid til Gode Valg Modal -->
+    <div id="tidTilGodeChoiceModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div class="p-4 border-b border-amber-200 bg-amber-500 text-white rounded-t-2xl">
                 <div class="flex items-center justify-center gap-2">
                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    <h2 class="text-xl font-bold font-serif">Kan ikke avslutte runden</h2>
+                    <h2 id="ttgChoiceTitle" class="text-xl font-bold font-serif">Hunder med tid til gode</h2>
                 </div>
             </div>
             <div class="p-4">
-                <p class="text-bark-700 mb-4 text-center">
-                    Følgende hunder har fortsatt <strong class="text-amber-600">tid til gode</strong> og må fullføres før runden kan avsluttes:
+                <p id="ttgChoiceDesc" class="text-bark-700 mb-4 text-center">
+                    Følgende hunder har tid til gode. Vil du gi dem ekstra slipptid?
                 </p>
-                <ul id="ttgWarningDogList" class="space-y-2 mb-4">
+                <ul id="ttgChoiceDogList" class="space-y-2 mb-4">
                     <!-- Fylles dynamisk -->
                 </ul>
-                <p class="text-sm text-bark-500 text-center italic">
-                    Velg hundene fra partilisten eller rangeringen for å gi dem mer slipptid.
-                </p>
             </div>
-            <div class="p-4 border-t border-amber-200">
-                <button onclick="closeTidTilGodeWarning()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition">
-                    Forstått
+            <div class="p-4 border-t border-amber-200 space-y-2">
+                <button onclick="ttgChoiceYes()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Ja, sett opp ekstra slipp
+                </button>
+                <button onclick="ttgChoiceNo()" class="w-full bg-bark-500 hover:bg-bark-600 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                    Nei, fortsett uten
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manuell Hundevalg Modal -->
+    <div id="manualDogSelectModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-vk-200 bg-forest-600 text-white rounded-t-2xl">
+                <h2 class="text-xl font-bold font-serif text-center">Velg hunder for ekstra slipp</h2>
+                <p class="text-forest-100 text-sm text-center mt-1">Velg to hunder som skal ut i dette slippet</p>
+            </div>
+            <div class="p-4 space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-bark-700 mb-1">Hund 1</label>
+                    <select id="manualDog1Select" class="w-full h-12 px-3 rounded-lg border-2 border-vk-300 bg-white text-base font-medium focus:border-forest-500 focus:outline-none">
+                        <!-- Fylles dynamisk -->
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-bark-700 mb-1">Hund 2</label>
+                    <select id="manualDog2Select" class="w-full h-12 px-3 rounded-lg border-2 border-vk-300 bg-white text-base font-medium focus:border-forest-500 focus:outline-none">
+                        <!-- Fylles dynamisk -->
+                    </select>
+                </div>
+            </div>
+            <div class="p-4 border-t border-vk-200 space-y-2">
+                <button onclick="confirmManualDogSelect()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                    Bekreft og start slipp
+                </button>
+                <button onclick="closeManualDogSelectModal()" class="w-full bg-bark-200 hover:bg-bark-300 text-bark-700 font-bold py-3 rounded-xl transition">
+                    Avbryt
                 </button>
             </div>
         </div>

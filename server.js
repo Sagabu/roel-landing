@@ -40,20 +40,21 @@ const JWT_SECRET_FINAL = JWT_SECRET || "DEV-ONLY-INSECURE-SECRET-DO-NOT-USE-IN-P
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
-// --- SMS config (Twilio eller Sveve) ---
+// --- SMS config (Sveve prioritert, Twilio som backup) ---
+const SVEVE_USER = process.env.SVEVE_USER || "";
+const SVEVE_PASS = process.env.SVEVE_PASS || "";
+const SVEVE_FROM = process.env.SVEVE_FROM || "Fuglehund"; // Avsendernavn (maks 11 tegn)
+const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
+
+// Twilio (backup/legacy)
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER || "";
 const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || "";
 const twilioConfigured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_PHONE_NUMBER || TWILIO_MESSAGING_SERVICE_SID));
 
-// Fallback: Sveve (legacy)
-const SVEVE_USER = process.env.SVEVE_USER || "";
-const SVEVE_PASS = process.env.SVEVE_PASS || "";
-const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
-
-// SMS provider prioritet: Twilio > Sveve > Dev mode
-const smsProvider = twilioConfigured ? "twilio" : (sveveConfigured ? "sveve" : "dev");
+// SMS provider prioritet: Sveve > Twilio > Dev mode
+const smsProvider = sveveConfigured ? "sveve" : (twilioConfigured ? "twilio" : "dev");
 
 // Warn if using default secret
 if (SITE_PIN) {
@@ -1454,30 +1455,40 @@ async function sendSMS(telefon, message, options = {}) {
     }
   }
 
-  // Sveve (legacy fallback)
+  // Sveve (primær SMS-leverandør)
   if (smsProvider === "sveve") {
-    const url = new URL("https://sveve.no/SMS/SendSMS");
+    // Bruk norsk format uten +47 for Sveve
+    let svevePhone = telefon.replace(/\s/g, '').replace(/^\+47/, '');
+    if (svevePhone.length !== 8) {
+      svevePhone = phoneFormatted.replace(/^\+47/, '');
+    }
+
+    const url = new URL("https://sveve.no/SMS/SendMessage");
     url.searchParams.set("user", SVEVE_USER);
     url.searchParams.set("passwd", SVEVE_PASS);
-    url.searchParams.set("to", telefon);
+    url.searchParams.set("to", svevePhone);
     url.searchParams.set("msg", message);
-    url.searchParams.set("from", "Fuglehund");
+    url.searchParams.set("from", SVEVE_FROM);
+    url.searchParams.set("f", "json"); // JSON-respons
 
     try {
       const resp = await fetch(url.toString());
-      const text = await resp.text();
-      if (text.includes("<response>") && !text.includes("feil") && !text.includes("error")) {
-        console.log(`📱 [Sveve] SMS sendt til ${telefon}`);
-        logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'sent', klubb_id);
-        return { success: true, provider: 'sveve' };
+      const data = await resp.json();
+
+      if (data.msgOkCount && data.msgOkCount > 0) {
+        const msgId = data.ids ? data.ids[0] : null;
+        console.log(`📱 [Sveve] SMS sendt til ${svevePhone} (ID: ${msgId})`);
+        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, msgId, 'sent', klubb_id);
+        return { success: true, provider: 'sveve', id: msgId };
       } else {
-        console.error("Sveve SMS error:", text);
-        logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'failed', klubb_id);
-        return { success: false, error: text, provider: 'sveve' };
+        const errorMsg = data.errors ? data.errors.join(', ') : JSON.stringify(data);
+        console.error("Sveve SMS error:", errorMsg);
+        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'failed', klubb_id);
+        return { success: false, error: errorMsg, provider: 'sveve' };
       }
     } catch (err) {
       console.error("Sveve SMS fetch error:", err.message);
-      logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'error', klubb_id);
+      logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'error', klubb_id);
       return { success: false, error: err.message, provider: 'sveve' };
     }
   }

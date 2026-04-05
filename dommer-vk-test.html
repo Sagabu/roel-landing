@@ -1687,38 +1687,22 @@
 
             const [nextDog1, nextDog2] = getNextAvailablePair();
 
-            // Sjekk om det er hunder med tid til gode
-            const dogsWithTidTilGode = Object.entries(state.tidTilGode)
-                .filter(([_, hasTTG]) => hasTTG)
-                .map(([dogNr, _]) => parseInt(dogNr));
-
             if (nextDog1 === null && nextDog2 === null) {
-                // Ingen flere par - sjekk tid til gode
+                // Ingen flere par tilgjengelig - runden er ferdig
+                // Sjekk om det er hunder med tid til gode
+                const dogsWithTidTilGode = Object.entries(state.tidTilGode)
+                    .filter(([_, hasTTG]) => hasTTG)
+                    .map(([dogNr, _]) => parseInt(dogNr));
+
                 if (dogsWithTidTilGode.length > 0) {
-                    // Vis valg-modal - dommeren MÅ håndtere tid til gode
-                    showTidTilGodeChoice(dogsWithTidTilGode, true);
+                    // Vis valg-modal - dommeren kan velge å gi ekstra slipp eller avslutte runden
+                    showTidTilGodeChoice(dogsWithTidTilGode);
                     return;
                 }
 
                 // Runden er ferdig - vis runde-fullført modal
                 openRoundCompleteModal();
                 return;
-            }
-
-            // Det finnes flere par, men sjekk om dette var siste "vanlige" par
-            // og det er hunder med tid til gode som bør få ekstra slipp
-            if (dogsWithTidTilGode.length > 0) {
-                // Sjekk om neste par inneholder hunder som IKKE har tid til gode
-                // Hvis ja, spør dommeren om de vil gi TTG-hundene ekstra tid først
-                const nextPairHasTTG = dogsWithTidTilGode.includes(nextDog1) || dogsWithTidTilGode.includes(nextDog2);
-
-                if (!nextPairHasTTG) {
-                    // Neste par er vanlige hunder, men det er TTG-hunder som venter
-                    // Vis valg til dommeren
-                    state.pendingNextPair = [nextDog1, nextDog2];
-                    showTidTilGodeChoice(dogsWithTidTilGode, false);
-                    return;
-                }
             }
 
             // Øk slipp-nummer
@@ -2853,11 +2837,9 @@
         }
 
         // === TID TIL GODE VALG ===
-        let ttgChoiceIsLastPair = false;
         let ttgDogsForChoice = [];
 
-        function showTidTilGodeChoice(dogsWithTTG, isLastPair) {
-            ttgChoiceIsLastPair = isLastPair;
+        function showTidTilGodeChoice(dogsWithTTG) {
             ttgDogsForChoice = dogsWithTTG;
 
             const dogNames = dogsWithTTG.map(dogNr => {
@@ -2870,14 +2852,8 @@
             const titleEl = document.getElementById('ttgChoiceTitle');
             const descEl = document.getElementById('ttgChoiceDesc');
 
-            // Oppdater tittel basert på situasjon
-            if (isLastPair) {
-                titleEl.textContent = `Runde ${state.currentRound} nesten ferdig`;
-                descEl.textContent = 'Følgende hunder har tid til gode. Vil du sette opp et ekstra slipp?';
-            } else {
-                titleEl.textContent = 'Hunder med tid til gode';
-                descEl.textContent = 'Følgende hunder har tid til gode. Vil du gi dem ekstra slipptid nå?';
-            }
+            titleEl.textContent = `Runde ${state.currentRound} ferdig`;
+            descEl.textContent = 'Følgende hunder har tid til gode. Vil du sette opp et ekstra slipp?';
 
             listEl.innerHTML = dogNames.map(name => `
                 <li class="flex items-center gap-2 p-2 bg-amber-50 rounded-lg">
@@ -2907,47 +2883,16 @@
             openManualDogSelectModal(ttgDogsForChoice);
         }
 
-        // Bruker velger NEI - fortsett uten ekstra slipp
+        // Bruker velger NEI - avslutt runden uten ekstra slipp
         function ttgChoiceNo() {
             closeTidTilGodeChoice();
 
-            if (ttgChoiceIsLastPair) {
-                // Fjern tid til gode status fra alle og avslutt runden
-                ttgDogsForChoice.forEach(dogNr => {
-                    delete state.tidTilGode[dogNr];
-                });
-                saveToStorage();
-                openRoundCompleteModal();
-            } else {
-                // Fortsett til neste par som planlagt
-                if (state.pendingNextPair) {
-                    const [nextDog1, nextDog2] = state.pendingNextPair;
-                    state.pendingNextPair = null;
-
-                    // Øk slipp-nummer
-                    state.currentSlipp++;
-                    updateSlippLabels();
-
-                    // Sett nye hunder
-                    state.selectedDogs[1] = nextDog1;
-                    document.getElementById('dog1Select').value = nextDog1;
-                    delete state.tidTilGode[nextDog1];
-
-                    state.selectedDogs[2] = nextDog2;
-                    document.getElementById('dog2Select').value = nextDog2;
-                    delete state.tidTilGode[nextDog2];
-
-                    // Oppdater visning
-                    updateDogDisplays();
-                    loadSlippComment();
-                    loadDogData(1);
-                    loadDogData(2);
-                    updatePlacementDropdowns();
-                    renderPartyLists();
-                    renderRankings();
-                    saveToStorage();
-                }
-            }
+            // Fjern tid til gode status fra alle og avslutt runden
+            ttgDogsForChoice.forEach(dogNr => {
+                delete state.tidTilGode[dogNr];
+            });
+            saveToStorage();
+            openRoundCompleteModal();
         }
 
         // === MANUELL HUNDEVALG FOR EKSTRA SLIPP ===

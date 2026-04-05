@@ -3354,6 +3354,134 @@ app.get("/api/hunder/:id", (c) => {
 });
 
 // ============================================
+// HUND-SØK PÅ REGNR (for bruker-registrering)
+// ============================================
+
+// Søk etter hund basert på registreringsnummer
+// Normaliserer regnr for å håndtere variasjoner (mellomrom, case)
+app.get("/api/hunder/sok/regnr", (c) => {
+  const regnrQuery = (c.req.query("q") || "").trim().toUpperCase().replace(/\s+/g, '');
+
+  if (!regnrQuery || regnrQuery.length < 3) {
+    return c.json({ error: "Søkestreng må være minst 3 tegn" }, 400);
+  }
+
+  // Søk med normalisert regnr (fjerner mellomrom og konverterer til uppercase)
+  // Støtter både eksakt match og partial match
+  const hunder = db.prepare(`
+    SELECT h.id, h.regnr, h.navn, h.rase, h.fodt, h.eier_telefon,
+           b.fornavn || ' ' || b.etternavn as eier_navn,
+           o.eier_navn as import_eier_navn, o.forer_navn as import_forer_navn
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    LEFT JOIN eier_oppslag o ON h.regnr = o.regnr
+    WHERE UPPER(REPLACE(h.regnr, ' ', '')) = ?
+       OR UPPER(REPLACE(h.regnr, ' ', '')) LIKE ?
+    LIMIT 10
+  `).all(regnrQuery, `%${regnrQuery}%`);
+
+  return c.json({
+    results: hunder.map(h => ({
+      id: h.id,
+      regnr: h.regnr,
+      navn: h.navn,
+      rase: h.rase,
+      fodt: h.fodt,
+      harEier: !!h.eier_telefon,
+      eierNavn: h.eier_navn || h.import_eier_navn || null,
+      forerNavn: h.import_forer_navn || null
+    }))
+  });
+});
+
+// Koble bruker til hund basert på regnr (bruker-initiert)
+app.post("/api/hunder/koble", requireAuth, async (c) => {
+  try {
+    const bruker = c.get("bruker");
+    const body = await c.req.json();
+    const { regnr, fodselsdato } = body;
+
+    if (!regnr) {
+      return c.json({ error: "Registreringsnummer er påkrevd" }, 400);
+    }
+
+    if (!fodselsdato) {
+      return c.json({ error: "Fødselsdato er påkrevd" }, 400);
+    }
+
+    // Normaliser regnr
+    const normalizedRegnr = regnr.trim().toUpperCase().replace(/\s+/g, '');
+
+    // Valider at fødselsdato matcher årstall i regnr
+    const regnrYearMatch = normalizedRegnr.match(/\/(\d{2,4})$/);
+    if (regnrYearMatch) {
+      let regnrYear = regnrYearMatch[1];
+      if (regnrYear.length === 2) {
+        regnrYear = (parseInt(regnrYear) > 50 ? '19' : '20') + regnrYear;
+      }
+      const fodtYear = new Date(fodselsdato).getFullYear().toString();
+      if (fodtYear !== regnrYear) {
+        return c.json({
+          error: `Fødselsdato (${fodtYear}) matcher ikke årstall i regnr (${regnrYear})`
+        }, 400);
+      }
+    }
+
+    // Finn hunden
+    const hund = db.prepare(`
+      SELECT id, regnr, navn, eier_telefon
+      FROM hunder
+      WHERE UPPER(REPLACE(regnr, ' ', '')) = ?
+    `).get(normalizedRegnr);
+
+    if (!hund) {
+      return c.json({ error: "Hund ikke funnet med dette regnr" }, 404);
+    }
+
+    // Sjekk om hunden allerede har eier
+    if (hund.eier_telefon && hund.eier_telefon !== bruker.telefon) {
+      return c.json({
+        error: "Denne hunden er allerede registrert på en annen bruker",
+        hint: "Kontakt administrator hvis dette er feil"
+      }, 409);
+    }
+
+    // Oppdater hunden med eier og fødselsdato
+    db.prepare(`
+      UPDATE hunder
+      SET eier_telefon = ?, fodt = ?
+      WHERE id = ?
+    `).run(bruker.telefon, fodselsdato, hund.id);
+
+    // Sjekk om det finnes fullmakter som skal opprettes fra eier_oppslag
+    const oppslag = db.prepare(`
+      SELECT eier_navn, forer_navn FROM eier_oppslag WHERE regnr = ?
+    `).get(hund.regnr);
+
+    if (oppslag && oppslag.forer_navn && oppslag.forer_navn !== oppslag.eier_navn) {
+      // Fører er forskjellig fra eier - logg for manuell fullmakt-opprettelse
+      // (fullmakt opprettes når fører registrerer seg og matcher)
+      console.log(`Fullmakt kan opprettes: ${oppslag.eier_navn} → ${oppslag.forer_navn} for hund ${hund.regnr}`);
+    }
+
+    return c.json({
+      success: true,
+      message: `Hunden "${hund.navn}" er nå koblet til din profil`,
+      hund: {
+        id: hund.id,
+        regnr: hund.regnr,
+        navn: hund.navn,
+        fodt: fodselsdato
+      }
+    });
+
+  } catch (err) {
+    console.error("Feil ved kobling av hund:", err);
+    return c.json({ error: "Feil ved kobling: " + err.message }, 500);
+  }
+});
+
+// ============================================
 // BRØNNØYSUND OPPSLAG (organisasjonsnummer)
 // ============================================
 
@@ -7831,6 +7959,30 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
       VALUES (?, ?, ?, ?, ?)
     `);
 
+    // Opprett tabell for ventende fullmakter (fra deltakerlister)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ventende_fullmakter (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        prove_id TEXT,
+        hund_regnr TEXT NOT NULL,
+        hund_navn TEXT,
+        eier_navn TEXT NOT NULL,
+        forer_navn TEXT NOT NULL,
+        eier_telefon TEXT,
+        forer_telefon TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(prove_id, hund_regnr, forer_navn)
+      )
+    `);
+
+    const insertVentendeFullmakt = db.prepare(`
+      INSERT OR IGNORE INTO ventende_fullmakter (prove_id, hund_regnr, hund_navn, eier_navn, forer_navn)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    let fullmakterOpprettet = 0;
+
     for (const p of participants) {
       try {
         const regnr = (p.regnr || '').trim();
@@ -7871,6 +8023,25 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
           );
           results.created++;
         }
+
+        // Opprett ventende fullmakt hvis fører er forskjellig fra eier
+        const eierNavn = (p.eier || '').trim();
+        const forerNavn = (p.forer || '').trim();
+
+        if (eierNavn && forerNavn && eierNavn.toLowerCase() !== forerNavn.toLowerCase()) {
+          try {
+            insertVentendeFullmakt.run(
+              proveId || null,
+              regnr,
+              p.hundenavn || p.navn,
+              eierNavn,
+              forerNavn
+            );
+            fullmakterOpprettet++;
+          } catch (e) {
+            // Ignorer duplikater
+          }
+        }
       } catch (err) {
         results.errors.push({
           regnr: p.regnr,
@@ -7881,7 +8052,8 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
 
     return c.json({
       success: true,
-      message: `Importert ${results.created} nye hunder, oppdatert ${results.updated}`,
+      message: `Importert ${results.created} nye hunder, oppdatert ${results.updated}. ${fullmakterOpprettet} ventende fullmakter opprettet.`,
+      fullmakterOpprettet,
       ...results
     });
 
@@ -7892,48 +8064,120 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
 });
 
 // --- Koble bruker til hunder basert på e-post/navn ---
+// Denne kalles IKKE automatisk lenger - brukeren kobler manuelt via regnr-søk
+// Men vi beholder den for bakoverkompatibilitet og for å aktivere ventende fullmakter
 app.post("/api/koble-hunder", requireAuth, async (c) => {
   try {
     const bruker = c.get("bruker");
     const telefon = bruker.telefon;
-    const email = bruker.epost || '';
-    const fullNavn = `${bruker.fornavn || ''} ${bruker.etternavn || ''}`.trim().toLowerCase();
+    const fullNavn = `${bruker.fornavn || ''} ${bruker.etternavn || ''}`.trim();
 
-    // Finn hunder som matcher brukerens e-post eller navn fra eier_oppslag
-    const oppslag = db.prepare(`
-      SELECT o.regnr, h.id as hund_id
-      FROM eier_oppslag o
-      JOIN hunder h ON h.regnr = o.regnr
-      WHERE h.eier_telefon IS NULL
-        AND (
-          (o.eier_epost IS NOT NULL AND LOWER(o.eier_epost) = LOWER(?))
-          OR (o.forer_epost IS NOT NULL AND LOWER(o.forer_epost) = LOWER(?))
-          OR (o.eier_navn IS NOT NULL AND LOWER(o.eier_navn) LIKE ?)
-          OR (o.forer_navn IS NOT NULL AND LOWER(o.forer_navn) LIKE ?)
-        )
-    `).all(email, email, `%${fullNavn}%`, `%${fullNavn}%`);
+    // 1. Sjekk om brukeren er FØRER i noen ventende fullmakter
+    // Når fører registrerer seg, opprettes fullmakt automatisk
+    const ventendeForForer = db.prepare(`
+      SELECT vf.*, h.id as hund_id, h.eier_telefon
+      FROM ventende_fullmakter vf
+      LEFT JOIN hunder h ON h.regnr = vf.hund_regnr
+      WHERE vf.status = 'pending'
+        AND LOWER(vf.forer_navn) LIKE ?
+    `).all(`%${fullNavn.toLowerCase()}%`);
 
-    if (oppslag.length === 0) {
-      return c.json({ success: true, linked: 0, message: "Ingen hunder å koble" });
+    let fullmakterAktivert = 0;
+
+    // Opprett fullmakter-tabell hvis ikke finnes
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS fullmakter (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL CHECK(type IN ('given', 'received')),
+        giver_telefon TEXT NOT NULL,
+        mottaker_telefon TEXT,
+        mottaker_navn TEXT,
+        hund_id INTEGER,
+        dog_name TEXT,
+        dog_owner TEXT,
+        trial TEXT,
+        valid_from TEXT,
+        valid_to TEXT,
+        permissions TEXT DEFAULT '["run","results"]',
+        status TEXT DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (hund_id) REFERENCES hunder(id)
+      )
+    `);
+
+    const insertFullmakt = db.prepare(`
+      INSERT INTO fullmakter (type, giver_telefon, mottaker_telefon, mottaker_navn, hund_id, dog_name, trial, permissions, status)
+      VALUES ('given', ?, ?, ?, ?, ?, ?, '["run","results"]', 'active')
+    `);
+
+    const updateVentendeFullmakt = db.prepare(`
+      UPDATE ventende_fullmakter SET status = 'activated', forer_telefon = ? WHERE id = ?
+    `);
+
+    for (const vf of ventendeForForer) {
+      // Fører er denne brukeren - sjekk om eier finnes
+      if (vf.eier_telefon && vf.hund_id) {
+        try {
+          // Opprett fullmakt fra eier til denne føreren
+          insertFullmakt.run(
+            vf.eier_telefon,     // giver (eier)
+            telefon,             // mottaker (fører)
+            fullNavn,            // mottaker_navn
+            vf.hund_id,          // hund_id
+            vf.hund_navn,        // dog_name
+            vf.prove_id          // trial
+          );
+          updateVentendeFullmakt.run(telefon, vf.id);
+          fullmakterAktivert++;
+        } catch (e) {
+          console.error('Feil ved aktivering av fullmakt:', e);
+        }
+      }
     }
 
-    // Koble hundene til brukeren
-    const updateHund = db.prepare("UPDATE hunder SET eier_telefon = ? WHERE id = ?");
-    let linked = 0;
+    // 2. Sjekk om brukeren er EIER - oppdater ventende fullmakter med eier_telefon
+    const ventendeForEier = db.prepare(`
+      SELECT vf.id, vf.hund_regnr, vf.forer_navn, vf.forer_telefon
+      FROM ventende_fullmakter vf
+      WHERE vf.status = 'pending'
+        AND LOWER(vf.eier_navn) LIKE ?
+    `).all(`%${fullNavn.toLowerCase()}%`);
 
-    for (const o of oppslag) {
-      try {
-        updateHund.run(telefon, o.hund_id);
-        linked++;
-      } catch (err) {
-        console.error('Feil ved kobling av hund:', o.regnr, err);
+    const updateVentendeEier = db.prepare(`
+      UPDATE ventende_fullmakter SET eier_telefon = ? WHERE id = ?
+    `);
+
+    for (const vf of ventendeForEier) {
+      updateVentendeEier.run(telefon, vf.id);
+
+      // Hvis fører allerede er registrert, opprett fullmakt
+      if (vf.forer_telefon) {
+        const hund = db.prepare("SELECT id, navn FROM hunder WHERE regnr = ?").get(vf.hund_regnr);
+        if (hund) {
+          try {
+            insertFullmakt.run(
+              telefon,             // giver (eier)
+              vf.forer_telefon,    // mottaker (fører)
+              vf.forer_navn,       // mottaker_navn
+              hund.id,             // hund_id
+              hund.navn,           // dog_name
+              null                 // trial
+            );
+            updateVentendeFullmakt.run(vf.forer_telefon, vf.id);
+            fullmakterAktivert++;
+          } catch (e) {
+            console.error('Feil ved aktivering av fullmakt for eier:', e);
+          }
+        }
       }
     }
 
     return c.json({
       success: true,
-      linked,
-      message: `Koblet ${linked} hund${linked === 1 ? '' : 'er'} til din profil`
+      fullmakterAktivert,
+      message: fullmakterAktivert > 0
+        ? `${fullmakterAktivert} fullmakt${fullmakterAktivert === 1 ? '' : 'er'} aktivert automatisk`
+        : 'Ingen ventende fullmakter funnet'
     });
 
   } catch (err) {

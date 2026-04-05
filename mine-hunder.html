@@ -147,12 +147,29 @@
                     <p class="text-xs text-bark-400 mt-2">Klikk for å legge til bilde</p>
                 </div>
 
-                <!-- Registration Number (Required) -->
-                <div>
+                <!-- Registration Number (Required) with autocomplete -->
+                <div class="relative">
                     <label class="block text-sm font-medium text-bark-700 mb-1">Registreringsnummer (NKK) *</label>
                     <input type="text" id="dogRegNumber" required placeholder="f.eks. NO12345/21"
-                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
-                    <p class="text-xs text-bark-500 mt-1">Regnr er påkrevd for å koble kritikker til hunden</p>
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none"
+                        oninput="searchDogByRegnr(this.value)" autocomplete="off">
+                    <p class="text-xs text-bark-500 mt-1">Norske: NO12345/23 | Svenske: SE12345/2023</p>
+
+                    <!-- Autocomplete dropdown -->
+                    <div id="regnrAutocomplete" class="hidden absolute z-20 w-full mt-1 bg-white border-2 border-bark-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                        <!-- Results will be injected here -->
+                    </div>
+
+                    <!-- Match found indicator -->
+                    <div id="regnrMatchInfo" class="hidden mt-2 p-3 bg-green-50 border border-green-200 rounded-xl">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span id="regnrMatchText" class="text-sm text-green-800 font-medium"></span>
+                        </div>
+                        <p id="regnrMatchDetails" class="text-xs text-green-600 mt-1"></p>
+                    </div>
                 </div>
 
                 <!-- Name -->
@@ -186,7 +203,9 @@
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-1">Fødselsdato *</label>
                     <input type="date" id="dogBirthDate" required
-                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none"
+                        onchange="validateBirthDateAgainstRegnr()">
+                    <p id="birthDateValidation" class="text-xs mt-1 hidden"></p>
                     <p id="klasseInfo" class="text-xs text-bark-500 mt-1 hidden"></p>
                 </div>
 
@@ -1460,6 +1479,176 @@
                 FuglehundAuth.logout();
                 window.location.href = 'index.html';
             }
+        }
+
+        // ===== REGNR-SØK OG AUTOCOMPLETE =====
+        let regnrSearchTimeout = null;
+        let selectedDogFromSearch = null;
+
+        async function searchDogByRegnr(query) {
+            const autocompleteEl = document.getElementById('regnrAutocomplete');
+            const matchInfoEl = document.getElementById('regnrMatchInfo');
+
+            // Skjul match-info når bruker skriver
+            matchInfoEl.classList.add('hidden');
+            selectedDogFromSearch = null;
+
+            // Minst 3 tegn for å søke
+            if (!query || query.trim().length < 3) {
+                autocompleteEl.classList.add('hidden');
+                return;
+            }
+
+            // Debounce
+            if (regnrSearchTimeout) clearTimeout(regnrSearchTimeout);
+
+            regnrSearchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/hunder/sok/regnr?q=${encodeURIComponent(query.trim())}`);
+                    if (!response.ok) {
+                        autocompleteEl.classList.add('hidden');
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (!data.results || data.results.length === 0) {
+                        autocompleteEl.innerHTML = `
+                            <div class="px-4 py-3 text-sm text-bark-500 border-b border-bark-100">
+                                Ingen hund funnet med dette regnr
+                            </div>
+                            <div class="px-4 py-2 text-xs text-bark-400">
+                                Du kan registrere hunden manuelt nedenfor
+                            </div>
+                        `;
+                        autocompleteEl.classList.remove('hidden');
+                        return;
+                    }
+
+                    // Vis resultater
+                    autocompleteEl.innerHTML = data.results.map(dog => `
+                        <button type="button" onclick="selectDogFromSearch(${JSON.stringify(dog).replace(/"/g, '&quot;')})"
+                            class="w-full px-4 py-3 text-left hover:bg-warm-50 border-b border-bark-100 last:border-0 transition">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <span class="font-medium text-bark-800">${dog.navn || 'Ukjent navn'}</span>
+                                    <span class="text-bark-500 text-sm ml-2">${dog.regnr}</span>
+                                </div>
+                                ${dog.harEier ? '<span class="text-xs bg-warm-100 text-warm-700 px-2 py-0.5 rounded-full">Har eier</span>' : ''}
+                            </div>
+                            <div class="text-xs text-bark-500 mt-1">
+                                ${dog.rase || 'Rase ikke angitt'}
+                                ${dog.eierNavn ? ` • Eier: ${dog.eierNavn}` : ''}
+                            </div>
+                        </button>
+                    `).join('');
+
+                    autocompleteEl.classList.remove('hidden');
+
+                } catch (err) {
+                    console.error('Feil ved søk:', err);
+                    autocompleteEl.classList.add('hidden');
+                }
+            }, 300);
+        }
+
+        function selectDogFromSearch(dog) {
+            const autocompleteEl = document.getElementById('regnrAutocomplete');
+            const matchInfoEl = document.getElementById('regnrMatchInfo');
+            const matchTextEl = document.getElementById('regnrMatchText');
+            const matchDetailsEl = document.getElementById('regnrMatchDetails');
+
+            // Lukk autocomplete
+            autocompleteEl.classList.add('hidden');
+
+            // Lagre valgt hund
+            selectedDogFromSearch = dog;
+
+            // Fyll inn feltene
+            document.getElementById('dogRegNumber').value = dog.regnr;
+            document.getElementById('dogName').value = dog.navn || '';
+
+            if (dog.rase) {
+                const raseSelect = document.getElementById('dogBreed');
+                // Prøv å finne match i dropdown
+                for (let opt of raseSelect.options) {
+                    if (opt.value.toLowerCase() === dog.rase.toLowerCase()) {
+                        raseSelect.value = opt.value;
+                        break;
+                    }
+                }
+            }
+
+            // Vis match-info
+            if (dog.harEier) {
+                matchTextEl.textContent = `Hunden "${dog.navn}" er allerede registrert`;
+                matchDetailsEl.textContent = 'Kontakt administrator hvis dette er din hund';
+                matchInfoEl.className = 'mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-xl';
+                matchInfoEl.querySelector('svg').className = 'w-5 h-5 text-yellow-600';
+                matchTextEl.className = 'text-sm text-yellow-800 font-medium';
+                matchDetailsEl.className = 'text-xs text-yellow-600 mt-1';
+            } else {
+                matchTextEl.textContent = `Fant hund: ${dog.navn}`;
+                matchDetailsEl.textContent = dog.eierNavn ? `Fra deltakerliste (${dog.eierNavn})` : 'Fra deltakerliste';
+                matchInfoEl.className = 'mt-2 p-3 bg-green-50 border border-green-200 rounded-xl';
+                matchInfoEl.querySelector('svg').className = 'w-5 h-5 text-green-600';
+                matchTextEl.className = 'text-sm text-green-800 font-medium';
+                matchDetailsEl.className = 'text-xs text-green-600 mt-1';
+            }
+            matchInfoEl.classList.remove('hidden');
+
+            // Fokuser på fødselsdato
+            document.getElementById('dogBirthDate').focus();
+        }
+
+        // Skjul autocomplete når man klikker utenfor
+        document.addEventListener('click', (e) => {
+            const autocompleteEl = document.getElementById('regnrAutocomplete');
+            const regnrInput = document.getElementById('dogRegNumber');
+            if (autocompleteEl && !autocompleteEl.contains(e.target) && e.target !== regnrInput) {
+                autocompleteEl.classList.add('hidden');
+            }
+        });
+
+        // ===== FØDSELSDATO-VALIDERING MOT REGNR =====
+        function validateBirthDateAgainstRegnr() {
+            const regnr = document.getElementById('dogRegNumber').value.trim().toUpperCase();
+            const fodselsdato = document.getElementById('dogBirthDate').value;
+            const validationEl = document.getElementById('birthDateValidation');
+
+            if (!regnr || !fodselsdato) {
+                validationEl.classList.add('hidden');
+                updateKlasseAnbefaling();
+                return;
+            }
+
+            // Hent årstall fra regnr (NO12345/23 eller SE12345/2023)
+            const yearMatch = regnr.match(/\/(\d{2,4})$/);
+            if (!yearMatch) {
+                validationEl.classList.add('hidden');
+                updateKlasseAnbefaling();
+                return;
+            }
+
+            let regnrYear = yearMatch[1];
+            if (regnrYear.length === 2) {
+                // Norsk format: 23 → 2023
+                regnrYear = (parseInt(regnrYear) > 50 ? '19' : '20') + regnrYear;
+            }
+
+            const fodtYear = new Date(fodselsdato).getFullYear().toString();
+
+            if (fodtYear !== regnrYear) {
+                validationEl.textContent = `Årstall i fødselsdato (${fodtYear}) matcher ikke regnr (${regnrYear})`;
+                validationEl.className = 'text-xs text-red-600 mt-1';
+                validationEl.classList.remove('hidden');
+            } else {
+                validationEl.textContent = `Årstall bekreftet: ${regnrYear}`;
+                validationEl.className = 'text-xs text-green-600 mt-1';
+                validationEl.classList.remove('hidden');
+            }
+
+            updateKlasseAnbefaling();
         }
 
         // Klassevalidering ved fødselsdato-endring

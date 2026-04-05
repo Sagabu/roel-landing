@@ -1688,6 +1688,17 @@
             const [nextDog1, nextDog2] = getNextAvailablePair();
 
             if (nextDog1 === null && nextDog2 === null) {
+                // Sjekk om det er hunder med tid til gode - runden kan ikke avsluttes da
+                const dogsWithTidTilGode = Object.entries(state.tidTilGode)
+                    .filter(([_, hasTTG]) => hasTTG)
+                    .map(([dogNr, _]) => parseInt(dogNr));
+
+                if (dogsWithTidTilGode.length > 0) {
+                    // Vis advarsel - kan ikke avslutte runden
+                    showTidTilGodeWarning(dogsWithTidTilGode);
+                    return;
+                }
+
                 // Runden er ferdig - vis runde-fullført modal
                 openRoundCompleteModal();
                 return;
@@ -2824,6 +2835,32 @@
             setTimeout(() => goToNextPair(), 300);
         }
 
+        // === TID TIL GODE ADVARSEL ===
+        function showTidTilGodeWarning(dogsWithTTG) {
+            const dogNames = dogsWithTTG.map(dogNr => {
+                const dog = state.dogs.find(d => d.nr === dogNr);
+                return dog ? `${dog.nr}. ${dog.navn}` : `Hund ${dogNr}`;
+            });
+
+            const modal = document.getElementById('tidTilGodeWarningModal');
+            const listEl = document.getElementById('ttgWarningDogList');
+
+            listEl.innerHTML = dogNames.map(name => `
+                <li class="flex items-center gap-2 p-2 bg-amber-50 rounded-lg">
+                    <svg class="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span class="font-medium text-amber-800">${name}</span>
+                </li>
+            `).join('');
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeTidTilGodeWarning() {
+            document.getElementById('tidTilGodeWarningModal').classList.add('hidden');
+        }
+
         // === RUNDE FULLFØRT MODAL ===
         let round2Pairings = []; // Foreslåtte par for runde 2
 
@@ -3679,6 +3716,36 @@ Antall slipp: ${state.currentSlipp}
             saveToStorage();
         }
     </script>
+
+    <!-- Tid til Gode Advarsel Modal -->
+    <div id="tidTilGodeWarningModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-amber-200 bg-amber-500 text-white rounded-t-2xl">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <h2 class="text-xl font-bold font-serif">Kan ikke avslutte runden</h2>
+                </div>
+            </div>
+            <div class="p-4">
+                <p class="text-bark-700 mb-4 text-center">
+                    Følgende hunder har fortsatt <strong class="text-amber-600">tid til gode</strong> og må fullføres før runden kan avsluttes:
+                </p>
+                <ul id="ttgWarningDogList" class="space-y-2 mb-4">
+                    <!-- Fylles dynamisk -->
+                </ul>
+                <p class="text-sm text-bark-500 text-center italic">
+                    Velg hundene fra partilisten eller rangeringen for å gi dem mer slipptid.
+                </p>
+            </div>
+            <div class="p-4 border-t border-amber-200">
+                <button onclick="closeTidTilGodeWarning()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition">
+                    Forstått
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Runde Fullført Modal -->
     <div id="roundCompleteModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

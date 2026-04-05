@@ -8726,6 +8726,16 @@ app.post("/api/meldinger", requireAuth, async (c) => {
       `Ny melding fra ${user.navn || user.telefon}: ${emne}`
     );
 
+    // Auto-backup ved ny melding (viktig kommunikasjon)
+    autoBackup("melding_sendt");
+
+    // Checkpoint WAL for å sikre at meldingen er skrevet til disk
+    try {
+      db.pragma("wal_checkpoint(PASSIVE)");
+    } catch (e) {
+      console.error("WAL checkpoint error:", e.message);
+    }
+
     return c.json({
       success: true,
       melding_id: result.lastInsertRowid,
@@ -8786,6 +8796,16 @@ app.post("/api/meldinger/:id/svar", requireAdmin, async (c) => {
       "melding_besvart",
       `Svar sendt til ${original.fra_navn} (${original.fra_telefon}). SMS: ${smsResult.success ? 'OK' : 'Feilet'}`
     );
+
+    // Auto-backup ved svar på melding (viktig kommunikasjon)
+    autoBackup("melding_besvart");
+
+    // Checkpoint WAL for å sikre at svaret er skrevet til disk
+    try {
+      db.pragma("wal_checkpoint(PASSIVE)");
+    } catch (e) {
+      console.error("WAL checkpoint error:", e.message);
+    }
 
     return c.json({
       success: true,

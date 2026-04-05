@@ -1987,20 +1987,21 @@
         // MELDINGER TIL PRØVELEDELSEN
         // =============================================
         let userMessages = [];
-        let userHunder = [];
+        let userPameldinger = []; // Prøver brukeren er påmeldt
+        let selectedProve = null;
 
-        // Hent brukerens hunder for dropdown
-        async function loadUserHunder() {
+        // Hent brukerens påmeldinger (prøver + hunder)
+        async function loadUserPameldinger() {
             try {
-                const response = await fetch('/api/hunder/mine', {
+                const response = await fetch('/api/meldinger/mine-pameldinger', {
                     headers: { 'Authorization': `Bearer ${FuglehundAuth.getToken()}` }
                 });
                 if (response.ok) {
                     const data = await response.json();
-                    userHunder = data.hunder || [];
+                    userPameldinger = data.prover || [];
                 }
             } catch (e) {
-                console.error('Feil ved henting av hunder:', e);
+                console.error('Feil ved henting av påmeldinger:', e);
             }
         }
 
@@ -2042,21 +2043,68 @@
 
         // Åpne melding-modal
         async function openMessageModal() {
-            // Last hunder og meldinger først
-            await Promise.all([loadUserHunder(), loadUserMessages()]);
+            // Last påmeldinger og meldinger først
+            await Promise.all([loadUserPameldinger(), loadUserMessages()]);
 
             // Vis modal
             document.getElementById('messageModal').classList.remove('hidden');
 
-            // Fyll hund-dropdown
+            // Sjekk om bruker har påmeldinger
+            const proveSelect = document.getElementById('messageProveSelect');
             const hundSelect = document.getElementById('messageHundSelect');
-            hundSelect.innerHTML = '<option value="">-- Velg hund (valgfritt) --</option>';
-            userHunder.forEach(h => {
-                hundSelect.innerHTML += `<option value="${h.id}">${h.navn} (${h.regnr || 'ingen regnr'})</option>`;
-            });
+            const noProverWarning = document.getElementById('noProverWarning');
+            const messageForm = document.getElementById('messageForm');
+
+            if (userPameldinger.length === 0) {
+                // Ingen påmeldinger - vis advarsel
+                noProverWarning.classList.remove('hidden');
+                messageForm.classList.add('hidden');
+            } else {
+                noProverWarning.classList.add('hidden');
+                messageForm.classList.remove('hidden');
+
+                // Fyll prøve-dropdown
+                proveSelect.innerHTML = '<option value="">-- Velg prøve --</option>';
+                userPameldinger.forEach(p => {
+                    const datoStr = p.start_dato ? new Date(p.start_dato).toLocaleDateString('no-NO', { day: 'numeric', month: 'short' }) : '';
+                    proveSelect.innerHTML += `<option value="${p.prove_id}">${p.prove_navn} ${datoStr ? '(' + datoStr + ')' : ''}</option>`;
+                });
+
+                // Reset hund-dropdown
+                hundSelect.innerHTML = '<option value="">-- Velg prøve først --</option>';
+                hundSelect.disabled = true;
+
+                selectedProve = null;
+            }
 
             // Vis eksisterende meldinger
             renderUserMessages();
+        }
+
+        // Når prøve velges, oppdater hund-dropdown
+        function onProveSelected() {
+            const proveSelect = document.getElementById('messageProveSelect');
+            const hundSelect = document.getElementById('messageHundSelect');
+            const proveId = proveSelect.value;
+
+            if (!proveId) {
+                hundSelect.innerHTML = '<option value="">-- Velg prøve først --</option>';
+                hundSelect.disabled = true;
+                selectedProve = null;
+                return;
+            }
+
+            selectedProve = userPameldinger.find(p => p.prove_id === proveId);
+            if (!selectedProve) return;
+
+            // Fyll hund-dropdown med hunder fra denne prøven
+            hundSelect.disabled = false;
+            hundSelect.innerHTML = '<option value="">-- Velg hund (valgfritt) --</option>';
+
+            selectedProve.hunder.forEach(h => {
+                const typeLabel = h.type === 'fullmakt' ? ' (fullmakt)' : '';
+                hundSelect.innerHTML += `<option value="${h.hund_id}">${h.hund_navn || 'Ukjent'}${typeLabel} - ${h.hund_regnr || 'ingen regnr'}</option>`;
+            });
         }
 
         // Lukk melding-modal
@@ -2143,24 +2191,20 @@
 
         // Send ny melding
         async function sendMessage() {
+            const proveId = document.getElementById('messageProveSelect').value;
             const hundId = document.getElementById('messageHundSelect').value;
             const emne = document.getElementById('messageEmne').value.trim();
             const melding = document.getElementById('messageTekst').value.trim();
+
+            if (!proveId) {
+                alert('Du må velge hvilken prøve meldingen gjelder');
+                return;
+            }
 
             if (!emne || !melding) {
                 alert('Fyll ut emne og melding');
                 return;
             }
-
-            // Hent aktiv prøve (for nå, bruk første kommende prøve eller en default)
-            let proveId = 'default';
-            try {
-                const trialResp = await fetch('/api/trial');
-                if (trialResp.ok) {
-                    const trialData = await trialResp.json();
-                    proveId = trialData.id || 'default';
-                }
-            } catch (e) {}
 
             try {
                 const response = await fetch('/api/meldinger', {
@@ -2239,16 +2283,39 @@
 
             <!-- Content -->
             <div class="flex-1 overflow-y-auto p-5">
+                <!-- Advarsel hvis ingen påmeldinger -->
+                <div id="noProverWarning" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <p class="font-medium text-amber-800">Du er ikke påmeldt noen prøver</p>
+                            <p class="text-sm text-amber-700 mt-1">Du må være påmeldt en prøve for å kunne kontakte prøveledelsen. Gå til terminlisten for å melde deg på.</p>
+                            <a href="terminliste.html" class="inline-block mt-2 text-sm font-medium text-amber-800 underline hover:no-underline">Se terminliste</a>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Ny melding skjema -->
-                <div class="bg-bark-50 rounded-xl p-4 mb-5">
+                <div id="messageForm" class="bg-bark-50 rounded-xl p-4 mb-5">
                     <h4 class="font-semibold text-bark-700 mb-3">Send ny melding</h4>
 
                     <div class="space-y-3">
                         <div>
-                            <label class="block text-sm font-medium text-bark-600 mb-1">Gjelder hund</label>
-                            <select id="messageHundSelect" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-sky-500 focus:ring-0 outline-none text-sm">
-                                <option value="">-- Velg hund (valgfritt) --</option>
+                            <label class="block text-sm font-medium text-bark-600 mb-1">Velg prøve *</label>
+                            <select id="messageProveSelect" onchange="onProveSelected()" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-sky-500 focus:ring-0 outline-none text-sm">
+                                <option value="">-- Velg prøve --</option>
                             </select>
+                            <p class="text-xs text-bark-400 mt-1">Meldingen sendes til prøveledelsen for valgt prøve</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-600 mb-1">Gjelder hund</label>
+                            <select id="messageHundSelect" disabled class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-sky-500 focus:ring-0 outline-none text-sm disabled:bg-bark-100 disabled:text-bark-400">
+                                <option value="">-- Velg prøve først --</option>
+                            </select>
+                            <p class="text-xs text-bark-400 mt-1">Inkluderer dine hunder + hunder du har fullmakt for</p>
                         </div>
 
                         <div>

@@ -8570,6 +8570,87 @@ app.get("/api/meldinger", requireAdmin, (c) => {
   }
 });
 
+// Hent brukerens aktive påmeldinger med hunder (for meldingssystem)
+app.get("/api/meldinger/mine-pameldinger", requireAuth, (c) => {
+  try {
+    const telefon = c.get("user").telefon;
+
+    // Hent påmeldinger der brukeren er fører (aktive prøver)
+    const pameldinger = db.prepare(`
+      SELECT p.prove_id, p.hund_id, p.klasse, p.status,
+             pr.navn as prove_navn, pr.start_dato, pr.slutt_dato, pr.sted, pr.klubb_id,
+             h.navn as hund_navn, h.regnr as hund_regnr,
+             'egen' as type
+      FROM pameldinger p
+      JOIN prover pr ON p.prove_id = pr.id
+      JOIN hunder h ON p.hund_id = h.id
+      WHERE p.forer_telefon = ?
+        AND p.status NOT IN ('avmeldt')
+        AND pr.slutt_dato >= date('now')
+      ORDER BY pr.start_dato ASC
+    `).all(telefon);
+
+    // Hent fullmakter der brukeren er mottaker (hunder andre har gitt fullmakt til)
+    const fullmaktHunder = db.prepare(`
+      SELECT f.hund_id, f.dog_name as hund_navn, f.trial as prove_navn,
+             f.giver_telefon, h.regnr as hund_regnr,
+             'fullmakt' as type
+      FROM fullmakter f
+      LEFT JOIN hunder h ON f.hund_id = h.id
+      WHERE f.mottaker_telefon = ?
+        AND f.status = 'active'
+        AND (f.valid_to IS NULL OR f.valid_to >= date('now'))
+    `).all(telefon);
+
+    // Grupper etter prøve
+    const proverMap = new Map();
+
+    pameldinger.forEach(p => {
+      if (!proverMap.has(p.prove_id)) {
+        proverMap.set(p.prove_id, {
+          prove_id: p.prove_id,
+          prove_navn: p.prove_navn,
+          start_dato: p.start_dato,
+          slutt_dato: p.slutt_dato,
+          sted: p.sted,
+          klubb_id: p.klubb_id,
+          hunder: []
+        });
+      }
+      proverMap.get(p.prove_id).hunder.push({
+        hund_id: p.hund_id,
+        hund_navn: p.hund_navn,
+        hund_regnr: p.hund_regnr,
+        klasse: p.klasse,
+        type: p.type
+      });
+    });
+
+    // Legg til fullmaktshunder (hvis de ikke allerede er med)
+    fullmaktHunder.forEach(f => {
+      // Finn prøve basert på prøvenavn (kan være upresist, men bedre enn ingenting)
+      for (const [proveId, prove] of proverMap) {
+        if (f.hund_id && !prove.hunder.some(h => h.hund_id === f.hund_id)) {
+          prove.hunder.push({
+            hund_id: f.hund_id,
+            hund_navn: f.hund_navn,
+            hund_regnr: f.hund_regnr,
+            klasse: null,
+            type: 'fullmakt'
+          });
+        }
+      }
+    });
+
+    const prover = Array.from(proverMap.values());
+
+    return c.json({ success: true, prover });
+  } catch (err) {
+    console.error("Hent mine påmeldinger feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
 // Hent meldinger for deltaker
 app.get("/api/meldinger/mine", requireAuth, (c) => {
   try {

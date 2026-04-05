@@ -725,6 +725,42 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_dommer_oppgjor_prove ON dommer_oppgjor(prove_id);
   CREATE INDEX IF NOT EXISTS idx_dommer_oppgjor_status ON dommer_oppgjor(status);
+
+  -- Meldinger mellom deltakere og prøveledelse
+  CREATE TABLE IF NOT EXISTS meldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+
+    -- Avsender/mottaker
+    fra_telefon TEXT NOT NULL,
+    fra_navn TEXT NOT NULL,
+    til_type TEXT NOT NULL CHECK(til_type IN ('proveledelse', 'deltaker')),
+
+    -- Hvilken hund meldingen gjelder (valgfritt)
+    hund_id INTEGER REFERENCES hunder(id),
+    hund_regnr TEXT,
+    hund_navn TEXT,
+
+    -- Meldingsinnhold
+    emne TEXT NOT NULL,
+    melding TEXT NOT NULL,
+
+    -- Tråding (for svar)
+    parent_id INTEGER REFERENCES meldinger(id),
+
+    -- Status
+    lest INTEGER DEFAULT 0,
+    lest_av TEXT DEFAULT NULL,
+    lest_dato TEXT DEFAULT NULL,
+
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_meldinger_prove ON meldinger(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_meldinger_fra ON meldinger(fra_telefon);
+  CREATE INDEX IF NOT EXISTS idx_meldinger_parent ON meldinger(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_meldinger_lest ON meldinger(lest);
 `);
 
 // --- Migrations for existing databases ---
@@ -8481,6 +8517,256 @@ app.post("/api/sms/send", async (c) => {
     }
   } catch (err) {
     console.error("SMS send error:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// =============================================
+// MELDINGER (deltaker <-> prøveledelse)
+// =============================================
+
+// Hent meldinger for admin (innboks)
+app.get("/api/meldinger", requireAdmin, (c) => {
+  try {
+    const proveId = c.req.query("prove_id");
+    const uleste = c.req.query("uleste") === "true";
+
+    let query = `
+      SELECT m.*,
+        (SELECT COUNT(*) FROM meldinger r WHERE r.parent_id = m.id) as svar_count
+      FROM meldinger m
+      WHERE m.parent_id IS NULL
+    `;
+    const params = [];
+
+    if (proveId) {
+      query += " AND m.prove_id = ?";
+      params.push(proveId);
+    }
+
+    // Filtrer på uleste (inkluderer meldinger der minst én er ulest)
+    if (uleste) {
+      query += " AND (m.lest = 0 OR EXISTS (SELECT 1 FROM meldinger r WHERE r.parent_id = m.id AND r.lest = 0))";
+    }
+
+    query += " ORDER BY m.created_at DESC";
+
+    const meldinger = db.prepare(query).all(...params);
+
+    // Hent svar for hver melding
+    const result = meldinger.map(m => {
+      const svar = db.prepare(`
+        SELECT * FROM meldinger
+        WHERE parent_id = ?
+        ORDER BY created_at ASC
+      `).all(m.id);
+      return { ...m, svar };
+    });
+
+    return c.json({ success: true, meldinger: result });
+  } catch (err) {
+    console.error("Hent meldinger feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Hent meldinger for deltaker
+app.get("/api/meldinger/mine", requireAuth, (c) => {
+  try {
+    const telefon = c.get("user").telefon;
+
+    // Hent alle meldinger der brukeren er avsender ELLER mottaker av svar
+    const meldinger = db.prepare(`
+      SELECT m.*,
+        (SELECT COUNT(*) FROM meldinger r WHERE r.parent_id = m.id) as svar_count
+      FROM meldinger m
+      WHERE m.fra_telefon = ? AND m.parent_id IS NULL
+      ORDER BY m.created_at DESC
+    `).all(telefon);
+
+    // Hent svar for hver melding
+    const result = meldinger.map(m => {
+      const svar = db.prepare(`
+        SELECT * FROM meldinger
+        WHERE parent_id = ?
+        ORDER BY created_at ASC
+      `).all(m.id);
+      return { ...m, svar };
+    });
+
+    return c.json({ success: true, meldinger: result });
+  } catch (err) {
+    console.error("Hent mine meldinger feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Send ny melding fra deltaker til prøveledelse
+app.post("/api/meldinger", requireAuth, async (c) => {
+  try {
+    const user = c.get("user");
+    const body = await c.req.json();
+    const { prove_id, hund_id, emne, melding } = body;
+
+    if (!prove_id || !emne || !melding) {
+      return c.json({ success: false, error: "Mangler påkrevde felt" }, 400);
+    }
+
+    // Hent hund-info hvis angitt
+    let hundRegnr = null;
+    let hundNavn = null;
+    if (hund_id) {
+      const hund = db.prepare("SELECT regnr, navn FROM hunder WHERE id = ?").get(hund_id);
+      if (hund) {
+        hundRegnr = hund.regnr;
+        hundNavn = hund.navn;
+      }
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO meldinger (prove_id, fra_telefon, fra_navn, til_type, hund_id, hund_regnr, hund_navn, emne, melding)
+      VALUES (?, ?, ?, 'proveledelse', ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      prove_id,
+      user.telefon,
+      user.navn || "Ukjent",
+      hund_id || null,
+      hundRegnr,
+      hundNavn,
+      emne,
+      melding
+    );
+
+    // Logg
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "melding_sendt",
+      `Ny melding fra ${user.navn || user.telefon}: ${emne}`
+    );
+
+    return c.json({
+      success: true,
+      melding_id: result.lastInsertRowid,
+      message: "Meldingen er sendt til prøveledelsen"
+    });
+  } catch (err) {
+    console.error("Send melding feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Svar på melding (fra prøveledelse)
+app.post("/api/meldinger/:id/svar", requireAdmin, async (c) => {
+  try {
+    const meldingId = c.req.param("id");
+    const body = await c.req.json();
+    const { melding: svarTekst, avsender_navn } = body;
+
+    if (!svarTekst) {
+      return c.json({ success: false, error: "Mangler svar-tekst" }, 400);
+    }
+
+    // Hent original melding
+    const original = db.prepare("SELECT * FROM meldinger WHERE id = ?").get(meldingId);
+    if (!original) {
+      return c.json({ success: false, error: "Finner ikke meldingen" }, 404);
+    }
+
+    // Opprett svar
+    const stmt = db.prepare(`
+      INSERT INTO meldinger (prove_id, fra_telefon, fra_navn, til_type, hund_id, hund_regnr, hund_navn, emne, melding, parent_id)
+      VALUES (?, 'proveledelse', ?, 'deltaker', ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      original.prove_id,
+      avsender_navn || "Prøveledelsen",
+      original.hund_id,
+      original.hund_regnr,
+      original.hund_navn,
+      `Svar: ${original.emne}`,
+      svarTekst,
+      meldingId
+    );
+
+    // Marker original som lest
+    db.prepare("UPDATE meldinger SET lest = 1, lest_dato = datetime('now') WHERE id = ?").run(meldingId);
+
+    // Send SMS-varsling til deltaker
+    const smsResult = await sendSMS(
+      original.fra_telefon,
+      `Du har fått svar fra prøveledelsen på din henvendelse "${original.emne}". Logg inn på fuglehundprove.no for å se svaret.`,
+      { type: "melding_svar", klubb_id: null }
+    );
+
+    // Logg
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "melding_besvart",
+      `Svar sendt til ${original.fra_navn} (${original.fra_telefon}). SMS: ${smsResult.success ? 'OK' : 'Feilet'}`
+    );
+
+    return c.json({
+      success: true,
+      svar_id: result.lastInsertRowid,
+      sms_sendt: smsResult.success,
+      message: "Svar er sendt" + (smsResult.success ? " og deltaker er varslet på SMS" : " (SMS-varsling feilet)")
+    });
+  } catch (err) {
+    console.error("Svar på melding feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Marker melding som lest
+app.put("/api/meldinger/:id/lest", requireAdmin, (c) => {
+  try {
+    const meldingId = c.req.param("id");
+
+    db.prepare(`
+      UPDATE meldinger
+      SET lest = 1, lest_dato = datetime('now')
+      WHERE id = ?
+    `).run(meldingId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Slett melding (kun admin)
+app.delete("/api/meldinger/:id", requireAdmin, (c) => {
+  try {
+    const meldingId = c.req.param("id");
+
+    // Slett svar først
+    db.prepare("DELETE FROM meldinger WHERE parent_id = ?").run(meldingId);
+    // Slett hovedmelding
+    db.prepare("DELETE FROM meldinger WHERE id = ?").run(meldingId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Hent antall uleste meldinger (for badge)
+app.get("/api/meldinger/uleste", requireAdmin, (c) => {
+  try {
+    const proveId = c.req.query("prove_id");
+
+    let query = "SELECT COUNT(*) as antall FROM meldinger WHERE lest = 0 AND til_type = 'proveledelse'";
+    const params = [];
+
+    if (proveId) {
+      query += " AND prove_id = ?";
+      params.push(proveId);
+    }
+
+    const result = db.prepare(query).get(...params);
+    return c.json({ success: true, antall: result.antall });
+  } catch (err) {
     return c.json({ success: false, error: err.message }, 500);
   }
 });

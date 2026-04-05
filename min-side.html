@@ -437,6 +437,29 @@
                         </svg>
                     </a>
                 </div>
+
+                <!-- Kontakt prøveledelsen -->
+                <div class="mt-4">
+                    <button onclick="openMessageModal()" class="w-full flex items-center justify-between p-4 bg-sky-50 hover:bg-sky-100 rounded-xl transition border border-sky-200">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center">
+                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                                </svg>
+                            </div>
+                            <div class="text-left">
+                                <span class="font-semibold text-sky-800">Kontakt prøveledelsen</span>
+                                <p class="text-xs text-sky-600">Send melding om påmelding, avmelding m.m.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="unreadMessagesCount" class="hidden bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+                            <svg class="w-5 h-5 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </div>
+                    </button>
+                </div>
             </div>
 
             <!-- Roller-seksjon (vises kun for dommere, admins etc.) -->
@@ -1959,7 +1982,312 @@
         document.getElementById('phoneNumber').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') sendCode();
         });
+
+        // =============================================
+        // MELDINGER TIL PRØVELEDELSEN
+        // =============================================
+        let userMessages = [];
+        let userHunder = [];
+
+        // Hent brukerens hunder for dropdown
+        async function loadUserHunder() {
+            try {
+                const response = await fetch('/api/hunder/mine', {
+                    headers: { 'Authorization': `Bearer ${FuglehundAuth.getToken()}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    userHunder = data.hunder || [];
+                }
+            } catch (e) {
+                console.error('Feil ved henting av hunder:', e);
+            }
+        }
+
+        // Hent brukerens meldinger
+        async function loadUserMessages() {
+            try {
+                const response = await fetch('/api/meldinger/mine', {
+                    headers: { 'Authorization': `Bearer ${FuglehundAuth.getToken()}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    userMessages = data.meldinger || [];
+                    updateUnreadCount();
+                }
+            } catch (e) {
+                console.error('Feil ved henting av meldinger:', e);
+            }
+        }
+
+        // Oppdater badge med uleste svar
+        function updateUnreadCount() {
+            const badge = document.getElementById('unreadMessagesCount');
+            // Tell uleste svar fra prøveledelsen
+            let unread = 0;
+            userMessages.forEach(m => {
+                if (m.svar) {
+                    m.svar.forEach(s => {
+                        if (s.til_type === 'deltaker' && !s.lest) unread++;
+                    });
+                }
+            });
+            if (unread > 0) {
+                badge.textContent = unread;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        // Åpne melding-modal
+        async function openMessageModal() {
+            // Last hunder og meldinger først
+            await Promise.all([loadUserHunder(), loadUserMessages()]);
+
+            // Vis modal
+            document.getElementById('messageModal').classList.remove('hidden');
+
+            // Fyll hund-dropdown
+            const hundSelect = document.getElementById('messageHundSelect');
+            hundSelect.innerHTML = '<option value="">-- Velg hund (valgfritt) --</option>';
+            userHunder.forEach(h => {
+                hundSelect.innerHTML += `<option value="${h.id}">${h.navn} (${h.regnr || 'ingen regnr'})</option>`;
+            });
+
+            // Vis eksisterende meldinger
+            renderUserMessages();
+        }
+
+        // Lukk melding-modal
+        function closeMessageModal() {
+            document.getElementById('messageModal').classList.add('hidden');
+        }
+
+        // Render meldingsliste
+        function renderUserMessages() {
+            const container = document.getElementById('userMessagesContainer');
+            if (userMessages.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-bark-400">
+                        <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                        </svg>
+                        <p>Du har ingen meldinger ennå</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = userMessages.map(m => {
+                const harSvar = m.svar && m.svar.length > 0;
+                const ulestSvar = harSvar && m.svar.some(s => s.til_type === 'deltaker' && !s.lest);
+
+                return `
+                    <div class="border ${ulestSvar ? 'border-sky-400 bg-sky-50' : 'border-bark-200'} rounded-xl p-4 mb-3">
+                        <div class="flex items-start justify-between mb-2">
+                            <div>
+                                <span class="font-semibold text-bark-800">${escapeHtml(m.emne)}</span>
+                                ${m.hund_navn ? `<span class="ml-2 text-xs bg-bark-100 text-bark-600 px-2 py-0.5 rounded-full">${escapeHtml(m.hund_navn)}</span>` : ''}
+                            </div>
+                            <span class="text-xs text-bark-400">${formatDate(m.created_at)}</span>
+                        </div>
+                        <p class="text-sm text-bark-600 mb-3">${escapeHtml(m.melding)}</p>
+                        ${harSvar ? `
+                            <div class="border-t border-bark-200 pt-3 mt-3">
+                                <p class="text-xs text-bark-400 mb-2 flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                                    </svg>
+                                    Svar fra prøveledelsen:
+                                </p>
+                                ${m.svar.map(s => `
+                                    <div class="bg-white border border-bark-100 rounded-lg p-3 mb-2 ${s.til_type === 'deltaker' && !s.lest ? 'ring-2 ring-sky-400' : ''}">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-xs font-medium text-bark-500">${escapeHtml(s.fra_navn || 'Prøveledelsen')}</span>
+                                            <span class="text-xs text-bark-400">${formatDate(s.created_at)}</span>
+                                        </div>
+                                        <p class="text-sm text-bark-700">${escapeHtml(s.melding)}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <div class="text-xs text-bark-400 italic flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Venter på svar...
+                            </div>
+                        `}
+                    </div>
+                `;
+            }).join('');
+
+            // Marker svar som lest
+            markRepliesAsRead();
+        }
+
+        // Marker svar som lest (klientsiden)
+        function markRepliesAsRead() {
+            userMessages.forEach(m => {
+                if (m.svar) {
+                    m.svar.forEach(s => {
+                        if (s.til_type === 'deltaker' && !s.lest) {
+                            s.lest = 1; // Marker lokalt som lest
+                        }
+                    });
+                }
+            });
+            updateUnreadCount();
+        }
+
+        // Send ny melding
+        async function sendMessage() {
+            const hundId = document.getElementById('messageHundSelect').value;
+            const emne = document.getElementById('messageEmne').value.trim();
+            const melding = document.getElementById('messageTekst').value.trim();
+
+            if (!emne || !melding) {
+                alert('Fyll ut emne og melding');
+                return;
+            }
+
+            // Hent aktiv prøve (for nå, bruk første kommende prøve eller en default)
+            let proveId = 'default';
+            try {
+                const trialResp = await fetch('/api/trial');
+                if (trialResp.ok) {
+                    const trialData = await trialResp.json();
+                    proveId = trialData.id || 'default';
+                }
+            } catch (e) {}
+
+            try {
+                const response = await fetch('/api/meldinger', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${FuglehundAuth.getToken()}`
+                    },
+                    body: JSON.stringify({
+                        prove_id: proveId,
+                        hund_id: hundId || null,
+                        emne,
+                        melding
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    // Tøm skjema
+                    document.getElementById('messageEmne').value = '';
+                    document.getElementById('messageTekst').value = '';
+                    document.getElementById('messageHundSelect').value = '';
+
+                    // Oppdater meldingsliste
+                    await loadUserMessages();
+                    renderUserMessages();
+
+                    // Vis bekreftelse
+                    alert('Meldingen er sendt til prøveledelsen!');
+                } else {
+                    alert('Feil: ' + (data.error || 'Kunne ikke sende melding'));
+                }
+            } catch (e) {
+                console.error('Feil ved sending av melding:', e);
+                alert('Noe gikk galt. Prøv igjen.');
+            }
+        }
+
+        // Hjelpefunksjoner
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('no-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Last meldinger ved oppstart
+        if (FuglehundAuth.isLoggedIn()) {
+            loadUserMessages();
+        }
     </script>
+
+    <!-- Melding Modal -->
+    <div id="messageModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <!-- Header -->
+            <div class="bg-sky-600 text-white p-5 rounded-t-2xl flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                    </svg>
+                    <h3 class="font-bold font-serif text-lg">Kontakt prøveledelsen</h3>
+                </div>
+                <button onclick="closeMessageModal()" class="text-white/70 hover:text-white transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 overflow-y-auto p-5">
+                <!-- Ny melding skjema -->
+                <div class="bg-bark-50 rounded-xl p-4 mb-5">
+                    <h4 class="font-semibold text-bark-700 mb-3">Send ny melding</h4>
+
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-bark-600 mb-1">Gjelder hund</label>
+                            <select id="messageHundSelect" class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-sky-500 focus:ring-0 outline-none text-sm">
+                                <option value="">-- Velg hund (valgfritt) --</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-600 mb-1">Emne *</label>
+                            <input type="text" id="messageEmne" placeholder="F.eks. Avmelding, Spørsmål om startnummer..."
+                                class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-sky-500 focus:ring-0 outline-none text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-600 mb-1">Melding *</label>
+                            <textarea id="messageTekst" rows="3" placeholder="Skriv din melding her..."
+                                class="w-full px-3 py-2 border border-bark-200 rounded-lg focus:border-sky-500 focus:ring-0 outline-none text-sm resize-none"></textarea>
+                        </div>
+
+                        <button onclick="sendMessage()" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-medium py-2 rounded-lg transition flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                            Send melding
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Meldingshistorikk -->
+                <div>
+                    <h4 class="font-semibold text-bark-700 mb-3 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        Mine henvendelser
+                    </h4>
+                    <div id="userMessagesContainer">
+                        <!-- Meldinger vises her -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="dog-search.js"></script>
 </body>
 </html>

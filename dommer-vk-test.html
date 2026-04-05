@@ -533,6 +533,11 @@
                         <div id="shared_finishedList" class="text-[10px] text-red-700"></div>
                     </div>
                 </div>
+                <!-- Historikk fra tidligere runder (kun synlig fra runde 2+) -->
+                <div id="roundHistorySection" class="hidden">
+                    <h4 class="text-[10px] font-bold text-bark-600 uppercase mb-1">Tidligere runder</h4>
+                    <div id="roundHistoryList" class="space-y-2 text-[10px]"></div>
+                </div>
             </div>
         </div>
     </main>
@@ -2045,6 +2050,59 @@
             } else {
                 finishedSection.classList.add('hidden');
             }
+
+            // Historikk fra tidligere runder (kun synlig fra runde 2+)
+            renderRoundHistory();
+        }
+
+        // Vis rangeringshistorikk fra tidligere runder
+        function renderRoundHistory() {
+            const historySection = document.getElementById('roundHistorySection');
+            const historyList = document.getElementById('roundHistoryList');
+
+            if (!historySection || !historyList) return;
+
+            // Hent fullførte runder fra snapshots
+            const completedRounds = Object.keys(state.roundSnapshots)
+                .map(r => parseInt(r))
+                .sort((a, b) => a - b);
+
+            // Vis kun hvis vi er i runde 2+ og har historikk
+            if (state.currentRound <= 1 || completedRounds.length === 0) {
+                historySection.classList.add('hidden');
+                return;
+            }
+
+            historySection.classList.remove('hidden');
+
+            // Bygg HTML for hver tidligere runde
+            historyList.innerHTML = completedRounds.map(round => {
+                const snapshot = state.roundSnapshots[round];
+                if (!snapshot || !snapshot.plasseringer) return '';
+
+                // Sorter plasserte hunder
+                const placedInRound = Object.entries(snapshot.plasseringer)
+                    .filter(([_, p]) => p !== 'avsluttet')
+                    .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                    .map(([nr, plass]) => {
+                        const dog = partyList.find(d => d.nr === parseInt(nr));
+                        return { dog, plass: parseInt(plass), dogNr: parseInt(nr) };
+                    })
+                    .filter(item => item.dog);
+
+                if (placedInRound.length === 0) return '';
+
+                const rankingHtml = placedInRound.map(({ dog, plass }) =>
+                    `<div class="text-bark-600"><span class="font-bold">${plass}.</span> ${dog.race} ${dog.name}</div>`
+                ).join('');
+
+                return `
+                    <div class="border-l-2 border-bark-300 pl-2">
+                        <h5 class="text-[9px] font-bold text-bark-500 uppercase mb-0.5">Runde ${round}</h5>
+                        ${rankingHtml}
+                    </div>
+                `;
+            }).join('');
         }
 
         // Zoom functionality

@@ -1656,7 +1656,7 @@
                             <h2 class="text-xl font-bold font-serif text-bark-900">Team og rettigheter</h2>
                             <p class="text-sm text-bark-500">Administrer hvem som har tilgang til denne prøven</p>
                         </div>
-                        <button class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2" onclick="document.getElementById('addTeamMemberModal').classList.remove('hidden')">
+                        <button class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2" onclick="openAddTeamMemberModal()">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
                             </svg>
@@ -1760,13 +1760,19 @@
                 </button>
             </div>
             <div class="p-6 space-y-4">
-                <div>
+                <div class="relative">
                     <label class="block text-sm font-medium text-bark-700 mb-2">Navn *</label>
-                    <input type="text" placeholder="Fullt navn" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                    <input type="text" id="teamMemberName" placeholder="Søk etter navn..." autocomplete="off"
+                        oninput="searchTeamMemberUsers(this.value)"
+                        class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                    <!-- Autocomplete dropdown -->
+                    <div id="teamMemberAutocomplete" class="hidden absolute z-10 w-full mt-1 bg-white border border-bark-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                        <!-- Fylles dynamisk -->
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-2">E-postadresse *</label>
-                    <input type="email" placeholder="epost@eksempel.no" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                    <input type="email" id="teamMemberEmail" placeholder="epost@eksempel.no" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-2">Telefonnummer</label>
@@ -1774,13 +1780,13 @@
                         <span class="inline-flex items-center px-3 py-2 rounded-l-xl border border-r-0 border-bark-300 bg-bark-50 text-bark-600 font-medium text-sm">
                             +47
                         </span>
-                        <input type="tel" placeholder="12345678" maxlength="8" pattern="[0-9]{8}" inputmode="numeric"
+                        <input type="tel" id="teamMemberPhone" placeholder="12345678" maxlength="8" pattern="[0-9]{8}" inputmode="numeric"
                             class="w-full px-4 py-2 rounded-r-xl border border-bark-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                     </div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-2">Rolle *</label>
-                    <select class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                    <select id="teamMemberRole" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         <option value="">Velg rolle...</option>
                         <option value="admin">Admin - Full tilgang</option>
                         <option value="editor">Redaktør - Kan redigere partier og deltakere</option>
@@ -1789,7 +1795,19 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-2">Beskrivelse (valgfritt)</label>
-                    <input type="text" placeholder="F.eks. Sekretær, Hjelpedommer..." class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                    <input type="text" id="teamMemberDescription" placeholder="F.eks. Sekretær, Hjelpedommer..." class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                </div>
+                <!-- Indikator for valgt bruker -->
+                <div id="teamMemberSelected" class="hidden bg-forest-50 border border-forest-200 rounded-xl p-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span class="text-sm text-forest-700">Eksisterende bruker valgt - feltene er automatisk fylt ut</span>
+                        </div>
+                        <button onclick="clearTeamMemberSelection()" class="text-forest-600 hover:text-forest-800 text-sm underline">Tøm</button>
+                    </div>
                 </div>
             </div>
             <div class="px-6 py-4 bg-bark-50 border-t border-bark-100 flex justify-end gap-3">
@@ -8373,7 +8391,97 @@
                     }
                 }, 500);
             }
+
+            // Lukk autocomplete når man klikker utenfor
+            document.addEventListener('click', function(e) {
+                const autocomplete = document.getElementById('teamMemberAutocomplete');
+                const nameInput = document.getElementById('teamMemberName');
+                if (autocomplete && !autocomplete.contains(e.target) && e.target !== nameInput) {
+                    autocomplete.classList.add('hidden');
+                }
+            });
         });
+
+        // ============ TEAM MEMBER AUTOCOMPLETE ============
+
+        let teamMemberSearchTimeout = null;
+        let selectedTeamMemberUser = null;
+
+        async function searchTeamMemberUsers(query) {
+            const autocomplete = document.getElementById('teamMemberAutocomplete');
+
+            // Debounce søket
+            if (teamMemberSearchTimeout) {
+                clearTimeout(teamMemberSearchTimeout);
+            }
+
+            if (query.length < 2) {
+                autocomplete.classList.add('hidden');
+                return;
+            }
+
+            teamMemberSearchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/brukere/sok?q=${encodeURIComponent(query)}`);
+                    const users = await response.json();
+
+                    if (users.length === 0) {
+                        autocomplete.classList.add('hidden');
+                        return;
+                    }
+
+                    autocomplete.innerHTML = users.map(user => `
+                        <button type="button"
+                            onclick="selectTeamMemberUser('${user.telefon}', '${(user.fornavn || '').replace(/'/g, "\\'")}', '${(user.etternavn || '').replace(/'/g, "\\'")}', '${(user.epost || '').replace(/'/g, "\\'")}')"
+                            class="w-full px-4 py-3 text-left hover:bg-bark-50 border-b border-bark-100 last:border-b-0 transition">
+                            <div class="font-medium text-bark-800">${user.fornavn || ''} ${user.etternavn || ''}</div>
+                            <div class="text-sm text-bark-500 flex items-center gap-2">
+                                ${user.telefon ? `<span>${user.telefon}</span>` : ''}
+                                ${user.epost ? `<span>· ${user.epost}</span>` : ''}
+                            </div>
+                        </button>
+                    `).join('');
+
+                    autocomplete.classList.remove('hidden');
+                } catch (err) {
+                    console.error('Feil ved søk etter brukere:', err);
+                    autocomplete.classList.add('hidden');
+                }
+            }, 300);
+        }
+
+        function selectTeamMemberUser(telefon, fornavn, etternavn, epost) {
+            selectedTeamMemberUser = { telefon, fornavn, etternavn, epost };
+
+            // Fyll ut feltene
+            document.getElementById('teamMemberName').value = `${fornavn} ${etternavn}`.trim();
+            document.getElementById('teamMemberEmail').value = epost || '';
+            document.getElementById('teamMemberPhone').value = telefon || '';
+
+            // Skjul autocomplete og vis bekreftelse
+            document.getElementById('teamMemberAutocomplete').classList.add('hidden');
+            document.getElementById('teamMemberSelected').classList.remove('hidden');
+        }
+
+        function clearTeamMemberSelection() {
+            selectedTeamMemberUser = null;
+
+            // Tøm feltene
+            document.getElementById('teamMemberName').value = '';
+            document.getElementById('teamMemberEmail').value = '';
+            document.getElementById('teamMemberPhone').value = '';
+            document.getElementById('teamMemberRole').value = '';
+            document.getElementById('teamMemberDescription').value = '';
+
+            // Skjul bekreftelse
+            document.getElementById('teamMemberSelected').classList.add('hidden');
+        }
+
+        // Nullstill modal når den åpnes
+        function openAddTeamMemberModal() {
+            clearTeamMemberSelection();
+            document.getElementById('addTeamMemberModal').classList.remove('hidden');
+        }
     </script>
 
 </body>

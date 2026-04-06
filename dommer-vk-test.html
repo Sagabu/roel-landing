@@ -4296,24 +4296,36 @@
 
         function updatePublicRanking() {
             // Lagre premier og finaleplasser til localStorage for offentlig visning
+            // Bruk partinavnet for unik nøkkel slik at VK Trekning kan hente fra alle partier
+            const partiNavn = parti.replace(/\s+/g, '_');
+
             const resultater = {
                 plasseringer: state.plasseringer,
                 premietildelinger: state.premietildelinger,
                 kvalifisertTilFinale: state.kvalifisertTilFinale || {},
                 vkType: state.vkType,
-                partyName: state.partyName || 'VK',
+                partyName: parti,
                 timestamp: new Date().toISOString()
             };
 
-            // Lagre lokalt
+            // Lagre lokalt med partinavn
+            localStorage.setItem(`vkResultater_${partiNavn}`, JSON.stringify(resultater));
+            // Behold også generisk nøkkel for bakoverkompatibilitet
             localStorage.setItem('vkResultater', JSON.stringify(resultater));
 
-            // Synkroniser til server
-            fetch('/api/storage/vkResultater', {
+            // Synkroniser til server med partinavn
+            fetch(`/api/storage/vkResultater_${partiNavn}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ value: resultater })
             }).catch(err => console.warn('Kunne ikke synkronisere resultater til server:', err));
+
+            // Behold også generisk synk for bakoverkompatibilitet
+            fetch('/api/storage/vkResultater', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: resultater })
+            }).catch(err => console.warn('Kunne ikke synkronisere generiske resultater til server:', err));
         }
 
         function showDagensResultater() {

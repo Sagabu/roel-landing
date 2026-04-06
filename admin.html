@@ -4938,10 +4938,19 @@
                 const partyDate = new Date(startDate);
                 partyDate.setDate(partyDate.getDate() + vkDay - 1);
 
+                // Hent VK-type (1day, 2day, none)
+                const vkType = document.getElementById('vkTypeSelect')?.value || '1day';
+                // Bestem VK-undertype basert på valg
+                let vkSubType = 'vk'; // Standard for 1-dags VK
+                if (vkType === '2day') {
+                    vkSubType = 'vk_kval'; // Dag 1 av 2-dagers er kval
+                }
+
                 parties.push({
-                    name: `VK ${i + 1}`,
+                    name: vkSubType === 'vk_kval' ? `VK Kval ${i + 1}` : `VK ${i + 1}`,
                     partyNum: i + 1,
                     type: 'vk',
+                    vkSubType: vkSubType, // 'vk' = 1-dags, 'vk_kval' = kval, 'vk_finale' = finale
                     day: vkDay,
                     date: partyDate.toISOString().split('T')[0],
                     dogs: vkHunderTilPartier.slice(vkOffset, vkOffset + count)
@@ -4951,6 +4960,16 @@
 
             // Store waitlist (med klasseinformasjon)
             setTrialVenteliste(venteliste);
+
+            // Lagre VK-type for hele prøven (brukes av dommer-siden)
+            const vkTypeGlobal = document.getElementById('vkTypeSelect')?.value || '1day';
+            localStorage.setItem('trialVkType', vkTypeGlobal);
+            // Synkroniser til server
+            fetch('/api/storage/trialVkType', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: vkTypeGlobal })
+            }).catch(err => console.warn('Kunne ikke lagre vkType til server:', err));
 
             // Save parties to localStorage
             setTrialParties(parties);

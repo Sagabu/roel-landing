@@ -612,6 +612,8 @@
             roundSnapshots: {}, // { round: { plasseringer: {...}, dogData: {...} } } - snapshot av rangering etter hver runde
             vkType: '1dag', // '1dag', 'kval', 'finale'
             premietildelinger: {}, // { dogNr: 'premie' } - tildelte premier
+            kvalifisertTilFinale: {}, // { dogNr: true/false } - hunder kvalifisert til finale (kun VK kval)
+            judgingFinished: false, // Om bedømmingen er ferdig
         };
 
         // Hent proveId og parti fra URL-parametre
@@ -977,6 +979,8 @@
                     state.slippRankings = parsed.slippRankings || {};
                     state.vkType = parsed.vkType || '1dag';
                     state.premietildelinger = parsed.premietildelinger || {};
+                    state.kvalifisertTilFinale = parsed.kvalifisertTilFinale || {};
+                    state.judgingFinished = parsed.judgingFinished || false;
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -1002,7 +1006,9 @@
                 slippDogs: state.slippDogs,
                 slippRankings: state.slippRankings,
                 vkType: state.vkType,
-                premietildelinger: state.premietildelinger
+                premietildelinger: state.premietildelinger,
+                kvalifisertTilFinale: state.kvalifisertTilFinale,
+                judgingFinished: state.judgingFinished
             }));
 
             // Lagre live-rangering til server hvis ikke demo OG jeg er live-rangering eier
@@ -1050,7 +1056,9 @@
                     slipp_dogs: state.slippDogs,
                     slipp_rankings: state.slippRankings,
                     vk_type: state.vkType,
-                    premietildelinger: state.premietildelinger
+                    premietildelinger: state.premietildelinger,
+                    kvalifisert_til_finale: state.kvalifisertTilFinale,
+                    judging_finished: state.judgingFinished
                 };
 
                 try {
@@ -3966,7 +3974,31 @@
             return stats && (stats.fmr > 0 || stats.fur > 0);
         }
 
+        // Sjekk om hund kvalifiserer for premie (fuglearbeid + apport)
+        function kanFaPremie(dogNr) {
+            const harFuglearbeid = hasFuglearbeid(dogNr);
+            const harApport = hasApportGodkjent(dogNr);
+            return harFuglearbeid && harApport;
+        }
+
         function showFinishJudgingModal() {
+            // Hent vkType fra localStorage hvis det finnes, ellers bruk state
+            const storedVkType = localStorage.getItem('trialVkType');
+            if (storedVkType) {
+                // Konverter fra admin-format til dommer-format
+                if (storedVkType === '1day') {
+                    state.vkType = '1dag';
+                } else if (storedVkType === '2day') {
+                    // Sjekk om dette er kval eller finale basert på parti-info
+                    const selectedPartyVkSubType = localStorage.getItem('judgeSelectedPartyVkSubType');
+                    if (selectedPartyVkSubType === 'vk_finale') {
+                        state.vkType = 'finale';
+                    } else {
+                        state.vkType = 'kval';
+                    }
+                }
+            }
+
             // Sett VK-type dropdown
             document.getElementById('vkTypeSelect').value = state.vkType;
 
@@ -3986,6 +4018,7 @@
         function renderPremieRankingList() {
             const container = document.getElementById('premieRankingList');
             const premier = getPremierForType(state.vkType);
+            const isKval = state.vkType === 'kval';
 
             // Hent rangerte hunder
             const ranked = Object.entries(state.plasseringer)
@@ -3997,12 +4030,15 @@
                     dogNr: parseInt(nr)
                 }));
 
-            let html = '';
+            let html = '<div id="dragRankingList" class="space-y-2">';
 
-            ranked.forEach(({ dog, plass, dogNr }) => {
+            ranked.forEach(({ dog, plass, dogNr }, index) => {
                 const stats = formatDogStatsDetailed(dogNr);
+                const kvalForPremie = kanFaPremie(dogNr);
                 const harFuglearbeid = hasFuglearbeid(dogNr);
+                const harApport = hasApportGodkjent(dogNr);
                 const currentPremie = state.premietildelinger[dogNr] || '';
+                const isKvalFinale = state.kvalifisertTilFinale?.[dogNr] || false;
 
                 // Bygg options for premie-dropdown
                 let optionsHtml = '<option value="">-- Velg premie --</option>';
@@ -4011,24 +4047,61 @@
                     optionsHtml += `<option value="${p.value}" ${selected}>${p.label}</option>`;
                 });
 
+                // Status-badge
+                let statusBadge = '';
+                if (kvalForPremie) {
+                    statusBadge = '<span class="text-[10px] bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full">Klar for premie</span>';
+                } else if (harFuglearbeid && !harApport) {
+                    statusBadge = '<span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Mangler apport</span>';
+                } else {
+                    statusBadge = '<span class="text-[10px] bg-vk-100 text-vk-500 px-2 py-0.5 rounded-full">Uten fugl</span>';
+                }
+
                 html += `
-                    <div class="bg-white border ${harFuglearbeid ? 'border-forest-300' : 'border-vk-200'} rounded-lg p-3">
+                    <div class="bg-white border ${kvalForPremie ? 'border-forest-300' : 'border-vk-200'} rounded-lg p-3 cursor-move ranking-item"
+                         draggable="true"
+                         data-dog-nr="${dogNr}"
+                         data-plass="${plass}"
+                         ondragstart="handleDragStart(event)"
+                         ondragover="handleDragOver(event)"
+                         ondrop="handleDrop(event)"
+                         ondragend="handleDragEnd(event)">
                         <div class="flex items-center justify-between mb-1">
                             <div class="flex items-center gap-2">
-                                <span class="font-bold text-vk-700">${plass}.</span>
+                                <div class="flex items-center gap-1">
+                                    <svg class="w-4 h-4 text-vk-300 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                                    </svg>
+                                    <span class="font-bold text-vk-700 ranking-number">${plass}.</span>
+                                </div>
                                 <span class="font-medium">${dog.race} ${dog.name}</span>
                             </div>
-                            ${harFuglearbeid ? '<span class="text-[10px] bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full">Fuglearbeid</span>' : '<span class="text-[10px] bg-vk-100 text-vk-500 px-2 py-0.5 rounded-full">Uten fugl</span>'}
+                            ${statusBadge}
                         </div>
                         <div class="text-[10px] text-vk-500 mb-2">${stats || 'Ingen statistikk'}</div>
-                        ${harFuglearbeid ? `
-                            <select onchange="setPremie(${dogNr}, this.value)" class="w-full h-9 px-2 rounded border border-vk-300 bg-white text-sm">
-                                ${optionsHtml}
-                            </select>
-                        ` : '<div class="text-xs text-vk-400 italic">Kan ikke tildeles premie uten fuglearbeid</div>'}
+
+                        <div class="space-y-2">
+                            ${kvalForPremie ? `
+                                <select onchange="setPremie(${dogNr}, this.value)" class="w-full h-9 px-2 rounded border border-vk-300 bg-white text-sm">
+                                    ${optionsHtml}
+                                </select>
+                            ` : '<div class="text-xs text-vk-400 italic">Kan ikke tildeles premie (krever fuglearbeid + apport)</div>'}
+
+                            ${isKval ? `
+                                <label class="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-200 cursor-pointer">
+                                    <input type="checkbox"
+                                           ${isKvalFinale ? 'checked' : ''}
+                                           onchange="setKvalifisertTilFinale(${dogNr}, this.checked)"
+                                           class="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
+                                    <span class="text-xs font-medium text-amber-800">Kvalifisert til finale</span>
+                                </label>
+                            ` : ''}
+                        </div>
                     </div>
                 `;
             });
+
+            html += '</div>';
 
             // Avsluttede hunder
             const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
@@ -4048,6 +4121,124 @@
             container.innerHTML = html;
         }
 
+        // Drag and drop handlers
+        let draggedItem = null;
+        let draggedDogNr = null;
+        let originalPlass = null;
+
+        function handleDragStart(e) {
+            draggedItem = e.target.closest('.ranking-item');
+            draggedDogNr = parseInt(draggedItem.dataset.dogNr);
+            originalPlass = parseInt(draggedItem.dataset.plass);
+            draggedItem.classList.add('opacity-50');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            const item = e.target.closest('.ranking-item');
+            if (item && item !== draggedItem) {
+                item.classList.add('border-forest-500', 'border-2');
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            const targetItem = e.target.closest('.ranking-item');
+            if (!targetItem || targetItem === draggedItem) return;
+
+            const targetDogNr = parseInt(targetItem.dataset.dogNr);
+            const targetPlass = parseInt(targetItem.dataset.plass);
+
+            // Vis bekreftelsesmodal
+            showMoveConfirmation(draggedDogNr, originalPlass, targetPlass);
+        }
+
+        function handleDragEnd(e) {
+            // Fjern alle visuell-indikatorer
+            document.querySelectorAll('.ranking-item').forEach(item => {
+                item.classList.remove('opacity-50', 'border-forest-500', 'border-2');
+            });
+            draggedItem = null;
+        }
+
+        function showMoveConfirmation(dogNr, fromPlass, toPlass) {
+            const dog = partyList.find(d => d.nr === dogNr);
+            const dogName = dog ? `${dog.race} ${dog.name}` : `Hund ${dogNr}`;
+
+            // Opprett bekreftelsesmodal
+            const modal = document.createElement('div');
+            modal.id = 'moveConfirmModal';
+            modal.className = 'fixed inset-0 bg-black/50 z-[90] flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                    <div class="text-center mb-4">
+                        <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-vk-800">Bekreft flytting</h3>
+                    </div>
+                    <p class="text-sm text-vk-600 text-center mb-6">
+                        Du har flyttet <strong>${dogName}</strong> fra <strong>${fromPlass}. plass</strong> til <strong>${toPlass}. plass</strong>.<br><br>
+                        Er dette riktig?
+                    </p>
+                    <div class="flex gap-3">
+                        <button onclick="cancelMove()" class="flex-1 bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
+                            Avbryt
+                        </button>
+                        <button onclick="confirmMove(${dogNr}, ${fromPlass}, ${toPlass})" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                            Bekreft
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function cancelMove() {
+            document.getElementById('moveConfirmModal')?.remove();
+        }
+
+        function confirmMove(dogNr, fromPlass, toPlass) {
+            document.getElementById('moveConfirmModal')?.remove();
+
+            // Oppdater plasseringer
+            // Alle hunder mellom fromPlass og toPlass må flyttes
+            const direction = fromPlass < toPlass ? 1 : -1;
+
+            Object.keys(state.plasseringer).forEach(nr => {
+                const currentPlass = parseInt(state.plasseringer[nr]);
+                if (currentPlass === 'avsluttet' || isNaN(currentPlass)) return;
+
+                if (parseInt(nr) === dogNr) {
+                    // Hunden som flyttes
+                    state.plasseringer[nr] = toPlass;
+                } else if (direction === 1 && currentPlass > fromPlass && currentPlass <= toPlass) {
+                    // Flytt opp (trekk fra 1)
+                    state.plasseringer[nr] = currentPlass - 1;
+                } else if (direction === -1 && currentPlass < fromPlass && currentPlass >= toPlass) {
+                    // Flytt ned (legg til 1)
+                    state.plasseringer[nr] = currentPlass + 1;
+                }
+            });
+
+            saveToStorage();
+            renderPremieRankingList();
+
+            // Vis bekreftelse
+            showToast('Plassering oppdatert', 'success');
+        }
+
+        function setKvalifisertTilFinale(dogNr, qualified) {
+            if (!state.kvalifisertTilFinale) {
+                state.kvalifisertTilFinale = {};
+            }
+            state.kvalifisertTilFinale[dogNr] = qualified;
+            saveToStorage();
+        }
+
         function setPremie(dogNr, premie) {
             if (premie) {
                 state.premietildelinger[dogNr] = premie;
@@ -4058,16 +4249,19 @@
         }
 
         function confirmPremier() {
-            // Sjekk at alle hunder med fuglearbeid har fått premie
-            const rankedWithFuglearbeid = Object.entries(state.plasseringer)
-                .filter(([nr, p]) => p !== 'avsluttet' && hasFuglearbeid(parseInt(nr)))
+            // Sjekk at alle hunder som kvalifiserer for premie (fugl + apport) har fått premie
+            const rankedKanFaPremie = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && kanFaPremie(parseInt(nr)))
                 .map(([nr, _]) => parseInt(nr));
 
-            const missingPremie = rankedWithFuglearbeid.filter(nr => !state.premietildelinger[nr]);
+            const missingPremie = rankedKanFaPremie.filter(nr => !state.premietildelinger[nr]);
 
             if (missingPremie.length > 0) {
-                const dogs = missingPremie.map(nr => partyList.find(d => d.nr === nr).name).join(', ');
-                if (!confirm(`Følgende hunder med fuglearbeid mangler premie:\n\n${dogs}\n\nVil du fortsette likevel?`)) {
+                const dogs = missingPremie.map(nr => {
+                    const dog = partyList.find(d => d.nr === nr);
+                    return dog ? `${dog.race} ${dog.name}` : `Hund ${nr}`;
+                }).join(', ');
+                if (!confirm(`Følgende hunder kvalifiserer for premie men har ikke fått tildelt:\n\n${dogs}\n\nVil du fortsette likevel?`)) {
                     return;
                 }
             }
@@ -4076,10 +4270,179 @@
             state.judgingFinished = true;
             saveToStorage();
 
+            // Oppdater offentlig rangering med premier
+            updatePublicRanking();
+
             closeFinishJudgingModal();
             closeRoundCompleteModal();
 
-            alert('Bedømming avsluttet!\n\nResultater og premier er lagret.');
+            // Vis "Dagens resultater" modal
+            showDagensResultater();
+        }
+
+        function updatePublicRanking() {
+            // Lagre premier og finaleplasser til localStorage for offentlig visning
+            const resultater = {
+                plasseringer: state.plasseringer,
+                premietildelinger: state.premietildelinger,
+                kvalifisertTilFinale: state.kvalifisertTilFinale || {},
+                vkType: state.vkType,
+                partyName: state.partyName || 'VK',
+                timestamp: new Date().toISOString()
+            };
+
+            // Lagre lokalt
+            localStorage.setItem('vkResultater', JSON.stringify(resultater));
+
+            // Synkroniser til server
+            fetch('/api/storage/vkResultater', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: resultater })
+            }).catch(err => console.warn('Kunne ikke synkronisere resultater til server:', err));
+        }
+
+        function showDagensResultater() {
+            // Hent rangeringsdata
+            const ranked = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => ({
+                    dog: partyList.find(d => d.nr === parseInt(nr)),
+                    plass: parseInt(plass),
+                    dogNr: parseInt(nr)
+                }));
+
+            const isKval = state.vkType === 'kval';
+            const vkTypeName = state.vkType === '1dag' ? '1-dags VK' : state.vkType === 'kval' ? 'VK Kvalifisering' : 'VK Finale';
+
+            let resultatHtml = '';
+            ranked.forEach(({ dog, plass, dogNr }) => {
+                const premie = state.premietildelinger[dogNr];
+                const premieLabel = premie ? getPremieLabel(premie) : null;
+                const erKvalTilFinale = state.kvalifisertTilFinale?.[dogNr];
+
+                resultatHtml += `
+                    <div class="flex items-center justify-between py-2 px-3 ${premieLabel ? 'bg-forest-50' : 'bg-white'} rounded-lg border ${premieLabel ? 'border-forest-200' : 'border-vk-100'}">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-vk-700 w-6">${plass}.</span>
+                            <span class="font-medium text-sm">${dog?.race || ''} ${dog?.name || ''}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${premieLabel ? `<span class="text-xs font-bold text-forest-700 bg-forest-100 px-2 py-1 rounded">${premieLabel}</span>` : ''}
+                            ${isKval && erKvalTilFinale ? `<span class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded">→ Finale</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Avsluttede hunder
+            const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
+            if (finished.length > 0) {
+                resultatHtml += '<div class="mt-3 pt-3 border-t border-vk-200">';
+                resultatHtml += '<div class="text-xs font-bold text-vk-400 uppercase mb-2">Avsluttet</div>';
+                finished.forEach(dog => {
+                    resultatHtml += `
+                        <div class="py-1 px-3 text-vk-400 text-sm line-through">
+                            ${dog.race} ${dog.name}
+                        </div>
+                    `;
+                });
+                resultatHtml += '</div>';
+            }
+
+            // Tell opp premier og finaleplasser
+            const antallPremier = Object.values(state.premietildelinger).filter(p => p && p !== 'ingen').length;
+            const antallKvalTilFinale = Object.values(state.kvalifisertTilFinale || {}).filter(Boolean).length;
+
+            // Opprett modal
+            const modal = document.createElement('div');
+            modal.id = 'dagensResultaterModal';
+            modal.className = 'fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+                    <div class="p-4 border-b border-vk-200 bg-forest-700 text-white rounded-t-2xl">
+                        <h2 class="text-xl font-bold font-serif text-center">Dagens resultater</h2>
+                        <p class="text-forest-100 text-sm text-center mt-1">${vkTypeName}</p>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-4">
+                        <!-- Oppsummering -->
+                        <div class="bg-vk-50 rounded-lg p-3 mb-4 border border-vk-200">
+                            <div class="grid grid-cols-2 gap-3 text-center">
+                                <div>
+                                    <div class="text-2xl font-bold text-forest-700">${antallPremier}</div>
+                                    <div class="text-xs text-vk-500">Premier tildelt</div>
+                                </div>
+                                ${isKval ? `
+                                    <div>
+                                        <div class="text-2xl font-bold text-amber-600">${antallKvalTilFinale}</div>
+                                        <div class="text-xs text-vk-500">Til finale</div>
+                                    </div>
+                                ` : `
+                                    <div>
+                                        <div class="text-2xl font-bold text-vk-600">${ranked.length}</div>
+                                        <div class="text-xs text-vk-500">Rangert</div>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Resultatliste -->
+                        <div class="space-y-2">
+                            ${resultatHtml}
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-vk-200 space-y-3">
+                        <p class="text-xs text-vk-500 text-center">
+                            Resultatene er nå publisert og synkronisert.
+                        </p>
+                        <button onclick="closeDagensResultater()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                            Ferdig
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function closeDagensResultater() {
+            document.getElementById('dagensResultaterModal')?.remove();
+        }
+
+        function getPremieLabel(premieValue) {
+            // Konverter premie-verdi til lesbar tekst
+            const labels = {
+                '1vk': '1. VK',
+                '1vk_ck': '1. VK m/CK',
+                '2vk': '2. VK',
+                '2vk_ck': '2. VK m/CK',
+                '3vk': '3. VK',
+                '4vk': '4. VK',
+                '5vk': '5. VK',
+                '6vk': '6. VK',
+                '1vk_kval': '1. VK kval',
+                '1vk_ck_kval': '1. VK m/CK kval',
+                '2vk_kval': '2. VK kval',
+                '2vk_ck_kval': '2. VK m/CK kval',
+                '3vk_kval': '3. VK kval',
+                '4vk_kval': '4. VK kval',
+                '5vk_kval': '5. VK kval',
+                '6vk_kval': '6. VK kval',
+                '1vk_finale': '1. VK finale',
+                '1vk_ck_finale': '1. VK finale m/CK',
+                '1vk_cacit_finale': '1. VK finale m/CACIT',
+                '2vk_finale': '2. VK finale',
+                '2vk_ck_finale': '2. VK finale m/CK',
+                '2vk_rescacit_finale': '2. VK finale m/res.CACIT',
+                '3vk_finale': '3. VK finale',
+                '4vk_finale': '4. VK finale',
+                '5vk_finale': '5. VK finale',
+                '6vk_finale': '6. VK finale',
+                'ingen': null
+            };
+            return labels[premieValue] || premieValue;
         }
 
         function closeFinishJudgingModal() {

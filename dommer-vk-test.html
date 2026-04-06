@@ -2005,6 +2005,12 @@
             return stats;
         }
 
+        // Hjelpefunksjon: Hent hundenavn uten startnummer
+        function getDogName(dog) {
+            if (!dog) return '';
+            return (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
+        }
+
         // Formater statistikk som kort tekst (f.eks. "2xFMR FUR 65'" - kun "2x" hvis mer enn 1)
         // showSlipptid: true = vis slipptid (kun for plasserte hunder)
         function formatDogStats(dogNr, showSlipptid = true) {
@@ -2067,7 +2073,9 @@
                 rankContainer.innerHTML = placed.map(({ dog, plass, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Vis FMR/FUR etc, men ikke slipptid
                     const statsHtml = stats ? `<span class="text-vk-500 ml-1">${stats}</span>` : '';
-                    return `<div><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dog.name}${statsHtml}</div>`;
+                    // Fjern evt. startnummer fra navnet (f.eks. "3. Hundenavn" -> "Hundenavn")
+                    const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
+                    return `<div><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dogName}${statsHtml}</div>`;
                 }).join('');
             }
 
@@ -2077,8 +2085,9 @@
                 tidTilGodeList.innerHTML = tidTilGodeDogs.map(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for TTG
                     const statsHtml = stats ? `<span class="text-amber-500 ml-1">${stats}</span>` : '';
+                    const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
                     return `<div class="cursor-pointer hover:bg-amber-100 px-1 rounded flex items-center gap-1" onclick="hentTilbakeTTG(${dog.nr}, 1)">
-                        <span class="text-amber-600">↩</span> ${dog.race} ${dog.name}${statsHtml}
+                        <span class="text-amber-600">↩</span> ${dog.race} ${dogName}${statsHtml}
                     </div>`;
                 }).join('');
             } else {
@@ -2091,7 +2100,8 @@
                 finishedList.innerHTML = finished.map(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for avsluttede
                     const statsHtml = stats ? `<span class="text-red-400 ml-1">${stats}</span>` : '';
-                    return `<div>${dog.race} ${dog.name}${statsHtml}</div>`;
+                    const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
+                    return `<div>${dog.race} ${dogName}${statsHtml}</div>`;
                 }).join('');
             } else {
                 finishedSection.classList.add('hidden');

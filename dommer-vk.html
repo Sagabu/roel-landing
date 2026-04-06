@@ -673,6 +673,9 @@
             renderRankings();
             renderRoundHistoryButtons();
             setupDictation();
+
+            // Start polling for ikke-eiere (hvis eier allerede er valgt)
+            startLiveRangeringPolling();
         }
 
         // Finn vkSubType basert på partinavn og trialParties
@@ -838,6 +841,9 @@
 
                 document.getElementById('liveRangeringModal').classList.add('hidden');
                 updateLiveRangeringStatusUI();
+
+                // Start polling for ikke-eiere
+                startLiveRangeringPolling();
             } catch (err) {
                 console.error('Feil ved valg av live-rangering eier:', err);
                 alert('Nettverksfeil ved valg av eier');
@@ -856,17 +862,50 @@
             statusBtn.classList.remove('hidden');
 
             const erJegEier = liveRangeringEier === dommerTelefon;
+            const eierNavn = partiDommere.find(d => d.dommer_telefon === liveRangeringEier)?.dommer_navn || liveRangeringEier;
+
             if (erJegEier) {
                 statusBtn.classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
                 statusBtn.classList.add('bg-forest-600', 'hover:bg-forest-700');
-                statusText.textContent = 'Synk';
-                statusBtn.title = 'Du synkroniserer live-rangeringen';
+                statusText.textContent = 'Du synker';
+                statusBtn.title = 'Du synkroniserer live-rangeringen til serveren';
             } else {
                 statusBtn.classList.remove('bg-forest-600', 'hover:bg-forest-700');
                 statusBtn.classList.add('bg-yellow-600', 'hover:bg-yellow-700');
-                statusText.textContent = 'Lokal';
-                statusBtn.title = 'Dine endringer lagres kun lokalt. ' + liveRangeringEier + ' synkroniserer.';
+                statusText.textContent = eierNavn.split(' ')[0] + ' synker';
+                statusBtn.title = `${eierNavn} synkroniserer rangeringen. Du mottar oppdateringer automatisk.`;
             }
+
+            // Vis også en info-banner for ikke-eiere
+            updateLiveRangeringInfoBanner(erJegEier, eierNavn);
+        }
+
+        function updateLiveRangeringInfoBanner(erJegEier, eierNavn) {
+            let banner = document.getElementById('liveRangeringBanner');
+
+            if (erJegEier || partiDommere.length <= 1) {
+                if (banner) banner.remove();
+                return;
+            }
+
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'liveRangeringBanner';
+                banner.className = 'bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-center';
+                const header = document.querySelector('header');
+                if (header && header.nextSibling) {
+                    header.parentNode.insertBefore(banner, header.nextSibling);
+                }
+            }
+
+            banner.innerHTML = `
+                <div class="flex items-center justify-center gap-2 text-sm text-yellow-800">
+                    <svg class="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <span><strong>${eierNavn}</strong> styrer rangeringen. Du mottar live-oppdateringer.</span>
+                </div>
+            `;
         }
 
         function showLiveRangeringInfo() {
@@ -890,6 +929,115 @@
             if (proveId === 'demo') return true;
             if (partiDommere.length <= 1) return true;
             return liveRangeringEier === dommerTelefon;
+        }
+
+        // =============================================
+        // LIVE-RANGERING POLLING (for ikke-eiere)
+        // =============================================
+        let liveRangeringPollingInterval = null;
+        let lastRangeringUpdate = null;
+
+        function startLiveRangeringPolling() {
+            // Kun start polling hvis:
+            // 1. Ikke demo-modus
+            // 2. Flere dommere på partiet
+            // 3. Jeg er IKKE eieren
+            if (proveId === 'demo' || partiDommere.length <= 1 || erJegLiveEier()) {
+                return;
+            }
+
+            console.log('Starter live-rangering polling (ikke eier)');
+
+            // Poll hvert 5. sekund
+            liveRangeringPollingInterval = setInterval(async () => {
+                await pollLiveRangering();
+            }, 5000);
+
+            // Gjør første poll med en gang
+            pollLiveRangering();
+        }
+
+        function stopLiveRangeringPolling() {
+            if (liveRangeringPollingInterval) {
+                clearInterval(liveRangeringPollingInterval);
+                liveRangeringPollingInterval = null;
+                console.log('Stoppet live-rangering polling');
+            }
+        }
+
+        async function pollLiveRangering() {
+            if (erJegLiveEier()) {
+                stopLiveRangeringPolling();
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/vk-rangering/${proveId}/${parti}`);
+                const data = await response.json();
+
+                if (!data.exists) return;
+
+                // Sjekk om det er nye data
+                if (lastRangeringUpdate === data.updated_at) {
+                    return; // Ingen endringer
+                }
+
+                lastRangeringUpdate = data.updated_at;
+                console.log('Mottok oppdatert rangering fra server:', data);
+
+                // Oppdater state.plasseringer fra rangeringen
+                const nyePlasseringer = {};
+                if (data.rangering && Array.isArray(data.rangering)) {
+                    data.rangering.forEach(item => {
+                        nyePlasseringer[item.nr] = item.plass;
+                    });
+                }
+                if (data.avsluttet && Array.isArray(data.avsluttet)) {
+                    data.avsluttet.forEach(item => {
+                        nyePlasseringer[item.nr] = 'avsluttet';
+                    });
+                }
+
+                // Oppdater state
+                state.plasseringer = nyePlasseringer;
+                if (data.current_round) {
+                    state.currentRound = data.current_round;
+                }
+                if (data.vk_type) {
+                    state.vkType = data.vk_type;
+                }
+
+                // Oppdater UI
+                renderRankings();
+                updatePlacementDropdowns();
+
+                // Vis kort melding om oppdatering
+                showLiveUpdateNotification();
+
+            } catch (err) {
+                console.warn('Feil ved polling av live-rangering:', err);
+            }
+        }
+
+        function showLiveUpdateNotification() {
+            // Vis en kort flash-notifikasjon
+            const existing = document.getElementById('liveUpdateNotification');
+            if (existing) existing.remove();
+
+            const notification = document.createElement('div');
+            notification.id = 'liveUpdateNotification';
+            notification.className = 'fixed top-4 right-4 bg-forest-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2 animate-pulse';
+            notification.innerHTML = `
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="text-sm font-medium">Rangering oppdatert</span>
+            `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 2000);
         }
 
         // Last dommerens egne notater fra server og merge med eksisterende data

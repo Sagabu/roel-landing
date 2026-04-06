@@ -1876,7 +1876,7 @@
             const pendingTasks = [];
 
             // Check for NKK-rep pending critiques
-            const hasNkkRole = currentUser.trials.some(t => t.roles?.some(r => r.type === 'nkkrep'));
+            const hasNkkRole = currentUser.trials.some(t => t.roles?.some(r => r.type === 'nkkrep' || r.type === 'nkkvara'));
             if (hasNkkRole) {
                 const count = await getSubmittedCritiques();
                 if (count > 0) {
@@ -1887,9 +1887,19 @@
                 }
             }
 
-            // Check for judge pending critiques
+            // Check for meddommer pending critiques (kritikker som venter på din bekreftelse)
             const hasJudgeRole = currentUser.trials.some(t => t.roles?.some(r => r.type === 'dommer'));
             if (hasJudgeRole) {
+                const meddommerCount = await getMeddommerPendingCount();
+                if (meddommerCount > 0) {
+                    pendingTasks.push({
+                        label: `${meddommerCount} kritikk${meddommerCount > 1 ? 'er' : ''} venter på din bekreftelse`,
+                        link: 'dommer-kritikk.html',
+                        icon: 'meddommer'
+                    });
+                }
+
+                // Check for judge pending critiques
                 const pendingParties = getPendingParties();
                 for (const party of pendingParties) {
                     pendingTasks.push({
@@ -1904,14 +1914,24 @@
 
             if (pendingTasks.length > 0) {
                 section.classList.remove('hidden');
-                container.innerHTML = pendingTasks.map(task => `
-                    <a href="${task.link}" class="flex items-center justify-between p-3 bg-white rounded-xl hover:bg-amber-50 transition">
-                        <span class="text-amber-800 font-medium">${task.label}</span>
-                        <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                container.innerHTML = pendingTasks.map(task => {
+                    // Meddommer-oppgaver får lilla farge
+                    const isMeddommer = task.icon === 'meddommer';
+                    const bgColor = isMeddommer ? 'bg-purple-50 hover:bg-purple-100' : 'bg-white hover:bg-amber-50';
+                    const textColor = isMeddommer ? 'text-purple-800' : 'text-amber-800';
+                    const iconColor = isMeddommer ? 'text-purple-500' : 'text-amber-500';
+                    const icon = isMeddommer
+                        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>'
+                        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>';
+
+                    return `
+                    <a href="${task.link}" class="flex items-center justify-between p-3 ${bgColor} rounded-xl transition">
+                        <span class="${textColor} font-medium">${task.label}</span>
+                        <svg class="w-5 h-5 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            ${icon}
                         </svg>
                     </a>
-                `).join('');
+                `}).join('');
             } else {
                 section.classList.add('hidden');
             }
@@ -1928,6 +1948,29 @@
                     }
                 }
             } catch (e) {}
+            return 0;
+        }
+
+        // Hent antall kritikker som venter på meddommer-bekreftelse fra denne brukeren
+        async function getMeddommerPendingCount() {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                if (!token) return 0;
+
+                const phone = currentUser?.phone || '';
+                if (!phone) return 0;
+
+                const resp = await fetch(`/api/kritikker/venter-meddommer/${phone}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    return data.kritikker?.length || 0;
+                }
+            } catch (e) {
+                console.warn('Kunne ikke hente meddommer-oppgaver:', e);
+            }
             return 0;
         }
 

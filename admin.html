@@ -2604,9 +2604,15 @@
                     </svg>
                     Lagre utkast
                 </button>
-                <div class="flex gap-3">
+                <div class="flex gap-3 flex-wrap">
                     <button onclick="closeNKKRapportModal()" class="bg-white border border-bark-300 hover:bg-bark-50 text-bark-700 px-4 py-2 rounded-xl font-medium transition">
                         Avbryt
+                    </button>
+                    <button onclick="varsleNkkRep('nkk')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                        Varsle NKK-rep
                     </button>
                     <button onclick="generateNKKRapport()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-xl font-medium transition flex items-center gap-2">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7930,6 +7936,14 @@
             link.click();
             URL.revokeObjectURL(link.href);
 
+            // Lagre versjon til audit-trail
+            await saveRapportVersjon('nkk', {
+                trialName,
+                generertDato: new Date().toISOString(),
+                antallDeltakere: dogs.length,
+                statsPerKlasse
+            }, 'NKK-rapport generert og lastet ned');
+
             alert(`✅ NKK-rapport generert med ${dogs.length} deltakere.\n\nMerk: Kritikker sendes IKKE til NKK, men til raseklubbene.`);
         }
 
@@ -7978,6 +7992,65 @@
                 badge.className = 'text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700';
                 badge.textContent = 'Ikke startet';
             }
+        }
+
+        // Varsle NKK-rep om ventende rapport (SMS)
+        async function varsleNkkRep(rapportType) {
+            const proveId = localStorage.getItem('currentTrialId');
+            if (!proveId) {
+                alert('Ingen prøve valgt. Lagre prøvedetaljer først.');
+                return;
+            }
+
+            const bekreft = confirm('Dette vil sende en SMS til NKK-representanten om at rapporten er klar for gjennomgang og signatur.\n\nVil du fortsette?');
+            if (!bekreft) return;
+
+            try {
+                const resp = await fetch(`/api/rapport-versjoner/${proveId}/varsle-nkkrep`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ rapport_type: rapportType })
+                });
+
+                const result = await resp.json();
+
+                if (result.success) {
+                    alert('SMS sendt til NKK-representanten!');
+                } else {
+                    alert('Kunne ikke sende SMS: ' + (result.error || 'Ukjent feil'));
+                }
+            } catch (err) {
+                console.error('Feil ved varsling:', err);
+                alert('Nettverksfeil ved sending av SMS');
+            }
+        }
+
+        // Lagre rapport-versjon til audit-trail
+        async function saveRapportVersjon(rapportType, data, beskrivelse) {
+            const proveId = localStorage.getItem('currentTrialId');
+            if (!proveId) return null;
+
+            try {
+                const resp = await fetch('/api/rapport-versjoner', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        prove_id: proveId,
+                        rapport_type: rapportType,
+                        data: data,
+                        endring_beskrivelse: beskrivelse
+                    })
+                });
+
+                if (resp.ok) {
+                    const result = await resp.json();
+                    console.log(`Rapport-versjon ${result.versjon} lagret for ${rapportType}`);
+                    return result;
+                }
+            } catch (err) {
+                console.warn('Kunne ikke lagre rapport-versjon:', err);
+            }
+            return null;
         }
 
         // === FKF RAPPORT ===
@@ -8380,6 +8453,15 @@
             // Last ned
             const fileName = `FKF_Rapport_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
             XLSX.writeFile(wb, fileName);
+
+            // Lagre versjon til audit-trail
+            await saveRapportVersjon('fkf', {
+                trialName,
+                generertDato: new Date().toISOString(),
+                totalStartet,
+                totalAvgift,
+                harDvkJournal: !!cachedDvkJournal
+            }, 'FKF-rapport generert og lastet ned');
 
             alert(`✅ FKF-rapport generert!\n\nAntall startende: ${totalStartet}\nAvgift til FKF: kr ${totalAvgift.toLocaleString('no-NO', { minimumFractionDigits: 2 })}\n\nHusk å betale til konto 9680.04.38699`);
         }

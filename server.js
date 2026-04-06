@@ -556,6 +556,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_dvk_journaler_prove ON dvk_journaler(prove_id);
   CREATE INDEX IF NOT EXISTS idx_dvk_journaler_status ON dvk_journaler(status);
 
+  -- Rapport-versjoner (audit-trail for rapporter)
+  CREATE TABLE IF NOT EXISTS rapport_versjoner (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    rapport_type TEXT NOT NULL CHECK(rapport_type IN ('nkk', 'fkf', 'raseklubb', 'kritikker')),
+    versjon INTEGER DEFAULT 1,
+    data_json TEXT,
+    endret_av TEXT,
+    endret_av_navn TEXT,
+    endring_beskrivelse TEXT,
+    signatur_status TEXT DEFAULT 'usignert' CHECK(signatur_status IN ('usignert', 'delvis_signert', 'fullstendig_signert')),
+    proveleder_signert_at TEXT,
+    nkkrep_signert_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_rapport_versjoner_prove ON rapport_versjoner(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_rapport_versjoner_type ON rapport_versjoner(rapport_type);
+
   -- VK-bedømming (Vinnerklasse dommerkort)
   CREATE TABLE IF NOT EXISTS vk_bedomming (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9602,6 +9620,206 @@ app.post("/api/dvk-journal/:prove_id/sign", async (c) => {
     autoBackup("dvk-journal-signed");
     return c.json({ success: true, message: "Journal signert og arkivert" });
   } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// RAPPORT-VERSJONER API (Audit-trail)
+// =============================================
+
+// Lagre ny versjon av rapport
+app.post("/api/rapport-versjoner", requireAuth, async (c) => {
+  try {
+    const body = await c.req.json();
+    const user = c.get('user');
+    const { prove_id, rapport_type, data, endring_beskrivelse } = body;
+
+    if (!prove_id || !rapport_type) {
+      return c.json({ error: "prove_id og rapport_type er påkrevd" }, 400);
+    }
+
+    // Finn neste versjonsnummer
+    const lastVersion = db.prepare(`
+      SELECT MAX(versjon) as max_versjon FROM rapport_versjoner
+      WHERE prove_id = ? AND rapport_type = ?
+    `).get(prove_id, rapport_type);
+
+    const nyVersjon = (lastVersion?.max_versjon || 0) + 1;
+
+    // Lagre ny versjon
+    const result = db.prepare(`
+      INSERT INTO rapport_versjoner (prove_id, rapport_type, versjon, data_json, endret_av, endret_av_navn, endring_beskrivelse)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      prove_id,
+      rapport_type,
+      nyVersjon,
+      JSON.stringify(data || {}),
+      user?.telefon || null,
+      user ? `${user.fornavn || ''} ${user.etternavn || ''}`.trim() : 'Ukjent',
+      endring_beskrivelse || null
+    );
+
+    // Logg til admin_log
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "rapport_versjon",
+      JSON.stringify({ prove_id, rapport_type, versjon: nyVersjon, endret_av: user?.telefon })
+    );
+
+    return c.json({
+      success: true,
+      id: result.lastInsertRowid,
+      versjon: nyVersjon
+    });
+  } catch (err) {
+    console.error("Rapport-versjon POST error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent alle versjoner for en rapport
+app.get("/api/rapport-versjoner/:prove_id/:rapport_type", (c) => {
+  try {
+    const { prove_id, rapport_type } = c.req.param();
+
+    const versjoner = db.prepare(`
+      SELECT id, versjon, endret_av, endret_av_navn, endring_beskrivelse,
+             signatur_status, proveleder_signert_at, nkkrep_signert_at, created_at
+      FROM rapport_versjoner
+      WHERE prove_id = ? AND rapport_type = ?
+      ORDER BY versjon DESC
+    `).all(prove_id, rapport_type);
+
+    return c.json({ versjoner });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent én spesifikk versjon med full data
+app.get("/api/rapport-versjoner/:prove_id/:rapport_type/:versjon", (c) => {
+  try {
+    const { prove_id, rapport_type, versjon } = c.req.param();
+
+    const ver = db.prepare(`
+      SELECT * FROM rapport_versjoner
+      WHERE prove_id = ? AND rapport_type = ? AND versjon = ?
+    `).get(prove_id, rapport_type, parseInt(versjon));
+
+    if (!ver) {
+      return c.json({ error: "Versjon ikke funnet" }, 404);
+    }
+
+    return c.json({
+      ...ver,
+      data: JSON.parse(ver.data_json || '{}')
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Oppdater signaturstatus for rapport-versjon
+app.post("/api/rapport-versjoner/:id/signer", requireAuth, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const user = c.get('user');
+    const { rolle } = body; // 'proveleder' eller 'nkkrep'
+
+    if (!rolle || !['proveleder', 'nkkrep'].includes(rolle)) {
+      return c.json({ error: "Ugyldig rolle" }, 400);
+    }
+
+    const versjon = db.prepare("SELECT * FROM rapport_versjoner WHERE id = ?").get(id);
+    if (!versjon) {
+      return c.json({ error: "Versjon ikke funnet" }, 404);
+    }
+
+    // Oppdater riktig signatur-felt
+    const signertAt = new Date().toISOString();
+    if (rolle === 'proveleder') {
+      db.prepare("UPDATE rapport_versjoner SET proveleder_signert_at = ? WHERE id = ?").run(signertAt, id);
+    } else {
+      db.prepare("UPDATE rapport_versjoner SET nkkrep_signert_at = ? WHERE id = ?").run(signertAt, id);
+    }
+
+    // Sjekk om begge har signert
+    const oppdatert = db.prepare("SELECT proveleder_signert_at, nkkrep_signert_at FROM rapport_versjoner WHERE id = ?").get(id);
+    let nyStatus = 'usignert';
+    if (oppdatert.proveleder_signert_at && oppdatert.nkkrep_signert_at) {
+      nyStatus = 'fullstendig_signert';
+    } else if (oppdatert.proveleder_signert_at || oppdatert.nkkrep_signert_at) {
+      nyStatus = 'delvis_signert';
+    }
+
+    db.prepare("UPDATE rapport_versjoner SET signatur_status = ? WHERE id = ?").run(nyStatus, id);
+
+    // Logg signatur
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "rapport_signert",
+      JSON.stringify({ id, prove_id: versjon.prove_id, rapport_type: versjon.rapport_type, rolle, signert_av: user?.telefon })
+    );
+
+    return c.json({
+      success: true,
+      signatur_status: nyStatus
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Send notifikasjon til NKK-rep om ventende rapport
+app.post("/api/rapport-versjoner/:prove_id/varsle-nkkrep", requireAuth, async (c) => {
+  try {
+    const { prove_id } = c.req.param();
+    const body = await c.req.json();
+    const user = c.get('user');
+    const { rapport_type } = body;
+
+    // Hent prøve med NKK-rep info
+    const prove = db.prepare(`
+      SELECT p.*, nr.fornavn as nkkrep_fornavn, nr.etternavn as nkkrep_etternavn
+      FROM prover p
+      LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+      WHERE p.id = ?
+    `).get(prove_id);
+
+    if (!prove) {
+      return c.json({ error: "Prøve ikke funnet" }, 404);
+    }
+
+    if (!prove.nkkrep_telefon) {
+      return c.json({ error: "Ingen NKK-representant er tildelt prøven" }, 400);
+    }
+
+    // Bestem rapporttype-navn
+    const rapportNavn = {
+      'nkk': 'NKK-rapport',
+      'fkf': 'FKF-rapport',
+      'kritikker': 'Kritikk-sammendrag'
+    }[rapport_type] || 'Rapport';
+
+    // Send SMS
+    const melding = `Hei ${prove.nkkrep_fornavn || ''}! ${rapportNavn} for ${prove.navn} er klar for din signatur. Logg inn på fuglehundprove.no for å gjennomgå og signere.`;
+
+    const smsResult = await sendSMS(prove.nkkrep_telefon, melding, { type: "rapport_signatur_varsling" });
+
+    // Logg varsling
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "nkkrep_varslet",
+      JSON.stringify({ prove_id, rapport_type, nkkrep_telefon: prove.nkkrep_telefon, varslet_av: user?.telefon })
+    );
+
+    return c.json({
+      success: smsResult.success,
+      message: smsResult.success ? "SMS sendt til NKK-representant" : "Kunne ikke sende SMS",
+      error: smsResult.error || null
+    });
+  } catch (err) {
+    console.error("Varsle NKK-rep error:", err);
     return c.json({ error: err.message }, 500);
   }
 });

@@ -1376,6 +1376,32 @@
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
 
+            // Valider at slipptid er fylt ut for begge hunder
+            const slipptid1 = document.getElementById('dog1_slipptid').value;
+            const slipptid2 = document.getElementById('dog2_slipptid').value;
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            if (!slipptid1 || !slipptid2) {
+                const missingDogs = [];
+                if (!slipptid1) missingDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`);
+                if (!slipptid2) missingDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`);
+                alert(`Slipptid må fylles ut for:\n• ${missingDogs.join('\n• ')}`);
+                return;
+            }
+
+            // Advarsel hvis slipptid er under 15 minutter (uvanlig kort)
+            const tid1 = parseInt(slipptid1);
+            const tid2 = parseInt(slipptid2);
+            if (tid1 < 15 || tid2 < 15) {
+                const shortDogs = [];
+                if (tid1 < 15) shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${tid1} min`);
+                if (tid2 < 15) shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${tid2} min`);
+                if (!confirm(`Slipptid er under 15 minutter for:\n• ${shortDogs.join('\n• ')}\n\nEr dette riktig?`)) {
+                    return;
+                }
+            }
+
             // I runde 2+ må vi sjekke om hundene har fått ny plassering i DENNE runden
             // Ikke bare om de har en plassering fra før
             const judgedThisRound = state.judgedThisRound[state.currentRound] || [];

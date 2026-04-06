@@ -1759,6 +1759,49 @@
 
                         <!-- Hovedinnhold (vises kun for 2-dagers og 3-dagers VK) -->
                         <div id="vkTrekningInnhold" class="space-y-6">
+
+                            <!-- LIVE LISTE OVER KVALIFISERTE HUNDER -->
+                            <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 overflow-hidden">
+                                <div class="px-4 py-3 bg-emerald-100 border-b border-emerald-200 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                                            <h4 class="font-semibold text-emerald-800">Kvalifiserte hunder (live)</h4>
+                                        </div>
+                                        <span id="liveKvalifiserteCount" class="text-xs bg-emerald-200 text-emerald-700 px-2 py-1 rounded-full">0 totalt</span>
+                                    </div>
+                                    <button onclick="refreshLiveKvalifiserte()" class="text-emerald-600 hover:text-emerald-800 p-2 rounded-lg hover:bg-emerald-200 transition" title="Oppdater liste">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="p-4">
+                                    <p class="text-xs text-emerald-600 mb-3">Hunder som dommerne har krysset av som kvalifisert samles her automatisk når partiene er ferdig bedømt.</p>
+
+                                    <!-- Gruppert per kilde -->
+                                    <div id="liveKvalifiserteFraKval" class="mb-4">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <span class="text-sm font-medium text-emerald-700">Fra kvalifisering</span>
+                                            <span id="liveKvalCount" class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">0</span>
+                                        </div>
+                                        <div id="liveKvalifiserteKvalListe" class="bg-white rounded-lg border border-emerald-100 divide-y divide-emerald-50 max-h-48 overflow-y-auto">
+                                            <p class="p-3 text-sm text-emerald-400 text-center">Venter på at dommerne krysser av kvalifiserte...</p>
+                                        </div>
+                                    </div>
+
+                                    <div id="liveKvalifiserteFraSemi" class="hidden">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <span class="text-sm font-medium text-emerald-700">Fra semifinale</span>
+                                            <span id="liveSemiCount" class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">0</span>
+                                        </div>
+                                        <div id="liveKvalifiserteSemiListe" class="bg-white rounded-lg border border-emerald-100 divide-y divide-emerald-50 max-h-48 overflow-y-auto">
+                                            <p class="p-3 text-sm text-emerald-400 text-center">Venter på at dommerne krysser av kvalifiserte...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Info om tilfeldig trekning -->
                             <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
                                 <div class="flex items-start gap-3">
@@ -4219,6 +4262,9 @@
 
             // Hent antall kvalifiserte for visning på knappene
             loadKvalifiserteCount();
+
+            // Start live-oppdatering av kvalifiserte hunder
+            startLiveKvalifiserteUpdates();
         }
 
         // Last antall kvalifiserte for visning på knappene
@@ -4264,6 +4310,146 @@
                 }
             } catch (err) {
                 console.error('Kunne ikke laste kvalifiserte-telling:', err);
+            }
+        }
+
+        // ========================================
+        // LIVE KVALIFISERTE HUNDER
+        // ========================================
+        let liveKvalifiserteInterval = null;
+
+        async function refreshLiveKvalifiserte() {
+            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const is3Day = vkConfig.type === '3day';
+
+            // Vis/skjul semi-seksjonen basert på VK-type
+            const semiSection = document.getElementById('liveKvalifiserteFraSemi');
+            if (is3Day && semiSection) {
+                semiSection.classList.remove('hidden');
+            }
+
+            const allResultater = await hentAlleVkResultater();
+            const parties = getTrialParties();
+
+            // Grupper kvalifiserte etter kilde (kval eller semi)
+            const fraKval = [];
+            const fraSemi = [];
+
+            for (const resultater of allResultater) {
+                if (!resultater.kvalifisertTilFinale) continue;
+
+                const kvalIds = Object.entries(resultater.kvalifisertTilFinale)
+                    .filter(([_, kval]) => kval === true)
+                    .map(([nr, _]) => parseInt(nr));
+
+                if (kvalIds.length === 0) continue;
+
+                // Finn partiet for å hente hundeinfo
+                const party = parties.find(p => p.name === resultater.partyName);
+
+                for (const nr of kvalIds) {
+                    let dogInfo = { nr, fraParti: resultater.partyName };
+
+                    if (party && party.dogs) {
+                        const dog = party.dogs.find(d => d.nr === nr);
+                        if (dog) {
+                            dogInfo = { ...dog, fraParti: resultater.partyName };
+                        }
+                    }
+
+                    if (resultater.vkType === 'kval') {
+                        fraKval.push(dogInfo);
+                    } else if (resultater.vkType === 'semi') {
+                        fraSemi.push(dogInfo);
+                    }
+                }
+            }
+
+            // Oppdater UI - Kval
+            const kvalListe = document.getElementById('liveKvalifiserteKvalListe');
+            const kvalCount = document.getElementById('liveKvalCount');
+            if (kvalListe) {
+                if (fraKval.length === 0) {
+                    kvalListe.innerHTML = '<p class="p-3 text-sm text-emerald-400 text-center">Venter på at dommerne krysser av kvalifiserte...</p>';
+                } else {
+                    kvalListe.innerHTML = fraKval.map((dog, i) => `
+                        <div class="flex items-center justify-between px-3 py-2 hover:bg-emerald-50">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-emerald-400 w-5">${i + 1}.</span>
+                                <span class="font-medium text-emerald-800 text-sm">${dog.rase || ''} ${dog.hundenavn || dog.name || `Hund #${dog.nr}`}</span>
+                            </div>
+                            <span class="text-xs text-emerald-500">${dog.fraParti || ''}</span>
+                        </div>
+                    `).join('');
+                }
+            }
+            if (kvalCount) kvalCount.textContent = fraKval.length;
+
+            // Oppdater UI - Semi (kun for 3-dagers)
+            if (is3Day) {
+                const semiListe = document.getElementById('liveKvalifiserteSemiListe');
+                const semiCount = document.getElementById('liveSemiCount');
+                if (semiListe) {
+                    if (fraSemi.length === 0) {
+                        semiListe.innerHTML = '<p class="p-3 text-sm text-emerald-400 text-center">Venter på at dommerne krysser av kvalifiserte...</p>';
+                    } else {
+                        semiListe.innerHTML = fraSemi.map((dog, i) => `
+                            <div class="flex items-center justify-between px-3 py-2 hover:bg-emerald-50">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-emerald-400 w-5">${i + 1}.</span>
+                                    <span class="font-medium text-emerald-800 text-sm">${dog.rase || ''} ${dog.hundenavn || dog.name || `Hund #${dog.nr}`}</span>
+                                </div>
+                                <span class="text-xs text-emerald-500">${dog.fraParti || ''}</span>
+                            </div>
+                        `).join('');
+                    }
+                }
+                if (semiCount) semiCount.textContent = fraSemi.length;
+            }
+
+            // Oppdater totalt antall
+            const totalCount = document.getElementById('liveKvalifiserteCount');
+            if (totalCount) {
+                const total = fraKval.length + fraSemi.length;
+                totalCount.textContent = `${total} totalt`;
+            }
+
+            // Oppdater også knapp-tellerne
+            if (fraKval.length > 0) {
+                const semiCountEl = document.getElementById('semiKvalifiserteCount');
+                const finaleFraKvalCountEl = document.getElementById('finaleFraKvalKvalifiserteCount');
+                if (semiCountEl) {
+                    semiCountEl.textContent = `${fraKval.length} kvalifiserte hunder`;
+                    semiCountEl.classList.remove('hidden');
+                }
+                if (finaleFraKvalCountEl) {
+                    finaleFraKvalCountEl.textContent = `${fraKval.length} kvalifiserte hunder`;
+                    finaleFraKvalCountEl.classList.remove('hidden');
+                }
+            }
+            if (fraSemi.length > 0) {
+                const finaleCountEl = document.getElementById('finaleKvalifiserteCount');
+                if (finaleCountEl) {
+                    finaleCountEl.textContent = `${fraSemi.length} kvalifiserte hunder`;
+                    finaleCountEl.classList.remove('hidden');
+                }
+            }
+        }
+
+        // Start live-oppdatering av kvalifiserte når VK trekning-seksjonen vises
+        function startLiveKvalifiserteUpdates() {
+            // Kjør første gang umiddelbart
+            refreshLiveKvalifiserte();
+
+            // Deretter oppdater hvert 30. sekund
+            if (liveKvalifiserteInterval) clearInterval(liveKvalifiserteInterval);
+            liveKvalifiserteInterval = setInterval(refreshLiveKvalifiserte, 30000);
+        }
+
+        function stopLiveKvalifiserteUpdates() {
+            if (liveKvalifiserteInterval) {
+                clearInterval(liveKvalifiserteInterval);
+                liveKvalifiserteInterval = null;
             }
         }
 

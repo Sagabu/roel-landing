@@ -6,6 +6,7 @@
     <title>Partilister - Fuglehundprøve</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -885,6 +886,16 @@
                     <div id="signature-${partyId}" class="px-4 py-2 border-t border-bark-100 text-xs text-bark-500">
                         <!-- Signatur-status lastes dynamisk -->
                     </div>
+
+                    <!-- Lagre som bilde knapp -->
+                    <div class="px-4 py-3 border-t border-bark-100 bg-bark-50/50">
+                        <button onclick="savePartyAsImage('${partyId}')" class="inline-flex items-center gap-2 bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            Lagre partiliste som bilde
+                        </button>
+                    </div>
                 </div>
             `;
         }
@@ -1112,6 +1123,145 @@
 
             // Oppdater alle VK-partier asynkront
             await Promise.all(vkParties.map(party => loadPartyLiveRanking(party)));
+        }
+
+        // ========================================
+        // LAGRE PARTILISTE SOM BILDE
+        // ========================================
+        async function savePartyAsImage(partyId) {
+            // Finn parti-kortet i DOM
+            const partyCards = document.querySelectorAll('.bg-white.rounded-2xl.shadow-sm');
+            let targetCard = null;
+
+            for (const card of partyCards) {
+                const title = card.querySelector('h3');
+                if (title && (title.textContent === partyId || card.querySelector(`#ranking-${partyId}`))) {
+                    targetCard = card;
+                    break;
+                }
+            }
+
+            if (!targetCard) {
+                alert('Kunne ikke finne partilisten');
+                return;
+            }
+
+            // Vis loading-indikator
+            const saveBtn = targetCard.querySelector('button[onclick*="savePartyAsImage"]');
+            const originalText = saveBtn?.innerHTML;
+            if (saveBtn) {
+                saveBtn.innerHTML = `
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Genererer bilde...
+                `;
+                saveBtn.disabled = true;
+            }
+
+            try {
+                // Hent prøve-info for header
+                const trialName = document.getElementById('trialName')?.textContent || 'Fuglehundprøve';
+                const trialDetails = document.getElementById('trialDetails')?.textContent || '';
+
+                // Opprett en midlertidig container for bildet
+                const tempContainer = document.createElement('div');
+                tempContainer.style.cssText = 'position: absolute; left: -9999px; top: 0; background: white; padding: 20px; width: 800px;';
+                document.body.appendChild(tempContainer);
+
+                // Opprett header med prøve-info og logo
+                const header = document.createElement('div');
+                header.style.cssText = 'margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #d4a989;';
+                header.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                        <img src="images/logo.png" alt="Logo" style="width: 50px; height: 50px;" onerror="this.style.display='none'">
+                        <div>
+                            <h1 style="font-size: 20px; font-weight: bold; color: #3D1B0C; margin: 0;">${trialName}</h1>
+                            <p style="font-size: 12px; color: #7D6A54; margin: 0;">${trialDetails}</p>
+                        </div>
+                    </div>
+                    <div style="font-size: 18px; font-weight: 600; color: #5A2812;">${partyId}</div>
+                `;
+                tempContainer.appendChild(header);
+
+                // Finn party data
+                const party = allParties.find(p => (p.id || p.name) === partyId);
+                if (!party) {
+                    throw new Error('Party ikke funnet');
+                }
+
+                // Opprett tabell
+                const table = document.createElement('table');
+                table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 13px;';
+
+                // Header row
+                const thead = document.createElement('thead');
+                thead.innerHTML = `
+                    <tr style="background: #F7F3EE;">
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Nr</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Rase</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Hund</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Reg.nr</th>
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Eier/Fører</th>
+                    </tr>
+                `;
+                table.appendChild(thead);
+
+                // Body rows
+                const tbody = document.createElement('tbody');
+                (party.dogs || []).forEach((dog, i) => {
+                    const row = document.createElement('tr');
+                    row.style.cssText = i % 2 === 0 ? 'background: white;' : 'background: #FDFBF9;';
+                    row.innerHTML = `
+                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #5A2812; font-weight: 500;">${i + 1}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #6E3018;">${dog.rase || '-'}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #3D1B0C; font-weight: 500;">${dog.hundenavn || dog.navn || '-'}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #7D6A54; font-size: 12px;">${dog.regnr || '-'}</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #5A2812;">${dog.eier || '-'}${dog.forer && dog.forer !== dog.eier ? ` (F: ${dog.forer})` : ''}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                table.appendChild(tbody);
+                tempContainer.appendChild(table);
+
+                // Footer
+                const footer = document.createElement('div');
+                footer.style.cssText = 'margin-top: 20px; padding-top: 10px; border-top: 1px solid #EAD8CF; text-align: center; color: #9A8268; font-size: 11px;';
+                footer.innerHTML = `
+                    <p>fuglehundprove.no · Generert ${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' })}</p>
+                `;
+                tempContainer.appendChild(footer);
+
+                // Generer bilde med html2canvas
+                const canvas = await html2canvas(tempContainer, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    logging: false,
+                    useCORS: true
+                });
+
+                // Fjern midlertidig container
+                document.body.removeChild(tempContainer);
+
+                // Konverter til PNG og last ned
+                const link = document.createElement('a');
+                const dateStr = new Date().toISOString().split('T')[0];
+                const filename = `Partiliste_${partyId.replace(/\s+/g, '_')}_${dateStr}.png`;
+                link.download = filename;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+            } catch (error) {
+                console.error('Feil ved generering av bilde:', error);
+                alert('Kunne ikke generere bilde. Prøv igjen.');
+            } finally {
+                // Gjenopprett knapp
+                if (saveBtn) {
+                    saveBtn.innerHTML = originalText;
+                    saveBtn.disabled = false;
+                }
+            }
         }
 
         // Initialize

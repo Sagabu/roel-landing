@@ -1702,6 +1702,14 @@
                 saveSlippRanking(state.currentSlipp);
             }
 
+            saveToStorage();
+
+            // Vis redegjørelses-modal før vi går videre
+            showRedegjoerelseModal();
+        }
+
+        // Fortsett til neste par (kalles fra redegjørelses-modal)
+        function proceedToNextPair() {
             const [nextDog1, nextDog2] = getNextAvailablePair();
 
             if (nextDog1 === null && nextDog2 === null) {
@@ -3235,6 +3243,138 @@
             document.getElementById('roundCompleteModal').classList.add('hidden');
         }
 
+        // ===== REDEGJØRELSE MODAL FUNKSJONER =====
+
+        function showRedegjoerelseModal() {
+            const modal = document.getElementById('redegjoerelseModal');
+            const slippInfo = document.getElementById('redegjoerelseSlippInfo');
+            const hundeContainer = document.getElementById('redegjoerelseSlippHunder');
+            const rangeringContainer = document.getElementById('redegjoerelseRangering');
+            const kommentarContainer = document.getElementById('redegjoerelseKommentar');
+
+            // Oppdater slipp-info
+            slippInfo.textContent = `Slipp ${state.currentSlipp} fullført - Runde ${state.currentRound}`;
+
+            // Vis de to hundene som nettopp ble bedømt
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            let hundeHTML = '';
+            [{ dog: dog1, nr: dog1Nr }, { dog: dog2, nr: dog2Nr }].forEach(({ dog, nr }) => {
+                if (!dog) return;
+                const plass = state.plasseringer[nr];
+                const isAvsluttet = plass === 'avsluttet';
+                const hasTTG = state.tidTilGode[nr];
+                const stats = formatDogStats(nr);
+
+                let statusText = '';
+                let statusClass = '';
+                if (isAvsluttet) {
+                    statusText = 'Avsluttet';
+                    statusClass = 'bg-red-100 text-red-700';
+                } else if (hasTTG) {
+                    statusText = 'Tid til gode';
+                    statusClass = 'bg-amber-100 text-amber-700';
+                } else if (plass) {
+                    statusText = `${plass}. plass`;
+                    statusClass = 'bg-forest-100 text-forest-700';
+                } else {
+                    statusText = 'Ikke plassert';
+                    statusClass = 'bg-bark-100 text-bark-600';
+                }
+
+                hundeHTML += `
+                    <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-warm-200">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-warm-800">${nr}.</span>
+                            <span class="font-medium text-bark-800">${dog.navn || dog.name}</span>
+                            ${stats ? `<span class="text-xs text-bark-500">(${stats})</span>` : ''}
+                        </div>
+                        <span class="text-xs px-2 py-1 rounded-full font-medium ${statusClass}">${statusText}</span>
+                    </div>
+                `;
+            });
+            hundeContainer.innerHTML = hundeHTML || '<p class="text-bark-400 text-sm">Ingen hunder</p>';
+
+            // Vis nåværende rangering
+            const sortedDogs = [...partyList].sort((a, b) => {
+                const pA = state.plasseringer[a.nr];
+                const pB = state.plasseringer[b.nr];
+
+                // Avsluttede hunder sist
+                if (pA === 'avsluttet' && pB !== 'avsluttet') return 1;
+                if (pB === 'avsluttet' && pA !== 'avsluttet') return -1;
+
+                // TTG etter plasserte
+                const ttgA = state.tidTilGode[a.nr];
+                const ttgB = state.tidTilGode[b.nr];
+                if (ttgA && !ttgB) return 1;
+                if (ttgB && !ttgA) return -1;
+
+                // Sortér etter plassering
+                const numA = parseInt(pA) || 999;
+                const numB = parseInt(pB) || 999;
+                return numA - numB;
+            });
+
+            let rangeringHTML = '';
+            sortedDogs.forEach(dog => {
+                const plass = state.plasseringer[dog.nr];
+                const isAvsluttet = plass === 'avsluttet';
+                const hasTTG = state.tidTilGode[dog.nr];
+                const stats = formatDogStats(dog.nr);
+
+                if (isAvsluttet) return; // Vis ikke avsluttede i rangeringen
+
+                let plassText = '';
+                let bgClass = 'bg-bark-50';
+                if (hasTTG) {
+                    plassText = 'TTG';
+                    bgClass = 'bg-amber-50 border-amber-200';
+                } else if (plass && plass !== 'avsluttet') {
+                    plassText = `${plass}.`;
+                    bgClass = plass <= 3 ? 'bg-forest-50 border-forest-200' : 'bg-vk-50 border-vk-200';
+                } else {
+                    plassText = '-';
+                }
+
+                rangeringHTML += `
+                    <div class="flex items-center justify-between p-2 rounded-lg border ${bgClass}">
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 text-center font-bold ${plass && plass <= 3 ? 'text-forest-700' : 'text-bark-600'}">${plassText}</span>
+                            <span class="font-medium text-bark-800">${dog.navn || dog.name}</span>
+                            ${stats ? `<span class="text-xs text-bark-500">(${stats})</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            rangeringContainer.innerHTML = rangeringHTML || '<p class="text-bark-400 text-sm">Ingen plasserte hunder ennå</p>';
+
+            // Vis felles kommentar for slippet
+            const slippData = state.slipps[state.currentSlipp] || {};
+            const kommentar = slippData.comment || '';
+            if (kommentar.trim()) {
+                kommentarContainer.textContent = kommentar;
+                kommentarContainer.classList.remove('text-bark-400');
+                kommentarContainer.classList.add('text-bark-700');
+            } else {
+                kommentarContainer.textContent = 'Ingen kommentar for dette slippet.';
+                kommentarContainer.classList.add('text-bark-400');
+                kommentarContainer.classList.remove('text-bark-700');
+            }
+
+            // Vis modalen
+            modal.classList.remove('hidden');
+        }
+
+        function closeRedegjoerelseAndContinue() {
+            document.getElementById('redegjoerelseModal').classList.add('hidden');
+            // Fortsett til neste par
+            proceedToNextPair();
+        }
+
         function generateNextRoundPairings() {
             // Finn alle aktive hunder (ikke avsluttet) - behold original rekkefølge fra partilisten
             const activeDogs = partyList.filter(dog => {
@@ -4012,6 +4152,66 @@ Antall slipp: ${state.currentSlipp}
                 </button>
                 <button onclick="closeManualDogSelectModal()" class="w-full bg-bark-200 hover:bg-bark-300 text-bark-700 font-bold py-3 rounded-xl transition">
                     Avbryt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Redegjørelse Modal - Vises etter hvert slipp før neste par -->
+    <div id="redegjoerelseModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-vk-200 bg-forest-600 text-white rounded-t-2xl">
+                <h2 class="text-xl font-bold font-serif text-center">Redegjørelse</h2>
+                <p id="redegjoerelseSlippInfo" class="text-forest-100 text-sm text-center mt-1">Slipp 1 fullført</p>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Nettopp bedømte hunder -->
+                <div class="bg-warm-50 border border-warm-200 rounded-xl p-3">
+                    <h3 class="text-sm font-bold text-warm-800 uppercase mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Bedømte hunder i dette slippet
+                    </h3>
+                    <div id="redegjoerelseSlippHunder" class="space-y-2">
+                        <!-- Fylles dynamisk -->
+                    </div>
+                </div>
+
+                <!-- Nåværende rangering -->
+                <div class="bg-vk-50 border border-vk-200 rounded-xl p-3">
+                    <h3 class="text-sm font-bold text-vk-700 uppercase mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                        Nåværende rangering
+                    </h3>
+                    <div id="redegjoerelseRangering" class="space-y-1 max-h-48 overflow-y-auto">
+                        <!-- Fylles dynamisk -->
+                    </div>
+                </div>
+
+                <!-- Felles kommentar for slippet -->
+                <div class="bg-bark-50 border border-bark-200 rounded-xl p-3">
+                    <h3 class="text-sm font-bold text-bark-700 uppercase mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                        </svg>
+                        Felles kommentar
+                    </h3>
+                    <div id="redegjoerelseKommentar" class="text-bark-700 text-sm italic bg-white p-3 rounded-lg border border-bark-200 min-h-[60px]">
+                        Ingen kommentar for dette slippet.
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-vk-200">
+                <button onclick="closeRedegjoerelseAndContinue()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                    </svg>
+                    Fortsett til neste slipp
                 </button>
             </div>
         </div>

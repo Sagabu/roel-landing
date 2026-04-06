@@ -134,6 +134,12 @@
                     </svg>
                     Partilister
                 </a>
+                <a href="#vk-trekning" class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-bark-50 text-bark-700 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    VK Trekning
+                </a>
                 <a href="#venteliste" class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-bark-50 text-bark-700 transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -1730,6 +1736,157 @@
                         <!-- Parti-containere fylles dynamisk -->
                         <div id="partyListsContainer">
                             <!-- Partilister legges inn her dynamisk -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VK Trekning - sett opp semifinale/finale fra kvalifiserte hunder -->
+                <section id="vk-trekning" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
+                    <div class="section-bg-setter-stand px-6 py-4 border-b border-bark-100">
+                        <h3 class="font-semibold text-earth-800 font-serif">VK Trekning</h3>
+                        <p class="text-sm text-bark-600">Sett opp semifinale- og finalepartier fra kvalifiserte hunder</p>
+                    </div>
+
+                    <div class="p-6 space-y-6">
+                        <!-- Info om tilfeldig trekning -->
+                        <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                            <div class="flex items-start gap-3">
+                                <svg class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <div class="text-sm text-blue-800">
+                                    <p class="font-medium mb-1">Om tilfeldig trekning</p>
+                                    <p>Systemet bruker en kryptografisk tilfeldig algoritme. Hver trekning får et unikt "frø" (seed) basert på tidspunkt ned til millisekund. Dette frøet vises og kan brukes til å verifisere at trekningen var 100% tilfeldig - samme frø gir alltid samme resultat.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Velg trekning-type -->
+                        <div class="bg-vk-50 rounded-xl p-4 border border-vk-200">
+                            <label class="block text-sm font-medium text-vk-800 mb-3">Velg hva du vil sette opp</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <button onclick="showTrekningForType('semi')" id="btnTrekkSemi" class="p-4 bg-white rounded-xl border-2 border-vk-200 hover:border-amber-400 transition text-left">
+                                    <div class="font-medium text-vk-800">Kval → Semifinale</div>
+                                    <div class="text-xs text-vk-500 mt-1">Fordel kvalifiserte fra kval på 2 semifinalepartier</div>
+                                    <div id="semiKvalifiserteCount" class="text-xs text-amber-600 font-medium mt-2 hidden">0 kvalifiserte hunder</div>
+                                </button>
+                                <button onclick="showTrekningForType('finale')" id="btnTrekkFinale" class="p-4 bg-white rounded-xl border-2 border-vk-200 hover:border-forest-400 transition text-left">
+                                    <div class="font-medium text-vk-800">Semi → Finale</div>
+                                    <div class="text-xs text-vk-500 mt-1">Fordel kvalifiserte fra semi på 1 finaleparti</div>
+                                    <div id="finaleKvalifiserteCount" class="text-xs text-forest-600 font-medium mt-2 hidden">0 kvalifiserte hunder</div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Trekning-container (skjult til type er valgt) -->
+                        <div id="trekningContainer" class="hidden space-y-4">
+                            <!-- Header -->
+                            <div class="flex items-center justify-between">
+                                <h4 id="trekningHeader" class="text-lg font-semibold text-vk-800">Kvalifiserte hunder</h4>
+                                <div class="flex gap-2">
+                                    <button onclick="printKvalifiserte()" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                                        </svg>
+                                        Skriv ut liste
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Liste over kvalifiserte -->
+                            <div class="bg-white rounded-xl border border-vk-200 overflow-hidden">
+                                <div class="p-3 bg-vk-50 border-b border-vk-200 flex items-center justify-between">
+                                    <span class="text-sm font-medium text-vk-700">Kvalifiserte hunder fra <span id="trekningFromText">kval</span></span>
+                                    <span id="kvalifiserteTotal" class="text-xs bg-vk-200 text-vk-700 px-2 py-1 rounded-full">0 hunder</span>
+                                </div>
+                                <div id="kvalifiserteListe" class="divide-y divide-vk-100 max-h-64 overflow-y-auto">
+                                    <!-- Fylles dynamisk -->
+                                    <div class="p-4 text-center text-vk-400 text-sm">
+                                        Ingen kvalifiserte hunder funnet
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Trekning-kontroller -->
+                            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                                <h5 class="font-medium text-amber-800 mb-3">Fordeling på partier</h5>
+
+                                <div class="space-y-4">
+                                    <!-- Tilfeldig trekning -->
+                                    <div class="flex items-center gap-3">
+                                        <button onclick="utforTilfeldigTrekning()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                            </svg>
+                                            Utfør tilfeldig trekning
+                                        </button>
+                                        <span class="text-xs text-amber-700">Systemet fordeler hundene tilfeldig på partiene</span>
+                                    </div>
+
+                                    <!-- Frø-visning (vises etter trekning) -->
+                                    <div id="trekningFroContainer" class="hidden bg-white rounded-lg p-3 border border-amber-200">
+                                        <div class="flex items-center justify-between">
+                                            <div>
+                                                <span class="text-xs text-amber-600 font-medium">Trekning utført med frø:</span>
+                                                <code id="trekningFro" class="ml-2 bg-amber-100 px-2 py-1 rounded text-xs font-mono text-amber-800">-</code>
+                                            </div>
+                                            <button onclick="copyFroToClipboard()" class="text-xs text-amber-600 hover:text-amber-800 underline">Kopier</button>
+                                        </div>
+                                        <p class="text-xs text-amber-600 mt-2">Dette frøet kan brukes til å verifisere at trekningen var tilfeldig. Samme frø gir alltid samme resultat.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Resultat av trekning / manuell fordeling -->
+                            <div id="trekningResultat" class="hidden space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <h5 class="font-medium text-vk-800">Fordeling på partier</h5>
+                                    <span class="text-xs text-vk-500">Dra og slipp for å endre rekkefølge eller flytte mellom partier</span>
+                                </div>
+
+                                <!-- Parti 1 -->
+                                <div class="bg-white rounded-xl border-2 border-amber-300 overflow-hidden">
+                                    <div class="p-3 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+                                        <span id="parti1Header" class="font-medium text-amber-800">VK Semi 1</span>
+                                        <span id="parti1Count" class="text-xs bg-amber-200 text-amber-800 px-2 py-1 rounded-full">0 hunder</span>
+                                    </div>
+                                    <div id="parti1Liste" class="divide-y divide-amber-100 min-h-[60px]"
+                                         ondragover="allowDrop(event)" ondrop="dropToParti(event, 1)">
+                                        <!-- Fylles dynamisk -->
+                                    </div>
+                                </div>
+
+                                <!-- Parti 2 (kun for semi) -->
+                                <div id="parti2Container" class="bg-white rounded-xl border-2 border-forest-300 overflow-hidden">
+                                    <div class="p-3 bg-forest-50 border-b border-forest-200 flex items-center justify-between">
+                                        <span id="parti2Header" class="font-medium text-forest-800">VK Semi 2</span>
+                                        <span id="parti2Count" class="text-xs bg-forest-200 text-forest-800 px-2 py-1 rounded-full">0 hunder</span>
+                                    </div>
+                                    <div id="parti2Liste" class="divide-y divide-forest-100 min-h-[60px]"
+                                         ondragover="allowDrop(event)" ondrop="dropToParti(event, 2)">
+                                        <!-- Fylles dynamisk -->
+                                    </div>
+                                </div>
+
+                                <!-- Lagre-knapper -->
+                                <div class="flex gap-3 pt-4">
+                                    <button onclick="lagreTrekning()" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white px-4 py-3 rounded-xl font-medium transition">
+                                        Lagre partioppsett
+                                    </button>
+                                    <button onclick="nullstillTrekning()" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-3 rounded-xl font-medium transition">
+                                        Nullstill
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tom tilstand -->
+                        <div id="trekningEmptyState" class="text-center py-8">
+                            <svg class="w-12 h-12 text-vk-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                            </svg>
+                            <p class="text-vk-500 mb-2">Velg type trekning ovenfor</p>
+                            <p class="text-xs text-vk-400">Kvalifiserte hunder hentes automatisk fra dommerens registreringer</p>
                         </div>
                     </div>
                 </section>
@@ -3995,6 +4152,412 @@
             } catch (e) {
                 console.error('Kunne ikke laste lagrede partier:', e);
             }
+        }
+
+        // ========================================
+        // VK TREKNING - SEMIFINALE/FINALE
+        // ========================================
+
+        let currentTrekningType = null; // 'semi' eller 'finale'
+        let kvalifiserteHunder = [];
+        let trekningParti1 = [];
+        let trekningParti2 = [];
+        let currentTrekningSeed = null;
+
+        // Vis trekning for valgt type
+        async function showTrekningForType(type) {
+            currentTrekningType = type;
+
+            // Oppdater UI
+            document.getElementById('btnTrekkSemi').classList.toggle('border-amber-500', type === 'semi');
+            document.getElementById('btnTrekkSemi').classList.toggle('bg-amber-50', type === 'semi');
+            document.getElementById('btnTrekkFinale').classList.toggle('border-forest-500', type === 'finale');
+            document.getElementById('btnTrekkFinale').classList.toggle('bg-forest-50', type === 'finale');
+
+            document.getElementById('trekningContainer').classList.remove('hidden');
+            document.getElementById('trekningEmptyState').classList.add('hidden');
+
+            // Sett header og tekst
+            if (type === 'semi') {
+                document.getElementById('trekningHeader').textContent = 'Kvalifiserte til semifinale';
+                document.getElementById('trekningFromText').textContent = 'kval-partiene';
+                document.getElementById('parti1Header').textContent = 'VK Semi 1';
+                document.getElementById('parti2Header').textContent = 'VK Semi 2';
+                document.getElementById('parti2Container').classList.remove('hidden');
+            } else {
+                document.getElementById('trekningHeader').textContent = 'Kvalifiserte til finale';
+                document.getElementById('trekningFromText').textContent = 'semifinalepartiene';
+                document.getElementById('parti1Header').textContent = 'VK Finale';
+                document.getElementById('parti2Container').classList.add('hidden');
+            }
+
+            // Hent kvalifiserte hunder
+            await hentKvalifiserteHunder(type);
+        }
+
+        // Hent kvalifiserte hunder fra server
+        async function hentKvalifiserteHunder(type) {
+            kvalifiserteHunder = [];
+
+            try {
+                // Hent VK-resultater fra server
+                const resp = await fetch('/api/storage/vkResultater');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const resultater = data.value || {};
+
+                    // Hent kvalifiserte basert på type
+                    if (resultater.kvalifisertTilFinale) {
+                        const parties = getTrialParties();
+                        const kvalIds = Object.entries(resultater.kvalifisertTilFinale)
+                            .filter(([_, kval]) => kval === true)
+                            .map(([nr, _]) => parseInt(nr));
+
+                        // Finn hundene i partilisten
+                        for (const party of parties) {
+                            if (party.type === 'vk') {
+                                for (const dog of party.dogs) {
+                                    if (kvalIds.includes(dog.nr)) {
+                                        kvalifiserteHunder.push({
+                                            ...dog,
+                                            fraParti: party.name
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Kunne ikke hente kvalifiserte:', err);
+            }
+
+            // Oppdater UI
+            renderKvalifiserteListe();
+        }
+
+        // Render liste over kvalifiserte
+        function renderKvalifiserteListe() {
+            const container = document.getElementById('kvalifiserteListe');
+            const countEl = document.getElementById('kvalifiserteTotal');
+
+            countEl.textContent = `${kvalifiserteHunder.length} hunder`;
+
+            if (kvalifiserteHunder.length === 0) {
+                container.innerHTML = `
+                    <div class="p-4 text-center text-vk-400 text-sm">
+                        <p>Ingen kvalifiserte hunder funnet</p>
+                        <p class="text-xs mt-1">Dommerne må først krysse av "Kvalifisert til semi/finale" i bedømmingen</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = kvalifiserteHunder.map((dog, idx) => `
+                <div class="flex items-center justify-between px-4 py-2 hover:bg-vk-50">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs text-vk-400 w-6">${idx + 1}.</span>
+                        <div>
+                            <span class="font-medium text-vk-800">${dog.race || ''} ${dog.hundenavn || dog.name || ''}</span>
+                            <span class="text-xs text-vk-500 ml-2">${dog.regnr || ''}</span>
+                        </div>
+                    </div>
+                    <span class="text-xs text-vk-400">${dog.fraParti || ''}</span>
+                </div>
+            `).join('');
+
+            // Oppdater count på knappene
+            if (currentTrekningType === 'semi') {
+                document.getElementById('semiKvalifiserteCount').textContent = `${kvalifiserteHunder.length} kvalifiserte hunder`;
+                document.getElementById('semiKvalifiserteCount').classList.remove('hidden');
+            } else {
+                document.getElementById('finaleKvalifiserteCount').textContent = `${kvalifiserteHunder.length} kvalifiserte hunder`;
+                document.getElementById('finaleKvalifiserteCount').classList.remove('hidden');
+            }
+        }
+
+        // Utfør tilfeldig trekning med synlig frø
+        function utforTilfeldigTrekning() {
+            if (kvalifiserteHunder.length === 0) {
+                alert('Ingen kvalifiserte hunder å trekke');
+                return;
+            }
+
+            // Generer seed basert på nåværende tid (millisekunder)
+            currentTrekningSeed = Date.now();
+
+            // Bruk seed til å shuffle
+            const shuffled = seededShuffle([...kvalifiserteHunder], currentTrekningSeed);
+
+            // Fordel på partier
+            if (currentTrekningType === 'semi') {
+                // 2 partier - annenhver hund
+                trekningParti1 = [];
+                trekningParti2 = [];
+                shuffled.forEach((dog, idx) => {
+                    if (idx % 2 === 0) {
+                        trekningParti1.push(dog);
+                    } else {
+                        trekningParti2.push(dog);
+                    }
+                });
+            } else {
+                // 1 parti - alle til finale
+                trekningParti1 = shuffled;
+                trekningParti2 = [];
+            }
+
+            // Vis frø
+            document.getElementById('trekningFro').textContent = currentTrekningSeed;
+            document.getElementById('trekningFroContainer').classList.remove('hidden');
+
+            // Vis resultat
+            renderTrekningResultat();
+        }
+
+        // Seeded random shuffle (Fisher-Yates med seed)
+        function seededShuffle(array, seed) {
+            // Enkel seeded random number generator (mulberry32)
+            function mulberry32(a) {
+                return function() {
+                    var t = a += 0x6D2B79F5;
+                    t = Math.imul(t ^ t >>> 15, t | 1);
+                    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                }
+            }
+
+            const random = mulberry32(seed);
+            const result = [...array];
+
+            for (let i = result.length - 1; i > 0; i--) {
+                const j = Math.floor(random() * (i + 1));
+                [result[i], result[j]] = [result[j], result[i]];
+            }
+
+            return result;
+        }
+
+        // Render trekning-resultat med drag-and-drop
+        function renderTrekningResultat() {
+            document.getElementById('trekningResultat').classList.remove('hidden');
+
+            // Parti 1
+            document.getElementById('parti1Count').textContent = `${trekningParti1.length} hunder`;
+            document.getElementById('parti1Liste').innerHTML = trekningParti1.map((dog, idx) => `
+                <div class="flex items-center justify-between px-4 py-2 hover:bg-amber-50 cursor-move"
+                     draggable="true"
+                     ondragstart="dragTrekningStart(event, ${dog.nr}, 1)"
+                     data-dog-nr="${dog.nr}">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                        </svg>
+                        <span class="text-xs text-amber-500 w-6">${idx + 1}.</span>
+                        <span class="font-medium text-amber-800">${dog.race || ''} ${dog.hundenavn || dog.name || ''}</span>
+                    </div>
+                </div>
+            `).join('') || '<div class="p-3 text-center text-amber-400 text-sm">Dra hunder hit</div>';
+
+            // Parti 2 (kun semi)
+            if (currentTrekningType === 'semi') {
+                document.getElementById('parti2Count').textContent = `${trekningParti2.length} hunder`;
+                document.getElementById('parti2Liste').innerHTML = trekningParti2.map((dog, idx) => `
+                    <div class="flex items-center justify-between px-4 py-2 hover:bg-forest-50 cursor-move"
+                         draggable="true"
+                         ondragstart="dragTrekningStart(event, ${dog.nr}, 2)"
+                         data-dog-nr="${dog.nr}">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-4 h-4 text-forest-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                            </svg>
+                            <span class="text-xs text-forest-500 w-6">${idx + 1}.</span>
+                            <span class="font-medium text-forest-800">${dog.race || ''} ${dog.hundenavn || dog.name || ''}</span>
+                        </div>
+                    </div>
+                `).join('') || '<div class="p-3 text-center text-forest-400 text-sm">Dra hunder hit</div>';
+            }
+        }
+
+        // Drag and drop for trekning
+        let draggedTrekningDog = null;
+        let draggedFromParti = null;
+
+        function dragTrekningStart(event, dogNr, fromParti) {
+            draggedTrekningDog = dogNr;
+            draggedFromParti = fromParti;
+            event.dataTransfer.effectAllowed = 'move';
+        }
+
+        function allowDrop(event) {
+            event.preventDefault();
+        }
+
+        function dropToParti(event, toParti) {
+            event.preventDefault();
+            if (draggedTrekningDog === null || draggedFromParti === toParti) return;
+
+            // Finn hunden
+            const sourceList = draggedFromParti === 1 ? trekningParti1 : trekningParti2;
+            const targetList = toParti === 1 ? trekningParti1 : trekningParti2;
+
+            const dogIndex = sourceList.findIndex(d => d.nr === draggedTrekningDog);
+            if (dogIndex === -1) return;
+
+            const [dog] = sourceList.splice(dogIndex, 1);
+            targetList.push(dog);
+
+            // Re-render
+            renderTrekningResultat();
+
+            // Nullstill
+            draggedTrekningDog = null;
+            draggedFromParti = null;
+        }
+
+        // Kopier frø til utklippstavle
+        function copyFroToClipboard() {
+            navigator.clipboard.writeText(currentTrekningSeed.toString());
+            alert('Frø kopiert til utklippstavlen!');
+        }
+
+        // Lagre trekning
+        async function lagreTrekning() {
+            if (trekningParti1.length === 0 && trekningParti2.length === 0) {
+                alert('Ingen hunder å lagre. Utfør trekning først.');
+                return;
+            }
+
+            const parties = getTrialParties();
+            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+
+            if (currentTrekningType === 'semi') {
+                // Opprett semifinalepartier
+                const semiParti1 = {
+                    name: 'VK Semi 1',
+                    partyNum: 1,
+                    type: 'vk',
+                    vkSubType: 'vk_semi',
+                    day: 2,
+                    dogs: trekningParti1
+                };
+                const semiParti2 = {
+                    name: 'VK Semi 2',
+                    partyNum: 2,
+                    type: 'vk',
+                    vkSubType: 'vk_semi',
+                    day: 2,
+                    dogs: trekningParti2
+                };
+
+                // Fjern eksisterende semi-partier
+                const filteredParties = parties.filter(p => p.vkSubType !== 'vk_semi');
+                filteredParties.push(semiParti1, semiParti2);
+                setTrialParties(filteredParties);
+
+            } else {
+                // Opprett finaleparti
+                const finaleParti = {
+                    name: 'VK Finale',
+                    partyNum: 1,
+                    type: 'vk',
+                    vkSubType: 'vk_finale',
+                    day: vkConfig.type === '3day' ? 3 : 2,
+                    dogs: trekningParti1
+                };
+
+                // Fjern eksisterende finale-parti
+                const filteredParties = parties.filter(p => p.vkSubType !== 'vk_finale');
+                filteredParties.push(finaleParti);
+                setTrialParties(filteredParties);
+            }
+
+            // Lagre trekning-info
+            const trekningInfo = {
+                type: currentTrekningType,
+                seed: currentTrekningSeed,
+                timestamp: new Date().toISOString(),
+                parti1: trekningParti1.map(d => d.nr),
+                parti2: trekningParti2.map(d => d.nr)
+            };
+            localStorage.setItem(`vkTrekning_${currentTrekningType}`, JSON.stringify(trekningInfo));
+
+            // Synk til server
+            try {
+                await fetch(`/api/storage/vkTrekning_${currentTrekningType}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: trekningInfo })
+                });
+            } catch (err) {
+                console.warn('Kunne ikke synkronisere trekning til server:', err);
+            }
+
+            alert(`${currentTrekningType === 'semi' ? 'Semifinale' : 'Finale'}-partier er lagret!`);
+
+            // Oppdater partiliste-visning
+            renderAllParties(getTrialParties());
+        }
+
+        // Nullstill trekning
+        function nullstillTrekning() {
+            trekningParti1 = [];
+            trekningParti2 = [];
+            currentTrekningSeed = null;
+            document.getElementById('trekningFroContainer').classList.add('hidden');
+            document.getElementById('trekningResultat').classList.add('hidden');
+        }
+
+        // Skriv ut kvalifiserte
+        function printKvalifiserte() {
+            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const typeNavn = currentTrekningType === 'semi' ? 'semifinale' : 'finale';
+
+            let html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Kvalifiserte til ${typeNavn}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; }
+                        h1 { font-size: 18px; margin-bottom: 5px; }
+                        h2 { font-size: 14px; color: #666; margin-bottom: 20px; }
+                        table { width: 100%; border-collapse: collapse; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background: #f5f5f5; }
+                        .seed { font-size: 11px; color: #666; margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Kvalifiserte hunder til ${typeNavn}</h1>
+                    <h2>Totalt ${kvalifiserteHunder.length} hunder</h2>
+                    <table>
+                        <tr>
+                            <th>#</th>
+                            <th>Rase</th>
+                            <th>Navn</th>
+                            <th>Reg.nr</th>
+                            <th>Fra parti</th>
+                        </tr>
+                        ${kvalifiserteHunder.map((dog, idx) => `
+                            <tr>
+                                <td>${idx + 1}</td>
+                                <td>${dog.race || ''}</td>
+                                <td>${dog.hundenavn || dog.name || ''}</td>
+                                <td>${dog.regnr || ''}</td>
+                                <td>${dog.fraParti || ''}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                    ${currentTrekningSeed ? `<p class="seed">Trekning utført med frø: ${currentTrekningSeed}</p>` : ''}
+                </body>
+                </html>
+            `;
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.print();
         }
 
         // ========================================

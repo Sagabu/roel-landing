@@ -5689,7 +5689,7 @@
             });
         }
 
-        // Eksporter kritikker for valgt rase
+        // Eksporter kritikker for valgt rase (både Excel og HTML)
         async function exportKritikkerByRase() {
             const select = document.getElementById('kritikkRaseSelect');
             const rase = select.value;
@@ -5700,7 +5700,7 @@
             }
 
             let kritikker = await getAllKritikkerFromStorage();
-            kritikker = kritikker.filter(k => (k.rase || k.race) === rase);
+            kritikker = kritikker.filter(k => (k.breed || k.rase || k.race) === rase);
 
             if (kritikker.length === 0) {
                 alert(`Ingen kritikker funnet for ${rase}`);
@@ -5709,8 +5709,55 @@
 
             const trialName = document.getElementById('trialName')?.value || 'Prøve';
             const safeRaseName = rase.replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, '_');
-            const fileName = `Kritikker_${safeRaseName}_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
-            downloadKritikkerAsExcel(kritikker, fileName);
+            const dateStr = new Date().toISOString().slice(0,10);
+
+            // Lag ZIP med både Excel og HTML
+            const zip = new JSZip();
+
+            // 1. Excel-fil
+            const rows = kritikker.map((k, idx) => {
+                const scores = k.rounds && k.rounds.length > 0 ? k.rounds[k.rounds.length - 1].scores : {};
+                return {
+                    'Nr': k.nr || idx + 1,
+                    'Hundenavn': k.name || k.hundenavn || '',
+                    'Reg.nr': k.regnr || '',
+                    'Fører': k.handler || k.forer || '',
+                    'Eier': k.owner || k.eier || '',
+                    'Klasse': k.klasse || '',
+                    'Parti': k.partyName || '',
+                    'Premie': k.prize || '',
+                    'Jaktlyst': scores.JAKTLYST || '',
+                    'Fart': scores.FART || '',
+                    'Selvstendighet': scores.SELVSTENDIGHET || '',
+                    'Søksbredde': scores.SOKSBREDDE || '',
+                    'Reviering': scores.REVIERING || '',
+                    'Samarbeid': scores.SAMARBEID || '',
+                    'Presisjon': scores.PRESISJON || '',
+                    'Reising': scores.REISING || '',
+                    'Slipptid (min)': scores.SLIPPTID || '',
+                    'Kritikk': k.critique || ''
+                };
+            });
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Kritikker');
+            const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            zip.file(`${safeRaseName}_data.xlsx`, xlsxData);
+
+            // 2. HTML-kritikker
+            const htmlContent = generateKritikkerHTMLDocument(kritikker, rase, trialName);
+            zip.file(`${safeRaseName}_kritikker.html`, htmlContent);
+
+            // Last ned ZIP
+            const content = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `Kritikker_${safeRaseName}_${trialName.replace(/\s+/g, '_')}_${dateStr}.zip`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+
+            const kontakt = RASEKLUBB_KONTAKT[rase] || { klubb: 'Ukjent', epost: '-' };
+            alert(`✅ Eksportert ${kritikker.length} kritikker for ${rase}\n\nInneholder:\n• Excel-fil (data/statistikk)\n• HTML-fil (utskriftsvennlige kritikker)\n\nSendes til: ${kontakt.klubb} (${kontakt.epost})`);
         }
 
         // Eksporter kritikker for valgt dag
@@ -5856,7 +5903,7 @@
             'Grosser Münsterländer': { klubb: 'NGMK', epost: 'ngmk@fuglehund.no' }
         };
 
-        // Eksporter kritikker per rase (ZIP med separate filer)
+        // Eksporter kritikker per rase (ZIP med separate filer - både Excel og HTML/kritikkformat)
         async function exportKritikkerPerRase() {
             const kritikker = await getAllKritikkerFromStorage();
 
@@ -5874,20 +5921,15 @@
             });
 
             const raser = Object.keys(perRase);
-
-            if (raser.length === 1) {
-                // Bare én rase - eksporter direkte som Excel
-                const rase = raser[0];
-                const fileName = `Kritikker_${rase.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
-                downloadKritikkerAsExcel(perRase[rase], fileName);
-                return;
-            }
-
-            // Flere raser - lag ZIP
-            const zip = new JSZip();
             const trialName = document.getElementById('trialName')?.value || 'Prove';
 
+            // Lag alltid ZIP med både Excel og HTML for hver rase
+            const zip = new JSZip();
+
             for (const rase of raser) {
+                const safeRaseName = rase.replace(/[\/\\:*?"<>|]/g, '_');
+
+                // 1. Generer Excel-fil
                 const rows = perRase[rase].map((k, idx) => {
                     const scores = k.rounds && k.rounds.length > 0 ? k.rounds[k.rounds.length - 1].scores : {};
                     return {
@@ -5915,22 +5957,26 @@
                 const ws = XLSX.utils.json_to_sheet(rows);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Kritikker');
-
-                // Eksporter til buffer
                 const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                const safeRaseName = rase.replace(/[\/\\:*?"<>|]/g, '_');
-                zip.file(`Kritikker_${safeRaseName}.xlsx`, xlsxData);
+                zip.file(`${safeRaseName}/${safeRaseName}_data.xlsx`, xlsxData);
+
+                // 2. Generer HTML-kritikker (utskriftsvennlig format)
+                const htmlContent = generateKritikkerHTMLDocument(perRase[rase], rase, trialName);
+                zip.file(`${safeRaseName}/${safeRaseName}_kritikker.html`, htmlContent);
             }
 
             // Lag oversikts-fil med raseklubber
             const oversiktRows = raser.map(rase => {
                 const kontakt = RASEKLUBB_KONTAKT[rase] || { klubb: 'Ukjent', epost: '-' };
+                const safeRaseName = rase.replace(/[\/\\:*?"<>|]/g, '_');
                 return {
                     'Rase': rase,
                     'Antall kritikker': perRase[rase].length,
                     'Raseklubb': kontakt.klubb,
                     'Epost': kontakt.epost,
-                    'Fil': `Kritikker_${rase.replace(/[\/\\:*?"<>|]/g, '_')}.xlsx`
+                    'Mappe': safeRaseName,
+                    'Excel-fil': `${safeRaseName}_data.xlsx`,
+                    'Kritikk-fil (HTML)': `${safeRaseName}_kritikker.html`
                 };
             });
             const oversiktWs = XLSX.utils.json_to_sheet(oversiktRows);
@@ -5949,12 +5995,15 @@
 
             // Vis detaljert melding
             let melding = `✅ Eksportert kritikker for ${raser.length} raser til ZIP-fil\n\n`;
+            melding += 'Hver rase har fått:\n';
+            melding += '• Excel-fil med data (for statistikk)\n';
+            melding += '• HTML-fil med kritikker (utskriftsvennlig)\n\n';
             melding += 'Raser inkludert:\n';
             raser.forEach(rase => {
                 const kontakt = RASEKLUBB_KONTAKT[rase] || { klubb: '-', epost: '-' };
-                melding += `• ${rase}: ${perRase[rase].length} kritikker (${kontakt.klubb})\n`;
+                melding += `• ${rase}: ${perRase[rase].length} kritikker → ${kontakt.klubb} (${kontakt.epost})\n`;
             });
-            melding += '\nOversiktsfil med e-postadresser er inkludert i ZIP.';
+            melding += '\nOversiktsfil med e-postadresser er inkludert.';
             alert(melding);
         }
 
@@ -5967,6 +6016,135 @@
                 'returned': 'Returnert'
             };
             return statuses[status] || status || 'Utkast';
+        }
+
+        // Generer utskriftsvennlig HTML-kritikk for én hund
+        function generateKritikkHTML(k, trialName) {
+            const scores = k.rounds && k.rounds.length > 0 ? k.rounds[k.rounds.length - 1].scores : {};
+
+            return `
+            <div class="kritikk-page" style="page-break-after: always; padding: 20px; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+                <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px;">
+                    <h1 style="margin: 0; font-size: 18px;">${trialName || 'Jaktprøve'}</h1>
+                    <p style="margin: 5px 0 0 0; color: #666; font-size: 12px;">Kritikk</p>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px;">
+                    <tr>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5; width: 25%;"><strong>Hund</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.name || k.hundenavn || '-'}</td>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5; width: 25%;"><strong>Reg.nr</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.regnr || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5;"><strong>Rase</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.breed || k.rase || '-'}</td>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5;"><strong>Klasse</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.klasse || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5;"><strong>Fører</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.handler || k.forer || '-'}</td>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5;"><strong>Eier</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.owner || k.eier || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5;"><strong>Parti</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd;">${k.partyName || '-'}</td>
+                        <td style="padding: 5px; border: 1px solid #ddd; background: #f5f5f5;"><strong>Premie</strong></td>
+                        <td style="padding: 5px; border: 1px solid #ddd; font-weight: bold; color: ${k.prize ? '#2563eb' : '#666'};">${k.prize || 'Ingen'}</td>
+                    </tr>
+                </table>
+
+                <h3 style="font-size: 14px; margin: 15px 0 10px 0; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Egenskaper</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 12px;">
+                    <tr style="background: #f5f5f5;">
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Jaktlyst</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Fart</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Selvst.</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Søksbr.</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Reviering</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Samarb.</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.JAKTLYST || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.FART || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.SELVSTENDIGHET || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.SOKSBREDDE || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.REVIERING || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.SAMARBEID || '-'}</td>
+                    </tr>
+                </table>
+
+                <h3 style="font-size: 14px; margin: 15px 0 10px 0; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Fuglearbeid og stand</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 12px;">
+                    <tr style="background: #f5f5f5;">
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Presisjon</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Reising</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Godkj. reis</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Stand (m)</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Stand (u)</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Tomstand</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Makkst.</th>
+                        <th style="padding: 6px; border: 1px solid #ddd; text-align: center;">Sjanse</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.PRESISJON || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.REISING || '-'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.GODKJENT_REISING ? 'Ja' : 'Nei'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.STAND_M || '0'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.STAND_U || '0'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.TOMSTAND || '0'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.MAKKER_STAND || '0'}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${scores.SJANSE || '0'}</td>
+                    </tr>
+                </table>
+
+                <div style="margin-bottom: 10px;">
+                    <strong style="font-size: 12px;">Slipptid:</strong> <span style="font-size: 13px;">${scores.SLIPPTID || '0'} minutter</span>
+                </div>
+
+                <h3 style="font-size: 14px; margin: 15px 0 10px 0; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Kritikk</h3>
+                <div style="border: 1px solid #ddd; padding: 12px; background: #fafafa; min-height: 100px; font-size: 13px; line-height: 1.5;">
+                    ${(k.critique || 'Ingen kritikk skrevet.').replace(/\n/g, '<br>')}
+                </div>
+
+                <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 11px; color: #666;">
+                    <p style="margin: 0;">Dommer: ${k.dommer || '-'}</p>
+                    <p style="margin: 5px 0 0 0;">Dato: ${k.dato || new Date().toLocaleDateString('nb-NO')}</p>
+                </div>
+            </div>
+            `;
+        }
+
+        // Generer samlet HTML-dokument med alle kritikker for en rase
+        function generateKritikkerHTMLDocument(kritikker, rase, trialName) {
+            const kritikkSider = kritikker.map(k => generateKritikkHTML(k, trialName)).join('\n');
+
+            return `<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kritikker - ${rase} - ${trialName}</title>
+    <style>
+        @media print {
+            .kritikk-page { page-break-after: always; }
+            .kritikk-page:last-child { page-break-after: avoid; }
+            body { margin: 0; padding: 0; }
+        }
+        body { font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <div style="text-align: center; padding: 20px; border-bottom: 2px solid #333; margin-bottom: 20px;">
+        <h1 style="margin: 0;">${trialName}</h1>
+        <h2 style="margin: 10px 0 0 0; color: #666;">${rase} - ${kritikker.length} kritikker</h2>
+        <p style="margin: 5px 0 0 0; font-size: 12px; color: #888;">Generert: ${new Date().toLocaleDateString('nb-NO')}</p>
+    </div>
+    ${kritikkSider}
+</body>
+</html>`;
         }
 
         // ===== UØNSKET ADFERD FUNKSJONER =====

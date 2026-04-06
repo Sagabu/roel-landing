@@ -998,7 +998,7 @@ function seedData() {
     { telefon: '99999995', fornavn: 'Marstein', etternavn: 'Manstein', epost: 'marstein.manstein@example.com', adresse: 'Fjellgata 44', postnummer: '7340', sted: 'Oppdal', rolle: 'deltaker,nkkrep', medlem_siden: '2021' },
     { telefon: '99999994', fornavn: 'Roar', etternavn: 'Storseth', epost: 'roar.storseth@example.com', adresse: 'Hundegata 8', postnummer: '7500', sted: 'Stjørdal', rolle: 'deltaker,dommer', medlem_siden: '2017' }
   ];
-  const insertBruker = db.prepare("INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, medlem_siden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  const insertBruker = db.prepare("INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, medlem_siden, sms_samtykke, sms_samtykke_tidspunkt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))");
   for (const b of brukere) {
     insertBruker.run(b.telefon, b.fornavn, b.etternavn, b.epost, b.adresse, b.postnummer, b.sted, b.rolle, b.medlem_siden);
   }
@@ -1850,44 +1850,18 @@ app.post("/api/auth/verify-code", async (c) => {
     });
   }
 
-  // Ny bruker - opprett automatisk hvis FKF-dommer
+  // FKF-dommer uten brukerkonto - krev fullstendig registrering med samtykke
   if (fkfDommer) {
-    const rolle = 'deltaker,dommer';
-    db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      telefon,
-      fkfDommer.fornavn || '',
-      fkfDommer.etternavn || '',
-      fkfDommer.epost || '',
-      fkfDommer.adresse || '',
-      fkfDommer.postnummer || '',
-      fkfDommer.sted || '',
-      rolle
-    );
-
-    console.log(`[Auto-dommer] Ny bruker ${telefon} opprettet med dommer-rolle (FKF: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`);
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "auto_bruker_dommer",
-      `Ny bruker opprettet automatisk fra FKF-dommerliste: ${fkfDommer.fornavn} ${fkfDommer.etternavn} (${telefon})`
-    );
-
-    // Oppdater linked_bruker_telefon på FKF-dommer
-    db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
-
-    bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
-    const token = generateToken(bruker);
+    console.log(`[FKF-dommer] ${fkfDommer.fornavn} ${fkfDommer.etternavn} (${telefon}) må fullføre registrering`);
     return c.json({
-      token,
-      bruker: {
-        telefon: bruker.telefon,
-        fornavn: bruker.fornavn,
-        etternavn: bruker.etternavn,
-        rolle: bruker.rolle
-      },
+      requiresRegistration: true,
       isFkfDommer: true,
-      autoCreated: true
+      fkfDommerInfo: {
+        fornavn: fkfDommer.fornavn,
+        etternavn: fkfDommer.etternavn,
+        epost: fkfDommer.epost || ''
+      },
+      message: "Du er registrert som FKF-dommer, men må fullføre registrering med SMS-samtykke."
     });
   }
 
@@ -2556,11 +2530,11 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
     const rolle = fkfDommer ? 'deltaker,dommer' : 'deltaker';
 
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, rolle)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(telefon, fornavn, etternavn, epost, passordHash, now, rolle);
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1, ?)
+    `).run(telefon, fornavn, etternavn, epost, passordHash, now, rolle, now);
     brukerOpprettet = true;
-    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})${fkfDommer ? ' [FKF-dommer]' : ''}`);
+    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})${fkfDommer ? ' [FKF-dommer]' : ''} (SMS-samtykke: Ja)`);
 
     // Oppdater FKF-dommer kobling
     if (fkfDommer && !fkfDommer.linked_bruker_telefon) {
@@ -3123,10 +3097,10 @@ app.put("/api/brukere/:telefon", async (c) => {
       db.prepare(`UPDATE brukere SET ${sets.join(", ")} WHERE telefon = ?`).run(...vals, telefon);
     }
   } else {
-    // Opprett ny
+    // Opprett ny - sms_samtykke = 0 fordi admin-opprettelse krever at brukeren selv avgir samtykke senere
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, sms_samtykke)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run(
       telefon,
       body.fornavn || '',
@@ -3137,6 +3111,7 @@ app.put("/api/brukere/:telefon", async (c) => {
       body.sted || '',
       nyRolle
     );
+    console.log(`[Admin] Ny bruker opprettet: ${telefon} (SMS-samtykke: Nei - må avgis av bruker)`);
   }
 
   const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
@@ -3899,16 +3874,17 @@ app.post("/api/klubb-foresporsel", async (c) => {
 
   const normalizedPhone = normalizePhone(lederTelefon);
 
-  // Opprett brukerprofil umiddelbart (hvis ikke finnes)
+  // Opprett brukerprofil umiddelbart (hvis ikke finnes) - med SMS-samtykke siden de registrerer seg selv
   const existingUser = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(normalizedPhone);
   if (!existingUser) {
     const nameParts = lederNavn.trim().split(' ');
     const fornavn = nameParts[0] || '';
     const etternavn = nameParts.slice(1).join(' ') || '';
+    const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash)
-      VALUES (?, ?, ?, ?, 'deltaker', ?)
-    `).run(normalizedPhone, fornavn, etternavn, lederEpost, passordHash);
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt)
+      VALUES (?, ?, ?, ?, 'deltaker', ?, 1, ?)
+    `).run(normalizedPhone, fornavn, etternavn, lederEpost, passordHash, now);
   } else if (passordHash) {
     // Oppdater passord hvis bruker finnes men ikke har passord
     db.prepare(`
@@ -4010,10 +3986,11 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     const nameParts = foresporsel.leder_navn.split(' ');
     const fornavn = nameParts[0] || '';
     const etternavn = nameParts.slice(1).join(' ') || '';
+    const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash)
-      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?)
-    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '');
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt)
+      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?, 1, ?)
+    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '', now);
   } else {
     // Oppdater rolle til å inkludere klubbleder og sett passord hvis mangler
     if (!existingUser.passord_hash && foresporsel.passord_hash) {
@@ -9075,16 +9052,16 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
     const dommerExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(dommerTelefon);
     if (!dommerExists) {
       db.prepare(`
-        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
-        VALUES (?, 'Test', 'Dommer', 'test.dommer@test.no', 'dommer')
+        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+        VALUES (?, 'Test', 'Dommer', 'test.dommer@test.no', 'dommer', 1, datetime('now'))
       `).run(dommerTelefon);
     }
 
     const nkkrepExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(nkkrepTelefon);
     if (!nkkrepExists) {
       db.prepare(`
-        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
-        VALUES (?, 'Test', 'NKK-Rep', 'test.nkkrep@test.no', 'admin')
+        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+        VALUES (?, 'Test', 'NKK-Rep', 'test.nkkrep@test.no', 'admin', 1, datetime('now'))
       `).run(nkkrepTelefon);
     }
 
@@ -9106,12 +9083,12 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
     const opprettedeHunder = [];
 
     for (const td of testData) {
-      // Opprett bruker hvis ikke eksisterer
+      // Opprett bruker hvis ikke eksisterer - testbrukere har samtykke
       const brukerExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(td.telefon);
       if (!brukerExists) {
         db.prepare(`
-          INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle)
-          VALUES (?, ?, '', ?, 'deltaker')
+          INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+          VALUES (?, ?, '', ?, 'deltaker', 1, datetime('now'))
         `).run(td.telefon, td.forer, `${td.forer.toLowerCase().replace(' ', '.')}@test.no`);
       }
 

@@ -169,13 +169,14 @@
             </div>
 
             <form id="mandateForm" class="p-6 space-y-5">
-                <!-- Select Dog -->
+                <!-- Select Dogs (multiple) -->
                 <div>
-                    <label class="block text-sm font-medium text-bark-700 mb-1">Velg hund *</label>
-                    <select id="mandateDog" required
-                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none bg-white">
-                        <option value="">Velg hund</option>
-                    </select>
+                    <label class="block text-sm font-medium text-bark-700 mb-2">Velg hund(er) *</label>
+                    <div id="dogCheckboxes" class="space-y-2 max-h-48 overflow-y-auto border border-bark-200 rounded-xl p-3 bg-bark-50">
+                        <!-- Checkboxes rendered by JavaScript -->
+                        <p class="text-bark-400 text-sm">Laster hunder...</p>
+                    </div>
+                    <p class="text-xs text-bark-500 mt-1">Du kan velge flere hunder for samme fullmakt</p>
                 </div>
 
                 <!-- Recipient Name with Autocomplete -->
@@ -497,15 +498,27 @@
         }
 
         function populateDogSelect() {
-            const select = document.getElementById('mandateDog');
-            select.innerHTML = '<option value="">Velg hund</option>';
+            const container = document.getElementById('dogCheckboxes');
 
-            userDogs.forEach(dog => {
-                const option = document.createElement('option');
-                option.value = dog.id;
-                option.textContent = dog.navn || dog.name || 'Ukjent';
-                select.appendChild(option);
-            });
+            if (userDogs.length === 0) {
+                container.innerHTML = '<p class="text-bark-400 text-sm">Ingen hunder registrert</p>';
+                return;
+            }
+
+            container.innerHTML = userDogs.map(dog => {
+                const dogName = dog.navn || dog.name || 'Ukjent';
+                const dogRase = dog.rase || '';
+                return `
+                    <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white cursor-pointer transition">
+                        <input type="checkbox" name="mandateDogs" value="${dog.id}" data-name="${dogName.replace(/"/g, '&quot;')}"
+                            class="w-5 h-5 text-warm-500 rounded border-bark-300 focus:ring-warm-500">
+                        <div>
+                            <span class="font-medium text-bark-800">${dogName}</span>
+                            ${dogRase ? `<span class="text-xs text-bark-500 ml-2">(${dogRase})</span>` : ''}
+                        </div>
+                    </label>
+                `;
+            }).join('');
         }
 
         function openAddMandateModal() {
@@ -514,6 +527,8 @@
             document.getElementById('selectedUserId').value = '';
             document.getElementById('userMatchInfo').classList.add('hidden');
             document.getElementById('recipientPhone').readOnly = false;
+            // Reset alle hund-checkboxer
+            document.querySelectorAll('input[name="mandateDogs"]').forEach(cb => cb.checked = false);
             document.getElementById('mandateModal').classList.remove('hidden');
         }
 
@@ -605,43 +620,67 @@
         document.getElementById('mandateForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            const dogId = document.getElementById('mandateDog').value;
-            const dog = userDogs.find(d => d.id == dogId);
+            // Hent alle valgte hunder
+            const checkedBoxes = document.querySelectorAll('input[name="mandateDogs"]:checked');
+            if (checkedBoxes.length === 0) {
+                showToast('Du må velge minst én hund');
+                return;
+            }
+
+            const selectedDogs = Array.from(checkedBoxes).map(cb => ({
+                id: cb.value,
+                name: cb.dataset.name
+            }));
 
             const permissions = [];
             if (document.getElementById('permRun').checked) permissions.push('run');
             if (document.getElementById('permRegister').checked) permissions.push('register');
             if (document.getElementById('permResults').checked) permissions.push('results');
 
-            const newMandate = {
-                type: 'given',
-                dogId: dogId,
-                dogName: dog ? (dog.navn || dog.name) : 'Ukjent hund',
-                recipientName: document.getElementById('recipientName').value,
-                recipientPhone: document.getElementById('recipientPhone').value,
-                trial: null,
-                validFrom: document.getElementById('validFrom').value,
-                validTo: document.getElementById('validTo').value,
-                permissions: permissions,
-                status: 'active'
-            };
+            const recipientName = document.getElementById('recipientName').value;
+            const recipientPhone = document.getElementById('recipientPhone').value;
+            const validFrom = document.getElementById('validFrom').value;
+            const validTo = document.getElementById('validTo').value;
 
             try {
                 const user = FuglehundAuth.getUser();
-                const response = await FuglehundAuth.authFetch('/api/brukere/' + encodeURIComponent(user.telefon) + '/fullmakter', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newMandate)
-                });
+                let createdCount = 0;
 
-                if (response.ok) {
-                    const created = await response.json();
-                    mandates.push(created);
-                    closeMandateModal();
-                    renderMandates();
-                    showToast('Fullmakt opprettet');
+                // Opprett én fullmakt per hund
+                for (const dog of selectedDogs) {
+                    const newMandate = {
+                        type: 'given',
+                        dogId: dog.id,
+                        dogName: dog.name,
+                        recipientName: recipientName,
+                        recipientPhone: recipientPhone,
+                        trial: null,
+                        validFrom: validFrom,
+                        validTo: validTo,
+                        permissions: permissions,
+                        status: 'active'
+                    };
+
+                    const response = await FuglehundAuth.authFetch('/api/brukere/' + encodeURIComponent(user.telefon) + '/fullmakter', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newMandate)
+                    });
+
+                    if (response.ok) {
+                        const created = await response.json();
+                        mandates.push(created);
+                        createdCount++;
+                    }
+                }
+
+                closeMandateModal();
+                renderMandates();
+
+                if (createdCount === selectedDogs.length) {
+                    showToast(createdCount === 1 ? 'Fullmakt opprettet' : `${createdCount} fullmakter opprettet`);
                 } else {
-                    showToast('Kunne ikke opprette fullmakt');
+                    showToast(`${createdCount} av ${selectedDogs.length} fullmakter opprettet`);
                 }
             } catch (error) {
                 console.error('Feil ved oppretting av fullmakt:', error);

@@ -1415,13 +1415,24 @@
             }
 
             // Advarsel hvis slipptid er under 15 minutter (uvanlig kort)
+            // Men IKKE hvis hunden har "Tid til gode" eller "Avslutt hund" valgt
             const tid1 = parseInt(slipptid1);
             const tid2 = parseInt(slipptid2);
-            if (tid1 < 15 || tid2 < 15) {
-                const shortDogs = [];
-                if (tid1 < 15) shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${tid1} min`);
-                if (tid2 < 15) shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${tid2} min`);
+            const dog1HasTTG = document.getElementById('dog1_ttg')?.checked || state.tidTilGode[dog1Nr];
+            const dog1IsAvslutt = document.getElementById('dog1_avslutt')?.checked || state.plasseringer[dog1Nr] === 'avsluttet';
+            const dog2HasTTG = document.getElementById('dog2_ttg')?.checked || state.tidTilGode[dog2Nr];
+            const dog2IsAvslutt = document.getElementById('dog2_avslutt')?.checked || state.plasseringer[dog2Nr] === 'avsluttet';
 
+            const shortDogs = [];
+            // Kun advar hvis slipptid er kort OG hunden ikke har TTG eller Avslutt
+            if (tid1 < 15 && !dog1HasTTG && !dog1IsAvslutt) {
+                shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${tid1} min`);
+            }
+            if (tid2 < 15 && !dog2HasTTG && !dog2IsAvslutt) {
+                shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${tid2} min`);
+            }
+
+            if (shortDogs.length > 0) {
                 // Vis pen modal i stedet for confirm()
                 slipptidWarningCallback = (confirmed) => {
                     if (confirmed) {

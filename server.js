@@ -1880,11 +1880,18 @@ app.post("/api/auth/verify-code", async (c) => {
   });
 });
 
-// Registrer samtykke (GDPR)
+// Registrer samtykke (GDPR) - oppdaterer både gamle og nye samtykke-felt
 app.post("/api/auth/consent", requireAuth, (c) => {
   const payload = c.get("bruker");
-  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(payload.telefon);
-  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE brukere
+    SET samtykke_gitt = datetime('now'),
+        sms_samtykke = 1,
+        sms_samtykke_tidspunkt = ?
+    WHERE telefon = ?
+  `).run(now, payload.telefon);
+  return c.json({ ok: true, samtykke_gitt: now, sms_samtykke: true });
 });
 
 // ============================================

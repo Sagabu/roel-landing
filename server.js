@@ -251,6 +251,9 @@ db.exec(`
     klubb_id TEXT REFERENCES klubber(id),
     proveleder_telefon TEXT REFERENCES brukere(telefon),
     nkkrep_telefon TEXT REFERENCES brukere(telefon),
+    nkkvara_telefon TEXT REFERENCES brukere(telefon),
+    dvk_telefon TEXT REFERENCES brukere(telefon),
+    dvk_navn TEXT DEFAULT '',
     status TEXT DEFAULT 'planlagt',
     klasser TEXT DEFAULT '{"uk":true,"ak":true,"vk":true}',
     partier TEXT DEFAULT '{}',
@@ -848,6 +851,10 @@ const migrations = [
   // Kritikk-bekreftelse fra meddommer
   "ALTER TABLE kritikker ADD COLUMN meddommer_telefon TEXT DEFAULT NULL",
   "ALTER TABLE kritikker ADD COLUMN meddommer_bekreftet_at TEXT DEFAULT NULL",
+  // NKK-vara og DVK-roller for prøver
+  "ALTER TABLE prover ADD COLUMN nkkvara_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN dvk_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN dvk_navn TEXT DEFAULT ''",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -5762,11 +5769,15 @@ app.get("/api/prover", (c) => {
   const rows = db.prepare(`
     SELECT p.*, k.navn as klubb_navn,
            pl.fornavn || ' ' || pl.etternavn as proveleder_navn,
-           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn
+           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn,
+           nv.fornavn || ' ' || nv.etternavn as nkkvara_navn,
+           COALESCE(p.dvk_navn, dv.fornavn || ' ' || dv.etternavn) as dvk_navn_display
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
     LEFT JOIN brukere pl ON p.proveleder_telefon = pl.telefon
     LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+    LEFT JOIN brukere nv ON p.nkkvara_telefon = nv.telefon
+    LEFT JOIN brukere dv ON p.dvk_telefon = dv.telefon
     ORDER BY p.start_dato DESC
   `).all();
   return c.json(rows);
@@ -5795,11 +5806,15 @@ app.get("/api/prover/:id", (c) => {
   const row = db.prepare(`
     SELECT p.*, k.navn as klubb_navn,
            pl.fornavn || ' ' || pl.etternavn as proveleder_navn, pl.telefon as proveleder_telefon,
-           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn, nr.telefon as nkkrep_telefon
+           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn, nr.telefon as nkkrep_telefon,
+           nv.fornavn || ' ' || nv.etternavn as nkkvara_navn, nv.telefon as nkkvara_telefon,
+           COALESCE(p.dvk_navn, dv.fornavn || ' ' || dv.etternavn) as dvk_navn_display, dv.telefon as dvk_telefon
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
     LEFT JOIN brukere pl ON p.proveleder_telefon = pl.telefon
     LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+    LEFT JOIN brukere nv ON p.nkkvara_telefon = nv.telefon
+    LEFT JOIN brukere dv ON p.dvk_telefon = dv.telefon
     WHERE p.id = ?
   `).get(id);
 
@@ -5838,6 +5853,9 @@ app.post("/api/prover", requireAdmin, async (c) => {
       klubb_id = null,
       proveleder_telefon = null,
       nkkrep_telefon = null,
+      nkkvara_telefon = null,
+      dvk_telefon = null,
+      dvk_navn = '',
       klasser = { uk: true, ak: true, vk: true },
       partier = {}
     } = body;
@@ -5850,8 +5868,8 @@ app.post("/api/prover", requireAdmin, async (c) => {
     }
 
     db.prepare(`
-      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, klasser, partier, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt')
+      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon, dvk_navn, klasser, partier, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt')
     `).run(
       id,
       navn,
@@ -5861,6 +5879,9 @@ app.post("/api/prover", requireAdmin, async (c) => {
       klubb_id,
       proveleder_telefon,
       nkkrep_telefon,
+      nkkvara_telefon,
+      dvk_telefon,
+      dvk_navn,
       JSON.stringify(klasser),
       JSON.stringify(partier)
     );
@@ -5891,7 +5912,7 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
       return c.json({ error: "Prøve ikke funnet" }, 404);
     }
 
-    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "nkkrep_telefon", "status"];
+    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "nkkrep_telefon", "nkkvara_telefon", "dvk_telefon", "dvk_navn", "status"];
     const sets = [];
     const vals = [];
 

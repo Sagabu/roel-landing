@@ -3127,11 +3127,35 @@
                                 endDate: apiTrial.slutt_dato,
                                 location: apiTrial.sted,
                                 club: { name: apiTrial.klubb_navn || '' },
-                                classes: apiTrial.klasser
+                                classes: apiTrial.klasser,
+                                // Rolle-data fra API
+                                proveleder_telefon: apiTrial.proveleder_telefon,
+                                proveleder_navn: apiTrial.proveleder_navn,
+                                nkkrep_telefon: apiTrial.nkkrep_telefon,
+                                nkkrep_navn: apiTrial.nkkrep_navn,
+                                nkkvara_telefon: apiTrial.nkkvara_telefon,
+                                nkkvara_navn: apiTrial.nkkvara_navn,
+                                dvk_telefon: apiTrial.dvk_telefon,
+                                dvk_navn: apiTrial.dvk_navn || apiTrial.dvk_navn_display
                             };
                             // Lagre i localStorage for fremtidig bruk
                             trials.push(trial);
                             localStorage.setItem('clubTrials', JSON.stringify(trials));
+
+                            // Fyll ut rolle-feltene i UI (autocomplete)
+                            if (apiTrial.proveleder_telefon && apiTrial.proveleder_navn) {
+                                velgBruker('proveleder', apiTrial.proveleder_telefon, apiTrial.proveleder_navn);
+                            }
+                            if (apiTrial.nkkrep_telefon && apiTrial.nkkrep_navn) {
+                                velgBruker('nkkRep', apiTrial.nkkrep_telefon, apiTrial.nkkrep_navn);
+                            }
+                            if (apiTrial.nkkvara_telefon && apiTrial.nkkvara_navn) {
+                                velgBruker('nkkVara', apiTrial.nkkvara_telefon, apiTrial.nkkvara_navn);
+                            }
+                            if (apiTrial.dvk_telefon) {
+                                const dvkNavnVal = apiTrial.dvk_navn || apiTrial.dvk_navn_display || '';
+                                velgBruker('dvk', apiTrial.dvk_telefon, dvkNavnVal);
+                            }
                         }
                     } catch (e) {
                         console.error('Kunne ikke hente prøve fra API:', e);
@@ -9457,6 +9481,13 @@
                 // Sjekk om prøven allerede eksisterer i prover-tabellen
                 let proverResp;
                 if (trialId) {
+                    // Hent roller fra praktiskInfo-feltene
+                    const provelederTlf = document.getElementById('provelederTelefon')?.value || null;
+                    const nkkRepTlf = document.getElementById('nkkRepTelefon')?.value || null;
+                    const nkkVaraTlf = document.getElementById('nkkVaraTelefon')?.value || null;
+                    const dvkTlf = document.getElementById('dvkTelefon')?.value || null;
+                    const dvkNavnValue = document.getElementById('dvkNavn')?.value || '';
+
                     // Forsøk å oppdatere eksisterende prøve
                     proverResp = await fetch(`/api/prover/${trialId}`, {
                         method: 'PUT',
@@ -9466,7 +9497,12 @@
                             sted: trialLocation,
                             start_dato: trialDateFrom,
                             slutt_dato: trialDateTo,
-                            klubb_id: klubbId
+                            klubb_id: klubbId,
+                            proveleder_telefon: provelederTlf,
+                            nkkrep_telefon: nkkRepTlf,
+                            nkkvara_telefon: nkkVaraTlf,
+                            dvk_telefon: dvkTlf,
+                            dvk_navn: dvkNavnValue
                         })
                     });
 
@@ -9478,6 +9514,13 @@
 
                 // Hvis ingen eksisterende prøve, opprett ny
                 if (!trialId) {
+                    // Hent roller fra praktiskInfo-feltene (for nye prøver)
+                    const provelederTlfNew = document.getElementById('provelederTelefon')?.value || null;
+                    const nkkRepTlfNew = document.getElementById('nkkRepTelefon')?.value || null;
+                    const nkkVaraTlfNew = document.getElementById('nkkVaraTelefon')?.value || null;
+                    const dvkTlfNew = document.getElementById('dvkTelefon')?.value || null;
+                    const dvkNavnNew = document.getElementById('dvkNavn')?.value || '';
+
                     proverResp = await fetch('/api/prover', {
                         method: 'POST',
                         headers: getAuthHeaders(),
@@ -9487,7 +9530,12 @@
                             start_dato: trialDateFrom,
                             slutt_dato: trialDateTo,
                             klubb_id: klubbId,
-                            klasser: { uk: true, ak: true, vk: true }
+                            klasser: { uk: true, ak: true, vk: true },
+                            proveleder_telefon: provelederTlfNew,
+                            nkkrep_telefon: nkkRepTlfNew,
+                            nkkvara_telefon: nkkVaraTlfNew,
+                            dvk_telefon: dvkTlfNew,
+                            dvk_navn: dvkNavnNew
                         })
                     });
 

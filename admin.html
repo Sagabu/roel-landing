@@ -4224,26 +4224,20 @@
         // Last antall kvalifiserte for visning på knappene
         async function loadKvalifiserteCount() {
             try {
-                // Hent alle VK-bedømminger fra server
-                const parties = getTrialParties();
-                const vkParties = parties.filter(p => p.type === 'vk');
+                // Hent ALLE vkResultater-nøkler fra server (mer robust enn å gjette partinavn)
+                const allVkResultater = await hentAlleVkResultater();
 
                 let totalKvalTilSemi = 0;
                 let totalKvalTilFinale = 0;
 
-                for (const party of vkParties) {
-                    const partiNavn = party.name.replace(/\s+/g, '_');
-                    const resp = await fetch(`/api/storage/vkResultater_${partiNavn}`);
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        const resultater = data.value || {};
-                        if (resultater.kvalifisertTilFinale) {
-                            const count = Object.values(resultater.kvalifisertTilFinale).filter(Boolean).length;
-                            if (party.vkSubType === 'vk_kval') {
-                                totalKvalTilSemi += count;
-                            } else if (party.vkSubType === 'vk_semi') {
-                                totalKvalTilFinale += count;
-                            }
+                for (const resultater of allVkResultater) {
+                    if (resultater.kvalifisertTilFinale) {
+                        const count = Object.values(resultater.kvalifisertTilFinale).filter(Boolean).length;
+                        // vkType fra resultatet forteller oss hvilken runde dette er fra
+                        if (resultater.vkType === 'kval') {
+                            totalKvalTilSemi += count;
+                        } else if (resultater.vkType === 'semi') {
+                            totalKvalTilFinale += count;
                         }
                     }
                 }
@@ -4271,6 +4265,54 @@
             } catch (err) {
                 console.error('Kunne ikke laste kvalifiserte-telling:', err);
             }
+        }
+
+        // Hent alle vkResultater fra server (alle nøkler som starter med vkResultater_)
+        async function hentAlleVkResultater() {
+            const resultater = [];
+            try {
+                // Først prøv å hente liste over alle nøkler
+                const keysResp = await fetch('/api/storage');
+                if (keysResp.ok) {
+                    const keysData = await keysResp.json();
+                    const vkKeys = (keysData.keys || [])
+                        .filter(k => k.key && k.key.startsWith('vkResultater_'))
+                        .map(k => k.key);
+
+                    // Hent verdien for hver nøkkel
+                    for (const key of vkKeys) {
+                        const resp = await fetch(`/api/storage/${key}`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.value) {
+                                resultater.push(data.value);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Kunne ikke hente vkResultater fra server:', err);
+            }
+
+            // Fallback: Også sjekk localStorage for partinavn fra trialParties
+            const parties = getTrialParties();
+            const vkParties = parties.filter(p => p.type === 'vk');
+            for (const party of vkParties) {
+                const partiNavn = party.name.replace(/\s+/g, '_');
+                const localKey = `vkResultater_${partiNavn}`;
+                const local = localStorage.getItem(localKey);
+                if (local) {
+                    try {
+                        const parsed = JSON.parse(local);
+                        // Unngå duplikater
+                        if (!resultater.some(r => r.partyName === parsed.partyName)) {
+                            resultater.push(parsed);
+                        }
+                    } catch (e) { /* ignorer */ }
+                }
+            }
+
+            return resultater;
         }
 
         // Vis trekning for valgt type
@@ -4321,42 +4363,47 @@
             kvalifiserteHunder = [];
 
             try {
-                const parties = getTrialParties();
-
-                // Bestem hvilke parti-typer vi skal hente fra
-                let sourceVkSubTypes = [];
+                // Bestem hvilke vkType-verdier vi skal hente fra
+                let sourceVkTypes = [];
                 if (type === 'semi' || type === 'finale_fra_kval') {
-                    sourceVkSubTypes = ['vk_kval'];
+                    sourceVkTypes = ['kval'];
                 } else if (type === 'finale') {
-                    sourceVkSubTypes = ['vk_semi'];
+                    sourceVkTypes = ['semi'];
                 }
 
-                // Hent kvalifiserte fra hvert relevant parti
-                for (const party of parties) {
-                    if (party.type !== 'vk') continue;
-                    if (!sourceVkSubTypes.includes(party.vkSubType)) continue;
+                // Hent alle vkResultater fra server (robust metode)
+                const allResultater = await hentAlleVkResultater();
+                const parties = getTrialParties();
 
-                    const partiNavn = party.name.replace(/\s+/g, '_');
+                // Filtrer på vkType fra resultatene
+                for (const resultater of allResultater) {
+                    if (!sourceVkTypes.includes(resultater.vkType)) continue;
 
-                    // Hent resultater for dette partiet fra server
-                    const resp = await fetch(`/api/storage/vkResultater_${partiNavn}`);
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        const resultater = data.value || {};
+                    if (resultater.kvalifisertTilFinale) {
+                        const kvalIds = Object.entries(resultater.kvalifisertTilFinale)
+                            .filter(([_, kval]) => kval === true)
+                            .map(([nr, _]) => parseInt(nr));
 
-                        if (resultater.kvalifisertTilFinale) {
-                            const kvalIds = Object.entries(resultater.kvalifisertTilFinale)
-                                .filter(([_, kval]) => kval === true)
-                                .map(([nr, _]) => parseInt(nr));
-
-                            // Finn hundene i dette partiets hundeliste
+                        // Prøv å finne hundene i trialParties basert på partyName
+                        const party = parties.find(p => p.name === resultater.partyName);
+                        if (party && party.dogs) {
                             for (const dog of party.dogs) {
                                 if (kvalIds.includes(dog.nr)) {
                                     kvalifiserteHunder.push({
                                         ...dog,
-                                        fraParti: party.name
+                                        fraParti: resultater.partyName
                                     });
                                 }
+                            }
+                        } else {
+                            // Fallback: Lag dummy-hunder med bare nr (hvis partiliste ikke finnes)
+                            for (const nr of kvalIds) {
+                                kvalifiserteHunder.push({
+                                    nr: nr,
+                                    name: `Hund #${nr}`,
+                                    race: '?',
+                                    fraParti: resultater.partyName || 'Ukjent parti'
+                                });
                             }
                         }
                     }

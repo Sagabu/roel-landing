@@ -650,6 +650,9 @@
 
         // Initialize
         async function init() {
+            // Finn vkSubType basert på partinavn (for å håndtere kval/semi/finale)
+            await detectVkSubType();
+
             // Last partiliste fra server
             await loadPartyList();
             // Last bedømmingsdata fra server (live-rangering fra eier)
@@ -670,6 +673,46 @@
             renderRankings();
             renderRoundHistoryButtons();
             setupDictation();
+        }
+
+        // Finn vkSubType basert på partinavn og trialParties
+        async function detectVkSubType() {
+            try {
+                // Hent trialParties fra server
+                const resp = await fetch('/api/storage/trialParties');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const parties = data.value || [];
+
+                    // Finn partiet som matcher URL-parameteren
+                    const matchingParty = parties.find(p =>
+                        p.name === parti ||
+                        p.name.replace(/\s+/g, '_') === parti ||
+                        p.name.replace(/\s+/g, '-') === parti
+                    );
+
+                    if (matchingParty && matchingParty.vkSubType) {
+                        localStorage.setItem('judgeSelectedPartyVkSubType', matchingParty.vkSubType);
+                        console.log('VK SubType detektert fra trialParties:', matchingParty.vkSubType);
+                        return;
+                    }
+                }
+
+                // Fallback: gjett basert på partinavn
+                const partiLower = parti.toLowerCase();
+                if (partiLower.includes('finale')) {
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk_finale');
+                } else if (partiLower.includes('semi')) {
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk_semi');
+                } else if (partiLower.includes('kval')) {
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk_kval');
+                } else {
+                    // Standard: anta 1-dags VK
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk');
+                }
+            } catch (err) {
+                console.warn('Kunne ikke detektere vkSubType:', err);
+            }
         }
 
         // Hent partiliste fra server
@@ -3995,15 +4038,25 @@
         function showFinishJudgingModal() {
             // Hent vkType fra localStorage hvis det finnes, ellers bruk state
             const storedVkType = localStorage.getItem('trialVkType');
+            const selectedPartyVkSubType = localStorage.getItem('judgeSelectedPartyVkSubType');
+
             if (storedVkType) {
                 // Konverter fra admin-format til dommer-format
                 if (storedVkType === '1day') {
                     state.vkType = '1dag';
                 } else if (storedVkType === '2day') {
                     // Sjekk om dette er kval eller finale basert på parti-info
-                    const selectedPartyVkSubType = localStorage.getItem('judgeSelectedPartyVkSubType');
                     if (selectedPartyVkSubType === 'vk_finale') {
                         state.vkType = 'finale';
+                    } else {
+                        state.vkType = 'kval';
+                    }
+                } else if (storedVkType === '3day') {
+                    // 3-dagers VK: sjekk om kval, semi eller finale
+                    if (selectedPartyVkSubType === 'vk_finale') {
+                        state.vkType = 'finale';
+                    } else if (selectedPartyVkSubType === 'vk_semi') {
+                        state.vkType = 'semi';
                     } else {
                         state.vkType = 'kval';
                     }

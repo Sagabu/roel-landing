@@ -3951,6 +3951,17 @@
                     { value: '6vk_kval', label: '6. VK kval' },
                     { value: 'ingen', label: 'Ingen premie' }
                 ],
+                'semi': [
+                    { value: '1vk_semi', label: '1. VK semi' },
+                    { value: '1vk_ck_semi', label: '1. VK m/CK semi' },
+                    { value: '2vk_semi', label: '2. VK semi' },
+                    { value: '2vk_ck_semi', label: '2. VK m/CK semi' },
+                    { value: '3vk_semi', label: '3. VK semi' },
+                    { value: '4vk_semi', label: '4. VK semi' },
+                    { value: '5vk_semi', label: '5. VK semi' },
+                    { value: '6vk_semi', label: '6. VK semi' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ],
                 'finale': [
                     { value: '1vk_finale', label: '1. VK finale' },
                     { value: '1vk_ck_finale', label: '1. VK finale m/CK' },
@@ -4019,6 +4030,9 @@
             const container = document.getElementById('premieRankingList');
             const premier = getPremierForType(state.vkType);
             const isKval = state.vkType === 'kval';
+            const isSemi = state.vkType === 'semi';
+            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const is3DayVK = vkConfig.type === '3day';
 
             // Hent rangerte hunder
             const ranked = Object.entries(state.plasseringer)
@@ -4087,13 +4101,13 @@
                                 </select>
                             ` : '<div class="text-xs text-vk-400 italic">Kan ikke tildeles premie (krever fuglearbeid + apport)</div>'}
 
-                            ${isKval ? `
+                            ${(isKval || isSemi) ? `
                                 <label class="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-200 cursor-pointer">
                                     <input type="checkbox"
                                            ${isKvalFinale ? 'checked' : ''}
                                            onchange="setKvalifisertTilFinale(${dogNr}, this.checked)"
                                            class="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
-                                    <span class="text-xs font-medium text-amber-800">Kvalifisert til finale</span>
+                                    <span class="text-xs font-medium text-amber-800">${isKval ? (is3DayVK ? 'Kvalifisert til semi' : 'Kvalifisert til finale') : 'Kvalifisert til finale'}</span>
                                 </label>
                             ` : ''}
                         </div>
@@ -4314,13 +4328,29 @@
                 }));
 
             const isKval = state.vkType === 'kval';
-            const vkTypeName = state.vkType === '1dag' ? '1-dags VK' : state.vkType === 'kval' ? 'VK Kvalifisering' : 'VK Finale';
+            const isSemi = state.vkType === 'semi';
+            const vkTypeName = state.vkType === '1dag' ? '1-dags VK'
+                : state.vkType === 'kval' ? 'VK Kvalifisering'
+                : state.vkType === 'semi' ? 'VK Semifinale'
+                : 'VK Finale';
 
             let resultatHtml = '';
             ranked.forEach(({ dog, plass, dogNr }) => {
                 const premie = state.premietildelinger[dogNr];
                 const premieLabel = premie ? getPremieLabel(premie) : null;
                 const erKvalTilFinale = state.kvalifisertTilFinale?.[dogNr];
+
+                // Vis "→ Semi" for kval eller "→ Finale" for kval/semi
+                let nextRoundLabel = '';
+                if (erKvalTilFinale) {
+                    if (isKval) {
+                        // I 2-dagers: kval → finale, i 3-dagers: kval → semi
+                        const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+                        nextRoundLabel = vkConfig.type === '3day' ? '→ Semi' : '→ Finale';
+                    } else if (isSemi) {
+                        nextRoundLabel = '→ Finale';
+                    }
+                }
 
                 resultatHtml += `
                     <div class="flex items-center justify-between py-2 px-3 ${premieLabel ? 'bg-forest-50' : 'bg-white'} rounded-lg border ${premieLabel ? 'border-forest-200' : 'border-vk-100'}">
@@ -4330,7 +4360,7 @@
                         </div>
                         <div class="flex items-center gap-2">
                             ${premieLabel ? `<span class="text-xs font-bold text-forest-700 bg-forest-100 px-2 py-1 rounded">${premieLabel}</span>` : ''}
-                            ${isKval && erKvalTilFinale ? `<span class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded">→ Finale</span>` : ''}
+                            ${nextRoundLabel ? `<span class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded">${nextRoundLabel}</span>` : ''}
                         </div>
                     </div>
                 `;
@@ -4430,6 +4460,14 @@
                 '4vk_kval': '4. VK kval',
                 '5vk_kval': '5. VK kval',
                 '6vk_kval': '6. VK kval',
+                '1vk_semi': '1. VK semi',
+                '1vk_ck_semi': '1. VK m/CK semi',
+                '2vk_semi': '2. VK semi',
+                '2vk_ck_semi': '2. VK m/CK semi',
+                '3vk_semi': '3. VK semi',
+                '4vk_semi': '4. VK semi',
+                '5vk_semi': '5. VK semi',
+                '6vk_semi': '6. VK semi',
                 '1vk_finale': '1. VK finale',
                 '1vk_ck_finale': '1. VK finale m/CK',
                 '1vk_cacit_finale': '1. VK finale m/CACIT',
@@ -5007,6 +5045,7 @@ Antall slipp: ${state.currentSlipp}
                     <select id="vkTypeSelect" onchange="updateVkType()" class="w-full h-10 px-3 rounded-lg border border-vk-300 bg-white text-sm font-medium">
                         <option value="1dag">1-dags VK</option>
                         <option value="kval">VK Kvalifisering</option>
+                        <option value="semi">VK Semifinale</option>
                         <option value="finale">VK Finale</option>
                     </select>
                 </div>

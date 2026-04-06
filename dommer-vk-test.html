@@ -1414,7 +1414,7 @@
                 return;
             }
 
-            // Advarsel hvis slipptid er under 15 minutter (uvanlig kort)
+            // Advarsel hvis TOTAL slipptid i runden er under 15 minutter
             // Men IKKE hvis hunden har "Tid til gode" eller "Avslutt hund" valgt
             const tid1 = parseInt(slipptid1);
             const tid2 = parseInt(slipptid2);
@@ -1423,13 +1423,19 @@
             const dog2HasTTG = document.getElementById('dog2_ttg')?.checked || state.tidTilGode[dog2Nr];
             const dog2IsAvslutt = document.getElementById('dog2_avslutt')?.checked || state.plasseringer[dog2Nr] === 'avsluttet';
 
+            // Beregn total slipptid for hver hund (tidligere slipp + nåværende)
+            const dog1PreviousTime = getTotalSlipptid(dog1Nr);
+            const dog2PreviousTime = getTotalSlipptid(dog2Nr);
+            const dog1TotalTime = dog1PreviousTime + tid1;
+            const dog2TotalTime = dog2PreviousTime + tid2;
+
             const shortDogs = [];
-            // Kun advar hvis slipptid er kort OG hunden ikke har TTG eller Avslutt
-            if (tid1 < 15 && !dog1HasTTG && !dog1IsAvslutt) {
-                shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${tid1} min`);
+            // Kun advar hvis TOTAL slipptid er kort OG hunden ikke har TTG eller Avslutt
+            if (dog1TotalTime < 15 && !dog1HasTTG && !dog1IsAvslutt) {
+                shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${dog1TotalTime} min totalt`);
             }
-            if (tid2 < 15 && !dog2HasTTG && !dog2IsAvslutt) {
-                shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${tid2} min`);
+            if (dog2TotalTime < 15 && !dog2HasTTG && !dog2IsAvslutt) {
+                shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${dog2TotalTime} min totalt`);
             }
 
             if (shortDogs.length > 0) {

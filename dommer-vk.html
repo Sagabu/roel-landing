@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Dommerkort VK (Test)</title>
+    <!-- Skip auth for testing -->
+    <script>window.SKIP_AUTH = true;</script>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -194,7 +196,7 @@
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St m/M</label>
-                            <input type="number" min="0" id="dog1_stand_m_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
+                            <input type="number" min="0" id="dog1_stand_m_makker" onchange="updateMakkerSlatt(1)" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St u/M</label>
@@ -390,7 +392,7 @@
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St m/M</label>
-                            <input type="number" min="0" id="dog2_stand_m_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
+                            <input type="number" min="0" id="dog2_stand_m_makker" onchange="updateMakkerSlatt(2)" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St u/M</label>
@@ -535,11 +537,11 @@
         <!-- Felles Parti og Rangering (under hundekortene) -->
         <div class="w-full bg-bark-50 border-t border-bark-200 px-3 py-2 mt-2">
             <div class="grid grid-cols-2 gap-4">
-                <div>
+                <div class="overflow-hidden">
                     <h4 class="text-[10px] font-bold text-bark-600 uppercase mb-1">Parti</h4>
                     <div id="shared_partyList" class="space-y-0.5 text-[10px]"></div>
                 </div>
-                <div>
+                <div class="overflow-hidden">
                     <h4 class="text-[10px] font-bold text-bark-600 uppercase mb-1">Rangering</h4>
                     <div id="shared_ranking" class="space-y-0.5 text-[10px]"></div>
                     <div id="shared_tidtilgode_section" class="mt-1 hidden">
@@ -550,11 +552,11 @@
                         <h5 class="text-[9px] font-bold text-red-600 uppercase">Avsluttet</h5>
                         <div id="shared_finishedList" class="text-[10px] text-red-700"></div>
                     </div>
-                    <!-- Historikk fra tidligere runder (kun synlig fra runde 2+) -->
-                    <div id="roundHistorySection" class="hidden">
-                        <h4 class="text-[10px] font-bold text-bark-600 uppercase mb-1">Tidligere runder</h4>
-                        <div id="roundHistoryList" class="space-y-2 text-[10px]"></div>
-                    </div>
+                </div>
+                <!-- Historikk fra tidligere runder (kun synlig fra runde 2+) -->
+                <div id="roundHistorySection" class="hidden">
+                    <h4 class="text-[10px] font-bold text-bark-600 uppercase mb-1">Tidligere runder</h4>
+                    <div id="roundHistoryList" class="space-y-2 text-[10px]"></div>
                 </div>
             </div>
         </div>
@@ -610,6 +612,8 @@
             roundSnapshots: {}, // { round: { plasseringer: {...}, dogData: {...} } } - snapshot av rangering etter hver runde
             vkType: '1dag', // '1dag', 'kval', 'finale'
             premietildelinger: {}, // { dogNr: 'premie' } - tildelte premier
+            kvalifisertTilFinale: {}, // { dogNr: true/false } - hunder kvalifisert til finale (kun VK kval)
+            judgingFinished: false, // Om bedømmingen er ferdig
         };
 
         // Hent proveId og parti fra URL-parametre
@@ -646,6 +650,9 @@
 
         // Initialize
         async function init() {
+            // Finn vkSubType basert på partinavn (for å håndtere kval/semi/finale)
+            await detectVkSubType();
+
             // Last partiliste fra server
             await loadPartyList();
             // Last bedømmingsdata fra server (live-rangering fra eier)
@@ -666,6 +673,46 @@
             renderRankings();
             renderRoundHistoryButtons();
             setupDictation();
+        }
+
+        // Finn vkSubType basert på partinavn og trialParties
+        async function detectVkSubType() {
+            try {
+                // Hent trialParties fra server
+                const resp = await fetch('/api/storage/trialParties');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const parties = data.value || [];
+
+                    // Finn partiet som matcher URL-parameteren
+                    const matchingParty = parties.find(p =>
+                        p.name === parti ||
+                        p.name.replace(/\s+/g, '_') === parti ||
+                        p.name.replace(/\s+/g, '-') === parti
+                    );
+
+                    if (matchingParty && matchingParty.vkSubType) {
+                        localStorage.setItem('judgeSelectedPartyVkSubType', matchingParty.vkSubType);
+                        console.log('VK SubType detektert fra trialParties:', matchingParty.vkSubType);
+                        return;
+                    }
+                }
+
+                // Fallback: gjett basert på partinavn
+                const partiLower = parti.toLowerCase();
+                if (partiLower.includes('finale')) {
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk_finale');
+                } else if (partiLower.includes('semi')) {
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk_semi');
+                } else if (partiLower.includes('kval')) {
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk_kval');
+                } else {
+                    // Standard: anta 1-dags VK
+                    localStorage.setItem('judgeSelectedPartyVkSubType', 'vk');
+                }
+            } catch (err) {
+                console.warn('Kunne ikke detektere vkSubType:', err);
+            }
         }
 
         // Hent partiliste fra server
@@ -975,6 +1022,8 @@
                     state.slippRankings = parsed.slippRankings || {};
                     state.vkType = parsed.vkType || '1dag';
                     state.premietildelinger = parsed.premietildelinger || {};
+                    state.kvalifisertTilFinale = parsed.kvalifisertTilFinale || {};
+                    state.judgingFinished = parsed.judgingFinished || false;
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -1000,7 +1049,9 @@
                 slippDogs: state.slippDogs,
                 slippRankings: state.slippRankings,
                 vkType: state.vkType,
-                premietildelinger: state.premietildelinger
+                premietildelinger: state.premietildelinger,
+                kvalifisertTilFinale: state.kvalifisertTilFinale,
+                judgingFinished: state.judgingFinished
             }));
 
             // Lagre live-rangering til server hvis ikke demo OG jeg er live-rangering eier
@@ -1048,7 +1099,9 @@
                     slipp_dogs: state.slippDogs,
                     slipp_rankings: state.slippRankings,
                     vk_type: state.vkType,
-                    premietildelinger: state.premietildelinger
+                    premietildelinger: state.premietildelinger,
+                    kvalifisert_til_finale: state.kvalifisertTilFinale,
+                    judging_finished: state.judgingFinished
                 };
 
                 try {
@@ -1257,12 +1310,37 @@
             const apportCheckbox = document.getElementById(`dog${position}_apport`);
             apportCheckbox.checked = slippData.apport || harApportFraTidligere;
 
-            // Oppdater slipptid-visning
-            updateSlipptidDisplay(position);
+            // Godkjent reis: Sjekk om hunden har godkjent reis fra tidligere slipp
+            const harReisFraTidligere = hasReisGodkjent(dogNr);
+            const reisCheckbox = document.getElementById(`dog${position}_godkjent_reis`);
+            if (reisCheckbox) {
+                reisCheckbox.checked = slippData.godkjentReis || harReisFraTidligere;
+            }
+
+            // Reising karakter (per slipp)
+            const reisingInput = document.getElementById(`dog${position}_reising`);
+            if (reisingInput) {
+                reisingInput.value = slippData.reising ?? '';
+            }
+
+            // Stand med/uten makker (per slipp)
+            const standMakkerInput = document.getElementById(`dog${position}_stand_m_makker`);
+            const standUtenMakkerInput = document.getElementById(`dog${position}_stand_u_makker`);
+            if (standMakkerInput) {
+                standMakkerInput.value = slippData.standMakker ?? '';
+                // Initialiser previousStandMakkerValues for korrekt differanse-beregning
+                previousStandMakkerValues[position] = slippData.standMakker || 0;
+            }
+            if (standUtenMakkerInput) {
+                standUtenMakkerInput.value = slippData.standUtenMakker ?? '';
+            }
 
             // Uønsket adferd (lagres på hund-nivå, ikke per slipp)
             document.getElementById(`dog${position}_uonsket_adferd`).checked = data?.uonsketAdferd || false;
             document.getElementById(`dog${position}_uonsket_adferd_tekst`).value = data?.uonsketAdferdTekst || '';
+
+            // Oppdater slipptid-visning
+            updateSlipptidDisplay(position);
         }
 
         // Sjekk om hunden har fått godkjent apport i et tidligere slipp
@@ -1271,6 +1349,14 @@
             if (!data || !data.slipps) return false;
 
             return Object.values(data.slipps).some(slipp => slipp.apport === true);
+        }
+
+        // Sjekk om hunden har fått godkjent reis i et tidligere slipp
+        function hasReisGodkjent(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return false;
+
+            return Object.values(data.slipps).some(slipp => slipp.godkjentReis === true);
         }
 
         function saveDogData(position) {
@@ -1283,13 +1369,19 @@
             }
 
             const apportChecked = document.getElementById(`dog${position}_apport`).checked;
+            const godkjentReisChecked = document.getElementById(`dog${position}_godkjent_reis`)?.checked || false;
+            const reisingValue = document.getElementById(`dog${position}_reising`)?.value;
 
             state.dogData[dogNr].slipps[state.currentSlipp] = {
                 fmr: document.getElementById(`dog${position}_fmr`).value ? parseInt(document.getElementById(`dog${position}_fmr`).value) : null,
                 fur: document.getElementById(`dog${position}_fur`).value ? parseInt(document.getElementById(`dog${position}_fur`).value) : null,
+                standMakker: document.getElementById(`dog${position}_stand_m_makker`).value ? parseInt(document.getElementById(`dog${position}_stand_m_makker`).value) : null,
+                standUtenMakker: document.getElementById(`dog${position}_stand_u_makker`).value ? parseInt(document.getElementById(`dog${position}_stand_u_makker`).value) : null,
                 slat: document.getElementById(`dog${position}_slat`).value ? parseInt(document.getElementById(`dog${position}_slat`).value) : null,
                 sjanse: document.getElementById(`dog${position}_sjanse`).value ? parseInt(document.getElementById(`dog${position}_sjanse`).value) : null,
                 apport: apportChecked || null,
+                godkjentReis: godkjentReisChecked || null,
+                reising: reisingValue ? parseInt(reisingValue) : null,
                 ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
                 slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : null,
                 // Jaktegenskaper
@@ -1370,7 +1462,274 @@
             infoEl.innerHTML = html;
         }
 
+        // Lagre forrige verdi av St m/M for å kunne beregne differansen
+        let previousStandMakkerValues = { 1: 0, 2: 0 };
+
+        // Oppdater makkerens slått-verdi når St m/M endres
+        function updateMakkerSlatt(position) {
+            const makkerPosition = position === 1 ? 2 : 1;
+            const standMakkerInput = document.getElementById(`dog${position}_stand_m_makker`);
+            const makkerSlattInput = document.getElementById(`dog${makkerPosition}_slat`);
+
+            if (!standMakkerInput || !makkerSlattInput) return;
+
+            const newValue = parseInt(standMakkerInput.value) || 0;
+            const previousValue = previousStandMakkerValues[position] || 0;
+            const difference = newValue - previousValue;
+
+            if (difference !== 0) {
+                const currentMakkerSlatt = parseInt(makkerSlattInput.value) || 0;
+                const newMakkerSlatt = Math.max(0, currentMakkerSlatt + difference);
+                makkerSlattInput.value = newMakkerSlatt > 0 ? newMakkerSlatt : '';
+
+                // Vis melding til dommer
+                const dog = partyList.find(d => d.nr === state.selectedDogs[makkerPosition]);
+                const dogName = dog ? `${dog.race} ${dog.name}` : `Hund ${makkerPosition}`;
+
+                if (difference > 0) {
+                    showToast(`${dogName}: Slått +${difference} (totalt ${newMakkerSlatt})`, 'info');
+                } else {
+                    showToast(`${dogName}: Slått ${difference} (totalt ${newMakkerSlatt})`, 'info');
+                }
+            }
+
+            // Oppdater lagret verdi
+            previousStandMakkerValues[position] = newValue;
+        }
+
+        // Vis en liten toast-melding
+        function showToast(message, type = 'info') {
+            // Fjern eksisterende toast
+            const existingToast = document.getElementById('toast-message');
+            if (existingToast) existingToast.remove();
+
+            const bgColor = type === 'info' ? 'bg-vk-600' : type === 'warning' ? 'bg-amber-500' : 'bg-green-600';
+
+            const toast = document.createElement('div');
+            toast.id = 'toast-message';
+            toast.className = `fixed bottom-24 left-1/2 transform -translate-x-1/2 ${bgColor} text-white px-4 py-2 rounded-xl shadow-lg z-50 text-sm font-medium`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            // Fjern etter 3 sekunder
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        // Callback for slipptid warning modal
+        let slipptidWarningCallback = null;
+
+        function showSlipptidWarning(shortDogs) {
+            const listEl = document.getElementById('slipptidWarningList');
+            listEl.innerHTML = shortDogs.map(d => `
+                <div class="flex items-center gap-2 p-2 bg-amber-50 rounded-lg border border-amber-200">
+                    <svg class="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span class="text-sm font-medium text-amber-800">${d}</span>
+                </div>
+            `).join('');
+            document.getElementById('slipptidWarningModal').classList.remove('hidden');
+        }
+
+        function closeSlipptidWarning(confirmed) {
+            document.getElementById('slipptidWarningModal').classList.add('hidden');
+            if (slipptidWarningCallback) {
+                slipptidWarningCallback(confirmed);
+                slipptidWarningCallback = null;
+            }
+        }
+
         function saveAll() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+
+            // Valider at slipptid er fylt ut for begge hunder
+            const slipptid1 = document.getElementById('dog1_slipptid').value;
+            const slipptid2 = document.getElementById('dog2_slipptid').value;
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            if (!slipptid1 || !slipptid2) {
+                const missingDogs = [];
+                if (!slipptid1) missingDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`);
+                if (!slipptid2) missingDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`);
+                alert(`Slipptid må fylles ut for:\n• ${missingDogs.join('\n• ')}`);
+                return;
+            }
+
+            // Advarsel hvis TOTAL slipptid i runden er under 15 minutter
+            // Men IKKE hvis hunden har "Tid til gode" eller "Avslutt hund" valgt
+            const tid1 = parseInt(slipptid1);
+            const tid2 = parseInt(slipptid2);
+            const dog1HasTTG = document.getElementById('dog1_ttg')?.checked || state.tidTilGode[dog1Nr];
+            const dog1IsAvslutt = document.getElementById('dog1_avslutt')?.checked || state.plasseringer[dog1Nr] === 'avsluttet';
+            const dog2HasTTG = document.getElementById('dog2_ttg')?.checked || state.tidTilGode[dog2Nr];
+            const dog2IsAvslutt = document.getElementById('dog2_avslutt')?.checked || state.plasseringer[dog2Nr] === 'avsluttet';
+
+            // Beregn total slipptid for hver hund (tidligere slipp + nåværende)
+            const dog1PreviousTime = getTotalSlipptid(dog1Nr);
+            const dog2PreviousTime = getTotalSlipptid(dog2Nr);
+            const dog1TotalTime = dog1PreviousTime + tid1;
+            const dog2TotalTime = dog2PreviousTime + tid2;
+
+            const shortDogs = [];
+            // Kun advar hvis TOTAL slipptid er kort OG hunden ikke har TTG eller Avslutt
+            if (dog1TotalTime < 15 && !dog1HasTTG && !dog1IsAvslutt) {
+                shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${dog1TotalTime} min totalt`);
+            }
+            if (dog2TotalTime < 15 && !dog2HasTTG && !dog2IsAvslutt) {
+                shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${dog2TotalTime} min totalt`);
+            }
+
+            if (shortDogs.length > 0) {
+                // Vis pen modal i stedet for confirm()
+                slipptidWarningCallback = (confirmed) => {
+                    if (confirmed) {
+                        validateFuglearbeidAndContinue();
+                    }
+                };
+                showSlipptidWarning(shortDogs);
+                return;
+            }
+
+            validateFuglearbeidAndContinue();
+        }
+
+        // Validering av fuglearbeid (FMR/FUR) og apport
+        function validateFuglearbeidAndContinue() {
+            const dog1Nr = state.selectedDogs[1];
+            const dog2Nr = state.selectedDogs[2];
+            const dog1 = partyList.find(d => d.nr === dog1Nr);
+            const dog2 = partyList.find(d => d.nr === dog2Nr);
+
+            const dog1IsAvslutt = document.getElementById('dog1_avslutt')?.checked;
+            const dog2IsAvslutt = document.getElementById('dog2_avslutt')?.checked;
+
+            // Hent FMR/FUR verdier
+            const dog1FMR = parseInt(document.getElementById('dog1_fmr').value) || 0;
+            const dog1FUR = parseInt(document.getElementById('dog1_fur').value) || 0;
+            const dog2FMR = parseInt(document.getElementById('dog2_fmr').value) || 0;
+            const dog2FUR = parseInt(document.getElementById('dog2_fur').value) || 0;
+
+            // Hent reis og apport status
+            const dog1GodkjentReis = document.getElementById('dog1_godkjent_reis')?.checked || hasReisGodkjent(dog1Nr);
+            const dog1Reising = document.getElementById('dog1_reising')?.value;
+            const dog1Apport = document.getElementById('dog1_apport')?.checked || hasApportGodkjent(dog1Nr);
+
+            const dog2GodkjentReis = document.getElementById('dog2_godkjent_reis')?.checked || hasReisGodkjent(dog2Nr);
+            const dog2Reising = document.getElementById('dog2_reising')?.value;
+            const dog2Apport = document.getElementById('dog2_apport')?.checked || hasApportGodkjent(dog2Nr);
+
+            const problems = [];
+
+            // Hent Stand m/M og Stand u/M verdier
+            const dog1StandMakker = parseInt(document.getElementById('dog1_stand_m_makker')?.value) || 0;
+            const dog1StandUtenMakker = parseInt(document.getElementById('dog1_stand_u_makker')?.value) || 0;
+            const dog2StandMakker = parseInt(document.getElementById('dog2_stand_m_makker')?.value) || 0;
+            const dog2StandUtenMakker = parseInt(document.getElementById('dog2_stand_u_makker')?.value) || 0;
+
+            // Validering for hund 1
+            if (!dog1IsAvslutt) {
+                // FMR krever godkjent reis og reising-karakter
+                if (dog1FMR > 0 && (!dog1GodkjentReis || !dog1Reising)) {
+                    const missing = [];
+                    if (!dog1GodkjentReis) missing.push('godkjent reis');
+                    if (!dog1Reising) missing.push('reising-karakter');
+                    problems.push({
+                        dog: `${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`,
+                        issue: `FMR er valgt, men mangler: ${missing.join(', ')}`,
+                        type: 'fmr_reis'
+                    });
+                }
+
+                // FMR eller FUR krever apport for plassering
+                if ((dog1FMR > 0 || dog1FUR > 0) && !dog1Apport) {
+                    problems.push({
+                        dog: `${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`,
+                        issue: `Har fuglearbeid (${dog1FMR > 0 ? 'FMR' : 'FUR'}) men apport er ikke godkjent`,
+                        type: 'apport'
+                    });
+                }
+
+                // FMR+FUR må være lik St m/M + St u/M
+                const dog1TotalFuglearbeid = dog1FMR + dog1FUR;
+                const dog1TotalStand = dog1StandMakker + dog1StandUtenMakker;
+                if (dog1TotalFuglearbeid > 0 && dog1TotalFuglearbeid !== dog1TotalStand) {
+                    problems.push({
+                        dog: `${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`,
+                        issue: `FMR+FUR (${dog1TotalFuglearbeid}) må være lik St m/M + St u/M (${dog1TotalStand})`,
+                        type: 'stand_mismatch'
+                    });
+                }
+            }
+
+            // Validering for hund 2
+            if (!dog2IsAvslutt) {
+                // FMR krever godkjent reis og reising-karakter
+                if (dog2FMR > 0 && (!dog2GodkjentReis || !dog2Reising)) {
+                    const missing = [];
+                    if (!dog2GodkjentReis) missing.push('godkjent reis');
+                    if (!dog2Reising) missing.push('reising-karakter');
+                    problems.push({
+                        dog: `${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`,
+                        issue: `FMR er valgt, men mangler: ${missing.join(', ')}`,
+                        type: 'fmr_reis'
+                    });
+                }
+
+                // FMR eller FUR krever apport for plassering
+                if ((dog2FMR > 0 || dog2FUR > 0) && !dog2Apport) {
+                    problems.push({
+                        dog: `${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`,
+                        issue: `Har fuglearbeid (${dog2FMR > 0 ? 'FMR' : 'FUR'}) men apport er ikke godkjent`,
+                        type: 'apport'
+                    });
+                }
+
+                // FMR+FUR må være lik St m/M + St u/M
+                const dog2TotalFuglearbeid = dog2FMR + dog2FUR;
+                const dog2TotalStand = dog2StandMakker + dog2StandUtenMakker;
+                if (dog2TotalFuglearbeid > 0 && dog2TotalFuglearbeid !== dog2TotalStand) {
+                    problems.push({
+                        dog: `${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`,
+                        issue: `FMR+FUR (${dog2TotalFuglearbeid}) må være lik St m/M + St u/M (${dog2TotalStand})`,
+                        type: 'stand_mismatch'
+                    });
+                }
+            }
+
+            if (problems.length > 0) {
+                showFuglearbeidWarning(problems);
+                return;
+            }
+
+            continueWithSaveAll();
+        }
+
+        // Callback for fuglearbeid warning modal
+        let fuglearbeidWarningCallback = null;
+
+        function showFuglearbeidWarning(problems) {
+            const listEl = document.getElementById('fuglearbeidWarningList');
+            listEl.innerHTML = problems.map(p => `
+                <div class="p-3 bg-warm-50 rounded-lg border border-warm-200">
+                    <div class="font-medium text-warm-800">${p.dog}</div>
+                    <div class="text-sm text-warm-600 mt-1">${p.issue}</div>
+                </div>
+            `).join('');
+            document.getElementById('fuglearbeidWarningModal').classList.remove('hidden');
+        }
+
+        function closeFuglearbeidWarning(confirmed) {
+            document.getElementById('fuglearbeidWarningModal').classList.add('hidden');
+            if (confirmed) {
+                continueWithSaveAll();
+            }
+        }
+
+        function continueWithSaveAll() {
             const dog1Nr = state.selectedDogs[1];
             const dog2Nr = state.selectedDogs[2];
 
@@ -1430,21 +1789,57 @@
                 btn.classList.remove('bg-green-600');
                 btn.classList.add('bg-vk-600', 'hover:bg-vk-700');
 
-                // Bestem hva som skal skje videre
-                if (dog1NeedNewDog && dog2NeedNewDog) {
-                    // Begge hunder må byttes - gå til neste par
-                    goToNextPair();
-                } else if (dog1NeedNewDog) {
-                    // Kun hund 1 må byttes - åpne partiliste for posisjon 1
-                    openPartyListModal(1);
-                } else if (dog2NeedNewDog) {
-                    // Kun hund 2 må byttes - åpne partiliste for posisjon 2
-                    openPartyListModal(2);
-                } else {
-                    // Ingen trenger å byttes (begge fikk plassering) - gå til neste par
-                    goToNextPair();
-                }
+                // Lagre hva som skal skje etter redegjørelsen
+                state.afterRedegjoerelse = {
+                    dog1NeedNewDog: dog1NeedNewDog,
+                    dog2NeedNewDog: dog2NeedNewDog
+                };
+
+                // Registrer motstandere og slipp-data før redegjørelse
+                registerSlippData();
+
+                // Vis alltid redegjørelse-modal først
+                showRedegjoerelseModal();
             }, 800);
+        }
+
+        // Registrer slipp-data (motstandere, pairing, etc.)
+        function registerSlippData() {
+            const currentDog1 = state.selectedDogs[1];
+            const currentDog2 = state.selectedDogs[2];
+            if (currentDog1 && currentDog2) {
+                if (!state.opponents[currentDog1]) state.opponents[currentDog1] = [];
+                if (!state.opponents[currentDog2]) state.opponents[currentDog2] = [];
+                if (!state.opponents[currentDog1].includes(currentDog2)) {
+                    state.opponents[currentDog1].push(currentDog2);
+                }
+                if (!state.opponents[currentDog2].includes(currentDog1)) {
+                    state.opponents[currentDog2].push(currentDog1);
+                }
+                // Lagre pairing for denne runden
+                if (!state.roundPairings[state.currentRound]) {
+                    state.roundPairings[state.currentRound] = [];
+                }
+                state.roundPairings[state.currentRound].push([currentDog1, currentDog2]);
+
+                // Marker hundene som bedømt i denne runden
+                if (!state.judgedThisRound[state.currentRound]) {
+                    state.judgedThisRound[state.currentRound] = [];
+                }
+                if (!state.judgedThisRound[state.currentRound].includes(currentDog1)) {
+                    state.judgedThisRound[state.currentRound].push(currentDog1);
+                }
+                if (!state.judgedThisRound[state.currentRound].includes(currentDog2)) {
+                    state.judgedThisRound[state.currentRound].push(currentDog2);
+                }
+
+                // Lagre hvilke hunder som var i dette slippet
+                state.slippDogs[state.currentSlipp] = [currentDog1, currentDog2];
+
+                // Lagre rangering etter dette slippet
+                saveSlippRanking(state.currentSlipp);
+            }
+            saveToStorage();
         }
 
         // Lagre kun én hund (uten å avslutte) - må ha plassering eller TTG
@@ -1665,46 +2060,18 @@
             return [null, null];
         }
 
+        // Gammel funksjon - nå brukes bare av saveLiveRanking for bakoverkompatibilitet
         function goToNextPair() {
-            // Registrer motstandere for nåværende par
-            const currentDog1 = state.selectedDogs[1];
-            const currentDog2 = state.selectedDogs[2];
-            if (currentDog1 && currentDog2) {
-                if (!state.opponents[currentDog1]) state.opponents[currentDog1] = [];
-                if (!state.opponents[currentDog2]) state.opponents[currentDog2] = [];
-                if (!state.opponents[currentDog1].includes(currentDog2)) {
-                    state.opponents[currentDog1].push(currentDog2);
-                }
-                if (!state.opponents[currentDog2].includes(currentDog1)) {
-                    state.opponents[currentDog2].push(currentDog1);
-                }
-                // Lagre pairing for denne runden
-                if (!state.roundPairings[state.currentRound]) {
-                    state.roundPairings[state.currentRound] = [];
-                }
-                state.roundPairings[state.currentRound].push([currentDog1, currentDog2]);
+            // Registrer slipp-data hvis ikke allerede gjort
+            registerSlippData();
 
-                // Marker hundene som bedømt i denne runden
-                if (!state.judgedThisRound[state.currentRound]) {
-                    state.judgedThisRound[state.currentRound] = [];
-                }
-                if (!state.judgedThisRound[state.currentRound].includes(currentDog1)) {
-                    state.judgedThisRound[state.currentRound].push(currentDog1);
-                }
-                if (!state.judgedThisRound[state.currentRound].includes(currentDog2)) {
-                    state.judgedThisRound[state.currentRound].push(currentDog2);
-                }
+            // Lagre hva som skal skje etter redegjørelsen (begge hunder må byttes)
+            state.afterRedegjoerelse = {
+                dog1NeedNewDog: true,
+                dog2NeedNewDog: true
+            };
 
-                // Lagre hvilke hunder som var i dette slippet
-                state.slippDogs[state.currentSlipp] = [currentDog1, currentDog2];
-
-                // Lagre rangering etter dette slippet
-                saveSlippRanking(state.currentSlipp);
-            }
-
-            saveToStorage();
-
-            // Vis redegjørelses-modal før vi går videre
+            // Vis redegjørelse-modal
             showRedegjoerelseModal();
         }
 
@@ -1955,24 +2322,17 @@
         }
 
         function renderPartyLists() {
-            // Render til felles partiliste
+            // Render til felles partiliste (kun startnummer, rase og navn - plassering vises i rangeringslisten)
             const container = document.getElementById('shared_partyList');
             if (!container) return;
 
             container.innerHTML = partyList.map(dog => {
                 const plass = state.plasseringer[dog.nr];
-                const hasTidTilGode = state.tidTilGode[dog.nr];
                 const isSelected = dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2];
                 const isFinished = plass === 'avsluttet';
 
-                let status = '';
-                if (plass && plass !== 'avsluttet') status = `<span class="text-vk-600 font-bold">${plass}.</span>`;
-                else if (hasTidTilGode) status = '<span class="text-amber-500 font-bold">TTG</span>';
-                else if (isFinished) status = '<span class="text-red-500">×</span>';
-
-                return `<div class="flex justify-between ${isSelected ? 'font-semibold text-vk-700' : ''} ${isFinished ? 'opacity-50 line-through' : ''}">
-                    <span>${dog.nr}. ${dog.race} ${dog.name}</span>
-                    ${status}
+                return `<div class="${isSelected ? 'font-semibold text-vk-700' : ''} ${isFinished ? 'opacity-50 line-through' : ''}">
+                    ${dog.nr}. ${dog.race} ${dog.name}
                 </div>`;
             }).join('');
         }
@@ -1995,8 +2355,31 @@
             return stats;
         }
 
+        // Hjelpefunksjon: Hent hundenavn uten startnummer
+        function getDogName(dog) {
+            if (!dog) return '';
+            return (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
+        }
+
+        // Hjelpefunksjon: Hent rase (fjern hvis det er et tall/plassering)
+        function getDogRace(dog) {
+            if (!dog) return '';
+            const race = dog.race || '';
+            // Hvis "race" er et tall med punktum (f.eks. "1."), ignorer det
+            if (/^\d+\.?$/.test(race)) return '';
+            return race;
+        }
+
+        // Hjelpefunksjon: Formater hund for visning (rase + navn, uten duplikate numre)
+        function formatDogDisplay(dog) {
+            if (!dog) return '';
+            const race = getDogRace(dog);
+            const name = getDogName(dog);
+            return race ? `${race} ${name}` : name;
+        }
+
         // Formater statistikk som kort tekst (f.eks. "2xFMR FUR 65'" - kun "2x" hvis mer enn 1)
-        // showSlipptid: om true vises slipptid, ellers kun FMR/FUR etc
+        // showSlipptid: true = vis slipptid (kun for plasserte hunder)
         function formatDogStats(dogNr, showSlipptid = true) {
             const stats = getDogStats(dogNr);
             const totalSlipptid = getTotalSlipptid(dogNr);
@@ -2057,7 +2440,7 @@
                 rankContainer.innerHTML = placed.map(({ dog, plass, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Vis FMR/FUR etc, men ikke slipptid
                     const statsHtml = stats ? `<span class="text-vk-500 ml-1">${stats}</span>` : '';
-                    return `<div><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dog.name}${statsHtml}</div>`;
+                    return `<div><span class="font-bold text-vk-700">${plass}.</span> ${formatDogDisplay(dog)}${statsHtml}</div>`;
                 }).join('');
             }
 
@@ -2068,7 +2451,7 @@
                     const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for TTG
                     const statsHtml = stats ? `<span class="text-amber-500 ml-1">${stats}</span>` : '';
                     return `<div class="cursor-pointer hover:bg-amber-100 px-1 rounded flex items-center gap-1" onclick="hentTilbakeTTG(${dog.nr}, 1)">
-                        <span class="text-amber-600">↩</span> ${dog.race} ${dog.name}${statsHtml}
+                        <span class="text-amber-600">↩</span> ${formatDogDisplay(dog)}${statsHtml}
                     </div>`;
                 }).join('');
             } else {
@@ -2081,7 +2464,7 @@
                 finishedList.innerHTML = finished.map(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for avsluttede
                     const statsHtml = stats ? `<span class="text-red-400 ml-1">${stats}</span>` : '';
-                    return `<div>${dog.race} ${dog.name}${statsHtml}</div>`;
+                    return `<div>${formatDogDisplay(dog)}${statsHtml}</div>`;
                 }).join('');
             } else {
                 finishedSection.classList.add('hidden');
@@ -2435,7 +2818,7 @@
                             </div>
                             <div class="flex flex-col items-end gap-1">
                                 ${statusBadge}
-                                ${totalSlipptid > 0 ? `<span class="text-xs ${totalSlipptid >= 60 ? 'text-green-600 font-bold' : 'text-vk-500'}">${totalSlipptid} min</span>` : ''}
+                                ${isRanked && totalSlipptid > 0 ? `<span class="text-xs ${totalSlipptid >= 60 ? 'text-green-600 font-bold' : 'text-vk-500'}">${totalSlipptid} min</span>` : ''}
                             </div>
                         </div>
                     </div>
@@ -2941,8 +3324,17 @@
             updateDogDisplays();
             updatePlacementDropdowns();
 
-            // Gå til neste par
-            setTimeout(() => goToNextPair(), 300);
+            // Registrer slipp-data (motstandere, pairing, etc.)
+            registerSlippData();
+
+            // Begge hunder har fått plassering, så begge må byttes til neste par
+            state.afterRedegjoerelse = {
+                dog1NeedNewDog: true,
+                dog2NeedNewDog: true
+            };
+
+            // Vis redegjørelse-modal
+            setTimeout(() => showRedegjoerelseModal(), 300);
         }
 
         // === TID TIL GODE VALG ===
@@ -2952,8 +3344,8 @@
             ttgDogsForChoice = dogsWithTTG;
 
             const dogNames = dogsWithTTG.map(dogNr => {
-                const dog = state.dogs.find(d => d.nr === dogNr);
-                return dog ? `${dog.nr}. ${dog.navn}` : `Hund ${dogNr}`;
+                const dog = partyList.find(d => d.nr === dogNr);
+                return dog ? `${dog.nr}. ${dog.name}` : `Hund ${dogNr}`;
             });
 
             const modal = document.getElementById('tidTilGodeChoiceModal');
@@ -3011,7 +3403,7 @@
             const dog2Select = document.getElementById('manualDog2Select');
 
             // Finn tilgjengelige hunder (ikke avsluttet)
-            const availableDogs = state.dogs.filter(dog => {
+            const availableDogs = partyList.filter(dog => {
                 const isFinished = state.plasseringer[dog.nr] === 'avsluttet';
                 return !isFinished;
             });
@@ -3022,7 +3414,7 @@
                     const isTTG = suggestedDogs.includes(dog.nr);
                     const ttgLabel = isTTG ? ' ⏱️ (tid til gode)' : '';
                     const selected = dog.nr === selectedNr ? 'selected' : '';
-                    return `<option value="${dog.nr}" ${selected}>${dog.nr}. ${dog.navn}${ttgLabel}</option>`;
+                    return `<option value="${dog.nr}" ${selected}>${dog.nr}. ${dog.name}${ttgLabel}</option>`;
                 }).join('');
             };
 
@@ -3247,13 +3639,27 @@
 
         function showRedegjoerelseModal() {
             const modal = document.getElementById('redegjoerelseModal');
+            if (!modal) {
+                console.error('redegjoerelseModal not found!');
+                return;
+            }
             const slippInfo = document.getElementById('redegjoerelseSlippInfo');
             const hundeContainer = document.getElementById('redegjoerelseSlippHunder');
             const rangeringContainer = document.getElementById('redegjoerelseRangering');
             const kommentarContainer = document.getElementById('redegjoerelseKommentar');
+            const kommentarTittel = document.getElementById('redegjoerelseKommentarTittel');
 
             // Oppdater slipp-info
             slippInfo.textContent = `Slipp ${state.currentSlipp} fullført - Runde ${state.currentRound}`;
+
+            // Oppdater kommentar-tittel med slippnummer
+            if (kommentarTittel) {
+                kommentarTittel.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                    </svg>
+                    Redegjørelse slipp ${state.currentSlipp}`;
+            }
 
             // Vis de to hundene som nettopp ble bedømt
             const dog1Nr = state.selectedDogs[1];
@@ -3289,7 +3695,7 @@
                     <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-warm-200">
                         <div class="flex items-center gap-2">
                             <span class="font-bold text-warm-800">${nr}.</span>
-                            <span class="font-medium text-bark-800">${dog.navn || dog.name}</span>
+                            <span class="font-medium text-bark-800">${formatDogDisplay(dog)}</span>
                             ${stats ? `<span class="text-xs text-bark-500">(${stats})</span>` : ''}
                         </div>
                         <span class="text-xs px-2 py-1 rounded-full font-medium ${statusClass}">${statusText}</span>
@@ -3344,7 +3750,7 @@
                     <div class="flex items-center justify-between p-2 rounded-lg border ${bgClass}">
                         <div class="flex items-center gap-2">
                             <span class="w-8 text-center font-bold ${plass && plass <= 3 ? 'text-forest-700' : 'text-bark-600'}">${plassText}</span>
-                            <span class="font-medium text-bark-800">${dog.navn || dog.name}</span>
+                            <span class="font-medium text-bark-800">${formatDogDisplay(dog)}</span>
                             ${stats ? `<span class="text-xs text-bark-500">(${stats})</span>` : ''}
                         </div>
                     </div>
@@ -3353,8 +3759,7 @@
             rangeringContainer.innerHTML = rangeringHTML || '<p class="text-bark-400 text-sm">Ingen plasserte hunder ennå</p>';
 
             // Vis felles kommentar for slippet
-            const slippData = state.slipps[state.currentSlipp] || {};
-            const kommentar = slippData.comment || '';
+            const kommentar = state.slippComments[state.currentSlipp] || '';
             if (kommentar.trim()) {
                 kommentarContainer.textContent = kommentar;
                 kommentarContainer.classList.remove('text-bark-400');
@@ -3371,8 +3776,26 @@
 
         function closeRedegjoerelseAndContinue() {
             document.getElementById('redegjoerelseModal').classList.add('hidden');
-            // Fortsett til neste par
-            proceedToNextPair();
+
+            // Sjekk hva som skal skje etter redegjørelsen
+            const after = state.afterRedegjoerelse || { dog1NeedNewDog: true, dog2NeedNewDog: true };
+
+            if (after.dog1NeedNewDog && after.dog2NeedNewDog) {
+                // Begge hunder må byttes - gå til neste par
+                proceedToNextPair();
+            } else if (after.dog1NeedNewDog) {
+                // Kun hund 1 må byttes - åpne partiliste for posisjon 1
+                openPartyListModal(1);
+            } else if (after.dog2NeedNewDog) {
+                // Kun hund 2 må byttes - åpne partiliste for posisjon 2
+                openPartyListModal(2);
+            } else {
+                // Ingen trenger å byttes - gå til neste par
+                proceedToNextPair();
+            }
+
+            // Nullstill
+            state.afterRedegjoerelse = null;
         }
 
         function generateNextRoundPairings() {
@@ -3571,6 +3994,17 @@
                     { value: '6vk_kval', label: '6. VK kval' },
                     { value: 'ingen', label: 'Ingen premie' }
                 ],
+                'semi': [
+                    { value: '1vk_semi', label: '1. VK semi' },
+                    { value: '1vk_ck_semi', label: '1. VK m/CK semi' },
+                    { value: '2vk_semi', label: '2. VK semi' },
+                    { value: '2vk_ck_semi', label: '2. VK m/CK semi' },
+                    { value: '3vk_semi', label: '3. VK semi' },
+                    { value: '4vk_semi', label: '4. VK semi' },
+                    { value: '5vk_semi', label: '5. VK semi' },
+                    { value: '6vk_semi', label: '6. VK semi' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ],
                 'finale': [
                     { value: '1vk_finale', label: '1. VK finale' },
                     { value: '1vk_ck_finale', label: '1. VK finale m/CK' },
@@ -3594,7 +4028,41 @@
             return stats && (stats.fmr > 0 || stats.fur > 0);
         }
 
+        // Sjekk om hund kvalifiserer for premie (fuglearbeid + apport)
+        function kanFaPremie(dogNr) {
+            const harFuglearbeid = hasFuglearbeid(dogNr);
+            const harApport = hasApportGodkjent(dogNr);
+            return harFuglearbeid && harApport;
+        }
+
         function showFinishJudgingModal() {
+            // Hent vkType fra localStorage hvis det finnes, ellers bruk state
+            const storedVkType = localStorage.getItem('trialVkType');
+            const selectedPartyVkSubType = localStorage.getItem('judgeSelectedPartyVkSubType');
+
+            if (storedVkType) {
+                // Konverter fra admin-format til dommer-format
+                if (storedVkType === '1day') {
+                    state.vkType = '1dag';
+                } else if (storedVkType === '2day') {
+                    // Sjekk om dette er kval eller finale basert på parti-info
+                    if (selectedPartyVkSubType === 'vk_finale') {
+                        state.vkType = 'finale';
+                    } else {
+                        state.vkType = 'kval';
+                    }
+                } else if (storedVkType === '3day') {
+                    // 3-dagers VK: sjekk om kval, semi eller finale
+                    if (selectedPartyVkSubType === 'vk_finale') {
+                        state.vkType = 'finale';
+                    } else if (selectedPartyVkSubType === 'vk_semi') {
+                        state.vkType = 'semi';
+                    } else {
+                        state.vkType = 'kval';
+                    }
+                }
+            }
+
             // Sett VK-type dropdown
             document.getElementById('vkTypeSelect').value = state.vkType;
 
@@ -3614,6 +4082,10 @@
         function renderPremieRankingList() {
             const container = document.getElementById('premieRankingList');
             const premier = getPremierForType(state.vkType);
+            const isKval = state.vkType === 'kval';
+            const isSemi = state.vkType === 'semi';
+            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const is3DayVK = vkConfig.type === '3day';
 
             // Hent rangerte hunder
             const ranked = Object.entries(state.plasseringer)
@@ -3625,12 +4097,15 @@
                     dogNr: parseInt(nr)
                 }));
 
-            let html = '';
+            let html = '<div id="dragRankingList" class="space-y-2">';
 
-            ranked.forEach(({ dog, plass, dogNr }) => {
+            ranked.forEach(({ dog, plass, dogNr }, index) => {
                 const stats = formatDogStatsDetailed(dogNr);
+                const kvalForPremie = kanFaPremie(dogNr);
                 const harFuglearbeid = hasFuglearbeid(dogNr);
+                const harApport = hasApportGodkjent(dogNr);
                 const currentPremie = state.premietildelinger[dogNr] || '';
+                const isKvalFinale = state.kvalifisertTilFinale?.[dogNr] || false;
 
                 // Bygg options for premie-dropdown
                 let optionsHtml = '<option value="">-- Velg premie --</option>';
@@ -3639,24 +4114,61 @@
                     optionsHtml += `<option value="${p.value}" ${selected}>${p.label}</option>`;
                 });
 
+                // Status-badge
+                let statusBadge = '';
+                if (kvalForPremie) {
+                    statusBadge = '<span class="text-[10px] bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full">Klar for premie</span>';
+                } else if (harFuglearbeid && !harApport) {
+                    statusBadge = '<span class="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Mangler apport</span>';
+                } else {
+                    statusBadge = '<span class="text-[10px] bg-vk-100 text-vk-500 px-2 py-0.5 rounded-full">Uten fugl</span>';
+                }
+
                 html += `
-                    <div class="bg-white border ${harFuglearbeid ? 'border-forest-300' : 'border-vk-200'} rounded-lg p-3">
+                    <div class="bg-white border ${kvalForPremie ? 'border-forest-300' : 'border-vk-200'} rounded-lg p-3 cursor-move ranking-item"
+                         draggable="true"
+                         data-dog-nr="${dogNr}"
+                         data-plass="${plass}"
+                         ondragstart="handleDragStart(event)"
+                         ondragover="handleDragOver(event)"
+                         ondrop="handleDrop(event)"
+                         ondragend="handleDragEnd(event)">
                         <div class="flex items-center justify-between mb-1">
                             <div class="flex items-center gap-2">
-                                <span class="font-bold text-vk-700">${plass}.</span>
+                                <div class="flex items-center gap-1">
+                                    <svg class="w-4 h-4 text-vk-300 cursor-grab" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                                    </svg>
+                                    <span class="font-bold text-vk-700 ranking-number">${plass}.</span>
+                                </div>
                                 <span class="font-medium">${dog.race} ${dog.name}</span>
                             </div>
-                            ${harFuglearbeid ? '<span class="text-[10px] bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full">Fuglearbeid</span>' : '<span class="text-[10px] bg-vk-100 text-vk-500 px-2 py-0.5 rounded-full">Uten fugl</span>'}
+                            ${statusBadge}
                         </div>
                         <div class="text-[10px] text-vk-500 mb-2">${stats || 'Ingen statistikk'}</div>
-                        ${harFuglearbeid ? `
-                            <select onchange="setPremie(${dogNr}, this.value)" class="w-full h-9 px-2 rounded border border-vk-300 bg-white text-sm">
-                                ${optionsHtml}
-                            </select>
-                        ` : '<div class="text-xs text-vk-400 italic">Kan ikke tildeles premie uten fuglearbeid</div>'}
+
+                        <div class="space-y-2">
+                            ${kvalForPremie ? `
+                                <select onchange="setPremie(${dogNr}, this.value)" class="w-full h-9 px-2 rounded border border-vk-300 bg-white text-sm">
+                                    ${optionsHtml}
+                                </select>
+                            ` : '<div class="text-xs text-vk-400 italic">Kan ikke tildeles premie (krever fuglearbeid + apport)</div>'}
+
+                            ${(isKval || isSemi) ? `
+                                <label class="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-200 cursor-pointer">
+                                    <input type="checkbox"
+                                           ${isKvalFinale ? 'checked' : ''}
+                                           onchange="setKvalifisertTilFinale(${dogNr}, this.checked)"
+                                           class="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500">
+                                    <span class="text-xs font-medium text-amber-800">${isKval ? (is3DayVK ? 'Kvalifisert til semi' : 'Kvalifisert til finale') : 'Kvalifisert til finale'}</span>
+                                </label>
+                            ` : ''}
+                        </div>
                     </div>
                 `;
             });
+
+            html += '</div>';
 
             // Avsluttede hunder
             const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
@@ -3676,6 +4188,124 @@
             container.innerHTML = html;
         }
 
+        // Drag and drop handlers
+        let draggedItem = null;
+        let draggedDogNr = null;
+        let originalPlass = null;
+
+        function handleDragStart(e) {
+            draggedItem = e.target.closest('.ranking-item');
+            draggedDogNr = parseInt(draggedItem.dataset.dogNr);
+            originalPlass = parseInt(draggedItem.dataset.plass);
+            draggedItem.classList.add('opacity-50');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            const item = e.target.closest('.ranking-item');
+            if (item && item !== draggedItem) {
+                item.classList.add('border-forest-500', 'border-2');
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            const targetItem = e.target.closest('.ranking-item');
+            if (!targetItem || targetItem === draggedItem) return;
+
+            const targetDogNr = parseInt(targetItem.dataset.dogNr);
+            const targetPlass = parseInt(targetItem.dataset.plass);
+
+            // Vis bekreftelsesmodal
+            showMoveConfirmation(draggedDogNr, originalPlass, targetPlass);
+        }
+
+        function handleDragEnd(e) {
+            // Fjern alle visuell-indikatorer
+            document.querySelectorAll('.ranking-item').forEach(item => {
+                item.classList.remove('opacity-50', 'border-forest-500', 'border-2');
+            });
+            draggedItem = null;
+        }
+
+        function showMoveConfirmation(dogNr, fromPlass, toPlass) {
+            const dog = partyList.find(d => d.nr === dogNr);
+            const dogName = dog ? `${dog.race} ${dog.name}` : `Hund ${dogNr}`;
+
+            // Opprett bekreftelsesmodal
+            const modal = document.createElement('div');
+            modal.id = 'moveConfirmModal';
+            modal.className = 'fixed inset-0 bg-black/50 z-[90] flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                    <div class="text-center mb-4">
+                        <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-vk-800">Bekreft flytting</h3>
+                    </div>
+                    <p class="text-sm text-vk-600 text-center mb-6">
+                        Du har flyttet <strong>${dogName}</strong> fra <strong>${fromPlass}. plass</strong> til <strong>${toPlass}. plass</strong>.<br><br>
+                        Er dette riktig?
+                    </p>
+                    <div class="flex gap-3">
+                        <button onclick="cancelMove()" class="flex-1 bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
+                            Avbryt
+                        </button>
+                        <button onclick="confirmMove(${dogNr}, ${fromPlass}, ${toPlass})" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                            Bekreft
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function cancelMove() {
+            document.getElementById('moveConfirmModal')?.remove();
+        }
+
+        function confirmMove(dogNr, fromPlass, toPlass) {
+            document.getElementById('moveConfirmModal')?.remove();
+
+            // Oppdater plasseringer
+            // Alle hunder mellom fromPlass og toPlass må flyttes
+            const direction = fromPlass < toPlass ? 1 : -1;
+
+            Object.keys(state.plasseringer).forEach(nr => {
+                const currentPlass = parseInt(state.plasseringer[nr]);
+                if (currentPlass === 'avsluttet' || isNaN(currentPlass)) return;
+
+                if (parseInt(nr) === dogNr) {
+                    // Hunden som flyttes
+                    state.plasseringer[nr] = toPlass;
+                } else if (direction === 1 && currentPlass > fromPlass && currentPlass <= toPlass) {
+                    // Flytt opp (trekk fra 1)
+                    state.plasseringer[nr] = currentPlass - 1;
+                } else if (direction === -1 && currentPlass < fromPlass && currentPlass >= toPlass) {
+                    // Flytt ned (legg til 1)
+                    state.plasseringer[nr] = currentPlass + 1;
+                }
+            });
+
+            saveToStorage();
+            renderPremieRankingList();
+
+            // Vis bekreftelse
+            showToast('Plassering oppdatert', 'success');
+        }
+
+        function setKvalifisertTilFinale(dogNr, qualified) {
+            if (!state.kvalifisertTilFinale) {
+                state.kvalifisertTilFinale = {};
+            }
+            state.kvalifisertTilFinale[dogNr] = qualified;
+            saveToStorage();
+        }
+
         function setPremie(dogNr, premie) {
             if (premie) {
                 state.premietildelinger[dogNr] = premie;
@@ -3686,16 +4316,19 @@
         }
 
         function confirmPremier() {
-            // Sjekk at alle hunder med fuglearbeid har fått premie
-            const rankedWithFuglearbeid = Object.entries(state.plasseringer)
-                .filter(([nr, p]) => p !== 'avsluttet' && hasFuglearbeid(parseInt(nr)))
+            // Sjekk at alle hunder som kvalifiserer for premie (fugl + apport) har fått premie
+            const rankedKanFaPremie = Object.entries(state.plasseringer)
+                .filter(([nr, p]) => p !== 'avsluttet' && kanFaPremie(parseInt(nr)))
                 .map(([nr, _]) => parseInt(nr));
 
-            const missingPremie = rankedWithFuglearbeid.filter(nr => !state.premietildelinger[nr]);
+            const missingPremie = rankedKanFaPremie.filter(nr => !state.premietildelinger[nr]);
 
             if (missingPremie.length > 0) {
-                const dogs = missingPremie.map(nr => partyList.find(d => d.nr === nr).name).join(', ');
-                if (!confirm(`Følgende hunder med fuglearbeid mangler premie:\n\n${dogs}\n\nVil du fortsette likevel?`)) {
+                const dogs = missingPremie.map(nr => {
+                    const dog = partyList.find(d => d.nr === nr);
+                    return dog ? `${dog.race} ${dog.name}` : `Hund ${nr}`;
+                }).join(', ');
+                if (!confirm(`Følgende hunder kvalifiserer for premie men har ikke fått tildelt:\n\n${dogs}\n\nVil du fortsette likevel?`)) {
                     return;
                 }
             }
@@ -3704,10 +4337,215 @@
             state.judgingFinished = true;
             saveToStorage();
 
+            // Oppdater offentlig rangering med premier
+            updatePublicRanking();
+
             closeFinishJudgingModal();
             closeRoundCompleteModal();
 
-            alert('Bedømming avsluttet!\n\nResultater og premier er lagret.');
+            // Vis "Dagens resultater" modal
+            showDagensResultater();
+        }
+
+        function updatePublicRanking() {
+            // Lagre premier og finaleplasser til localStorage for offentlig visning
+            // Bruk partinavnet for unik nøkkel slik at VK Trekning kan hente fra alle partier
+            const partiNavn = parti.replace(/\s+/g, '_');
+
+            const resultater = {
+                plasseringer: state.plasseringer,
+                premietildelinger: state.premietildelinger,
+                kvalifisertTilFinale: state.kvalifisertTilFinale || {},
+                vkType: state.vkType,
+                partyName: parti,
+                timestamp: new Date().toISOString()
+            };
+
+            // Lagre lokalt med partinavn
+            localStorage.setItem(`vkResultater_${partiNavn}`, JSON.stringify(resultater));
+            // Behold også generisk nøkkel for bakoverkompatibilitet
+            localStorage.setItem('vkResultater', JSON.stringify(resultater));
+
+            // Synkroniser til server med partinavn
+            fetch(`/api/storage/vkResultater_${partiNavn}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: resultater })
+            }).catch(err => console.warn('Kunne ikke synkronisere resultater til server:', err));
+
+            // Behold også generisk synk for bakoverkompatibilitet
+            fetch('/api/storage/vkResultater', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: resultater })
+            }).catch(err => console.warn('Kunne ikke synkronisere generiske resultater til server:', err));
+        }
+
+        function showDagensResultater() {
+            // Hent rangeringsdata
+            const ranked = Object.entries(state.plasseringer)
+                .filter(([_, p]) => p !== 'avsluttet')
+                .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+                .map(([nr, plass]) => ({
+                    dog: partyList.find(d => d.nr === parseInt(nr)),
+                    plass: parseInt(plass),
+                    dogNr: parseInt(nr)
+                }));
+
+            const isKval = state.vkType === 'kval';
+            const isSemi = state.vkType === 'semi';
+            const vkTypeName = state.vkType === '1dag' ? '1-dags VK'
+                : state.vkType === 'kval' ? 'VK Kvalifisering'
+                : state.vkType === 'semi' ? 'VK Semifinale'
+                : 'VK Finale';
+
+            let resultatHtml = '';
+            ranked.forEach(({ dog, plass, dogNr }) => {
+                const premie = state.premietildelinger[dogNr];
+                const premieLabel = premie ? getPremieLabel(premie) : null;
+                const erKvalTilFinale = state.kvalifisertTilFinale?.[dogNr];
+
+                // Vis "→ Semi" for kval eller "→ Finale" for kval/semi
+                let nextRoundLabel = '';
+                if (erKvalTilFinale) {
+                    if (isKval) {
+                        // I 2-dagers: kval → finale, i 3-dagers: kval → semi
+                        const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+                        nextRoundLabel = vkConfig.type === '3day' ? '→ Semi' : '→ Finale';
+                    } else if (isSemi) {
+                        nextRoundLabel = '→ Finale';
+                    }
+                }
+
+                resultatHtml += `
+                    <div class="flex items-center justify-between py-2 px-3 ${premieLabel ? 'bg-forest-50' : 'bg-white'} rounded-lg border ${premieLabel ? 'border-forest-200' : 'border-vk-100'}">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-vk-700 w-6">${plass}.</span>
+                            <span class="font-medium text-sm">${dog?.race || ''} ${dog?.name || ''}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${premieLabel ? `<span class="text-xs font-bold text-forest-700 bg-forest-100 px-2 py-1 rounded">${premieLabel}</span>` : ''}
+                            ${nextRoundLabel ? `<span class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded">${nextRoundLabel}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Avsluttede hunder
+            const finished = partyList.filter(d => state.plasseringer[d.nr] === 'avsluttet');
+            if (finished.length > 0) {
+                resultatHtml += '<div class="mt-3 pt-3 border-t border-vk-200">';
+                resultatHtml += '<div class="text-xs font-bold text-vk-400 uppercase mb-2">Avsluttet</div>';
+                finished.forEach(dog => {
+                    resultatHtml += `
+                        <div class="py-1 px-3 text-vk-400 text-sm line-through">
+                            ${dog.race} ${dog.name}
+                        </div>
+                    `;
+                });
+                resultatHtml += '</div>';
+            }
+
+            // Tell opp premier og finaleplasser
+            const antallPremier = Object.values(state.premietildelinger).filter(p => p && p !== 'ingen').length;
+            const antallKvalTilFinale = Object.values(state.kvalifisertTilFinale || {}).filter(Boolean).length;
+
+            // Opprett modal
+            const modal = document.createElement('div');
+            modal.id = 'dagensResultaterModal';
+            modal.className = 'fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+                    <div class="p-4 border-b border-vk-200 bg-forest-700 text-white rounded-t-2xl">
+                        <h2 class="text-xl font-bold font-serif text-center">Dagens resultater</h2>
+                        <p class="text-forest-100 text-sm text-center mt-1">${vkTypeName}</p>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-4">
+                        <!-- Oppsummering -->
+                        <div class="bg-vk-50 rounded-lg p-3 mb-4 border border-vk-200">
+                            <div class="grid grid-cols-2 gap-3 text-center">
+                                <div>
+                                    <div class="text-2xl font-bold text-forest-700">${antallPremier}</div>
+                                    <div class="text-xs text-vk-500">Premier tildelt</div>
+                                </div>
+                                ${isKval ? `
+                                    <div>
+                                        <div class="text-2xl font-bold text-amber-600">${antallKvalTilFinale}</div>
+                                        <div class="text-xs text-vk-500">Til finale</div>
+                                    </div>
+                                ` : `
+                                    <div>
+                                        <div class="text-2xl font-bold text-vk-600">${ranked.length}</div>
+                                        <div class="text-xs text-vk-500">Rangert</div>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Resultatliste -->
+                        <div class="space-y-2">
+                            ${resultatHtml}
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-vk-200 space-y-3">
+                        <p class="text-xs text-vk-500 text-center">
+                            Resultatene er nå publisert og synkronisert.
+                        </p>
+                        <button onclick="closeDagensResultater()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-3 rounded-xl transition">
+                            Ferdig
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function closeDagensResultater() {
+            document.getElementById('dagensResultaterModal')?.remove();
+        }
+
+        function getPremieLabel(premieValue) {
+            // Konverter premie-verdi til lesbar tekst
+            const labels = {
+                '1vk': '1. VK',
+                '1vk_ck': '1. VK m/CK',
+                '2vk': '2. VK',
+                '2vk_ck': '2. VK m/CK',
+                '3vk': '3. VK',
+                '4vk': '4. VK',
+                '5vk': '5. VK',
+                '6vk': '6. VK',
+                '1vk_kval': '1. VK kval',
+                '1vk_ck_kval': '1. VK m/CK kval',
+                '2vk_kval': '2. VK kval',
+                '2vk_ck_kval': '2. VK m/CK kval',
+                '3vk_kval': '3. VK kval',
+                '4vk_kval': '4. VK kval',
+                '5vk_kval': '5. VK kval',
+                '6vk_kval': '6. VK kval',
+                '1vk_semi': '1. VK semi',
+                '1vk_ck_semi': '1. VK m/CK semi',
+                '2vk_semi': '2. VK semi',
+                '2vk_ck_semi': '2. VK m/CK semi',
+                '3vk_semi': '3. VK semi',
+                '4vk_semi': '4. VK semi',
+                '5vk_semi': '5. VK semi',
+                '6vk_semi': '6. VK semi',
+                '1vk_finale': '1. VK finale',
+                '1vk_ck_finale': '1. VK finale m/CK',
+                '1vk_cacit_finale': '1. VK finale m/CACIT',
+                '2vk_finale': '2. VK finale',
+                '2vk_ck_finale': '2. VK finale m/CK',
+                '2vk_rescacit_finale': '2. VK finale m/res.CACIT',
+                '3vk_finale': '3. VK finale',
+                '4vk_finale': '4. VK finale',
+                '5vk_finale': '5. VK finale',
+                '6vk_finale': '6. VK finale',
+                'ingen': null
+            };
+            return labels[premieValue] || premieValue;
         }
 
         function closeFinishJudgingModal() {
@@ -4179,7 +5017,20 @@ Antall slipp: ${state.currentSlipp}
                     </div>
                 </div>
 
-                <!-- Nåværende rangering -->
+                <!-- Redegjørelse for slippet (tidligere "Felles kommentar") - FLYTTET OPP -->
+                <div class="bg-bark-50 border border-bark-200 rounded-xl p-3">
+                    <h3 id="redegjoerelseKommentarTittel" class="text-sm font-bold text-bark-700 uppercase mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                        </svg>
+                        Redegjørelse slipp 1
+                    </h3>
+                    <div id="redegjoerelseKommentar" class="text-bark-700 text-sm italic bg-white p-3 rounded-lg border border-bark-200 min-h-[60px]">
+                        Ingen kommentar for dette slippet.
+                    </div>
+                </div>
+
+                <!-- Nåværende rangering - FLYTTET NED -->
                 <div class="bg-vk-50 border border-vk-200 rounded-xl p-3">
                     <h3 class="text-sm font-bold text-vk-700 uppercase mb-2 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4189,19 +5040,6 @@ Antall slipp: ${state.currentSlipp}
                     </h3>
                     <div id="redegjoerelseRangering" class="space-y-1 max-h-48 overflow-y-auto">
                         <!-- Fylles dynamisk -->
-                    </div>
-                </div>
-
-                <!-- Felles kommentar for slippet -->
-                <div class="bg-bark-50 border border-bark-200 rounded-xl p-3">
-                    <h3 class="text-sm font-bold text-bark-700 uppercase mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
-                        </svg>
-                        Felles kommentar
-                    </h3>
-                    <div id="redegjoerelseKommentar" class="text-bark-700 text-sm italic bg-white p-3 rounded-lg border border-bark-200 min-h-[60px]">
-                        Ingen kommentar for dette slippet.
                     </div>
                 </div>
             </div>
@@ -4272,6 +5110,7 @@ Antall slipp: ${state.currentSlipp}
                     <select id="vkTypeSelect" onchange="updateVkType()" class="w-full h-10 px-3 rounded-lg border border-vk-300 bg-white text-sm font-medium">
                         <option value="1dag">1-dags VK</option>
                         <option value="kval">VK Kvalifisering</option>
+                        <option value="semi">VK Semifinale</option>
                         <option value="finale">VK Finale</option>
                     </select>
                 </div>
@@ -4395,6 +5234,64 @@ Antall slipp: ${state.currentSlipp}
             <div class="p-4 border-t border-vk-200">
                 <button onclick="closePositionSelectModal()" class="w-full bg-vk-200 hover:bg-vk-300 text-vk-700 font-medium py-3 rounded-xl transition">
                     Avbryt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slipptid Advarsel Modal -->
+    <div id="slipptidWarningModal" class="hidden fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="p-4 border-b border-amber-200 bg-amber-50 rounded-t-2xl">
+                <div class="flex items-center justify-center gap-2 text-amber-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <h2 class="text-lg font-bold font-serif">Kort slipptid</h2>
+                </div>
+            </div>
+            <div class="p-4">
+                <p class="text-sm text-bark-700 mb-3">Slipptid er under 15 minutter for:</p>
+                <div id="slipptidWarningList" class="space-y-2 mb-4">
+                    <!-- Fylles dynamisk -->
+                </div>
+                <p class="text-sm text-bark-600">Er dette riktig?</p>
+            </div>
+            <div class="p-4 border-t border-bark-200 flex gap-2">
+                <button onclick="closeSlipptidWarning(false)" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition">
+                    Nei, endre
+                </button>
+                <button onclick="closeSlipptidWarning(true)" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl transition">
+                    Ja, fortsett
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fuglearbeid Validering Modal -->
+    <div id="fuglearbeidWarningModal" class="hidden fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="p-4 border-b border-warm-200 bg-warm-50 rounded-t-2xl">
+                <div class="flex items-center justify-center gap-2 text-warm-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <h2 class="text-lg font-bold font-serif">Fuglearbeid</h2>
+                </div>
+            </div>
+            <div class="p-4">
+                <p class="text-sm text-bark-700 mb-3">Følgende må sjekkes:</p>
+                <div id="fuglearbeidWarningList" class="space-y-2 mb-4">
+                    <!-- Fylles dynamisk -->
+                </div>
+                <p class="text-sm text-bark-600">Vil du fortsette likevel?</p>
+            </div>
+            <div class="p-4 border-t border-bark-200 flex gap-2">
+                <button onclick="closeFuglearbeidWarning(false)" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition">
+                    Nei, endre
+                </button>
+                <button onclick="closeFuglearbeidWarning(true)" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white font-bold py-3 rounded-xl transition">
+                    Ja, fortsett
                 </button>
             </div>
         </div>

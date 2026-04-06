@@ -196,7 +196,7 @@
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St m/M</label>
-                            <input type="number" min="0" id="dog1_stand_m_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
+                            <input type="number" min="0" id="dog1_stand_m_makker" onchange="updateMakkerSlatt(1)" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St u/M</label>
@@ -392,7 +392,7 @@
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St m/M</label>
-                            <input type="number" min="0" id="dog2_stand_m_makker" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
+                            <input type="number" min="0" id="dog2_stand_m_makker" onchange="updateMakkerSlatt(2)" class="score-input w-full h-9 text-center text-sm font-bold rounded-lg border border-vk-200 focus:border-vk-500 outline-none bg-white" placeholder="-" title="Stand m/makker">
                         </div>
                         <div class="text-center">
                             <label class="block text-[9px] font-bold text-vk-600 mb-0.5">St u/M</label>
@@ -1272,6 +1272,18 @@
                 reisingInput.value = slippData.reising ?? '';
             }
 
+            // Stand med/uten makker (per slipp)
+            const standMakkerInput = document.getElementById(`dog${position}_stand_m_makker`);
+            const standUtenMakkerInput = document.getElementById(`dog${position}_stand_u_makker`);
+            if (standMakkerInput) {
+                standMakkerInput.value = slippData.standMakker ?? '';
+                // Initialiser previousStandMakkerValues for korrekt differanse-beregning
+                previousStandMakkerValues[position] = slippData.standMakker || 0;
+            }
+            if (standUtenMakkerInput) {
+                standUtenMakkerInput.value = slippData.standUtenMakker ?? '';
+            }
+
             // Uønsket adferd (lagres på hund-nivå, ikke per slipp)
             document.getElementById(`dog${position}_uonsket_adferd`).checked = data?.uonsketAdferd || false;
             document.getElementById(`dog${position}_uonsket_adferd_tekst`).value = data?.uonsketAdferdTekst || '';
@@ -1312,6 +1324,8 @@
             state.dogData[dogNr].slipps[state.currentSlipp] = {
                 fmr: document.getElementById(`dog${position}_fmr`).value ? parseInt(document.getElementById(`dog${position}_fmr`).value) : null,
                 fur: document.getElementById(`dog${position}_fur`).value ? parseInt(document.getElementById(`dog${position}_fur`).value) : null,
+                standMakker: document.getElementById(`dog${position}_stand_m_makker`).value ? parseInt(document.getElementById(`dog${position}_stand_m_makker`).value) : null,
+                standUtenMakker: document.getElementById(`dog${position}_stand_u_makker`).value ? parseInt(document.getElementById(`dog${position}_stand_u_makker`).value) : null,
                 slat: document.getElementById(`dog${position}_slat`).value ? parseInt(document.getElementById(`dog${position}_slat`).value) : null,
                 sjanse: document.getElementById(`dog${position}_sjanse`).value ? parseInt(document.getElementById(`dog${position}_sjanse`).value) : null,
                 apport: apportChecked || null,
@@ -1395,6 +1409,61 @@
             }
 
             infoEl.innerHTML = html;
+        }
+
+        // Lagre forrige verdi av St m/M for å kunne beregne differansen
+        let previousStandMakkerValues = { 1: 0, 2: 0 };
+
+        // Oppdater makkerens slått-verdi når St m/M endres
+        function updateMakkerSlatt(position) {
+            const makkerPosition = position === 1 ? 2 : 1;
+            const standMakkerInput = document.getElementById(`dog${position}_stand_m_makker`);
+            const makkerSlattInput = document.getElementById(`dog${makkerPosition}_slat`);
+
+            if (!standMakkerInput || !makkerSlattInput) return;
+
+            const newValue = parseInt(standMakkerInput.value) || 0;
+            const previousValue = previousStandMakkerValues[position] || 0;
+            const difference = newValue - previousValue;
+
+            if (difference !== 0) {
+                const currentMakkerSlatt = parseInt(makkerSlattInput.value) || 0;
+                const newMakkerSlatt = Math.max(0, currentMakkerSlatt + difference);
+                makkerSlattInput.value = newMakkerSlatt > 0 ? newMakkerSlatt : '';
+
+                // Vis melding til dommer
+                const dog = partyList.find(d => d.nr === state.selectedDogs[makkerPosition]);
+                const dogName = dog ? `${dog.race} ${dog.name}` : `Hund ${makkerPosition}`;
+
+                if (difference > 0) {
+                    showToast(`${dogName}: Slått +${difference} (totalt ${newMakkerSlatt})`, 'info');
+                } else {
+                    showToast(`${dogName}: Slått ${difference} (totalt ${newMakkerSlatt})`, 'info');
+                }
+            }
+
+            // Oppdater lagret verdi
+            previousStandMakkerValues[position] = newValue;
+        }
+
+        // Vis en liten toast-melding
+        function showToast(message, type = 'info') {
+            // Fjern eksisterende toast
+            const existingToast = document.getElementById('toast-message');
+            if (existingToast) existingToast.remove();
+
+            const bgColor = type === 'info' ? 'bg-vk-600' : type === 'warning' ? 'bg-amber-500' : 'bg-green-600';
+
+            const toast = document.createElement('div');
+            toast.id = 'toast-message';
+            toast.className = `fixed bottom-24 left-1/2 transform -translate-x-1/2 ${bgColor} text-white px-4 py-2 rounded-xl shadow-lg z-50 text-sm font-medium`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            // Fjern etter 3 sekunder
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
         }
 
         // Callback for slipptid warning modal
@@ -1504,6 +1573,12 @@
 
             const problems = [];
 
+            // Hent Stand m/M og Stand u/M verdier
+            const dog1StandMakker = parseInt(document.getElementById('dog1_stand_m_makker')?.value) || 0;
+            const dog1StandUtenMakker = parseInt(document.getElementById('dog1_stand_u_makker')?.value) || 0;
+            const dog2StandMakker = parseInt(document.getElementById('dog2_stand_m_makker')?.value) || 0;
+            const dog2StandUtenMakker = parseInt(document.getElementById('dog2_stand_u_makker')?.value) || 0;
+
             // Validering for hund 1
             if (!dog1IsAvslutt) {
                 // FMR krever godkjent reis og reising-karakter
@@ -1524,6 +1599,17 @@
                         dog: `${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`,
                         issue: `Har fuglearbeid (${dog1FMR > 0 ? 'FMR' : 'FUR'}) men apport er ikke godkjent`,
                         type: 'apport'
+                    });
+                }
+
+                // FMR+FUR må være lik St m/M + St u/M
+                const dog1TotalFuglearbeid = dog1FMR + dog1FUR;
+                const dog1TotalStand = dog1StandMakker + dog1StandUtenMakker;
+                if (dog1TotalFuglearbeid > 0 && dog1TotalFuglearbeid !== dog1TotalStand) {
+                    problems.push({
+                        dog: `${dog1?.race || ''} ${dog1?.name || 'Hund 1'}`,
+                        issue: `FMR+FUR (${dog1TotalFuglearbeid}) må være lik St m/M + St u/M (${dog1TotalStand})`,
+                        type: 'stand_mismatch'
                     });
                 }
             }
@@ -1548,6 +1634,17 @@
                         dog: `${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`,
                         issue: `Har fuglearbeid (${dog2FMR > 0 ? 'FMR' : 'FUR'}) men apport er ikke godkjent`,
                         type: 'apport'
+                    });
+                }
+
+                // FMR+FUR må være lik St m/M + St u/M
+                const dog2TotalFuglearbeid = dog2FMR + dog2FUR;
+                const dog2TotalStand = dog2StandMakker + dog2StandUtenMakker;
+                if (dog2TotalFuglearbeid > 0 && dog2TotalFuglearbeid !== dog2TotalStand) {
+                    problems.push({
+                        dog: `${dog2?.race || ''} ${dog2?.name || 'Hund 2'}`,
+                        issue: `FMR+FUR (${dog2TotalFuglearbeid}) må være lik St m/M + St u/M (${dog2TotalStand})`,
+                        type: 'stand_mismatch'
                     });
                 }
             }

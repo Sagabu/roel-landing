@@ -2011,6 +2011,23 @@
             return (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
         }
 
+        // Hjelpefunksjon: Hent rase (fjern hvis det er et tall/plassering)
+        function getDogRace(dog) {
+            if (!dog) return '';
+            const race = dog.race || '';
+            // Hvis "race" er et tall med punktum (f.eks. "1."), ignorer det
+            if (/^\d+\.?$/.test(race)) return '';
+            return race;
+        }
+
+        // Hjelpefunksjon: Formater hund for visning (rase + navn, uten duplikate numre)
+        function formatDogDisplay(dog) {
+            if (!dog) return '';
+            const race = getDogRace(dog);
+            const name = getDogName(dog);
+            return race ? `${race} ${name}` : name;
+        }
+
         // Formater statistikk som kort tekst (f.eks. "2xFMR FUR 65'" - kun "2x" hvis mer enn 1)
         // showSlipptid: true = vis slipptid (kun for plasserte hunder)
         function formatDogStats(dogNr, showSlipptid = true) {
@@ -2073,9 +2090,7 @@
                 rankContainer.innerHTML = placed.map(({ dog, plass, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Vis FMR/FUR etc, men ikke slipptid
                     const statsHtml = stats ? `<span class="text-vk-500 ml-1">${stats}</span>` : '';
-                    // Fjern evt. startnummer fra navnet (f.eks. "3. Hundenavn" -> "Hundenavn")
-                    const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
-                    return `<div><span class="font-bold text-vk-700">${plass}.</span> ${dog.race} ${dogName}${statsHtml}</div>`;
+                    return `<div><span class="font-bold text-vk-700">${plass}.</span> ${formatDogDisplay(dog)}${statsHtml}</div>`;
                 }).join('');
             }
 
@@ -2085,9 +2100,8 @@
                 tidTilGodeList.innerHTML = tidTilGodeDogs.map(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for TTG
                     const statsHtml = stats ? `<span class="text-amber-500 ml-1">${stats}</span>` : '';
-                    const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
                     return `<div class="cursor-pointer hover:bg-amber-100 px-1 rounded flex items-center gap-1" onclick="hentTilbakeTTG(${dog.nr}, 1)">
-                        <span class="text-amber-600">↩</span> ${dog.race} ${dogName}${statsHtml}
+                        <span class="text-amber-600">↩</span> ${formatDogDisplay(dog)}${statsHtml}
                     </div>`;
                 }).join('');
             } else {
@@ -2100,8 +2114,7 @@
                 finishedList.innerHTML = finished.map(({ dog, dogNr }) => {
                     const stats = formatDogStats(dogNr, false); // Ikke vis slipptid for avsluttede
                     const statsHtml = stats ? `<span class="text-red-400 ml-1">${stats}</span>` : '';
-                    const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
-                    return `<div>${dog.race} ${dogName}${statsHtml}</div>`;
+                    return `<div>${formatDogDisplay(dog)}${statsHtml}</div>`;
                 }).join('');
             } else {
                 finishedSection.classList.add('hidden');
@@ -3284,9 +3297,19 @@
             const hundeContainer = document.getElementById('redegjoerelseSlippHunder');
             const rangeringContainer = document.getElementById('redegjoerelseRangering');
             const kommentarContainer = document.getElementById('redegjoerelseKommentar');
+            const kommentarTittel = document.getElementById('redegjoerelseKommentarTittel');
 
             // Oppdater slipp-info
             slippInfo.textContent = `Slipp ${state.currentSlipp} fullført - Runde ${state.currentRound}`;
+
+            // Oppdater kommentar-tittel med slippnummer
+            if (kommentarTittel) {
+                kommentarTittel.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                    </svg>
+                    Redegjørelse slipp ${state.currentSlipp}`;
+            }
 
             // Vis de to hundene som nettopp ble bedømt
             const dog1Nr = state.selectedDogs[1];
@@ -3322,7 +3345,7 @@
                     <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-warm-200">
                         <div class="flex items-center gap-2">
                             <span class="font-bold text-warm-800">${nr}.</span>
-                            <span class="font-medium text-bark-800">${dog.navn || dog.name}</span>
+                            <span class="font-medium text-bark-800">${formatDogDisplay(dog)}</span>
                             ${stats ? `<span class="text-xs text-bark-500">(${stats})</span>` : ''}
                         </div>
                         <span class="text-xs px-2 py-1 rounded-full font-medium ${statusClass}">${statusText}</span>
@@ -3373,14 +3396,11 @@
                     plassText = '-';
                 }
 
-                // Hent hundenavn uten startnummer
-                const dogName = (dog.navn || dog.name || '').replace(/^\d+\.\s*/, '');
-
                 rangeringHTML += `
                     <div class="flex items-center justify-between p-2 rounded-lg border ${bgClass}">
                         <div class="flex items-center gap-2">
                             <span class="w-8 text-center font-bold ${plass && plass <= 3 ? 'text-forest-700' : 'text-bark-600'}">${plassText}</span>
-                            <span class="font-medium text-bark-800">${dogName}</span>
+                            <span class="font-medium text-bark-800">${formatDogDisplay(dog)}</span>
                             ${stats ? `<span class="text-xs text-bark-500">(${stats})</span>` : ''}
                         </div>
                     </div>
@@ -4232,7 +4252,20 @@ Antall slipp: ${state.currentSlipp}
                     </div>
                 </div>
 
-                <!-- Nåværende rangering -->
+                <!-- Redegjørelse for slippet (tidligere "Felles kommentar") - FLYTTET OPP -->
+                <div class="bg-bark-50 border border-bark-200 rounded-xl p-3">
+                    <h3 id="redegjoerelseKommentarTittel" class="text-sm font-bold text-bark-700 uppercase mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+                        </svg>
+                        Redegjørelse slipp 1
+                    </h3>
+                    <div id="redegjoerelseKommentar" class="text-bark-700 text-sm italic bg-white p-3 rounded-lg border border-bark-200 min-h-[60px]">
+                        Ingen kommentar for dette slippet.
+                    </div>
+                </div>
+
+                <!-- Nåværende rangering - FLYTTET NED -->
                 <div class="bg-vk-50 border border-vk-200 rounded-xl p-3">
                     <h3 class="text-sm font-bold text-vk-700 uppercase mb-2 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4242,19 +4275,6 @@ Antall slipp: ${state.currentSlipp}
                     </h3>
                     <div id="redegjoerelseRangering" class="space-y-1 max-h-48 overflow-y-auto">
                         <!-- Fylles dynamisk -->
-                    </div>
-                </div>
-
-                <!-- Felles kommentar for slippet -->
-                <div class="bg-bark-50 border border-bark-200 rounded-xl p-3">
-                    <h3 class="text-sm font-bold text-bark-700 uppercase mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
-                        </svg>
-                        Felles kommentar
-                    </h3>
-                    <div id="redegjoerelseKommentar" class="text-bark-700 text-sm italic bg-white p-3 rounded-lg border border-bark-200 min-h-[60px]">
-                        Ingen kommentar for dette slippet.
                     </div>
                 </div>
             </div>

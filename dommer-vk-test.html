@@ -1259,6 +1259,19 @@
             const apportCheckbox = document.getElementById(`dog${position}_apport`);
             apportCheckbox.checked = slippData.apport || harApportFraTidligere;
 
+            // Godkjent reis: Sjekk om hunden har godkjent reis fra tidligere slipp
+            const harReisFraTidligere = hasReisGodkjent(dogNr);
+            const reisCheckbox = document.getElementById(`dog${position}_godkjent_reis`);
+            if (reisCheckbox) {
+                reisCheckbox.checked = slippData.godkjentReis || harReisFraTidligere;
+            }
+
+            // Reising karakter (per slipp)
+            const reisingInput = document.getElementById(`dog${position}_reising`);
+            if (reisingInput) {
+                reisingInput.value = slippData.reising ?? '';
+            }
+
             // Uønsket adferd (lagres på hund-nivå, ikke per slipp)
             document.getElementById(`dog${position}_uonsket_adferd`).checked = data?.uonsketAdferd || false;
             document.getElementById(`dog${position}_uonsket_adferd_tekst`).value = data?.uonsketAdferdTekst || '';
@@ -1275,6 +1288,14 @@
             return Object.values(data.slipps).some(slipp => slipp.apport === true);
         }
 
+        // Sjekk om hunden har fått godkjent reis i et tidligere slipp
+        function hasReisGodkjent(dogNr) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return false;
+
+            return Object.values(data.slipps).some(slipp => slipp.godkjentReis === true);
+        }
+
         function saveDogData(position) {
             const dogNr = state.selectedDogs[position];
             if (!state.dogData[dogNr]) {
@@ -1285,6 +1306,8 @@
             }
 
             const apportChecked = document.getElementById(`dog${position}_apport`).checked;
+            const godkjentReisChecked = document.getElementById(`dog${position}_godkjent_reis`)?.checked || false;
+            const reisingValue = document.getElementById(`dog${position}_reising`)?.value;
 
             state.dogData[dogNr].slipps[state.currentSlipp] = {
                 fmr: document.getElementById(`dog${position}_fmr`).value ? parseInt(document.getElementById(`dog${position}_fmr`).value) : null,
@@ -1292,6 +1315,8 @@
                 slat: document.getElementById(`dog${position}_slat`).value ? parseInt(document.getElementById(`dog${position}_slat`).value) : null,
                 sjanse: document.getElementById(`dog${position}_sjanse`).value ? parseInt(document.getElementById(`dog${position}_sjanse`).value) : null,
                 apport: apportChecked || null,
+                godkjentReis: godkjentReisChecked || null,
+                reising: reisingValue ? parseInt(reisingValue) : null,
                 ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
                 slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : null,
                 // Jaktegenskaper

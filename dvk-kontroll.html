@@ -300,6 +300,61 @@
             </div>
         </div>
 
+        <!-- Aversjonsbevis-kontroll -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                </svg>
+                Aversjonsbevis (stikkprøvekontroll)
+            </h2>
+            <p class="text-sm text-bark-500 mb-4">Oversikt over deltakernes aversjonsbevis. Klikk på en hund for å se beviset.</p>
+
+            <!-- Statistikk -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-bark-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-bark-700" id="avStatTotal">-</p>
+                    <p class="text-xs text-bark-500">Deltakere</p>
+                </div>
+                <div class="bg-green-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-green-600" id="avStatMedBevis">-</p>
+                    <p class="text-xs text-bark-500">Med bevis</p>
+                </div>
+                <div class="bg-amber-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-amber-600" id="avStatUtenBevis">-</p>
+                    <p class="text-xs text-bark-500">Mangler</p>
+                </div>
+                <div class="bg-blue-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-blue-600" id="avStatBekreftet">-</p>
+                    <p class="text-xs text-bark-500">Bekreftet</p>
+                </div>
+            </div>
+
+            <!-- Filter -->
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button onclick="filterAversjonsbevis('alle')" class="av-filter-btn active px-3 py-1.5 text-sm rounded-lg bg-forest-600 text-white transition" data-filter="alle">Alle</button>
+                <button onclick="filterAversjonsbevis('mangler')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="mangler">Mangler bevis</button>
+                <button onclick="filterAversjonsbevis('gammelt')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="gammelt">Eldre enn 2 år</button>
+                <button onclick="filterAversjonsbevis('sau')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="sau">Sau</button>
+                <button onclick="filterAversjonsbevis('rein')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="rein">Rein</button>
+            </div>
+
+            <!-- Liste over hunder -->
+            <div id="aversjonsbevisListe" class="space-y-2 max-h-96 overflow-y-auto">
+                <p class="text-center text-bark-400 py-8">Laster aversjonsbevis-data...</p>
+            </div>
+
+            <!-- Last opp på vegne av deltaker -->
+            <div class="mt-4 pt-4 border-t border-bark-100">
+                <button onclick="openUploadForDeltaker()" class="text-sm text-forest-600 hover:text-forest-700 font-medium flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Last opp aversjonsbevis på vegne av deltaker
+                </button>
+            </div>
+        </div>
+
         <!-- Digital signatur -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
             <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
@@ -974,6 +1029,236 @@
             localStorage.removeItem('currentUser');
             window.location.href = 'index.html';
         }
+
+        // ========================================
+        // AVERSJONSBEVIS-KONTROLL
+        // ========================================
+
+        let aversjonsbevisData = [];
+        let currentAvFilter = 'alle';
+
+        async function lastAversjonsbevisOversikt() {
+            if (!currentProveId) return;
+
+            try {
+                const res = await fetch(`/api/prover/${encodeURIComponent(currentProveId)}/aversjonsbevis-oversikt`);
+                if (!res.ok) throw new Error('Kunne ikke hente aversjonsbevis');
+
+                const data = await res.json();
+                aversjonsbevisData = data.deltakere || [];
+
+                // Oppdater statistikk
+                document.getElementById('avStatTotal').textContent = data.statistikk?.total || 0;
+                document.getElementById('avStatMedBevis').textContent = data.statistikk?.medBevis || 0;
+                document.getElementById('avStatUtenBevis').textContent = data.statistikk?.utenBevis || 0;
+                document.getElementById('avStatBekreftet').textContent = data.statistikk?.bekreftet || 0;
+
+                visAversjonsbevisListe();
+            } catch (err) {
+                console.error('Feil ved lasting av aversjonsbevis:', err);
+                document.getElementById('aversjonsbevisListe').innerHTML =
+                    '<p class="text-center text-red-500 py-4">Kunne ikke laste aversjonsbevis-data</p>';
+            }
+        }
+
+        function filterAversjonsbevis(filter) {
+            currentAvFilter = filter;
+
+            // Oppdater filter-knapper
+            document.querySelectorAll('.av-filter-btn').forEach(btn => {
+                if (btn.dataset.filter === filter) {
+                    btn.className = 'av-filter-btn active px-3 py-1.5 text-sm rounded-lg bg-forest-600 text-white transition';
+                } else {
+                    btn.className = 'av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition';
+                }
+            });
+
+            visAversjonsbevisListe();
+        }
+
+        function visAversjonsbevisListe() {
+            const container = document.getElementById('aversjonsbevisListe');
+
+            // Filtrer data
+            let filtrert = aversjonsbevisData;
+            const toAarSiden = new Date();
+            toAarSiden.setFullYear(toAarSiden.getFullYear() - 2);
+
+            if (currentAvFilter === 'mangler') {
+                filtrert = aversjonsbevisData.filter(d => !d.har_bevis);
+            } else if (currentAvFilter === 'gammelt') {
+                filtrert = aversjonsbevisData.filter(d => {
+                    if (!d.aversjon_dato) return false;
+                    return new Date(d.aversjon_dato) < toAarSiden;
+                });
+            } else if (currentAvFilter === 'sau') {
+                filtrert = aversjonsbevisData.filter(d => d.dyretype?.toLowerCase().includes('sau'));
+            } else if (currentAvFilter === 'rein') {
+                filtrert = aversjonsbevisData.filter(d => d.dyretype?.toLowerCase().includes('rein'));
+            }
+
+            if (filtrert.length === 0) {
+                container.innerHTML = `
+                    <p class="text-center text-bark-400 py-8">
+                        ${currentAvFilter === 'alle' ? 'Ingen deltakere funnet' : 'Ingen treff på filteret'}
+                    </p>
+                `;
+                return;
+            }
+
+            container.innerHTML = filtrert.map(d => {
+                // Beregn alder på beviset
+                let alderTag = '';
+                if (d.aversjon_dato) {
+                    const datoObj = new Date(d.aversjon_dato);
+                    const erGammelt = datoObj < toAarSiden;
+                    const aarGammelt = Math.floor((new Date() - datoObj) / (365.25 * 24 * 60 * 60 * 1000));
+
+                    if (erGammelt) {
+                        alderTag = `<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">${aarGammelt} år</span>`;
+                    }
+                }
+
+                // Status-ikon og farge
+                let statusClass, statusIcon;
+                if (!d.har_bevis) {
+                    statusClass = 'bg-red-50 border-red-200';
+                    statusIcon = '<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+                } else if (d.bekreftet || d.godkjent) {
+                    statusClass = 'bg-green-50 border-green-200';
+                    statusIcon = '<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+                } else {
+                    statusClass = 'bg-yellow-50 border-yellow-200';
+                    statusIcon = '<svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
+                }
+
+                return `
+                    <div class="flex items-center gap-3 p-3 rounded-xl border ${statusClass} cursor-pointer hover:shadow-sm transition" onclick="visAversjonsbevisDetaljer('${d.id}')">
+                        <div class="flex-shrink-0">${statusIcon}</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-bark-800 truncate">${d.navn || 'Ukjent'}</p>
+                            <p class="text-xs text-bark-500">${d.regnr || ''} · ${d.rase || ''}</p>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            ${d.har_bevis ? `
+                                <span class="text-xs font-medium ${d.dyretype?.includes('Sau') ? 'text-forest-600' : d.dyretype?.includes('Rein') ? 'text-blue-600' : 'text-bark-600'}">
+                                    ${d.dyretype || 'Ukjent type'}
+                                </span>
+                                <p class="text-xs text-bark-400">${d.aversjon_dato || ''}</p>
+                                ${alderTag}
+                            ` : `
+                                <span class="text-xs text-red-600 font-medium">Mangler bevis</span>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function visAversjonsbevisDetaljer(hundId) {
+            try {
+                const res = await fetch(`/api/hunder/${hundId}/aversjonsbevis/detaljer`);
+                if (!res.ok) throw new Error('Kunne ikke hente detaljer');
+
+                const data = await res.json();
+
+                if (data.harBevis && data.bilde) {
+                    // Vis bildet i ny fane
+                    const win = window.open('', '_blank');
+                    win.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head><title>Aversjonsbevis - ${data.registrert?.navn || 'Hund'}</title>
+                        <style>body{margin:0;display:flex;flex-direction:column;align-items:center;min-height:100vh;background:#f0f0f0;font-family:system-ui,sans-serif;}
+                        .info{padding:1rem;background:white;width:100%;max-width:600px;margin-bottom:1rem;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+                        img{max-width:100%;max-height:80vh;object-fit:contain;}</style></head>
+                        <body>
+                            <div class="info">
+                                <h2 style="margin:0 0 0.5rem 0;">Aversjonsbevis</h2>
+                                <p><strong>Hund:</strong> ${data.registrert?.navn || '-'} (${data.registrert?.regnr || '-'})</p>
+                                <p><strong>Type:</strong> ${data.dyretype || 'Ikke angitt'}</p>
+                                <p><strong>Godkjent dato:</strong> ${data.datoGodkjent || 'Ikke angitt'}</p>
+                                <p><strong>Chip-ID:</strong> ${data.chipId || 'Ikke angitt'}</p>
+                                <p><strong>Status:</strong> ${data.godkjent ? '✅ Godkjent av DVK' : data.bekreftet ? '✓ Bekreftet av eier' : '⏳ Venter bekreftelse'}</p>
+                            </div>
+                            <img src="${data.bilde}" alt="Aversjonsbevis">
+                        </body>
+                        </html>
+                    `);
+                } else {
+                    alert('Hunden har ikke lastet opp aversjonsbevis ennå.');
+                }
+            } catch (err) {
+                alert('Kunne ikke vise aversjonsbevis: ' + err.message);
+            }
+        }
+
+        // Modal for opplasting på vegne av deltaker
+        let selectedDeltakerForUpload = null;
+
+        function openUploadForDeltaker() {
+            // Vis liste over deltakere uten bevis
+            const utenBevis = aversjonsbevisData.filter(d => !d.har_bevis);
+
+            if (utenBevis.length === 0) {
+                alert('Alle deltakere har allerede lastet opp aversjonsbevis!');
+                return;
+            }
+
+            const valg = utenBevis.map((d, i) => `${i + 1}. ${d.navn} (${d.regnr})`).join('\n');
+            const valgt = prompt(`Velg deltaker å laste opp for (skriv nummer):\n\n${valg}`);
+
+            if (valgt) {
+                const idx = parseInt(valgt) - 1;
+                if (idx >= 0 && idx < utenBevis.length) {
+                    selectedDeltakerForUpload = utenBevis[idx];
+                    // Åpne filopplasting
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*,application/pdf';
+                    input.onchange = (e) => uploadForDeltaker(e.target.files[0]);
+                    input.click();
+                }
+            }
+        }
+
+        async function uploadForDeltaker(file) {
+            if (!file || !selectedDeltakerForUpload) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64 = e.target.result;
+
+                try {
+                    const res = await fetch(`/api/hunder/${selectedDeltakerForUpload.id}/aversjonsbevis/analyser`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bilde: base64 })
+                    });
+
+                    const data = await res.json();
+                    if (res.ok) {
+                        alert(`Aversjonsbevis lastet opp for ${selectedDeltakerForUpload.navn}!\n\n${data.melding || ''}`);
+                        // Oppdater listen
+                        lastAversjonsbevisOversikt();
+                    } else {
+                        alert('Feil: ' + (data.error || 'Kunne ikke laste opp'));
+                    }
+                } catch (err) {
+                    alert('Nettverksfeil ved opplasting');
+                }
+
+                selectedDeltakerForUpload = null;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Last aversjonsbevis ved sideinnlasting (etter journal)
+        setTimeout(() => {
+            if (currentProveId) {
+                lastAversjonsbevisOversikt();
+            }
+        }, 1000);
     </script>
 </body>
 </html>

@@ -46,6 +46,10 @@ const SVEVE_PASS = process.env.SVEVE_PASS || "";
 const SVEVE_FROM = process.env.SVEVE_FROM || "Fuglehund"; // Avsendernavn (maks 11 tegn)
 const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
 
+// --- AI config (Claude for dokumentavlesning) ---
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const aiConfigured = !!ANTHROPIC_API_KEY;
+
 // Twilio (backup/legacy)
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
@@ -798,6 +802,16 @@ const migrations = [
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_dato TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_godkjent INTEGER DEFAULT 0",
+  // Utvidede aversjonsbevis-felter med AI-avlest data
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_dyretype TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_chip_id TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_avlest_navn TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_avlest_regnr TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_avlest_rase TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_gyldig INTEGER DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_bekreftet INTEGER DEFAULT 0",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_bekreftet_av TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_bekreftet_dato TEXT DEFAULT NULL",
   // Vipps-integrasjon for klubber
   "ALTER TABLE klubber ADD COLUMN vipps_nummer TEXT DEFAULT NULL",
   // Bilde-kolonne for hunder
@@ -7141,6 +7155,357 @@ app.post("/api/hunder/:id/aversjonsbevis/godkjenn", (c) => {
   `).run(id);
 
   return c.json({ success: true, message: "Aversjonsbevis godkjent" });
+});
+
+// Last opp og analyser aversjonsbevis med AI (utvidet versjon)
+app.post("/api/hunder/:id/aversjonsbevis/analyser", async (c) => {
+  const id = c.req.param("id");
+
+  // Sjekk at hunden finnes
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const body = await c.req.json();
+  const { bilde } = body;
+
+  if (!bilde) {
+    return c.json({ error: "Bilde er påkrevd" }, 400);
+  }
+
+  // Sjekk at bildet er base64 og ikke for stort (maks 10MB for AI-analyse)
+  let base64Data = bilde;
+  let mediaType = "image/jpeg";
+
+  // Håndter data URL format
+  const dataUrlMatch = bilde.match(/^data:(image\/[a-z]+|application\/pdf);base64,(.+)$/i);
+  if (dataUrlMatch) {
+    mediaType = dataUrlMatch[1];
+    base64Data = dataUrlMatch[2];
+  }
+
+  const sizeInBytes = (base64Data.length * 3) / 4;
+  const maxSize = 10 * 1024 * 1024; // 10MB
+
+  if (sizeInBytes > maxSize) {
+    return c.json({ error: "Filen er for stor. Maks 10MB tillatt." }, 400);
+  }
+
+  // Hvis AI ikke er konfigurert, returner en melding om manuell utfylling
+  if (!aiConfigured) {
+    // Lagre bildet uten AI-analyse
+    db.prepare(`
+      UPDATE hunder
+      SET aversjonsbevis = ?,
+          aversjonsbevis_dato = ?,
+          aversjonsbevis_godkjent = 0,
+          aversjonsbevis_bekreftet = 0
+      WHERE id = ?
+    `).run(bilde, new Date().toISOString().slice(0, 10), id);
+
+    return c.json({
+      success: true,
+      aiAnalyse: false,
+      melding: "Bilde lagret. AI-avlesning er ikke konfigurert - vennligst fyll inn feltene manuelt.",
+      avlestData: null
+    });
+  }
+
+  // Kall Claude API for bildeanalyse
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: base64Data
+              }
+            },
+            {
+              type: "text",
+              text: `Analyser dette aversjonsbeviset for en hund. Trekk ut følgende informasjon og returner som JSON:
+
+{
+  "dyretype": "Sau eller Rein (hva hunden har aversjon mot)",
+  "gyldig": true/false (om beviset viser at hunden er godkjent/gyldig),
+  "chip_id": "Hundens ID-nummer/chip-nummer (15 siffer)",
+  "hundenavn": "Hundens fulle navn",
+  "regnr": "Registreringsnummer (f.eks. NO12345/2020 eller DK14775/2018)",
+  "rase": "Hundens rase",
+  "dato_godkjent": "Dato for godkjent aversjon (format: YYYY-MM-DD)",
+  "dato_utstedt": "Dagens dato på beviset (format: YYYY-MM-DD)",
+  "lesbarhet": "god/middels/dårlig - hvor lesbart er dokumentet",
+  "kommentar": "Eventuelle merknader om avlesningen"
+}
+
+Returner KUN gyldig JSON, ingen annen tekst. Hvis et felt ikke kan leses, sett verdien til null.`
+            }
+          ]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Claude API feil:", errorText);
+
+      // Lagre bildet uten AI-data ved feil
+      db.prepare(`
+        UPDATE hunder
+        SET aversjonsbevis = ?,
+            aversjonsbevis_dato = ?,
+            aversjonsbevis_godkjent = 0,
+            aversjonsbevis_bekreftet = 0
+        WHERE id = ?
+      `).run(bilde, new Date().toISOString().slice(0, 10), id);
+
+      return c.json({
+        success: true,
+        aiAnalyse: false,
+        melding: "Bilde lagret, men AI-avlesning feilet. Vennligst fyll inn feltene manuelt.",
+        avlestData: null
+      });
+    }
+
+    const aiResponse = await response.json();
+    const aiText = aiResponse.content?.[0]?.text || "";
+
+    // Parse JSON fra AI-respons
+    let avlestData = null;
+    try {
+      // Finn JSON i responsen (kan være pakket inn i markdown code blocks)
+      const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        avlestData = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseErr) {
+      console.error("Kunne ikke parse AI-respons:", parseErr, aiText);
+    }
+
+    // Lagre bildet og AI-avlest data
+    db.prepare(`
+      UPDATE hunder
+      SET aversjonsbevis = ?,
+          aversjonsbevis_dato = ?,
+          aversjonsbevis_dyretype = ?,
+          aversjonsbevis_chip_id = ?,
+          aversjonsbevis_avlest_navn = ?,
+          aversjonsbevis_avlest_regnr = ?,
+          aversjonsbevis_avlest_rase = ?,
+          aversjonsbevis_gyldig = ?,
+          aversjonsbevis_godkjent = 0,
+          aversjonsbevis_bekreftet = 0
+      WHERE id = ?
+    `).run(
+      bilde,
+      avlestData?.dato_godkjent || new Date().toISOString().slice(0, 10),
+      avlestData?.dyretype || null,
+      avlestData?.chip_id || null,
+      avlestData?.hundenavn || null,
+      avlestData?.regnr || null,
+      avlestData?.rase || null,
+      avlestData?.gyldig === true ? 1 : (avlestData?.gyldig === false ? 0 : null),
+      id
+    );
+
+    // Sjekk om avlest data matcher hundens registrerte data
+    const matchWarnings = [];
+    if (avlestData?.regnr && hund.regnr) {
+      const normalizedAvlest = (avlestData.regnr || "").replace(/\s/g, "").toUpperCase();
+      const normalizedHund = (hund.regnr || "").replace(/\s/g, "").toUpperCase();
+      if (normalizedAvlest !== normalizedHund) {
+        matchWarnings.push(`Registreringsnummer på beviset (${avlestData.regnr}) stemmer ikke med hundens registrerte nummer (${hund.regnr})`);
+      }
+    }
+    if (avlestData?.hundenavn && hund.navn) {
+      const navnLikhet = avlestData.hundenavn.toLowerCase().includes(hund.navn.toLowerCase()) ||
+                         hund.navn.toLowerCase().includes(avlestData.hundenavn.toLowerCase());
+      if (!navnLikhet) {
+        matchWarnings.push(`Hundenavn på beviset (${avlestData.hundenavn}) kan avvike fra registrert navn (${hund.navn})`);
+      }
+    }
+
+    return c.json({
+      success: true,
+      aiAnalyse: true,
+      avlestData: avlestData,
+      matchWarnings: matchWarnings,
+      lesbarhet: avlestData?.lesbarhet || "ukjent",
+      melding: avlestData?.lesbarhet === "dårlig"
+        ? "Dokumentet var vanskelig å lese. Vennligst kontroller at dataen er riktig."
+        : "Aversjonsbevis analysert. Vennligst bekreft at informasjonen er korrekt."
+    });
+
+  } catch (err) {
+    console.error("AI-analyse feil:", err);
+
+    // Lagre bildet ved feil
+    db.prepare(`
+      UPDATE hunder
+      SET aversjonsbevis = ?,
+          aversjonsbevis_dato = ?,
+          aversjonsbevis_godkjent = 0,
+          aversjonsbevis_bekreftet = 0
+      WHERE id = ?
+    `).run(bilde, new Date().toISOString().slice(0, 10), id);
+
+    return c.json({
+      success: true,
+      aiAnalyse: false,
+      melding: "Bilde lagret, men AI-avlesning feilet. Vennligst fyll inn feltene manuelt.",
+      avlestData: null
+    });
+  }
+});
+
+// Bekreft/oppdater avlest aversjonsbevis-data
+app.post("/api/hunder/:id/aversjonsbevis/bekreft", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const {
+    dyretype,
+    chip_id,
+    hundenavn,
+    regnr,
+    rase,
+    dato_godkjent,
+    gyldig,
+    bekreftet_av
+  } = body;
+
+  db.prepare(`
+    UPDATE hunder
+    SET aversjonsbevis_dyretype = ?,
+        aversjonsbevis_chip_id = ?,
+        aversjonsbevis_avlest_navn = ?,
+        aversjonsbevis_avlest_regnr = ?,
+        aversjonsbevis_avlest_rase = ?,
+        aversjonsbevis_dato = ?,
+        aversjonsbevis_gyldig = ?,
+        aversjonsbevis_bekreftet = 1,
+        aversjonsbevis_bekreftet_av = ?,
+        aversjonsbevis_bekreftet_dato = ?
+    WHERE id = ?
+  `).run(
+    dyretype || null,
+    chip_id || null,
+    hundenavn || null,
+    regnr || null,
+    rase || null,
+    dato_godkjent || null,
+    gyldig === true ? 1 : (gyldig === false ? 0 : null),
+    bekreftet_av || null,
+    new Date().toISOString(),
+    id
+  );
+
+  return c.json({ success: true, message: "Aversjonsbevis bekreftet og lagret" });
+});
+
+// Hent alle hunder med aversjonsbevis-status (for DVK/admin)
+app.get("/api/prover/:proveId/aversjonsbevis-oversikt", (c) => {
+  const proveId = c.req.param("proveId");
+
+  // Hent alle deltakere på prøven med aversjonsbevis-info
+  const deltakere = db.prepare(`
+    SELECT
+      h.id,
+      h.navn,
+      h.regnr,
+      h.rase,
+      h.aversjonsbevis IS NOT NULL as har_bevis,
+      h.aversjonsbevis_dyretype as dyretype,
+      h.aversjonsbevis_dato as aversjon_dato,
+      h.aversjonsbevis_gyldig as gyldig,
+      h.aversjonsbevis_bekreftet as bekreftet,
+      h.aversjonsbevis_godkjent as godkjent,
+      d.parti,
+      d.klasse,
+      b.navn as eier_navn,
+      b.telefon as eier_telefon
+    FROM deltakere d
+    JOIN hunder h ON d.hund_id = h.id
+    LEFT JOIN brukere b ON h.eier_id = b.id
+    WHERE d.prove_id = ?
+    ORDER BY h.aversjonsbevis IS NULL DESC, h.navn ASC
+  `).all(proveId);
+
+  // Beregn statistikk
+  const total = deltakere.length;
+  const medBevis = deltakere.filter(d => d.har_bevis).length;
+  const utenBevis = total - medBevis;
+  const bekreftet = deltakere.filter(d => d.bekreftet).length;
+  const godkjent = deltakere.filter(d => d.godkjent).length;
+
+  return c.json({
+    deltakere,
+    statistikk: {
+      total,
+      medBevis,
+      utenBevis,
+      bekreftet,
+      godkjent
+    }
+  });
+});
+
+// Hent utvidet aversjonsbevis-info for en hund
+app.get("/api/hunder/:id/aversjonsbevis/detaljer", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare(`
+    SELECT
+      id, navn, regnr, rase,
+      aversjonsbevis,
+      aversjonsbevis_dato,
+      aversjonsbevis_dyretype,
+      aversjonsbevis_chip_id,
+      aversjonsbevis_avlest_navn,
+      aversjonsbevis_avlest_regnr,
+      aversjonsbevis_avlest_rase,
+      aversjonsbevis_gyldig,
+      aversjonsbevis_godkjent,
+      aversjonsbevis_bekreftet,
+      aversjonsbevis_bekreftet_av,
+      aversjonsbevis_bekreftet_dato
+    FROM hunder WHERE id = ?
+  `).get(id);
+
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  return c.json({
+    harBevis: !!hund.aversjonsbevis,
+    bilde: hund.aversjonsbevis,
+    datoGodkjent: hund.aversjonsbevis_dato,
+    dyretype: hund.aversjonsbevis_dyretype,
+    chipId: hund.aversjonsbevis_chip_id,
+    avlestNavn: hund.aversjonsbevis_avlest_navn,
+    avlestRegnr: hund.aversjonsbevis_avlest_regnr,
+    avlestRase: hund.aversjonsbevis_avlest_rase,
+    gyldig: hund.aversjonsbevis_gyldig === 1,
+    godkjent: hund.aversjonsbevis_godkjent === 1,
+    bekreftet: hund.aversjonsbevis_bekreftet === 1,
+    bekreftetAv: hund.aversjonsbevis_bekreftet_av,
+    bekreftetDato: hund.aversjonsbevis_bekreftet_dato,
+    // Registrert data for sammenligning
+    registrert: {
+      navn: hund.navn,
+      regnr: hund.regnr,
+      rase: hund.rase
+    }
+  });
 });
 
 // ============================================

@@ -7759,12 +7759,13 @@ app.get("/api/prover/:id/uonsket-adferd", requireAdmin, (c) => {
       h.navn as hund_navn,
       h.regnr as hund_regnr,
       h.rase as hund_rase,
-      h.eier_navn,
       h.eier_telefon,
+      COALESCE(eier.fornavn || ' ' || eier.etternavn, '') as eier_navn,
       b.fornavn as dommer_fornavn,
       b.etternavn as dommer_etternavn
     FROM kritikker k
     JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere eier ON h.eier_telefon = eier.telefon
     LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
     WHERE k.prove_id = ?
       AND (k.uonsket_adferd = 1 OR (k.adferd IS NOT NULL AND k.adferd != ''))

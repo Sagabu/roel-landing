@@ -7129,6 +7129,27 @@
 
         // Eksporter kritikker per rase (ZIP med separate filer - både Excel og HTML/kritikkformat)
         async function exportKritikkerPerRase() {
+            // ===== VALIDERING: Sjekk at alle kritikker er godkjent =====
+            const token = localStorage.getItem('fuglehund_token');
+            const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+            try {
+                const pendingResp = await fetch('/api/kritikker/pending', { headers });
+                if (pendingResp.ok) {
+                    const pending = await pendingResp.json();
+                    if (pending.length > 0) {
+                        const bekreft = confirm(
+                            `⚠️ ADVARSEL: ${pending.length} kritikker venter fortsatt godkjenning fra NKK-rep!\n\n` +
+                            `Det anbefales å vente til alle kritikker er godkjent før du sender til raseklubbene.\n\n` +
+                            `Vil du likevel eksportere nå?`
+                        );
+                        if (!bekreft) return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke sjekke pending kritikker:', e);
+            }
+
             const kritikker = await getAllKritikkerFromStorage();
 
             if (kritikker.length === 0) {
@@ -8246,7 +8267,121 @@
             if (draft.cacitEier) document.getElementById('nkk_cacitEier').value = draft.cacitEier;
         }
 
+        // Validerings-funksjon som sjekker alle krav før rapport kan genereres
+        async function validateRapportReadiness() {
+            const proveId = getCurrentTrialId();
+            const token = localStorage.getItem('fuglehund_token');
+            const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+            const mangler = [];
+
+            // 1. Sjekk om alle kritikker er godkjent
+            try {
+                const pendingResp = await fetch('/api/kritikker/pending', { headers });
+                if (pendingResp.ok) {
+                    const pending = await pendingResp.json();
+                    if (pending.length > 0) {
+                        mangler.push(`${pending.length} kritikker venter godkjenning av NKK-rep`);
+                    }
+                }
+            } catch (e) {
+                mangler.push('Kunne ikke verifisere kritikk-status');
+            }
+
+            // 2. Sjekk partiliste-signaturer (dommer og NKK-rep)
+            try {
+                const sigResp = await fetch(`/api/prover/${proveId}/signaturer`, { headers });
+                if (sigResp.ok) {
+                    const sigData = await sigResp.json();
+                    const signaturer = sigData.signaturer || [];
+
+                    if (signaturer.length === 0) {
+                        mangler.push('Ingen partilister funnet');
+                    } else {
+                        const utenDommerSig = signaturer.filter(s => !s.dommer_signert_at);
+                        const utenNkkSig = signaturer.filter(s => !s.nkkrep_signert_at);
+
+                        if (utenDommerSig.length > 0) {
+                            mangler.push(`${utenDommerSig.length} partilister mangler dommersignatur`);
+                        }
+                        if (utenNkkSig.length > 0) {
+                            mangler.push(`${utenNkkSig.length} partilister mangler NKK-rep godkjenning`);
+                        }
+                    }
+                }
+            } catch (e) {
+                mangler.push('Kunne ikke verifisere partiliste-signaturer');
+            }
+
+            // 3. Prøveleder referat
+            try {
+                const refResp = await fetch(`/api/storage/provelederReferat_${proveId}`, { headers });
+                if (refResp.ok) {
+                    const refData = await refResp.json();
+                    const referat = refData.value;
+                    if (!referat?.signert) {
+                        mangler.push('Prøveleder referat ikke signert');
+                    }
+                } else {
+                    mangler.push('Prøveleder referat ikke skrevet');
+                }
+            } catch (e) {
+                mangler.push('Prøveleder referat mangler');
+            }
+
+            // 4. NKK-rep rapport
+            try {
+                const nkkResp = await fetch(`/api/storage/nkkRepRapport_${proveId}`, { headers });
+                if (nkkResp.ok) {
+                    const nkkData = await nkkResp.json();
+                    const rapport = nkkData.value;
+                    if (!rapport?.signert) {
+                        mangler.push('NKK-rep rapport ikke signert');
+                    }
+                } else {
+                    mangler.push('NKK-rep rapport ikke skrevet');
+                }
+            } catch (e) {
+                mangler.push('NKK-rep rapport mangler');
+            }
+
+            // 5. DVK-journal signert
+            try {
+                const dvkResp = await fetch(`/api/dvk-journal/${proveId}`, { headers });
+                if (dvkResp.ok) {
+                    const dvkData = await dvkResp.json();
+                    if (!(dvkData.signert === true || dvkData.journal?.signert === true)) {
+                        mangler.push('DVK-journal ikke signert');
+                    }
+                } else {
+                    mangler.push('DVK-journal ikke funnet');
+                }
+            } catch (e) {
+                mangler.push('DVK-journal mangler');
+            }
+
+            return mangler;
+        }
+
         async function generateNKKRapport() {
+            // ===== VALIDERING: Sjekk at alt er klart =====
+            const mangler = await validateRapportReadiness();
+
+            if (mangler.length > 0) {
+                const bekreft = confirm(
+                    `⚠️ ADVARSEL: Rapporten har mangler!\n\n` +
+                    `Følgende må være på plass før NKK-rapport genereres:\n\n` +
+                    `❌ ${mangler.join('\n❌ ')}\n\n` +
+                    `Vil du likevel generere rapporten? (Anbefales IKKE)`
+                );
+
+                if (!bekreft) {
+                    // Oppdater sjekklisten så brukeren ser status
+                    await oppdaterSjekkliste();
+                    return;
+                }
+            }
+
             const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
             const dogs = getAllDogsFromParties();
             const participants = getTrialParticipants();
@@ -8824,6 +8959,28 @@
         }
 
         async function generateFKFRapport() {
+            // ===== VALIDERING: Sjekk at kritiske elementer er på plass =====
+            const mangler = await validateRapportReadiness();
+
+            // For FKF er det viktigst med DVK-signatur og prøveleder-referat
+            const kritiskeMangler = mangler.filter(m =>
+                m.includes('DVK') || m.includes('Prøveleder referat')
+            );
+
+            if (kritiskeMangler.length > 0) {
+                const bekreft = confirm(
+                    `⚠️ ADVARSEL: FKF-rapporten har mangler!\n\n` +
+                    `Følgende bør være på plass:\n\n` +
+                    `❌ ${kritiskeMangler.join('\n❌ ')}\n\n` +
+                    `Vil du likevel generere rapporten?`
+                );
+
+                if (!bekreft) {
+                    await oppdaterSjekkliste();
+                    return;
+                }
+            }
+
             const trialName = document.getElementById('trialName')?.value || 'Ukjent prøve';
             const stats = await calculateStats();
 

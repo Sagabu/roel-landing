@@ -6037,6 +6037,121 @@
                 return distribution;
             }
 
+            // ============================================
+            // EIER/FØRER-REGEL: Grupper hunder etter eier
+            // ============================================
+
+            // Hent unik identifikator for eier/fører (telefon eller navn)
+            function getOwnerKey(dog) {
+                // Prioriter telefon (mest pålitelig), ellers bruk fører/eier-navn
+                const phone = (dog.telefon || dog.eierTelefon || '').replace(/\s/g, '');
+                if (phone && phone.length >= 8) return 'tlf_' + phone;
+                const name = (dog.forer || dog.eier || dog.handler || dog.owner || '').toLowerCase().trim();
+                return name ? 'navn_' + name : 'ukjent_' + Math.random();
+            }
+
+            // Grupper hunder etter eier - returnerer Map<ownerKey, dog[]>
+            function groupByOwner(dogs) {
+                const groups = new Map();
+                for (const dog of dogs) {
+                    const key = getOwnerKey(dog);
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(dog);
+                }
+                return groups;
+            }
+
+            // Fordel hunder på partier med eier-regel
+            // Alle hunder fra samme eier må på samme parti
+            function distributeWithOwnerRule(dogs, numParties, maxPerParty) {
+                if (numParties === 0 || dogs.length === 0) return { parties: [], overflow: [] };
+
+                const ownerGroups = groupByOwner(dogs);
+                const parties = Array.from({ length: numParties }, () => []);
+                const overflow = [];
+
+                // Sorter grupper: største først (vanskeligere å plassere)
+                const sortedGroups = [...ownerGroups.values()].sort((a, b) => b.length - a.length);
+
+                for (const group of sortedGroups) {
+                    // Finn parti med minst hunder som har plass til hele gruppen
+                    let bestParty = -1;
+                    let bestSize = Infinity;
+
+                    for (let i = 0; i < numParties; i++) {
+                        const currentSize = parties[i].length;
+                        if (currentSize + group.length <= maxPerParty && currentSize < bestSize) {
+                            bestParty = i;
+                            bestSize = currentSize;
+                        }
+                    }
+
+                    if (bestParty >= 0) {
+                        parties[bestParty].push(...group);
+                    } else {
+                        // Ingen parti har plass - legg på overflow/venteliste
+                        overflow.push(...group);
+                    }
+                }
+
+                return { parties, overflow };
+            }
+
+            // Arranger hunder i et parti slik at samme eier ikke er i samme slipp
+            // Slipp = posisjon 1+2, 3+4, 5+6 osv.
+            function arrangeWithSlipRule(dogs) {
+                if (dogs.length <= 2) return dogs;
+
+                const ownerGroups = groupByOwner(dogs);
+                const result = [];
+                const used = new Set();
+
+                // Konverter til array av grupper
+                const groups = [...ownerGroups.entries()].map(([key, dogs]) => ({ key, dogs: [...dogs] }));
+
+                // Fyll posisjonene parvis (slipp for slipp)
+                while (result.length < dogs.length) {
+                    const slippStart = result.length;
+
+                    // Finn første hund for dette slippet
+                    let firstDog = null;
+                    let firstGroupIdx = -1;
+
+                    for (let i = 0; i < groups.length; i++) {
+                        if (groups[i].dogs.length > 0) {
+                            firstDog = groups[i].dogs.shift();
+                            firstGroupIdx = i;
+                            break;
+                        }
+                    }
+
+                    if (!firstDog) break;
+                    result.push(firstDog);
+
+                    // Finn andre hund for dette slippet - MÅ være fra annen eier
+                    let secondDog = null;
+
+                    for (let i = 0; i < groups.length; i++) {
+                        if (i !== firstGroupIdx && groups[i].dogs.length > 0) {
+                            secondDog = groups[i].dogs.shift();
+                            break;
+                        }
+                    }
+
+                    if (secondDog) {
+                        result.push(secondDog);
+                    } else {
+                        // Ingen annen eier tilgjengelig - ta fra samme eier (eneste mulighet)
+                        if (groups[firstGroupIdx].dogs.length > 0) {
+                            result.push(groups[firstGroupIdx].dogs.shift());
+                            console.warn('[Partifordeling] Advarsel: Samme eier i samme slipp (ingen alternativer)');
+                        }
+                    }
+                }
+
+                return result;
+            }
+
             // Get trial dates
             const trialStartDate = localStorage.getItem('trialStartDate') || '2026-03-06';
             const startDate = new Date(trialStartDate);
@@ -6078,34 +6193,26 @@
                 dag1Hunder = dag1Hunder.slice(0, dag1Kapasitet);
             }
 
-            // Distribute dag 1 dogs across dag 1 parties - MED BLANDING AV UK OG AK
+            // Distribute dag 1 dogs across dag 1 parties - MED EIER-REGEL OG SLIPP-REGEL
             if (dag1Partier > 0 && dag1Hunder.length > 0) {
-                // Separer UK og AK
-                const dag1UkListe = dag1Hunder.filter(d => d.klasse === 'UK');
-                const dag1AkListe = dag1Hunder.filter(d => d.klasse === 'AK');
+                // Bruk eier-regel: alle hunder fra samme eier på samme parti
+                const { parties: dag1PartiHunder, overflow: dag1Overflow } = distributeWithOwnerRule(
+                    dag1Hunder,
+                    dag1Partier,
+                    maxPerPartyUKAK
+                );
 
-                // Fordel TOTALT antall hunder per parti (maks 14 hver)
-                const totalPerParti = getEvenDistribution(dag1Hunder.length, dag1Partier);
-
-                // Fordel UK jevnt på partiene
-                const ukPerParti = getEvenDistribution(dag1UkListe.length, dag1Partier);
-
-                let ukOffset = 0;
-                let akOffset = 0;
+                // Legg overflow på venteliste
+                dag1Overflow.forEach(d => {
+                    if (d.klasse === 'UK') venteliste.dag1.uk.push(d);
+                    else venteliste.dag1.ak.push(d);
+                });
 
                 for (let i = 0; i < dag1Partier; i++) {
-                    const partiTotal = totalPerParti[i] || 0;
-                    const ukCount = ukPerParti[i] || 0;
-                    // AK fyller opp resten av plassene i partiet
-                    const akCount = partiTotal - ukCount;
-
-                    // Bland UK og AK i partiet
-                    const partyDogs = [
-                        ...dag1UkListe.slice(ukOffset, ukOffset + ukCount),
-                        ...dag1AkListe.slice(akOffset, akOffset + akCount)
-                    ];
-                    ukOffset += ukCount;
-                    akOffset += akCount;
+                    // Arranger med slipp-regel: samme eier ikke i samme slipp
+                    const partyDogs = arrangeWithSlipRule(dag1PartiHunder[i] || []);
+                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
+                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
 
                     const partyDate = new Date(startDate);
 
@@ -6140,34 +6247,26 @@
                 dag2Hunder = dag2Hunder.slice(0, dag2Kapasitet);
             }
 
-            // Distribute dag 2 dogs across dag 2 parties - MED BLANDING AV UK OG AK
+            // Distribute dag 2 dogs across dag 2 parties - MED EIER-REGEL OG SLIPP-REGEL
             if (dag2Partier > 0 && dag2Hunder.length > 0) {
-                // Separer UK og AK
-                const dag2UkListe = dag2Hunder.filter(d => d.klasse === 'UK');
-                const dag2AkListe = dag2Hunder.filter(d => d.klasse === 'AK');
+                // Bruk eier-regel: alle hunder fra samme eier på samme parti
+                const { parties: dag2PartiHunder, overflow: dag2Overflow } = distributeWithOwnerRule(
+                    dag2Hunder,
+                    dag2Partier,
+                    maxPerPartyUKAK
+                );
 
-                // Fordel TOTALT antall hunder per parti (maks 14 hver)
-                const totalPerParti2 = getEvenDistribution(dag2Hunder.length, dag2Partier);
-
-                // Fordel UK jevnt på partiene
-                const ukPerParti2 = getEvenDistribution(dag2UkListe.length, dag2Partier);
-
-                let ukOffset2 = 0;
-                let akOffset2 = 0;
+                // Legg overflow på venteliste
+                dag2Overflow.forEach(d => {
+                    if (d.klasse === 'UK') venteliste.dag2.uk.push(d);
+                    else venteliste.dag2.ak.push(d);
+                });
 
                 for (let i = 0; i < dag2Partier; i++) {
-                    const partiTotal = totalPerParti2[i] || 0;
-                    const ukCount = ukPerParti2[i] || 0;
-                    // AK fyller opp resten av plassene i partiet
-                    const akCount = partiTotal - ukCount;
-
-                    // Bland UK og AK i partiet
-                    const partyDogs = [
-                        ...dag2UkListe.slice(ukOffset2, ukOffset2 + ukCount),
-                        ...dag2AkListe.slice(akOffset2, akOffset2 + akCount)
-                    ];
-                    ukOffset2 += ukCount;
-                    akOffset2 += akCount;
+                    // Arranger med slipp-regel: samme eier ikke i samme slipp
+                    const partyDogs = arrangeWithSlipRule(dag2PartiHunder[i] || []);
+                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
+                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
 
                     const partyDate = new Date(startDate);
                     partyDate.setDate(partyDate.getDate() + 1);
@@ -6186,49 +6285,51 @@
                 }
             }
 
-            // Build VK parties (auto-calculate based on number of VK dogs)
-            // TODO: Legg til VK parti-konfigurasjon hvis ønskelig
+            // Build VK parties (auto-calculate based on number of VK dogs) - MED EIER-REGEL OG SLIPP-REGEL
             const vkPartyCount = Math.ceil(vkDogs.length / maxPerPartyVK) || 0;
-            const vkKapasitet = vkPartyCount * maxPerPartyVK;
-            let vkHunderTilPartier = vkDogs.slice(0, vkKapasitet);
 
-            // VK venteliste (egen, ikke dag-spesifikk)
-            if (vkDogs.length > vkKapasitet) {
-                venteliste.vk = vkDogs.slice(vkKapasitet);
-            }
+            if (vkPartyCount > 0 && vkDogs.length > 0) {
+                // Bruk eier-regel: alle hunder fra samme eier på samme VK-parti
+                const { parties: vkPartiHunder, overflow: vkOverflow } = distributeWithOwnerRule(
+                    vkDogs,
+                    vkPartyCount,
+                    maxPerPartyVK
+                );
 
-            const vkDistribution = getEvenDistribution(vkHunderTilPartier.length, vkPartyCount);
-            let vkOffset = 0;
+                // VK venteliste (egen, ikke dag-spesifikk)
+                venteliste.vk = vkOverflow;
 
-            for (let i = 0; i < vkPartyCount; i++) {
-                const count = vkDistribution[i] || 0;
-                const vkDay = 1; // VK usually on day 1, could be configurable
-                const partyDate = new Date(startDate);
-                partyDate.setDate(partyDate.getDate() + vkDay - 1);
+                for (let i = 0; i < vkPartyCount; i++) {
+                    const vkDay = 1; // VK usually on day 1, could be configurable
+                    const partyDate = new Date(startDate);
+                    partyDate.setDate(partyDate.getDate() + vkDay - 1);
 
-                // Hent VK-type (1day, 2day, 3day, none)
-                const vkType = document.getElementById('vkTypeSelect')?.value || '1day';
-                // Bestem VK-undertype basert på valg
-                let vkSubType = 'vk'; // Standard for 1-dags VK
-                let partyName = `VK ${i + 1}`;
-                if (vkType === '2day') {
-                    vkSubType = 'vk_kval'; // Dag 1 av 2-dagers er kval
-                    partyName = `VK Kval ${i + 1}`;
-                } else if (vkType === '3day') {
-                    vkSubType = 'vk_kval'; // Dag 1 av 3-dagers er kval
-                    partyName = `VK Kval ${i + 1}`;
+                    // Hent VK-type (1day, 2day, 3day, none)
+                    const vkType = document.getElementById('vkTypeSelect')?.value || '1day';
+                    // Bestem VK-undertype basert på valg
+                    let vkSubType = 'vk'; // Standard for 1-dags VK
+                    let partyName = `VK ${i + 1}`;
+                    if (vkType === '2day') {
+                        vkSubType = 'vk_kval'; // Dag 1 av 2-dagers er kval
+                        partyName = `VK Kval ${i + 1}`;
+                    } else if (vkType === '3day') {
+                        vkSubType = 'vk_kval'; // Dag 1 av 3-dagers er kval
+                        partyName = `VK Kval ${i + 1}`;
+                    }
+
+                    // Arranger med slipp-regel: samme eier ikke i samme slipp
+                    const partyDogs = arrangeWithSlipRule(vkPartiHunder[i] || []);
+
+                    parties.push({
+                        name: partyName,
+                        partyNum: i + 1,
+                        type: 'vk',
+                        vkSubType: vkSubType, // 'vk' = 1-dags, 'vk_kval' = kval, 'vk_semi' = semifinale, 'vk_finale' = finale
+                        day: vkDay,
+                        date: partyDate.toISOString().split('T')[0],
+                        dogs: partyDogs
+                    });
                 }
-
-                parties.push({
-                    name: partyName,
-                    partyNum: i + 1,
-                    type: 'vk',
-                    vkSubType: vkSubType, // 'vk' = 1-dags, 'vk_kval' = kval, 'vk_semi' = semifinale, 'vk_finale' = finale
-                    day: vkDay,
-                    date: partyDate.toISOString().split('T')[0],
-                    dogs: vkHunderTilPartier.slice(vkOffset, vkOffset + count)
-                });
-                vkOffset += count;
             }
 
             // Store waitlist (med klasseinformasjon)

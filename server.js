@@ -5103,6 +5103,94 @@ app.delete("/api/vipps-foresporsler/:id", (c) => {
   return c.json({ success: true });
 });
 
+// Hent Vipps-betalingsstatistikk for økonomimodulen
+app.get("/api/prover/:id/vipps-statistikk", (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent alle Vipps-forespørsler for prøven med betalingsstatus
+  const foresporsler = db.prepare(`
+    SELECT
+      vf.id,
+      vf.beskrivelse,
+      vf.belop,
+      vf.created_at,
+      COUNT(vm.id) as antall_mottakere,
+      SUM(CASE WHEN vm.status = 'betalt' THEN 1 ELSE 0 END) as antall_betalt,
+      SUM(CASE WHEN vm.status = 'betalt' THEN vf.belop ELSE 0 END) as sum_betalt,
+      SUM(CASE WHEN vm.status = 'venter' THEN vf.belop ELSE 0 END) as sum_venter
+    FROM vipps_foresporsler vf
+    LEFT JOIN vipps_mottakere vm ON vf.id = vm.foresporsel_id
+    WHERE vf.prove_id = ?
+    GROUP BY vf.id
+    ORDER BY vf.created_at DESC
+  `).all(proveId);
+
+  // Beregn totaler
+  let totalBetalt = 0;
+  let totalVenter = 0;
+  let totalForventet = 0;
+
+  foresporsler.forEach(f => {
+    totalBetalt += f.sum_betalt || 0;
+    totalVenter += f.sum_venter || 0;
+    totalForventet += (f.antall_mottakere || 0) * f.belop;
+  });
+
+  // Hent også betalte påmeldinger (startavgifter)
+  const pameldinger = db.prepare(`
+    SELECT
+      klasse,
+      COUNT(*) as antall,
+      SUM(CASE WHEN betalt = 1 THEN 1 ELSE 0 END) as antall_betalt,
+      SUM(CASE WHEN betalt = 1 THEN betalt_belop ELSE 0 END) as sum_betalt
+    FROM pameldinger
+    WHERE prove_id = ? AND status IN ('pameldt', 'bekreftet', 'betalt')
+    GROUP BY klasse
+  `).all(proveId);
+
+  let startavgifterBetalt = 0;
+  const startavgifterPerKlasse = {};
+  pameldinger.forEach(p => {
+    startavgifterBetalt += p.sum_betalt || 0;
+    startavgifterPerKlasse[p.klasse] = {
+      antall: p.antall,
+      antallBetalt: p.antall_betalt,
+      sumBetalt: p.sum_betalt || 0
+    };
+  });
+
+  // Hent jegermiddag-betalinger
+  const jegermiddag = db.prepare(`
+    SELECT
+      COUNT(*) as antall_pameldinger,
+      SUM(antall_personer) as antall_personer,
+      SUM(CASE WHEN betalt = 1 THEN belop ELSE 0 END) as sum_betalt,
+      SUM(CASE WHEN betalt = 0 THEN belop ELSE 0 END) as sum_venter
+    FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND status != 'avmeldt'
+  `).get(proveId);
+
+  return c.json({
+    vippsForesporsler: foresporsler,
+    vippsTotaler: {
+      betalt: totalBetalt,
+      venter: totalVenter,
+      forventet: totalForventet
+    },
+    startavgifter: {
+      perKlasse: startavgifterPerKlasse,
+      totalBetalt: startavgifterBetalt
+    },
+    jegermiddag: {
+      antallPameldinger: jegermiddag?.antall_pameldinger || 0,
+      antallPersoner: jegermiddag?.antall_personer || 0,
+      sumBetalt: jegermiddag?.sum_betalt || 0,
+      sumVenter: jegermiddag?.sum_venter || 0
+    },
+    totaltMottatt: totalBetalt + startavgifterBetalt + (jegermiddag?.sum_betalt || 0)
+  });
+});
+
 // ============================================
 // VIPPS ePAYMENT API INTEGRASJON
 // ============================================

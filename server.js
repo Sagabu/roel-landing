@@ -942,6 +942,8 @@ const migrations = [
   "ALTER TABLE prover ADD COLUMN dvk_navn TEXT DEFAULT ''",
   // Automatisk venteliste-opprykk konfigurasjon
   "ALTER TABLE prove_config ADD COLUMN auto_venteliste_opprykk INTEGER DEFAULT 1",
+  // Løpetid-egenerklæring (JSON med skjemadata)
+  "ALTER TABLE avmeldinger ADD COLUMN lopetid_egenerklaring TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -6579,11 +6581,27 @@ app.post("/api/prover/:proveId/avmeldinger", requireAuth, async (c) => {
   const body = await c.req.json();
   const bruker = c.get("bruker");
 
-  const { pamelding_id, arsak, arsak_beskrivelse } = body;
+  const { pamelding_id, arsak, arsak_beskrivelse, lopetid_egenerklaring } = body;
 
   // Valider påkrevde felt
   if (!pamelding_id || !arsak) {
     return c.json({ error: "Mangler påkrevde felt (pamelding_id, arsak)" }, 400);
+  }
+
+  // Valider løpetid-egenerklæring hvis årsak er løpetid
+  if (arsak === 'lopetid') {
+    if (!lopetid_egenerklaring) {
+      return c.json({ error: "Løpetid krever utfylt egenerklæring" }, 400);
+    }
+    const { startgebyr, kontonummer, digital_signatur } = lopetid_egenerklaring;
+    if (!startgebyr || !kontonummer || !digital_signatur) {
+      return c.json({ error: "Egenerklæring mangler påkrevde felt (startgebyr, kontonummer, signatur)" }, 400);
+    }
+    // Valider kontonummer (11 siffer)
+    const kontoRen = kontonummer.replace(/\s/g, '');
+    if (kontoRen.length !== 11 || !/^\d+$/.test(kontoRen)) {
+      return c.json({ error: "Ugyldig kontonummer (må være 11 siffer)" }, 400);
+    }
   }
 
   // Valider årsak
@@ -6641,11 +6659,13 @@ app.post("/api/prover/:proveId/avmeldinger", requireAuth, async (c) => {
   const avmeldingResult = db.prepare(`
     INSERT INTO avmeldinger (
       pamelding_id, prove_id, hund_id, forer_telefon,
-      arsak, arsak_beskrivelse, refusjon_belop, refusjon_prosent
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      arsak, arsak_beskrivelse, refusjon_belop, refusjon_prosent,
+      lopetid_egenerklaring
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     pamelding_id, proveId, pamelding.hund_id, bruker.telefon,
-    arsak, arsak_beskrivelse || '', refusjon.belop, refusjon.prosent
+    arsak, arsak_beskrivelse || '', refusjon.belop, refusjon.prosent,
+    arsak === 'lopetid' && lopetid_egenerklaring ? JSON.stringify(lopetid_egenerklaring) : null
   );
 
   const avmeldingId = avmeldingResult.lastInsertRowid;
@@ -6685,12 +6705,40 @@ app.post("/api/prover/:proveId/avmeldinger", requireAuth, async (c) => {
   if (arsak_beskrivelse) {
     meldingTekst += `Beskrivelse: ${arsak_beskrivelse}\n`;
   }
+
+  // Legg til løpetid-egenerklæring hvis relevant
+  if (arsak === 'lopetid' && lopetid_egenerklaring) {
+    meldingTekst += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    meldingTekst += `📋 EGENERKLÆRING LØPETID\n`;
+    meldingTekst += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    meldingTekst += `Jeg erklærer herved at min hund ${lopetid_egenerklaring.hund_navn || pamelding.hund_navn}\n`;
+    meldingTekst += `med registreringsnummer ${lopetid_egenerklaring.regnr || pamelding.hund_regnr || '-'}\n`;
+    meldingTekst += `har fått løpetid og ikke kan starte på prøven\n`;
+    meldingTekst += `som starter ${lopetid_egenerklaring.start_dato || '-'}.\n\n`;
+    meldingTekst += `Jeg ber om å få tilbakebetalt startgebyret:\n`;
+    meldingTekst += `Beløp: ${lopetid_egenerklaring.startgebyr} kr\n`;
+    meldingTekst += `Kontonummer: ${lopetid_egenerklaring.kontonummer}\n\n`;
+    meldingTekst += `Eier/fører: ${lopetid_egenerklaring.eier_navn || brukerNavn}\n`;
+    if (lopetid_egenerklaring.eier_adresse) {
+      meldingTekst += `Adresse: ${lopetid_egenerklaring.eier_adresse}\n`;
+    }
+    if (lopetid_egenerklaring.sted) {
+      meldingTekst += `Sted: ${lopetid_egenerklaring.sted}\n`;
+    }
+    meldingTekst += `Dato: ${lopetid_egenerklaring.signert_dato || new Date().toISOString().split('T')[0]}\n\n`;
+    meldingTekst += `✅ Digitalt signert av ${brukerNavn}\n`;
+    meldingTekst += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  }
+
   meldingTekst += `\nRefusjon: ${refusjon.prosent}%`;
   if (refusjon.belop > 0) {
     meldingTekst += ` (${refusjon.belop} kr)`;
   }
-  if (arsak !== 'annet' && refusjon.prosent > 0) {
+  if (arsak !== 'annet' && refusjon.prosent > 0 && arsak !== 'lopetid') {
     meldingTekst += `\n⚠️ Krever dokumentasjon for refusjon.`;
+  }
+  if (arsak === 'lopetid') {
+    meldingTekst += `\n✅ Egenerklæring mottatt som dokumentasjon.`;
   }
 
   // Opprett melding i innboks
@@ -6717,6 +6765,7 @@ app.post("/api/prover/:proveId/avmeldinger", requireAuth, async (c) => {
       hund_navn: pamelding.hund_navn,
       arsak,
       refusjon,
+      har_lopetid_egenerklaring: arsak === 'lopetid' && !!lopetid_egenerklaring,
       opprykk: opprykkListe.length > 0 ? opprykkListe[0] : null
     })
   );

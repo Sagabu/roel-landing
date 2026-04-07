@@ -864,6 +864,34 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_avmeldinger_prove ON avmeldinger(prove_id);
   CREATE INDEX IF NOT EXISTS idx_avmeldinger_status ON avmeldinger(status);
+
+  -- Fratatte aversjonsbevis (rapport til NJFF)
+  CREATE TABLE IF NOT EXISTS fratatte_aversjonsbevis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    hund_id INTEGER NOT NULL REFERENCES hunder(id),
+    eier_navn TEXT NOT NULL,
+    eier_telefon TEXT DEFAULT NULL,
+    eier_adresse TEXT DEFAULT '',
+    -- Hundens info på tidspunkt for fratakelse
+    hund_navn TEXT NOT NULL,
+    hund_regnr TEXT NOT NULL,
+    hund_rase TEXT DEFAULT '',
+    hund_chip_id TEXT DEFAULT '',
+    -- Årsak til fratakelse
+    arsak TEXT NOT NULL,
+    hendelsesdato TEXT NOT NULL,
+    registrert_av TEXT NOT NULL,
+    -- Ekstra info
+    kommentar TEXT DEFAULT '',
+    meldt_njff INTEGER DEFAULT 0,
+    meldt_njff_dato TEXT DEFAULT NULL,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_fratatte_prove ON fratatte_aversjonsbevis(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_fratatte_hund ON fratatte_aversjonsbevis(hund_id);
 `);
 
 // --- Migrations for existing databases ---
@@ -7311,6 +7339,171 @@ app.get("/api/prover/:id/jegermiddag/eksport", requireAdmin, (c) => {
       'Content-Disposition': `attachment; filename="${filename}"`
     }
   });
+});
+
+// ============================================
+// FRATATTE AVERSJONSBEVIS (NJFF-RAPPORT)
+// ============================================
+
+// Registrer fratatt aversjonsbevis
+app.post("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const { hund_id, arsak, hendelsesdato, kommentar } = body;
+
+  if (!hund_id || !arsak) {
+    return c.json({ error: "Hund og årsak er påkrevd" }, 400);
+  }
+
+  // Hent hund-info
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(hund_id);
+  if (!hund) {
+    return c.json({ error: "Hund ikke funnet" }, 404);
+  }
+
+  // Hent eier-info
+  let eierNavn = hund.eier_navn || 'Ukjent';
+  let eierAdresse = '';
+  if (hund.eier_telefon) {
+    const eier = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(hund.eier_telefon);
+    if (eier) {
+      eierNavn = `${eier.fornavn || ''} ${eier.etternavn || ''}`.trim() || eierNavn;
+      eierAdresse = eier.adresse || '';
+    }
+  }
+
+  // Sjekk om allerede registrert
+  const eksisterer = db.prepare(`
+    SELECT id FROM fratatte_aversjonsbevis WHERE prove_id = ? AND hund_id = ?
+  `).get(proveId, hund_id);
+
+  if (eksisterer) {
+    return c.json({ error: "Denne hunden er allerede registrert med fratatt aversjonsbevis for denne prøven" }, 400);
+  }
+
+  db.prepare(`
+    INSERT INTO fratatte_aversjonsbevis
+    (prove_id, hund_id, eier_navn, eier_telefon, eier_adresse, hund_navn, hund_regnr, hund_rase, hund_chip_id, arsak, hendelsesdato, registrert_av, kommentar)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    proveId,
+    hund_id,
+    eierNavn,
+    hund.eier_telefon || null,
+    eierAdresse,
+    hund.navn,
+    hund.regnr || '',
+    hund.rase || '',
+    hund.chip_id || hund.aversjonsbevis_chip_id || '',
+    arsak,
+    hendelsesdato || new Date().toISOString().split('T')[0],
+    bruker.telefon,
+    kommentar || ''
+  );
+
+  // Marker hundens aversjonsbevis som fratatt i hunder-tabellen
+  db.prepare(`
+    UPDATE hunder SET aversjonsbevis_godkjent = -1, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(hund_id);
+
+  return c.json({ ok: true });
+});
+
+// Hent alle fratatte aversjonsbevis for en prøve
+app.get("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const fratatte = db.prepare(`
+    SELECT fa.*, p.navn as prove_navn, p.start_dato as prove_dato
+    FROM fratatte_aversjonsbevis fa
+    JOIN prover p ON fa.prove_id = p.id
+    WHERE fa.prove_id = ?
+    ORDER BY fa.created_at DESC
+  `).all(proveId);
+
+  return c.json({ items: fratatte, count: fratatte.length });
+});
+
+// Slett registrering av fratatt aversjonsbevis
+app.delete("/api/prover/:proveId/fratatte-aversjonsbevis/:id", requireAdmin, (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+
+  const fratatt = db.prepare(`
+    SELECT * FROM fratatte_aversjonsbevis WHERE id = ? AND prove_id = ?
+  `).get(id, proveId);
+
+  if (!fratatt) {
+    return c.json({ error: "Registrering ikke funnet" }, 404);
+  }
+
+  // Gjenopprett hundens aversjonsbevis-status
+  db.prepare(`
+    UPDATE hunder SET aversjonsbevis_godkjent = 1, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(fratatt.hund_id);
+
+  db.prepare("DELETE FROM fratatte_aversjonsbevis WHERE id = ?").run(id);
+
+  return c.json({ ok: true });
+});
+
+// Eksporter NJFF-rapport (Excel)
+app.get("/api/prover/:id/fratatte-aversjonsbevis/eksport", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const prove = db.prepare("SELECT navn, start_dato FROM prover WHERE id = ?").get(proveId);
+  const fratatte = db.prepare(`
+    SELECT * FROM fratatte_aversjonsbevis WHERE prove_id = ? ORDER BY created_at ASC
+  `).all(proveId);
+
+  // Bygg Excel-data
+  const data = fratatte.map((f, i) => ({
+    'Nr': i + 1,
+    'Hundens navn': f.hund_navn,
+    'Reg.nr': f.hund_regnr,
+    'Rase': f.hund_rase,
+    'Chip-ID': f.hund_chip_id || '',
+    'Eiers navn': f.eier_navn,
+    'Eiers telefon': f.eier_telefon || '',
+    'Eiers adresse': f.eier_adresse || '',
+    'Årsak til fratakelse': f.arsak,
+    'Hendelsesdato': f.hendelsesdato,
+    'Kommentar': f.kommentar || '',
+    'Registrert dato': f.created_at?.split('T')[0] || ''
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Fratatte aversjonsbevis');
+
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+  const filename = `njff_fratatte_aversjonsbevis_${prove?.navn || proveId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`
+    }
+  });
+});
+
+// Marker som meldt til NJFF
+app.put("/api/prover/:proveId/fratatte-aversjonsbevis/:id/meldt", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+
+  db.prepare(`
+    UPDATE fratatte_aversjonsbevis
+    SET meldt_njff = 1, meldt_njff_dato = date('now'), updated_at = datetime('now')
+    WHERE id = ? AND prove_id = ?
+  `).run(id, proveId);
+
+  return c.json({ ok: true });
 });
 
 // ============================================

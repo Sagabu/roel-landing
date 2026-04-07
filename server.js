@@ -9311,10 +9311,26 @@ app.post("/api/gdpr/analyser-bilde", async (c) => {
 app.post("/api/varsle-nkkrep", async (c) => {
   try {
     const body = await c.req.json();
-    const { partyId, partyName, judgeName, dogCount } = body;
+    const { partyId, partyName, judgeName, dogCount, proveId } = body;
 
     if (!partyId || !judgeName) {
       return c.json({ error: "Mangler påkrevde felter" }, 400);
+    }
+
+    // Hent prøve-info for navn og klubb
+    let proveNavn = '';
+    let klubbNavn = '';
+    if (proveId) {
+      const prove = db.prepare(`
+        SELECT p.navn, k.navn as klubb_navn
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        WHERE p.id = ?
+      `).get(proveId);
+      if (prove) {
+        proveNavn = prove.navn || '';
+        klubbNavn = prove.klubb_navn || '';
+      }
     }
 
     // Hent NKK-rep info fra trialTeam i kv_store
@@ -9337,8 +9353,23 @@ app.post("/api/varsle-nkkrep", async (c) => {
     const nkkRepPhone = team.nkkrep.phone;
     const nkkRepName = team.nkkrep.name || "NKK-rep";
 
-    // Lag SMS-melding
-    const message = `Kritikker fra ${partyName || partyId} er klare for godkjenning. Dommer: ${judgeName}. ${dogCount ? dogCount + ' hunder. ' : ''}Logg inn på fuglehundprove.no/nkk-godkjenning`;
+    // Lag SMS-melding med prøvenavn og klubb
+    let message = '';
+    if (proveNavn) {
+      message = `${proveNavn}: Kritikker fra ${partyName || partyId} er klare for godkjenning. `;
+    } else {
+      message = `Kritikker fra ${partyName || partyId} er klare for godkjenning. `;
+    }
+    message += `Dommer: ${judgeName}. `;
+    if (dogCount) {
+      message += `${dogCount} hunder. `;
+    }
+    message += `Logg inn: fuglehundprove.no/nkk-godkjenning`;
+
+    // Legg til signatur med klubbnavn (maks 160 tegn for SMS)
+    if (klubbNavn && message.length + klubbNavn.length + 10 <= 160) {
+      message += ` - ${klubbNavn}`;
+    }
 
     // Send SMS
     const smsResult = await sendSMS(nkkRepPhone, message, { type: "nkk_varsling" });
@@ -10686,7 +10717,37 @@ app.post("/api/kritikker/:kritikkId/bekreft-meddommer", requireAuth, async (c) =
       WHERE id = ?
     `).run(kritikkId);
 
-    return c.json({ success: true });
+    // === AUTOMATISK MEDDOMMER-SIGNATUR PÅ PARTILISTEN ===
+    // Legg til meddommers signatur på partilisten
+    if (kritikk.prove_id && kritikk.parti) {
+      const meddommerNavn = user?.fornavn && user?.etternavn
+        ? `${user.fornavn} ${user.etternavn}`
+        : (user?.navn || 'Meddommer');
+
+      // Sjekk om meddommer allerede har signert dette partiet
+      const existingMeddommerSig = db.prepare(`
+        SELECT * FROM parti_signaturer
+        WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+      `).get(kritikk.prove_id, kritikk.parti, user?.telefon);
+
+      if (existingMeddommerSig) {
+        // Oppdater eksisterende signatur
+        db.prepare(`
+          UPDATE parti_signaturer
+          SET dommer_signert_at = datetime('now'), dommer_navn = ?
+          WHERE id = ?
+        `).run(meddommerNavn, existingMeddommerSig.id);
+      } else {
+        // Opprett ny signatur for meddommer
+        db.prepare(`
+          INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_navn, dommer_signert_at)
+          VALUES (?, ?, ?, ?, datetime('now'))
+        `).run(kritikk.prove_id, kritikk.parti, user?.telefon, meddommerNavn);
+      }
+      console.log(`📝 Meddommer-signatur lagt til for ${meddommerNavn} på parti ${kritikk.parti}`);
+    }
+
+    return c.json({ success: true, meddommerSignert: true });
   } catch (err) {
     console.error("Bekreft meddommer error:", err);
     return c.json({ error: err.message }, 500);

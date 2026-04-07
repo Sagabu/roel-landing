@@ -7849,7 +7849,7 @@
         // ===== PRØVELEDER REFERAT FUNCTIONS =====
 
         async function loadProvelederReferat() {
-            const proveId = 'default'; // TODO: Get from trial config
+            const proveId = getCurrentTrialId();
 
             try {
                 const token = localStorage.getItem('fuglehund_token');
@@ -7900,7 +7900,7 @@
         }
 
         async function lagreProvelederReferat() {
-            const proveId = 'default'; // TODO: Get from trial config
+            const proveId = getCurrentTrialId();
 
             const referat = {
                 tekst: document.getElementById('provelederReferat').value,
@@ -7958,7 +7958,7 @@
                 return;
             }
 
-            const proveId = 'default'; // TODO: Get from trial config
+            const proveId = getCurrentTrialId();
             const userName = localStorage.getItem('userName') || 'Prøveleder';
 
             const referat = {
@@ -8041,7 +8041,7 @@
         }
 
         async function oppdaterSjekkliste() {
-            const proveId = 'default'; // TODO: Get from trial config
+            const proveId = getCurrentTrialId();
             const token = localStorage.getItem('fuglehund_token');
             const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
@@ -8252,6 +8252,41 @@
             const participants = getTrialParticipants();
             const stats = await calculateStats();
 
+            // Hent NKK-rep rapport fra nkk-godkjenning.html (lagret i storage)
+            const proveId = getCurrentTrialId();
+            let nkkRepRapportData = null;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/storage/nkkRepRapport_${proveId}`, {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        nkkRepRapportData = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke hente NKK-rep rapport fra nkk-godkjenning:', e);
+            }
+
+            // Hent prøveleder referat fra storage (lagret i admin.html)
+            let provelederReferatData = null;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/storage/provelederReferat_${proveId}`, {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        provelederReferatData = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke hente prøveleder referat:', e);
+            }
+
             // Lag ZIP med alle vedlegg
             const zip = new JSZip();
 
@@ -8316,29 +8351,41 @@
                 { 'Felt': 'Mobilnr', 'Verdi': document.getElementById('nkk_provelederTlf').value || '' },
                 { 'Felt': 'E-post', 'Verdi': document.getElementById('nkk_provelederEpost')?.value || '' },
                 { 'Felt': '', 'Verdi': '' },
-                { 'Felt': '--- REFERAT FRA PRØVELEDER ---', 'Verdi': '' },
-                { 'Felt': 'Referat', 'Verdi': document.getElementById('nkk_referat').value || '(Ikke utfylt)' },
-                { 'Felt': 'Vaksinasjonsattester bekreftet', 'Verdi': document.getElementById('nkk_vaksinasjonsOK')?.checked ? 'Ja' : 'Nei/Ukjent' },
-                { 'Felt': 'Digital signatur prøveleder', 'Verdi': provelederSign },
+                { 'Felt': '--- REFERAT FRA PRØVELEDER (SEKSJON 2) ---', 'Verdi': '' },
+                // Bruk data fra storage hvis tilgjengelig, ellers fra modal-felter
+                { 'Felt': 'Referat', 'Verdi': provelederReferatData?.tekst || document.getElementById('nkk_referat').value || '(Ikke utfylt)' },
+                { 'Felt': 'Værforhold', 'Verdi': provelederReferatData?.vaer || '(Ikke angitt)' },
+                { 'Felt': 'Fuglestamme', 'Verdi': provelederReferatData?.fugl || '(Ikke angitt)' },
+                { 'Felt': 'Vaksinasjonsattester bekreftet', 'Verdi': (provelederReferatData?.vaksinasjon ?? document.getElementById('nkk_vaksinasjonsOK')?.checked) ? 'Ja' : 'Nei/Ukjent' },
+                { 'Felt': 'Signert', 'Verdi': provelederReferatData?.signert ? `Ja - ${provelederReferatData.signertAv || 'Prøveleder'} (${new Date(provelederReferatData.signertDato).toLocaleString('nb-NO')})` : provelederSign },
                 { 'Felt': '', 'Verdi': '' },
-                { 'Felt': '--- RAPPORT FRA NKKs REPRESENTANT ---', 'Verdi': '' },
+                { 'Felt': '--- RAPPORT FRA NKKs REPRESENTANT (SEKSJON 3) ---', 'Verdi': '' },
                 { 'Felt': 'Navn', 'Verdi': document.getElementById('nkk_nkkrepNavn').value || '(Ikke utfylt)' },
                 { 'Felt': 'Telefon dagtid', 'Verdi': document.getElementById('nkk_nkkrepTlf')?.value || '' },
                 { 'Felt': 'Adresse', 'Verdi': document.getElementById('nkk_nkkrepAdresse')?.value || '' },
                 { 'Felt': 'Postnr/sted', 'Verdi': document.getElementById('nkk_nkkrepPostnr')?.value || '' },
+                // Inkluder NKK-rep rapport fra nkk-godkjenning.html hvis tilgjengelig
+                { 'Felt': 'Generell vurdering', 'Verdi': nkkRepRapportData?.tekst || document.getElementById('nkk_nkkrepKommentar')?.value || '(Ikke utfylt)' },
+                { 'Felt': 'Værforhold (NKK-rep)', 'Verdi': nkkRepRapportData?.vaer || '(Ikke angitt)' },
+                { 'Felt': 'Fuglestamme (NKK-rep)', 'Verdi': nkkRepRapportData?.fugl || '(Ikke angitt)' },
+                { 'Felt': 'Andre merknader', 'Verdi': nkkRepRapportData?.merknader || '' },
                 { 'Felt': 'Innstilles prøven til anerkjennelse', 'Verdi': anerkjennelse === 'ja' ? 'Ja' : 'Nei' },
-                { 'Felt': 'Innkomne protester', 'Verdi': harProtester ? 'Ja' : 'Nei' }
+                { 'Felt': 'Innkomne protester', 'Verdi': (nkkRepRapportData?.protester === 'ja' || harProtester) ? 'Ja' : 'Nei' }
             ];
 
-            if (harProtester) {
+            // Legg til protestdetaljer hvis aktuelt
+            if (harProtester || nkkRepRapportData?.protester === 'ja') {
                 reportRows.push({
                     'Felt': 'Beskrivelse av protester',
-                    'Verdi': document.getElementById('nkk_protesterBeskrivelse')?.value || ''
+                    'Verdi': nkkRepRapportData?.protestDetaljer || document.getElementById('nkk_protesterBeskrivelse')?.value || ''
                 });
             }
 
-            reportRows.push({ 'Felt': 'Kommentarer', 'Verdi': document.getElementById('nkk_nkkrepKommentar')?.value || '' });
-            reportRows.push({ 'Felt': 'Digital signatur', 'Verdi': nkkrepSign });
+            // NKK-rep signatur
+            const nkkRepSignertTekst = nkkRepRapportData?.signert
+                ? `Ja - ${nkkRepRapportData.signertAv || 'NKK-rep'} (${new Date(nkkRepRapportData.signertDato).toLocaleString('nb-NO')})`
+                : nkkrepSign;
+            reportRows.push({ 'Felt': 'Digital signatur NKK-rep', 'Verdi': nkkRepSignertTekst });
 
             // CACIT-info
             const harCACIT = document.getElementById('nkk_harCACIT')?.checked;

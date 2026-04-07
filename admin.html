@@ -2800,7 +2800,7 @@
                             </div>
                         </div>
 
-                        <!-- Faktiske innbetalinger fra Vipps -->
+                        <!-- Faktiske innbetalinger -->
                         <div class="mt-8 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-6 border border-orange-200">
                             <div class="flex items-center justify-between mb-4">
                                 <h3 class="text-lg font-bold text-orange-800 flex items-center gap-2">
@@ -2813,27 +2813,35 @@
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                     </svg>
-                                    Oppdater fra system
+                                    Oppdater Vipps-data
                                 </button>
                             </div>
-                            <p class="text-sm text-orange-700 mb-4">Automatisk hentet fra registrerte Vipps-betalinger og påmeldinger.</p>
 
                             <div class="grid md:grid-cols-4 gap-4 mb-4">
-                                <div class="bg-white rounded-lg p-4 border border-orange-200">
-                                    <p class="text-xs text-orange-600 font-medium">Startavgifter mottatt</p>
-                                    <p class="text-xl font-bold text-orange-800" id="okonomi_vippsStartavgifter">kr 0,-</p>
-                                    <p class="text-xs text-orange-500" id="okonomi_vippsStartavgifterInfo">0 av 0 betalt</p>
+                                <!-- Startavgifter fra NKK (manuell registrering) -->
+                                <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                    <p class="text-xs text-blue-600 font-medium">Startavgifter fra NKK</p>
+                                    <div class="flex items-center gap-1 mt-1">
+                                        <span class="text-sm text-blue-700">kr</span>
+                                        <input type="number" id="okonomi_nkkStartavgifterMottatt" value="0" min="0"
+                                               class="flex-1 px-2 py-1 rounded border border-blue-200 text-right font-bold text-blue-800 text-lg"
+                                               onchange="beregnFaktiskeInntekter()">
+                                    </div>
+                                    <p class="text-xs text-blue-500 mt-1">Registrer fra NKK-oppgjør</p>
                                 </div>
+                                <!-- Jegermiddag (fra Vipps) -->
                                 <div class="bg-white rounded-lg p-4 border border-orange-200">
-                                    <p class="text-xs text-orange-600 font-medium">Jegermiddag mottatt</p>
+                                    <p class="text-xs text-orange-600 font-medium">Jegermiddag (Vipps)</p>
                                     <p class="text-xl font-bold text-orange-800" id="okonomi_vippsJegermiddag">kr 0,-</p>
                                     <p class="text-xs text-orange-500" id="okonomi_vippsJegermiddagInfo">0 personer</p>
                                 </div>
+                                <!-- Andre Vipps-betalinger -->
                                 <div class="bg-white rounded-lg p-4 border border-orange-200">
                                     <p class="text-xs text-orange-600 font-medium">Andre Vipps-betalinger</p>
                                     <p class="text-xl font-bold text-orange-800" id="okonomi_vippsAndre">kr 0,-</p>
                                     <p class="text-xs text-orange-500" id="okonomi_vippsAndreInfo">Fra forespørsler</p>
                                 </div>
+                                <!-- Totalt -->
                                 <div class="bg-orange-100 rounded-lg p-4 border-2 border-orange-300">
                                     <p class="text-xs text-orange-700 font-medium">TOTALT MOTTATT</p>
                                     <p class="text-xl font-bold text-orange-900" id="okonomi_vippsTotalt">kr 0,-</p>
@@ -9687,6 +9695,7 @@
                 andreUtgifter: andreUtgifter,
 
                 // Faktisk regnskap
+                nkkStartavgifterMottatt: parseInt(document.getElementById('okonomi_nkkStartavgifterMottatt')?.value) || 0,
                 faktiskInntekter: parseInt(document.getElementById('okonomi_faktiskInntekter')?.value) || 0,
                 faktiskUtgifter: parseInt(document.getElementById('okonomi_faktiskUtgifter')?.value) || 0,
 
@@ -9775,6 +9784,7 @@
                         }
 
                         // Faktisk regnskap
+                        if (budsjett.nkkStartavgifterMottatt !== undefined) document.getElementById('okonomi_nkkStartavgifterMottatt').value = budsjett.nkkStartavgifterMottatt;
                         if (budsjett.faktiskInntekter !== undefined) document.getElementById('okonomi_faktiskInntekter').value = budsjett.faktiskInntekter;
                         if (budsjett.faktiskUtgifter !== undefined) document.getElementById('okonomi_faktiskUtgifter').value = budsjett.faktiskUtgifter;
 
@@ -9809,20 +9819,9 @@
                 if (resp.ok) {
                     vippsStatistikkData = await resp.json();
 
-                    // Startavgifter
-                    const startBetalt = vippsStatistikkData.startavgifter?.totalBetalt || 0;
-                    const startPerKlasse = vippsStatistikkData.startavgifter?.perKlasse || {};
-                    let startAntallBetalt = 0;
-                    let startAntallTotalt = 0;
-                    Object.values(startPerKlasse).forEach(k => {
-                        startAntallBetalt += k.antallBetalt || 0;
-                        startAntallTotalt += k.antall || 0;
-                    });
+                    // Startavgifter registreres manuelt fra NKK-oppgjør, ikke via Vipps
 
-                    document.getElementById('okonomi_vippsStartavgifter').textContent = `kr ${startBetalt.toLocaleString('no-NO')},-`;
-                    document.getElementById('okonomi_vippsStartavgifterInfo').textContent = `${startAntallBetalt} av ${startAntallTotalt} betalt`;
-
-                    // Jegermiddag
+                    // Jegermiddag (fra Vipps)
                     const jmBetalt = vippsStatistikkData.jegermiddag?.sumBetalt || 0;
                     const jmPersoner = vippsStatistikkData.jegermiddag?.antallPersoner || 0;
                     document.getElementById('okonomi_vippsJegermiddag').textContent = `kr ${jmBetalt.toLocaleString('no-NO')},-`;
@@ -9833,11 +9832,8 @@
                     document.getElementById('okonomi_vippsAndre').textContent = `kr ${vippsBetalt.toLocaleString('no-NO')},-`;
                     document.getElementById('okonomi_vippsAndreInfo').textContent = `${vippsStatistikkData.vippsForesporsler?.length || 0} forespørsler`;
 
-                    // Totalt
-                    const totaltMottatt = vippsStatistikkData.totaltMottatt || 0;
-                    const venter = (vippsStatistikkData.vippsTotaler?.venter || 0) + (vippsStatistikkData.jegermiddag?.sumVenter || 0);
-                    document.getElementById('okonomi_vippsTotalt').textContent = `kr ${totaltMottatt.toLocaleString('no-NO')},-`;
-                    document.getElementById('okonomi_vippsVenter').textContent = `+ kr ${venter.toLocaleString('no-NO')} venter`;
+                    // Beregn totalt mottatt (NKK manuell + Vipps)
+                    beregnFaktiskeInntekter();
 
                     console.log('Vipps-statistikk hentet:', vippsStatistikkData);
                 }
@@ -9846,18 +9842,39 @@
             }
         }
 
-        // Bruk Vipps-data som faktiske inntekter
-        function brukVippsSomFaktisk() {
-            if (!vippsStatistikkData) {
-                alert('Ingen Vipps-data tilgjengelig. Klikk "Oppdater fra system" først.');
-                return;
-            }
+        // Beregn faktiske inntekter fra NKK + Vipps
+        function beregnFaktiskeInntekter() {
+            const nkkStartavgifter = parseInt(document.getElementById('okonomi_nkkStartavgifterMottatt')?.value) || 0;
+            const jmBetalt = vippsStatistikkData?.jegermiddag?.sumBetalt || 0;
+            const andreBetalt = vippsStatistikkData?.vippsTotaler?.betalt || 0;
 
-            const totaltMottatt = vippsStatistikkData.totaltMottatt || 0;
+            const totaltMottatt = nkkStartavgifter + jmBetalt + andreBetalt;
+            document.getElementById('okonomi_vippsTotalt').textContent = `kr ${totaltMottatt.toLocaleString('no-NO')},-`;
+
+            // Beregn også det som venter
+            const venter = (vippsStatistikkData?.vippsTotaler?.venter || 0) + (vippsStatistikkData?.jegermiddag?.sumVenter || 0);
+            document.getElementById('okonomi_vippsVenter').textContent = `+ kr ${venter.toLocaleString('no-NO')} venter`;
+        }
+
+        // Bruk NKK + Vipps-data som faktiske inntekter
+        function brukVippsSomFaktisk() {
+            // Hent manuell NKK-startavgift
+            const nkkStartavgifter = parseInt(document.getElementById('okonomi_nkkStartavgifterMottatt')?.value) || 0;
+
+            // Hent Vipps-data
+            const jmBetalt = vippsStatistikkData?.jegermiddag?.sumBetalt || 0;
+            const andreBetalt = vippsStatistikkData?.vippsTotaler?.betalt || 0;
+
+            const totaltMottatt = nkkStartavgifter + jmBetalt + andreBetalt;
             document.getElementById('okonomi_faktiskInntekter').value = totaltMottatt;
             beregnOkonomi();
 
-            alert(`Faktiske inntekter satt til kr ${totaltMottatt.toLocaleString('no-NO')},- basert på registrerte betalinger.`);
+            const detaljer = [];
+            if (nkkStartavgifter > 0) detaljer.push(`NKK startavgifter: kr ${nkkStartavgifter.toLocaleString('no-NO')}`);
+            if (jmBetalt > 0) detaljer.push(`Jegermiddag: kr ${jmBetalt.toLocaleString('no-NO')}`);
+            if (andreBetalt > 0) detaljer.push(`Andre Vipps: kr ${andreBetalt.toLocaleString('no-NO')}`);
+
+            alert(`Faktiske inntekter satt til kr ${totaltMottatt.toLocaleString('no-NO')},-\n\n${detaljer.join('\n')}`);
         }
 
         // Eksporter økonomirapport til Excel

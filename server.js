@@ -5125,15 +5125,45 @@ app.get("/api/prover/:id/vipps-statistikk", (c) => {
     ORDER BY vf.created_at DESC
   `).all(proveId);
 
-  // Beregn totaler
+  // Beregn totaler og grupper per kategori
   let totalBetalt = 0;
   let totalVenter = 0;
   let totalForventet = 0;
+
+  // Grupper betalinger per kategori (basert på beskrivelse)
+  const perKategori = {
+    parkering: { betalt: 0, venter: 0, antall: 0 },
+    loddsalg: { betalt: 0, venter: 0, antall: 0 },
+    semifinale: { betalt: 0, venter: 0, antall: 0 },
+    finale: { betalt: 0, venter: 0, antall: 0 },
+    jegermiddag: { betalt: 0, venter: 0, antall: 0 },
+    annet: { betalt: 0, venter: 0, antall: 0 }
+  };
 
   foresporsler.forEach(f => {
     totalBetalt += f.sum_betalt || 0;
     totalVenter += f.sum_venter || 0;
     totalForventet += (f.antall_mottakere || 0) * f.belop;
+
+    // Kategoriser basert på beskrivelse
+    const beskrivelse = (f.beskrivelse || '').toLowerCase();
+    let kategori = 'annet';
+
+    if (beskrivelse.includes('parkering')) {
+      kategori = 'parkering';
+    } else if (beskrivelse.includes('lodd')) {
+      kategori = 'loddsalg';
+    } else if (beskrivelse.includes('semifinale')) {
+      kategori = 'semifinale';
+    } else if (beskrivelse.includes('finale') || beskrivelse.includes('vk-finale')) {
+      kategori = 'finale';
+    } else if (beskrivelse.includes('jegermiddag') || beskrivelse.includes('middag')) {
+      kategori = 'jegermiddag';
+    }
+
+    perKategori[kategori].betalt += f.sum_betalt || 0;
+    perKategori[kategori].venter += f.sum_venter || 0;
+    perKategori[kategori].antall += f.antall_betalt || 0;
   });
 
   // Hent også betalte påmeldinger (startavgifter)
@@ -5177,6 +5207,7 @@ app.get("/api/prover/:id/vipps-statistikk", (c) => {
       venter: totalVenter,
       forventet: totalForventet
     },
+    perKategori: perKategori,
     startavgifter: {
       perKlasse: startavgifterPerKlasse,
       totalBetalt: startavgifterBetalt

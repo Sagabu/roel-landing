@@ -2689,6 +2689,48 @@
                                         <span class="font-medium text-amber-700">Sum jegermiddag</span>
                                         <span class="font-bold text-amber-800" id="okonomi_sumJegermiddag">kr 0,-</span>
                                     </div>
+                                    <div class="mt-2 pt-2 border-t border-amber-200 flex justify-between items-center">
+                                        <span class="text-xs text-amber-600">Vipps mottatt</span>
+                                        <span class="text-sm font-medium text-amber-700" id="okonomi_jmVippsMottatt">kr 0,-</span>
+                                    </div>
+                                </div>
+
+                                <!-- Loddsalg (via Vipps) -->
+                                <div class="bg-pink-50 rounded-xl p-4 mb-4 border border-pink-100">
+                                    <h4 class="font-semibold text-pink-800 mb-3">Loddsalg (via Vipps)</h4>
+                                    <div class="grid grid-cols-4 gap-2 items-center">
+                                        <span class="text-sm text-bark-600">Antall lodd</span>
+                                        <input type="number" id="okonomi_loddAntall" value="0" min="0" class="px-2 py-1 rounded border border-pink-200 text-sm text-center" onchange="beregnOkonomi()">
+                                        <span class="text-sm text-bark-500">x kr</span>
+                                        <input type="number" id="okonomi_loddPris" value="50" min="0" class="px-2 py-1 rounded border border-pink-200 text-sm text-right" onchange="beregnOkonomi()">
+                                    </div>
+                                    <div class="pt-2 mt-2 border-t border-pink-200 flex justify-between">
+                                        <span class="font-medium text-pink-700">Sum loddsalg (budsjett)</span>
+                                        <span class="font-bold text-pink-800" id="okonomi_sumLoddsalg">kr 0,-</span>
+                                    </div>
+                                    <div class="mt-2 pt-2 border-t border-pink-200 flex justify-between items-center">
+                                        <span class="text-xs text-pink-600">Vipps mottatt</span>
+                                        <span class="text-sm font-medium text-pink-700" id="okonomi_loddVippsMottatt">kr 0,-</span>
+                                    </div>
+                                </div>
+
+                                <!-- Parkering (via Vipps) -->
+                                <div class="bg-sky-50 rounded-xl p-4 mb-4 border border-sky-100">
+                                    <h4 class="font-semibold text-sky-800 mb-3">Parkering (via Vipps)</h4>
+                                    <div class="grid grid-cols-4 gap-2 items-center">
+                                        <span class="text-sm text-bark-600">Antall</span>
+                                        <input type="number" id="okonomi_parkeringAntall" value="0" min="0" class="px-2 py-1 rounded border border-sky-200 text-sm text-center" onchange="beregnOkonomi()">
+                                        <span class="text-sm text-bark-500">x kr</span>
+                                        <input type="number" id="okonomi_parkeringPris" value="100" min="0" class="px-2 py-1 rounded border border-sky-200 text-sm text-right" onchange="beregnOkonomi()">
+                                    </div>
+                                    <div class="pt-2 mt-2 border-t border-sky-200 flex justify-between">
+                                        <span class="font-medium text-sky-700">Sum parkering (budsjett)</span>
+                                        <span class="font-bold text-sky-800" id="okonomi_sumParkering">kr 0,-</span>
+                                    </div>
+                                    <div class="mt-2 pt-2 border-t border-sky-200 flex justify-between items-center">
+                                        <span class="text-xs text-sky-600">Vipps mottatt</span>
+                                        <span class="text-sm font-medium text-sky-700" id="okonomi_parkeringVippsMottatt">kr 0,-</span>
+                                    </div>
                                 </div>
 
                                 <!-- Andre inntekter -->
@@ -9446,12 +9488,24 @@
             const sumJegermiddag = jmAntall * jmPris;
             document.getElementById('okonomi_sumJegermiddag').textContent = `kr ${sumJegermiddag.toLocaleString('no-NO')},-`;
 
+            // Loddsalg
+            const loddAntall = parseInt(document.getElementById('okonomi_loddAntall')?.value) || 0;
+            const loddPris = parseInt(document.getElementById('okonomi_loddPris')?.value) || 0;
+            const sumLoddsalg = loddAntall * loddPris;
+            document.getElementById('okonomi_sumLoddsalg').textContent = `kr ${sumLoddsalg.toLocaleString('no-NO')},-`;
+
+            // Parkering
+            const parkeringAntall = parseInt(document.getElementById('okonomi_parkeringAntall')?.value) || 0;
+            const parkeringPris = parseInt(document.getElementById('okonomi_parkeringPris')?.value) || 0;
+            const sumParkering = parkeringAntall * parkeringPris;
+            document.getElementById('okonomi_sumParkering').textContent = `kr ${sumParkering.toLocaleString('no-NO')},-`;
+
             // Andre inntekter
             let sumAndreInntekter = 0;
             andreInntekter.forEach(i => sumAndreInntekter += i.belop);
 
-            // Total inntekter (inkluderer nå også semifinale/finale)
-            const totalInntekter = sumPameldingsavgifter + sumSemifinaleFinale + sumJegermiddag + sumAndreInntekter;
+            // Total inntekter (inkluderer alle kategorier)
+            const totalInntekter = sumPameldingsavgifter + sumSemifinaleFinale + sumJegermiddag + sumLoddsalg + sumParkering + sumAndreInntekter;
             document.getElementById('okonomi_totalInntekter').textContent = `kr ${totalInntekter.toLocaleString('no-NO')},-`;
             document.getElementById('okonomi_budsjettInntekter').textContent = `kr ${totalInntekter.toLocaleString('no-NO')},-`;
 
@@ -9714,6 +9768,14 @@
                 // Jegermiddag (antall lagres, pris hentes fra prøvedetaljer)
                 jmAntall: parseInt(document.getElementById('okonomi_jmAntall')?.value) || 0,
 
+                // Loddsalg
+                loddAntall: parseInt(document.getElementById('okonomi_loddAntall')?.value) || 0,
+                loddPris: parseInt(document.getElementById('okonomi_loddPris')?.value) || 0,
+
+                // Parkering
+                parkeringAntall: parseInt(document.getElementById('okonomi_parkeringAntall')?.value) || 0,
+                parkeringPris: parseInt(document.getElementById('okonomi_parkeringPris')?.value) || 0,
+
                 // Andre inntekter
                 andreInntekter: andreInntekter,
 
@@ -9803,6 +9865,14 @@
                         if (budsjett.jmAntall !== undefined) document.getElementById('okonomi_jmAntall').value = budsjett.jmAntall;
                         // jmPris hentes fra prøvedetaljer (se under)
 
+                        // Loddsalg
+                        if (budsjett.loddAntall !== undefined) document.getElementById('okonomi_loddAntall').value = budsjett.loddAntall;
+                        if (budsjett.loddPris !== undefined) document.getElementById('okonomi_loddPris').value = budsjett.loddPris;
+
+                        // Parkering
+                        if (budsjett.parkeringAntall !== undefined) document.getElementById('okonomi_parkeringAntall').value = budsjett.parkeringAntall;
+                        if (budsjett.parkeringPris !== undefined) document.getElementById('okonomi_parkeringPris').value = budsjett.parkeringPris;
+
                         // Andre inntekter
                         if (budsjett.andreInntekter) {
                             andreInntekter = budsjett.andreInntekter;
@@ -9881,16 +9951,38 @@
 
                     // Påmeldingsavgifter registreres manuelt fra NKK-oppgjør, ikke via Vipps
 
-                    // Jegermiddag (fra Vipps)
-                    const jmBetalt = vippsStatistikkData.jegermiddag?.sumBetalt || 0;
+                    // Hent kategoriserte Vipps-betalinger
+                    const perKategori = vippsStatistikkData.perKategori || {};
+
+                    // Jegermiddag (fra jegermiddag_pameldinger + Vipps-forespørsler med "jegermiddag")
+                    const jmFraPameldinger = vippsStatistikkData.jegermiddag?.sumBetalt || 0;
+                    const jmFraForesporsler = perKategori.jegermiddag?.betalt || 0;
+                    const jmBetalt = jmFraPameldinger + jmFraForesporsler;
                     const jmPersoner = vippsStatistikkData.jegermiddag?.antallPersoner || 0;
                     document.getElementById('okonomi_vippsJegermiddag').textContent = `kr ${jmBetalt.toLocaleString('no-NO')},-`;
                     document.getElementById('okonomi_vippsJegermiddagInfo').textContent = `${jmPersoner} personer`;
+                    // Oppdater Vipps mottatt i jegermiddag-boksen
+                    const jmVippsMottattEl = document.getElementById('okonomi_jmVippsMottatt');
+                    if (jmVippsMottattEl) jmVippsMottattEl.textContent = `kr ${jmBetalt.toLocaleString('no-NO')},-`;
 
-                    // Andre Vipps-betalinger (fra forespørsler)
-                    const vippsBetalt = vippsStatistikkData.vippsTotaler?.betalt || 0;
-                    document.getElementById('okonomi_vippsAndre').textContent = `kr ${vippsBetalt.toLocaleString('no-NO')},-`;
-                    document.getElementById('okonomi_vippsAndreInfo').textContent = `${vippsStatistikkData.vippsForesporsler?.length || 0} forespørsler`;
+                    // Loddsalg (fra Vipps-forespørsler)
+                    const loddBetalt = perKategori.loddsalg?.betalt || 0;
+                    const loddVippsMottattEl = document.getElementById('okonomi_loddVippsMottatt');
+                    if (loddVippsMottattEl) loddVippsMottattEl.textContent = `kr ${loddBetalt.toLocaleString('no-NO')},-`;
+
+                    // Parkering (fra Vipps-forespørsler)
+                    const parkeringBetalt = perKategori.parkering?.betalt || 0;
+                    const parkeringVippsMottattEl = document.getElementById('okonomi_parkeringVippsMottatt');
+                    if (parkeringVippsMottattEl) parkeringVippsMottattEl.textContent = `kr ${parkeringBetalt.toLocaleString('no-NO')},-`;
+
+                    // Semifinale/Finale (fra Vipps-forespørsler)
+                    const semifinaleBetalt = perKategori.semifinale?.betalt || 0;
+                    const finaleBetalt = perKategori.finale?.betalt || 0;
+
+                    // Andre Vipps-betalinger (det som ikke er kategorisert)
+                    const andreBetalt = perKategori.annet?.betalt || 0;
+                    document.getElementById('okonomi_vippsAndre').textContent = `kr ${andreBetalt.toLocaleString('no-NO')},-`;
+                    document.getElementById('okonomi_vippsAndreInfo').textContent = `${perKategori.annet?.antall || 0} betalinger`;
 
                     // Beregn totalt mottatt (NKK manuell + Vipps)
                     beregnFaktiskeInntekter();
@@ -9902,13 +9994,22 @@
             }
         }
 
-        // Beregn faktiske inntekter fra NKK + Vipps
+        // Beregn faktiske inntekter fra NKK + alle Vipps-kategorier
         function beregnFaktiskeInntekter() {
             const nkkStartavgifter = parseInt(document.getElementById('okonomi_nkkStartavgifterMottatt')?.value) || 0;
-            const jmBetalt = vippsStatistikkData?.jegermiddag?.sumBetalt || 0;
-            const andreBetalt = vippsStatistikkData?.vippsTotaler?.betalt || 0;
 
-            const totaltMottatt = nkkStartavgifter + jmBetalt + andreBetalt;
+            // Hent alle kategorier fra Vipps
+            const perKategori = vippsStatistikkData?.perKategori || {};
+            const jmFraPameldinger = vippsStatistikkData?.jegermiddag?.sumBetalt || 0;
+            const jmFraForesporsler = perKategori.jegermiddag?.betalt || 0;
+            const jmBetalt = jmFraPameldinger + jmFraForesporsler;
+            const loddBetalt = perKategori.loddsalg?.betalt || 0;
+            const parkeringBetalt = perKategori.parkering?.betalt || 0;
+            const semifinaleBetalt = perKategori.semifinale?.betalt || 0;
+            const finaleBetalt = perKategori.finale?.betalt || 0;
+            const andreBetalt = perKategori.annet?.betalt || 0;
+
+            const totaltMottatt = nkkStartavgifter + jmBetalt + loddBetalt + parkeringBetalt + semifinaleBetalt + finaleBetalt + andreBetalt;
             document.getElementById('okonomi_vippsTotalt').textContent = `kr ${totaltMottatt.toLocaleString('no-NO')},-`;
 
             // Beregn også det som venter
@@ -9918,20 +10019,31 @@
 
         // Bruk NKK + Vipps-data som faktiske inntekter
         function brukVippsSomFaktisk() {
-            // Hent manuell NKK-startavgift
+            // Hent manuell NKK-påmeldingsavgift
             const nkkStartavgifter = parseInt(document.getElementById('okonomi_nkkStartavgifterMottatt')?.value) || 0;
 
-            // Hent Vipps-data
-            const jmBetalt = vippsStatistikkData?.jegermiddag?.sumBetalt || 0;
-            const andreBetalt = vippsStatistikkData?.vippsTotaler?.betalt || 0;
+            // Hent alle kategorier fra Vipps
+            const perKategori = vippsStatistikkData?.perKategori || {};
+            const jmFraPameldinger = vippsStatistikkData?.jegermiddag?.sumBetalt || 0;
+            const jmFraForesporsler = perKategori.jegermiddag?.betalt || 0;
+            const jmBetalt = jmFraPameldinger + jmFraForesporsler;
+            const loddBetalt = perKategori.loddsalg?.betalt || 0;
+            const parkeringBetalt = perKategori.parkering?.betalt || 0;
+            const semifinaleBetalt = perKategori.semifinale?.betalt || 0;
+            const finaleBetalt = perKategori.finale?.betalt || 0;
+            const andreBetalt = perKategori.annet?.betalt || 0;
 
-            const totaltMottatt = nkkStartavgifter + jmBetalt + andreBetalt;
+            const totaltMottatt = nkkStartavgifter + jmBetalt + loddBetalt + parkeringBetalt + semifinaleBetalt + finaleBetalt + andreBetalt;
             document.getElementById('okonomi_faktiskInntekter').value = totaltMottatt;
             beregnOkonomi();
 
             const detaljer = [];
             if (nkkStartavgifter > 0) detaljer.push(`Påmeldingsavgifter fra NKK: kr ${nkkStartavgifter.toLocaleString('no-NO')}`);
             if (jmBetalt > 0) detaljer.push(`Jegermiddag: kr ${jmBetalt.toLocaleString('no-NO')}`);
+            if (loddBetalt > 0) detaljer.push(`Loddsalg: kr ${loddBetalt.toLocaleString('no-NO')}`);
+            if (parkeringBetalt > 0) detaljer.push(`Parkering: kr ${parkeringBetalt.toLocaleString('no-NO')}`);
+            if (semifinaleBetalt > 0) detaljer.push(`Semifinale: kr ${semifinaleBetalt.toLocaleString('no-NO')}`);
+            if (finaleBetalt > 0) detaljer.push(`Finale: kr ${finaleBetalt.toLocaleString('no-NO')}`);
             if (andreBetalt > 0) detaljer.push(`Andre Vipps: kr ${andreBetalt.toLocaleString('no-NO')}`);
 
             alert(`Faktiske inntekter satt til kr ${totaltMottatt.toLocaleString('no-NO')},-\n\n${detaljer.join('\n')}`);
@@ -9984,6 +10096,20 @@
             const jmAntall = parseInt(document.getElementById('okonomi_jmAntall')?.value) || 0;
             const jmPris = parseInt(document.getElementById('okonomi_jmPris')?.value) || 0;
             rows.push({ 'Post': 'Jegermiddag', 'Antall': jmAntall, 'Enhetspris': jmPris, 'Budsjett': jmAntall * jmPris, 'Faktisk': '' });
+
+            // Loddsalg
+            const loddAntall = parseInt(document.getElementById('okonomi_loddAntall')?.value) || 0;
+            const loddPris = parseInt(document.getElementById('okonomi_loddPris')?.value) || 0;
+            if (loddAntall > 0) {
+                rows.push({ 'Post': 'Loddsalg (via Vipps)', 'Antall': loddAntall, 'Enhetspris': loddPris, 'Budsjett': loddAntall * loddPris, 'Faktisk': '' });
+            }
+
+            // Parkering
+            const parkeringAntall = parseInt(document.getElementById('okonomi_parkeringAntall')?.value) || 0;
+            const parkeringPris = parseInt(document.getElementById('okonomi_parkeringPris')?.value) || 0;
+            if (parkeringAntall > 0) {
+                rows.push({ 'Post': 'Parkering (via Vipps)', 'Antall': parkeringAntall, 'Enhetspris': parkeringPris, 'Budsjett': parkeringAntall * parkeringPris, 'Faktisk': '' });
+            }
 
             andreInntekter.forEach(i => {
                 rows.push({ 'Post': i.beskrivelse || 'Annen inntekt', 'Antall': 1, 'Enhetspris': i.belop, 'Budsjett': i.belop, 'Faktisk': '' });

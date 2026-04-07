@@ -3469,7 +3469,63 @@
         }
 
         function setTrialParties(parties) {
+            // Lagre lokalt først (for umiddelbar respons)
             localStorage.setItem(getTrialPartiesKey(), JSON.stringify(parties));
+
+            // Synkroniser til server i bakgrunnen
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                syncPartiesToServer(parties, proveId);
+            }
+        }
+
+        // Synkroniser partilister til server
+        async function syncPartiesToServer(parties, proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/partilister`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ partier: parties })
+                });
+
+                if (resp.ok) {
+                    const result = await resp.json();
+                    console.log('✅ Partilister synkronisert til server:', result);
+                } else {
+                    console.error('❌ Kunne ikke synkronisere partilister:', await resp.text());
+                }
+            } catch (err) {
+                console.error('❌ Feil ved synkronisering av partilister:', err);
+            }
+        }
+
+        // Last partilister fra server (kalles ved oppstart og prøvebytte)
+        async function loadPartiesFromServer(proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/partilister`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+
+                if (resp.ok) {
+                    const parties = await resp.json();
+                    if (Array.isArray(parties) && parties.length > 0) {
+                        // Lagre til localStorage for offline-bruk
+                        localStorage.setItem(getTrialPartiesKey(), JSON.stringify(parties));
+                        console.log('✅ Partilister lastet fra server:', parties.length, 'partier');
+                        return parties;
+                    }
+                }
+            } catch (err) {
+                console.warn('Kunne ikke laste partilister fra server, bruker lokal kopi:', err);
+            }
+
+            // Fallback til localStorage
+            return getTrialParties();
         }
 
         function getTrialParticipants() {
@@ -3485,7 +3541,59 @@
         }
 
         function setTrialVenteliste(venteliste) {
+            // Lagre lokalt først
             localStorage.setItem(getTrialVentelisteKey(), JSON.stringify(venteliste));
+
+            // Synkroniser til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                syncVentelisteToServer(venteliste, proveId);
+            }
+        }
+
+        // Synkroniser venteliste til server
+        async function syncVentelisteToServer(venteliste, proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/venteliste`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ venteliste })
+                });
+
+                if (resp.ok) {
+                    console.log('✅ Venteliste synkronisert til server');
+                } else {
+                    console.error('❌ Kunne ikke synkronisere venteliste:', await resp.text());
+                }
+            } catch (err) {
+                console.error('❌ Feil ved synkronisering av venteliste:', err);
+            }
+        }
+
+        // Last venteliste fra server
+        async function loadVentelisteFromServer(proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/venteliste`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+
+                if (resp.ok) {
+                    const venteliste = await resp.json();
+                    // Lagre til localStorage
+                    localStorage.setItem(getTrialVentelisteKey(), JSON.stringify(venteliste));
+                    console.log('✅ Venteliste lastet fra server');
+                    return venteliste;
+                }
+            } catch (err) {
+                console.warn('Kunne ikke laste venteliste fra server:', err);
+            }
+
+            return getTrialVenteliste();
         }
 
         // ========================================
@@ -5060,10 +5168,21 @@
         }
 
         // Last lagrede partier ved sideoppstart
-        function loadSavedParties() {
+        async function loadSavedParties() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) {
+                console.log('Ingen prøve valgt, kan ikke laste partier');
+                return;
+            }
+
             try {
-                const savedParties = getTrialParties();
-                const savedVenteliste = getTrialVenteliste();
+                // Prøv å laste fra server først (sikrer data på tvers av enheter)
+                const serverParties = await loadPartiesFromServer(proveId);
+                const serverVenteliste = await loadVentelisteFromServer(proveId);
+
+                const savedParties = serverParties.length > 0 ? serverParties : getTrialParties();
+                const savedVenteliste = serverVenteliste && Object.keys(serverVenteliste).length > 0
+                    ? serverVenteliste : getTrialVenteliste();
 
                 if (savedParties.length > 0) {
                     renderAllParties(savedParties);
@@ -5083,7 +5202,12 @@
                     updateStatsFromStorage();
                 }
             } catch (e) {
-                console.error('Kunne ikke laste lagrede partier:', e);
+                console.error('Kunne ikke laste partier:', e);
+                // Fallback til localStorage ved feil
+                const savedParties = getTrialParties();
+                if (savedParties.length > 0) {
+                    renderAllParties(savedParties);
+                }
             }
         }
 

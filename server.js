@@ -274,6 +274,57 @@ db.exec(`
     UNIQUE(prove_id, dommer_telefon)
   );
 
+  -- Partier (gruppering av hunder i en prøve)
+  CREATE TABLE IF NOT EXISTS partier (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id) ON DELETE CASCADE,
+    navn TEXT NOT NULL,
+    display_navn TEXT,
+    type TEXT DEFAULT 'ukak',
+    dato TEXT,
+    klasse TEXT,
+    sortering INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, navn)
+  );
+
+  -- Parti-deltakere (hunder fordelt på partier)
+  CREATE TABLE IF NOT EXISTS parti_deltakere (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parti_id INTEGER NOT NULL REFERENCES partier(id) ON DELETE CASCADE,
+    prove_id TEXT NOT NULL REFERENCES prover(id) ON DELETE CASCADE,
+    hund_regnr TEXT NOT NULL,
+    hund_navn TEXT,
+    rase TEXT,
+    kjonn TEXT,
+    klasse TEXT,
+    eier_navn TEXT,
+    eier_telefon TEXT,
+    forer_navn TEXT,
+    forer_telefon TEXT,
+    startnummer INTEGER,
+    bekreftet INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'aktiv',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, hund_regnr)
+  );
+
+  -- Venteliste (hunder som ikke fikk plass)
+  CREATE TABLE IF NOT EXISTS venteliste (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id) ON DELETE CASCADE,
+    hund_regnr TEXT NOT NULL,
+    hund_navn TEXT,
+    rase TEXT,
+    klasse TEXT,
+    dag INTEGER,
+    eier_navn TEXT,
+    forer_navn TEXT,
+    prioritet INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, hund_regnr)
+  );
+
   -- Klubb-administratorer
   CREATE TABLE IF NOT EXISTS klubb_admins (
     telefon TEXT REFERENCES brukere(telefon),
@@ -7674,6 +7725,270 @@ app.get("/api/prover/:id/partier", (c) => {
   }
 
   return c.json({ partier });
+});
+
+// ========================================
+// PARTILISTER - Server-lagring
+// ========================================
+
+// Hent alle partier med deltakere for en prøve
+app.get("/api/prover/:id/partilister", (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent partier
+  const partier = db.prepare(`
+    SELECT * FROM partier WHERE prove_id = ? ORDER BY sortering, dato, navn
+  `).all(proveId);
+
+  // Hent deltakere for hvert parti
+  const deltakere = db.prepare(`
+    SELECT pd.*, p.navn as parti_navn
+    FROM parti_deltakere pd
+    JOIN partier p ON pd.parti_id = p.id
+    WHERE pd.prove_id = ?
+    ORDER BY pd.startnummer
+  `).all(proveId);
+
+  // Bygg opp struktur som matcher localStorage-formatet
+  const result = partier.map(parti => ({
+    id: parti.id,
+    name: parti.navn,
+    displayName: parti.display_navn || parti.navn,
+    type: parti.type,
+    date: parti.dato,
+    klasse: parti.klasse,
+    dogs: deltakere
+      .filter(d => d.parti_id === parti.id)
+      .map(d => ({
+        regnr: d.hund_regnr,
+        hundenavn: d.hund_navn,
+        rase: d.rase,
+        kjonn: d.kjonn,
+        klasse: d.klasse,
+        eier: d.eier_navn,
+        eierTelefon: d.eier_telefon,
+        forer: d.forer_navn,
+        forerTelefon: d.forer_telefon,
+        startnummer: d.startnummer,
+        confirmed: d.bekreftet === 1,
+        status: d.status
+      }))
+  }));
+
+  return c.json(result);
+});
+
+// Lagre partilister (erstatter alle eksisterende for prøven)
+app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { partier } = body;
+
+  if (!Array.isArray(partier)) {
+    return c.json({ error: "partier må være en array" }, 400);
+  }
+
+  // Verifiser at prøven eksisterer
+  const prove = db.prepare("SELECT id FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  try {
+    // Start transaksjon
+    db.exec("BEGIN TRANSACTION");
+
+    // Slett eksisterende partier og deltakere for denne prøven
+    db.prepare("DELETE FROM parti_deltakere WHERE prove_id = ?").run(proveId);
+    db.prepare("DELETE FROM partier WHERE prove_id = ?").run(proveId);
+
+    // Sett inn nye partier
+    const insertParti = db.prepare(`
+      INSERT INTO partier (prove_id, navn, display_navn, type, dato, klasse, sortering)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertDeltaker = db.prepare(`
+      INSERT INTO parti_deltakere (parti_id, prove_id, hund_regnr, hund_navn, rase, kjonn, klasse,
+                                   eier_navn, eier_telefon, forer_navn, forer_telefon, startnummer, bekreftet, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let sortering = 0;
+    for (const parti of partier) {
+      // Sett inn parti
+      const partiResult = insertParti.run(
+        proveId,
+        parti.name,
+        parti.displayName || parti.name,
+        parti.type || 'ukak',
+        parti.date || null,
+        parti.klasse || null,
+        sortering++
+      );
+
+      const partiId = partiResult.lastInsertRowid;
+
+      // Sett inn deltakere (hunder)
+      if (Array.isArray(parti.dogs)) {
+        let startnummer = 1;
+        for (const dog of parti.dogs) {
+          insertDeltaker.run(
+            partiId,
+            proveId,
+            dog.regnr || '',
+            dog.hundenavn || dog.navn || '',
+            dog.rase || '',
+            dog.kjonn || '',
+            dog.klasse || '',
+            dog.eier || '',
+            dog.eierTelefon || '',
+            dog.forer || '',
+            dog.forerTelefon || '',
+            dog.startnummer || startnummer++,
+            dog.confirmed ? 1 : 0,
+            dog.status || 'aktiv'
+          );
+        }
+      }
+    }
+
+    db.exec("COMMIT");
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "partilister_lagret",
+      `Lagret ${partier.length} partier med totalt ${partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)} deltakere for prøve ${proveId}`
+    );
+
+    return c.json({
+      success: true,
+      partier: partier.length,
+      deltakere: partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)
+    });
+
+  } catch (err) {
+    db.exec("ROLLBACK");
+    console.error("Feil ved lagring av partilister:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent venteliste for en prøve
+app.get("/api/prover/:id/venteliste", (c) => {
+  const proveId = c.req.param("id");
+
+  const venteliste = db.prepare(`
+    SELECT * FROM venteliste WHERE prove_id = ? ORDER BY dag, klasse, prioritet
+  `).all(proveId);
+
+  // Grupper etter dag og klasse (matcher localStorage-format)
+  const result = {
+    dag1: { uk: [], ak: [] },
+    dag2: { uk: [], ak: [] },
+    vk: []
+  };
+
+  for (const v of venteliste) {
+    const entry = {
+      regnr: v.hund_regnr,
+      hundenavn: v.hund_navn,
+      rase: v.rase,
+      klasse: v.klasse,
+      eier: v.eier_navn,
+      forer: v.forer_navn
+    };
+
+    if (v.klasse === 'VK') {
+      result.vk.push(entry);
+    } else if (v.dag === 1) {
+      if (v.klasse === 'UK') result.dag1.uk.push(entry);
+      else result.dag1.ak.push(entry);
+    } else if (v.dag === 2) {
+      if (v.klasse === 'UK') result.dag2.uk.push(entry);
+      else result.dag2.ak.push(entry);
+    }
+  }
+
+  return c.json(result);
+});
+
+// Lagre venteliste
+app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { venteliste } = body;
+
+  if (!venteliste || typeof venteliste !== 'object') {
+    return c.json({ error: "venteliste må være et objekt" }, 400);
+  }
+
+  try {
+    // Slett eksisterende venteliste
+    db.prepare("DELETE FROM venteliste WHERE prove_id = ?").run(proveId);
+
+    const insert = db.prepare(`
+      INSERT INTO venteliste (prove_id, hund_regnr, hund_navn, rase, klasse, dag, eier_navn, forer_navn, prioritet)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let total = 0;
+
+    // Dag 1 UK
+    if (Array.isArray(venteliste.dag1?.uk)) {
+      let prio = 0;
+      for (const v of venteliste.dag1.uk) {
+        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'UK', 1, v.eier, v.forer, prio++);
+        total++;
+      }
+    }
+
+    // Dag 1 AK
+    if (Array.isArray(venteliste.dag1?.ak)) {
+      let prio = 0;
+      for (const v of venteliste.dag1.ak) {
+        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'AK', 1, v.eier, v.forer, prio++);
+        total++;
+      }
+    }
+
+    // Dag 2 UK
+    if (Array.isArray(venteliste.dag2?.uk)) {
+      let prio = 0;
+      for (const v of venteliste.dag2.uk) {
+        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'UK', 2, v.eier, v.forer, prio++);
+        total++;
+      }
+    }
+
+    // Dag 2 AK
+    if (Array.isArray(venteliste.dag2?.ak)) {
+      let prio = 0;
+      for (const v of venteliste.dag2.ak) {
+        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'AK', 2, v.eier, v.forer, prio++);
+        total++;
+      }
+    }
+
+    // VK
+    if (Array.isArray(venteliste.vk)) {
+      let prio = 0;
+      for (const v of venteliste.vk) {
+        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'VK', null, v.eier, v.forer, prio++);
+        total++;
+      }
+    }
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "venteliste_lagret",
+      `Lagret venteliste med ${total} hunder for prøve ${proveId}`
+    );
+
+    return c.json({ success: true, total });
+
+  } catch (err) {
+    console.error("Feil ved lagring av venteliste:", err);
+    return c.json({ error: err.message }, 500);
+  }
 });
 
 // Hent prøver for en bruker (der brukeren har en rolle)

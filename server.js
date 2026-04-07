@@ -7309,7 +7309,7 @@ app.post("/api/prover/:proveId/parti/:parti/signer-dommer", async (c) => {
   const proveId = c.req.param("proveId");
   const parti = c.req.param("parti");
   const body = await c.req.json();
-  const { dommerTelefon } = body;
+  const { dommerTelefon, dommerNavn } = body;
 
   if (!dommerTelefon) {
     return c.json({ error: "Mangler dommerTelefon" }, 400);
@@ -7322,18 +7322,33 @@ app.post("/api/prover/:proveId/parti/:parti/signer-dommer", async (c) => {
   `).get(proveId, parti, dommerTelefon);
 
   if (existing) {
-    // Oppdater eksisterende
-    db.prepare(`
-      UPDATE parti_signaturer
-      SET dommer_signert_at = datetime('now')
-      WHERE id = ?
-    `).run(existing.id);
+    // Oppdater eksisterende - inkluder dommer_navn hvis oppgitt
+    if (dommerNavn) {
+      db.prepare(`
+        UPDATE parti_signaturer
+        SET dommer_signert_at = datetime('now'), dommer_navn = ?
+        WHERE id = ?
+      `).run(dommerNavn, existing.id);
+    } else {
+      db.prepare(`
+        UPDATE parti_signaturer
+        SET dommer_signert_at = datetime('now')
+        WHERE id = ?
+      `).run(existing.id);
+    }
   } else {
-    // Opprett ny
-    db.prepare(`
-      INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_signert_at)
-      VALUES (?, ?, ?, datetime('now'))
-    `).run(proveId, parti, dommerTelefon);
+    // Opprett ny - inkluder dommer_navn hvis oppgitt
+    if (dommerNavn) {
+      db.prepare(`
+        INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_navn, dommer_signert_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+      `).run(proveId, parti, dommerTelefon, dommerNavn);
+    } else {
+      db.prepare(`
+        INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_signert_at)
+        VALUES (?, ?, ?, datetime('now'))
+      `).run(proveId, parti, dommerTelefon);
+    }
   }
 
   return c.json({ success: true, message: "Partiliste signert av dommer" });

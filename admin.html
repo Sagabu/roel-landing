@@ -200,6 +200,15 @@
                         <span class="block text-xs text-bark-400">Prøvelederhåndbok</span>
                     </div>
                 </a>
+                <a href="#okonomi" class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-bark-50 text-bark-700 transition">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div>
+                        <span>Budsjett/Økonomi</span>
+                        <span class="block text-xs text-bark-400">Inntekter og utgifter</span>
+                    </div>
+                </a>
                 <a href="dommer-foresporsler.html" class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-bark-50 text-bark-700 transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
@@ -259,6 +268,7 @@
                         <option value="team">Team</option>
                         <option value="eksport-kritikker">Eksporter kritikker</option>
                         <option value="rapporter">NKK/FKF Rapporter</option>
+                        <option value="okonomi">Budsjett/Økonomi</option>
                         <option value="aktivitetslogg">Aktivitetslogg</option>
                     </select>
                 </div>
@@ -2550,6 +2560,280 @@
                             <!-- Meldingsliste - fylles dynamisk -->
                             <div id="inboxMessageList" class="space-y-3 hidden">
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Budsjett/Økonomi Section -->
+                <section id="okonomi" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
+                    <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 border-b border-bark-100">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-xl font-bold font-serif text-white">Budsjett og Økonomi</h2>
+                                <p class="text-sm text-emerald-100">Planlegg og spor inntekter og utgifter for prøven</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="saveOkonomiBudsjett()" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                                    </svg>
+                                    Lagre
+                                </button>
+                                <button onclick="exportOkonomiRapport()" class="bg-white hover:bg-emerald-50 text-emerald-700 px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Eksporter rapport
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-6">
+                        <!-- Sammendrag -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                            <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+                                <p class="text-xs text-emerald-600 font-medium uppercase">Budsjetterte inntekter</p>
+                                <p class="text-2xl font-bold text-emerald-700" id="okonomi_budsjettInntekter">kr 0,-</p>
+                            </div>
+                            <div class="bg-red-50 rounded-xl p-4 border border-red-200">
+                                <p class="text-xs text-red-600 font-medium uppercase">Budsjetterte utgifter</p>
+                                <p class="text-2xl font-bold text-red-700" id="okonomi_budsjettUtgifter">kr 0,-</p>
+                            </div>
+                            <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                                <p class="text-xs text-blue-600 font-medium uppercase">Budsjettert resultat</p>
+                                <p class="text-2xl font-bold text-blue-700" id="okonomi_budsjettResultat">kr 0,-</p>
+                            </div>
+                            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                                <p class="text-xs text-amber-600 font-medium uppercase">Faktisk resultat</p>
+                                <p class="text-2xl font-bold text-amber-700" id="okonomi_faktiskResultat">kr 0,-</p>
+                            </div>
+                        </div>
+
+                        <div class="grid md:grid-cols-2 gap-8">
+                            <!-- INNTEKTER -->
+                            <div>
+                                <h3 class="text-lg font-bold text-emerald-800 mb-4 flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                    Inntekter
+                                </h3>
+
+                                <!-- Startavgifter -->
+                                <div class="bg-emerald-50 rounded-xl p-4 mb-4 border border-emerald-100">
+                                    <h4 class="font-semibold text-emerald-800 mb-3">Startavgifter</h4>
+                                    <div class="space-y-3">
+                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">UK</span>
+                                            <input type="number" id="okonomi_ukAntall" value="0" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-center" onchange="beregnOkonomi()">
+                                            <span class="text-sm text-bark-500">x kr</span>
+                                            <input type="number" id="okonomi_ukPris" value="800" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-right" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">AK</span>
+                                            <input type="number" id="okonomi_akAntall" value="0" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-center" onchange="beregnOkonomi()">
+                                            <span class="text-sm text-bark-500">x kr</span>
+                                            <input type="number" id="okonomi_akPris" value="800" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-right" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">VK</span>
+                                            <input type="number" id="okonomi_vkAntall" value="0" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-center" onchange="beregnOkonomi()">
+                                            <span class="text-sm text-bark-500">x kr</span>
+                                            <input type="number" id="okonomi_vkPris" value="900" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-right" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="pt-2 border-t border-emerald-200 flex justify-between">
+                                            <span class="font-medium text-emerald-700">Sum startavgifter</span>
+                                            <span class="font-bold text-emerald-800" id="okonomi_sumStartavgifter">kr 0,-</span>
+                                        </div>
+                                    </div>
+                                    <button onclick="hentDeltakerTall()" class="mt-3 text-xs text-emerald-600 hover:text-emerald-800 underline">Hent antall fra påmeldinger</button>
+                                </div>
+
+                                <!-- Jegermiddag -->
+                                <div class="bg-amber-50 rounded-xl p-4 mb-4 border border-amber-100">
+                                    <h4 class="font-semibold text-amber-800 mb-3">Jegermiddag</h4>
+                                    <div class="grid grid-cols-4 gap-2 items-center">
+                                        <span class="text-sm text-bark-600">Antall</span>
+                                        <input type="number" id="okonomi_jmAntall" value="0" min="0" class="px-2 py-1 rounded border border-amber-200 text-sm text-center" onchange="beregnOkonomi()">
+                                        <span class="text-sm text-bark-500">x kr</span>
+                                        <input type="number" id="okonomi_jmPris" value="350" min="0" class="px-2 py-1 rounded border border-amber-200 text-sm text-right" onchange="beregnOkonomi()">
+                                    </div>
+                                    <div class="pt-2 mt-2 border-t border-amber-200 flex justify-between">
+                                        <span class="font-medium text-amber-700">Sum jegermiddag</span>
+                                        <span class="font-bold text-amber-800" id="okonomi_sumJegermiddag">kr 0,-</span>
+                                    </div>
+                                </div>
+
+                                <!-- Andre inntekter -->
+                                <div class="bg-white rounded-xl p-4 border border-bark-200">
+                                    <h4 class="font-semibold text-bark-800 mb-3">Andre inntekter</h4>
+                                    <div id="okonomi_andreInntekter" class="space-y-2">
+                                        <!-- Dynamisk generert -->
+                                    </div>
+                                    <button onclick="leggTilInntekt()" class="mt-3 text-sm text-emerald-600 hover:text-emerald-800 flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                        Legg til inntekt
+                                    </button>
+                                </div>
+
+                                <!-- Total inntekter -->
+                                <div class="mt-4 bg-emerald-100 rounded-xl p-4 border-2 border-emerald-300">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-bold text-emerald-800">TOTALE INNTEKTER</span>
+                                        <span class="text-xl font-bold text-emerald-900" id="okonomi_totalInntekter">kr 0,-</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- UTGIFTER -->
+                            <div>
+                                <h3 class="text-lg font-bold text-red-800 mb-4 flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                    </svg>
+                                    Utgifter
+                                </h3>
+
+                                <!-- Avgifter til NKK/FKF -->
+                                <div class="bg-red-50 rounded-xl p-4 mb-4 border border-red-100">
+                                    <h4 class="font-semibold text-red-800 mb-3">Avgifter til NKK/FKF</h4>
+                                    <div class="space-y-3">
+                                        <div class="flex justify-between items-center">
+                                            <div>
+                                                <span class="text-sm text-bark-600">NKK Aktivitetsavgift</span>
+                                                <p class="text-xs text-bark-400" id="okonomi_nkkAvgiftInfo">0 startere x kr 45</p>
+                                            </div>
+                                            <span class="font-medium text-red-700" id="okonomi_nkkAvgift">kr 0,-</span>
+                                        </div>
+                                        <div class="flex justify-between items-center">
+                                            <div>
+                                                <span class="text-sm text-bark-600">FKF Dommerutdanningsfond</span>
+                                                <p class="text-xs text-bark-400" id="okonomi_fkfAvgiftInfo">0 startere x kr 7,50</p>
+                                            </div>
+                                            <span class="font-medium text-red-700" id="okonomi_fkfAvgift">kr 0,-</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dommerkostnader -->
+                                <div class="bg-orange-50 rounded-xl p-4 mb-4 border border-orange-100">
+                                    <h4 class="font-semibold text-orange-800 mb-3">Dommerkostnader</h4>
+                                    <div class="space-y-3">
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Honorar</span>
+                                            <input type="number" id="okonomi_dommerHonorar" value="0" min="0" class="px-2 py-1 rounded border border-orange-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Reise</span>
+                                            <input type="number" id="okonomi_dommerReise" value="0" min="0" class="px-2 py-1 rounded border border-orange-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Diett/overnatting</span>
+                                            <input type="number" id="okonomi_dommerDiett" value="0" min="0" class="px-2 py-1 rounded border border-orange-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="pt-2 border-t border-orange-200 flex justify-between">
+                                            <span class="font-medium text-orange-700">Sum dommerkostnader</span>
+                                            <span class="font-bold text-orange-800" id="okonomi_sumDommer">kr 0,-</span>
+                                        </div>
+                                    </div>
+                                    <button onclick="hentDommerOppgjor()" class="mt-3 text-xs text-orange-600 hover:text-orange-800 underline">Hent fra dommeroppgjør</button>
+                                </div>
+
+                                <!-- Terreng og logistikk -->
+                                <div class="bg-teal-50 rounded-xl p-4 mb-4 border border-teal-100">
+                                    <h4 class="font-semibold text-teal-800 mb-3">Terreng og logistikk</h4>
+                                    <div class="space-y-3">
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Terrengkostnader</span>
+                                            <input type="number" id="okonomi_terreng" value="0" min="0" class="px-2 py-1 rounded border border-teal-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Transport</span>
+                                            <input type="number" id="okonomi_transport" value="0" min="0" class="px-2 py-1 rounded border border-teal-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Leie lokaler</span>
+                                            <input type="number" id="okonomi_lokaler" value="0" min="0" class="px-2 py-1 rounded border border-teal-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Forpleining -->
+                                <div class="bg-yellow-50 rounded-xl p-4 mb-4 border border-yellow-100">
+                                    <h4 class="font-semibold text-yellow-800 mb-3">Forpleining</h4>
+                                    <div class="space-y-3">
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Mat/drikke deltakere</span>
+                                            <input type="number" id="okonomi_matDeltakere" value="0" min="0" class="px-2 py-1 rounded border border-yellow-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-2 items-center">
+                                            <span class="text-sm text-bark-600">Jegermiddag (kostnad)</span>
+                                            <input type="number" id="okonomi_jmKostnad" value="0" min="0" class="px-2 py-1 rounded border border-yellow-200 text-sm text-right col-span-2" onchange="beregnOkonomi()">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Andre utgifter -->
+                                <div class="bg-white rounded-xl p-4 border border-bark-200">
+                                    <h4 class="font-semibold text-bark-800 mb-3">Andre utgifter</h4>
+                                    <div id="okonomi_andreUtgifter" class="space-y-2">
+                                        <!-- Dynamisk generert -->
+                                    </div>
+                                    <button onclick="leggTilUtgift()" class="mt-3 text-sm text-red-600 hover:text-red-800 flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                        Legg til utgift
+                                    </button>
+                                </div>
+
+                                <!-- Total utgifter -->
+                                <div class="mt-4 bg-red-100 rounded-xl p-4 border-2 border-red-300">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-bold text-red-800">TOTALE UTGIFTER</span>
+                                        <span class="text-xl font-bold text-red-900" id="okonomi_totalUtgifter">kr 0,-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Faktisk vs Budsjett sammenligning -->
+                        <div class="mt-8 bg-bark-50 rounded-xl p-6 border border-bark-200">
+                            <h3 class="text-lg font-bold text-bark-800 mb-4">Faktisk regnskap (etter prøven)</h3>
+                            <p class="text-sm text-bark-500 mb-4">Fyll inn faktiske tall etter prøven for sammenligning med budsjettet.</p>
+                            <div class="grid md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-bark-700 mb-2">Faktiske inntekter totalt</label>
+                                    <input type="number" id="okonomi_faktiskInntekter" value="0" min="0" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-emerald-500 outline-none" onchange="beregnOkonomi()">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-bark-700 mb-2">Faktiske utgifter totalt</label>
+                                    <input type="number" id="okonomi_faktiskUtgifter" value="0" min="0" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-red-500 outline-none" onchange="beregnOkonomi()">
+                                </div>
+                            </div>
+                            <div class="mt-4 grid md:grid-cols-3 gap-4">
+                                <div class="bg-white rounded-lg p-3 text-center">
+                                    <p class="text-xs text-bark-500">Budsjettert resultat</p>
+                                    <p class="font-bold text-bark-800" id="okonomi_sammenlignBudsjett">kr 0,-</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-3 text-center">
+                                    <p class="text-xs text-bark-500">Faktisk resultat</p>
+                                    <p class="font-bold text-bark-800" id="okonomi_sammenlignFaktisk">kr 0,-</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-3 text-center">
+                                    <p class="text-xs text-bark-500">Avvik</p>
+                                    <p class="font-bold" id="okonomi_avvik">kr 0,-</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Notater -->
+                        <div class="mt-6">
+                            <label class="block text-sm font-medium text-bark-700 mb-2">Notater til økonomien</label>
+                            <textarea id="okonomi_notater" rows="3" placeholder="Eventuelle kommentarer, avvik, spesielle forhold..." class="w-full px-4 py-3 rounded-xl border border-bark-200 focus:border-emerald-500 outline-none text-sm"></textarea>
                         </div>
                     </div>
                 </section>
@@ -9044,6 +9328,535 @@
             refreshUonsketAdferdListe();
         });
 
+        // ===== BUDSJETT OG ØKONOMI FUNKSJONER =====
+
+        let andreInntekter = [];
+        let andreUtgifter = [];
+
+        // Beregn all økonomi
+        function beregnOkonomi() {
+            // Startavgifter
+            const ukAntall = parseInt(document.getElementById('okonomi_ukAntall')?.value) || 0;
+            const ukPris = parseInt(document.getElementById('okonomi_ukPris')?.value) || 0;
+            const akAntall = parseInt(document.getElementById('okonomi_akAntall')?.value) || 0;
+            const akPris = parseInt(document.getElementById('okonomi_akPris')?.value) || 0;
+            const vkAntall = parseInt(document.getElementById('okonomi_vkAntall')?.value) || 0;
+            const vkPris = parseInt(document.getElementById('okonomi_vkPris')?.value) || 0;
+
+            const sumStartavgifter = (ukAntall * ukPris) + (akAntall * akPris) + (vkAntall * vkPris);
+            document.getElementById('okonomi_sumStartavgifter').textContent = `kr ${sumStartavgifter.toLocaleString('no-NO')},-`;
+
+            // Jegermiddag
+            const jmAntall = parseInt(document.getElementById('okonomi_jmAntall')?.value) || 0;
+            const jmPris = parseInt(document.getElementById('okonomi_jmPris')?.value) || 0;
+            const sumJegermiddag = jmAntall * jmPris;
+            document.getElementById('okonomi_sumJegermiddag').textContent = `kr ${sumJegermiddag.toLocaleString('no-NO')},-`;
+
+            // Andre inntekter
+            let sumAndreInntekter = 0;
+            andreInntekter.forEach(i => sumAndreInntekter += i.belop);
+
+            // Total inntekter
+            const totalInntekter = sumStartavgifter + sumJegermiddag + sumAndreInntekter;
+            document.getElementById('okonomi_totalInntekter').textContent = `kr ${totalInntekter.toLocaleString('no-NO')},-`;
+            document.getElementById('okonomi_budsjettInntekter').textContent = `kr ${totalInntekter.toLocaleString('no-NO')},-`;
+
+            // NKK/FKF avgifter (basert på antall startere)
+            const totalStartere = ukAntall + akAntall + vkAntall;
+            const nkkAvgiftSats = 45;
+            const fkfAvgiftSats = 7.5;
+            const nkkAvgift = totalStartere * nkkAvgiftSats;
+            const fkfAvgift = totalStartere * fkfAvgiftSats;
+
+            document.getElementById('okonomi_nkkAvgiftInfo').textContent = `${totalStartere} startere x kr ${nkkAvgiftSats}`;
+            document.getElementById('okonomi_nkkAvgift').textContent = `kr ${nkkAvgift.toLocaleString('no-NO')},-`;
+            document.getElementById('okonomi_fkfAvgiftInfo').textContent = `${totalStartere} startere x kr ${fkfAvgiftSats.toFixed(2).replace('.', ',')}`;
+            document.getElementById('okonomi_fkfAvgift').textContent = `kr ${fkfAvgift.toLocaleString('no-NO')},-`;
+
+            // Dommerkostnader
+            const dommerHonorar = parseInt(document.getElementById('okonomi_dommerHonorar')?.value) || 0;
+            const dommerReise = parseInt(document.getElementById('okonomi_dommerReise')?.value) || 0;
+            const dommerDiett = parseInt(document.getElementById('okonomi_dommerDiett')?.value) || 0;
+            const sumDommer = dommerHonorar + dommerReise + dommerDiett;
+            document.getElementById('okonomi_sumDommer').textContent = `kr ${sumDommer.toLocaleString('no-NO')},-`;
+
+            // Terreng og logistikk
+            const terreng = parseInt(document.getElementById('okonomi_terreng')?.value) || 0;
+            const transport = parseInt(document.getElementById('okonomi_transport')?.value) || 0;
+            const lokaler = parseInt(document.getElementById('okonomi_lokaler')?.value) || 0;
+
+            // Forpleining
+            const matDeltakere = parseInt(document.getElementById('okonomi_matDeltakere')?.value) || 0;
+            const jmKostnad = parseInt(document.getElementById('okonomi_jmKostnad')?.value) || 0;
+
+            // Andre utgifter
+            let sumAndreUtgifter = 0;
+            andreUtgifter.forEach(u => sumAndreUtgifter += u.belop);
+
+            // Total utgifter
+            const totalUtgifter = nkkAvgift + fkfAvgift + sumDommer + terreng + transport + lokaler + matDeltakere + jmKostnad + sumAndreUtgifter;
+            document.getElementById('okonomi_totalUtgifter').textContent = `kr ${totalUtgifter.toLocaleString('no-NO')},-`;
+            document.getElementById('okonomi_budsjettUtgifter').textContent = `kr ${totalUtgifter.toLocaleString('no-NO')},-`;
+
+            // Budsjettert resultat
+            const budsjettResultat = totalInntekter - totalUtgifter;
+            const budsjettResultatEl = document.getElementById('okonomi_budsjettResultat');
+            budsjettResultatEl.textContent = `kr ${budsjettResultat.toLocaleString('no-NO')},-`;
+            budsjettResultatEl.className = budsjettResultat >= 0 ? 'text-2xl font-bold text-emerald-700' : 'text-2xl font-bold text-red-700';
+
+            document.getElementById('okonomi_sammenlignBudsjett').textContent = `kr ${budsjettResultat.toLocaleString('no-NO')},-`;
+
+            // Faktisk resultat
+            const faktiskInntekter = parseInt(document.getElementById('okonomi_faktiskInntekter')?.value) || 0;
+            const faktiskUtgifter = parseInt(document.getElementById('okonomi_faktiskUtgifter')?.value) || 0;
+            const faktiskResultat = faktiskInntekter - faktiskUtgifter;
+
+            const faktiskResultatEl = document.getElementById('okonomi_faktiskResultat');
+            if (faktiskInntekter > 0 || faktiskUtgifter > 0) {
+                faktiskResultatEl.textContent = `kr ${faktiskResultat.toLocaleString('no-NO')},-`;
+                faktiskResultatEl.className = faktiskResultat >= 0 ? 'text-2xl font-bold text-emerald-700' : 'text-2xl font-bold text-red-700';
+            } else {
+                faktiskResultatEl.textContent = 'Ikke registrert';
+                faktiskResultatEl.className = 'text-2xl font-bold text-amber-700';
+            }
+
+            document.getElementById('okonomi_sammenlignFaktisk').textContent = `kr ${faktiskResultat.toLocaleString('no-NO')},-`;
+
+            // Avvik
+            const avvik = faktiskResultat - budsjettResultat;
+            const avvikEl = document.getElementById('okonomi_avvik');
+            if (faktiskInntekter > 0 || faktiskUtgifter > 0) {
+                avvikEl.textContent = `${avvik >= 0 ? '+' : ''}kr ${avvik.toLocaleString('no-NO')},-`;
+                avvikEl.className = avvik >= 0 ? 'font-bold text-emerald-700' : 'font-bold text-red-700';
+            } else {
+                avvikEl.textContent = '-';
+                avvikEl.className = 'font-bold text-bark-400';
+            }
+        }
+
+        // Legg til inntektspost
+        function leggTilInntekt() {
+            const id = Date.now();
+            andreInntekter.push({ id, beskrivelse: '', belop: 0 });
+            renderAndreInntekter();
+        }
+
+        // Fjern inntektspost
+        function fjernInntekt(id) {
+            andreInntekter = andreInntekter.filter(i => i.id !== id);
+            renderAndreInntekter();
+            beregnOkonomi();
+        }
+
+        // Render andre inntekter
+        function renderAndreInntekter() {
+            const container = document.getElementById('okonomi_andreInntekter');
+            container.innerHTML = andreInntekter.map(i => `
+                <div class="flex gap-2 items-center">
+                    <input type="text" placeholder="Beskrivelse" value="${i.beskrivelse}"
+                           onchange="oppdaterInntekt(${i.id}, 'beskrivelse', this.value)"
+                           class="flex-1 px-2 py-1 rounded border border-bark-200 text-sm">
+                    <input type="number" value="${i.belop}" min="0"
+                           onchange="oppdaterInntekt(${i.id}, 'belop', parseInt(this.value) || 0)"
+                           class="w-24 px-2 py-1 rounded border border-bark-200 text-sm text-right">
+                    <button onclick="fjernInntekt(${i.id})" class="text-red-500 hover:text-red-700 p-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Oppdater inntektspost
+        function oppdaterInntekt(id, felt, verdi) {
+            const inntekt = andreInntekter.find(i => i.id === id);
+            if (inntekt) {
+                inntekt[felt] = verdi;
+                beregnOkonomi();
+            }
+        }
+
+        // Legg til utgiftspost
+        function leggTilUtgift() {
+            const id = Date.now();
+            andreUtgifter.push({ id, beskrivelse: '', belop: 0 });
+            renderAndreUtgifter();
+        }
+
+        // Fjern utgiftspost
+        function fjernUtgift(id) {
+            andreUtgifter = andreUtgifter.filter(u => u.id !== id);
+            renderAndreUtgifter();
+            beregnOkonomi();
+        }
+
+        // Render andre utgifter
+        function renderAndreUtgifter() {
+            const container = document.getElementById('okonomi_andreUtgifter');
+            container.innerHTML = andreUtgifter.map(u => `
+                <div class="flex gap-2 items-center">
+                    <input type="text" placeholder="Beskrivelse" value="${u.beskrivelse}"
+                           onchange="oppdaterUtgift(${u.id}, 'beskrivelse', this.value)"
+                           class="flex-1 px-2 py-1 rounded border border-bark-200 text-sm">
+                    <input type="number" value="${u.belop}" min="0"
+                           onchange="oppdaterUtgift(${u.id}, 'belop', parseInt(this.value) || 0)"
+                           class="w-24 px-2 py-1 rounded border border-bark-200 text-sm text-right">
+                    <button onclick="fjernUtgift(${u.id})" class="text-red-500 hover:text-red-700 p-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Oppdater utgiftspost
+        function oppdaterUtgift(id, felt, verdi) {
+            const utgift = andreUtgifter.find(u => u.id === id);
+            if (utgift) {
+                utgift[felt] = verdi;
+                beregnOkonomi();
+            }
+        }
+
+        // Hent deltakertall fra faktiske påmeldinger
+        async function hentDeltakerTall() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) {
+                alert('Ingen prøve valgt');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/pameldinger`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+
+                if (resp.ok) {
+                    const pameldinger = await resp.json();
+                    const aktive = pameldinger.filter(p => p.status === 'bekreftet' || p.status === 'pameldt');
+
+                    const ukAntall = aktive.filter(p => p.klasse === 'UK').length;
+                    const akAntall = aktive.filter(p => p.klasse === 'AK').length;
+                    const vkAntall = aktive.filter(p => p.klasse === 'VK').length;
+
+                    document.getElementById('okonomi_ukAntall').value = ukAntall;
+                    document.getElementById('okonomi_akAntall').value = akAntall;
+                    document.getElementById('okonomi_vkAntall').value = vkAntall;
+
+                    beregnOkonomi();
+                    alert(`Hentet: ${ukAntall} UK, ${akAntall} AK, ${vkAntall} VK`);
+                }
+            } catch (e) {
+                console.error('Feil ved henting av deltakertall:', e);
+                alert('Kunne ikke hente deltakertall');
+            }
+        }
+
+        // Hent totaler fra dommeroppgjør
+        async function hentDommerOppgjor() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) {
+                alert('Ingen prøve valgt');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/dommer-oppgjor`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+
+                if (resp.ok) {
+                    const oppgjor = await resp.json();
+                    let totalHonorar = 0;
+                    let totalReise = 0;
+                    let totalDiett = 0;
+
+                    oppgjor.forEach(o => {
+                        totalHonorar += o.honorar_belop || 0;
+                        totalReise += (o.reise_km_belop || 0) + (o.reise_bom || 0) + (o.reise_ferge || 0) + (o.reise_fly || 0) + (o.reise_leiebil || 0) + (o.reise_annet || 0);
+                        totalDiett += (o.diett_belop || 0) + (o.overnatting_belop || 0);
+                    });
+
+                    document.getElementById('okonomi_dommerHonorar').value = Math.round(totalHonorar);
+                    document.getElementById('okonomi_dommerReise').value = Math.round(totalReise);
+                    document.getElementById('okonomi_dommerDiett').value = Math.round(totalDiett);
+
+                    beregnOkonomi();
+                    alert(`Hentet fra ${oppgjor.length} dommeroppgjør`);
+                }
+            } catch (e) {
+                console.error('Feil ved henting av dommeroppgjør:', e);
+                alert('Kunne ikke hente dommeroppgjør');
+            }
+        }
+
+        // Lagre økonomibudsjett til server
+        async function saveOkonomiBudsjett() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) {
+                alert('Ingen prøve valgt');
+                return;
+            }
+
+            const budsjettData = {
+                // Startavgifter
+                ukAntall: parseInt(document.getElementById('okonomi_ukAntall')?.value) || 0,
+                ukPris: parseInt(document.getElementById('okonomi_ukPris')?.value) || 0,
+                akAntall: parseInt(document.getElementById('okonomi_akAntall')?.value) || 0,
+                akPris: parseInt(document.getElementById('okonomi_akPris')?.value) || 0,
+                vkAntall: parseInt(document.getElementById('okonomi_vkAntall')?.value) || 0,
+                vkPris: parseInt(document.getElementById('okonomi_vkPris')?.value) || 0,
+
+                // Jegermiddag
+                jmAntall: parseInt(document.getElementById('okonomi_jmAntall')?.value) || 0,
+                jmPris: parseInt(document.getElementById('okonomi_jmPris')?.value) || 0,
+
+                // Andre inntekter
+                andreInntekter: andreInntekter,
+
+                // Dommerkostnader
+                dommerHonorar: parseInt(document.getElementById('okonomi_dommerHonorar')?.value) || 0,
+                dommerReise: parseInt(document.getElementById('okonomi_dommerReise')?.value) || 0,
+                dommerDiett: parseInt(document.getElementById('okonomi_dommerDiett')?.value) || 0,
+
+                // Terreng og logistikk
+                terreng: parseInt(document.getElementById('okonomi_terreng')?.value) || 0,
+                transport: parseInt(document.getElementById('okonomi_transport')?.value) || 0,
+                lokaler: parseInt(document.getElementById('okonomi_lokaler')?.value) || 0,
+
+                // Forpleining
+                matDeltakere: parseInt(document.getElementById('okonomi_matDeltakere')?.value) || 0,
+                jmKostnad: parseInt(document.getElementById('okonomi_jmKostnad')?.value) || 0,
+
+                // Andre utgifter
+                andreUtgifter: andreUtgifter,
+
+                // Faktisk regnskap
+                faktiskInntekter: parseInt(document.getElementById('okonomi_faktiskInntekter')?.value) || 0,
+                faktiskUtgifter: parseInt(document.getElementById('okonomi_faktiskUtgifter')?.value) || 0,
+
+                // Notater
+                notater: document.getElementById('okonomi_notater')?.value || '',
+
+                // Metadata
+                sistOppdatert: new Date().toISOString()
+            };
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/storage/okonomiBudsjett_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: budsjettData })
+                });
+
+                if (resp.ok) {
+                    alert('Budsjett lagret!');
+                    console.log('Økonomibudsjett lagret til server');
+                } else {
+                    throw new Error('Feil ved lagring');
+                }
+            } catch (e) {
+                console.error('Feil ved lagring av budsjett:', e);
+                alert('Kunne ikke lagre budsjett');
+            }
+        }
+
+        // Last inn økonomibudsjett fra server
+        async function loadOkonomiBudsjett() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/storage/okonomiBudsjett_${proveId}`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        const budsjett = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+
+                        // Startavgifter
+                        if (budsjett.ukAntall !== undefined) document.getElementById('okonomi_ukAntall').value = budsjett.ukAntall;
+                        if (budsjett.ukPris !== undefined) document.getElementById('okonomi_ukPris').value = budsjett.ukPris;
+                        if (budsjett.akAntall !== undefined) document.getElementById('okonomi_akAntall').value = budsjett.akAntall;
+                        if (budsjett.akPris !== undefined) document.getElementById('okonomi_akPris').value = budsjett.akPris;
+                        if (budsjett.vkAntall !== undefined) document.getElementById('okonomi_vkAntall').value = budsjett.vkAntall;
+                        if (budsjett.vkPris !== undefined) document.getElementById('okonomi_vkPris').value = budsjett.vkPris;
+
+                        // Jegermiddag
+                        if (budsjett.jmAntall !== undefined) document.getElementById('okonomi_jmAntall').value = budsjett.jmAntall;
+                        if (budsjett.jmPris !== undefined) document.getElementById('okonomi_jmPris').value = budsjett.jmPris;
+
+                        // Andre inntekter
+                        if (budsjett.andreInntekter) {
+                            andreInntekter = budsjett.andreInntekter;
+                            renderAndreInntekter();
+                        }
+
+                        // Dommerkostnader
+                        if (budsjett.dommerHonorar !== undefined) document.getElementById('okonomi_dommerHonorar').value = budsjett.dommerHonorar;
+                        if (budsjett.dommerReise !== undefined) document.getElementById('okonomi_dommerReise').value = budsjett.dommerReise;
+                        if (budsjett.dommerDiett !== undefined) document.getElementById('okonomi_dommerDiett').value = budsjett.dommerDiett;
+
+                        // Terreng og logistikk
+                        if (budsjett.terreng !== undefined) document.getElementById('okonomi_terreng').value = budsjett.terreng;
+                        if (budsjett.transport !== undefined) document.getElementById('okonomi_transport').value = budsjett.transport;
+                        if (budsjett.lokaler !== undefined) document.getElementById('okonomi_lokaler').value = budsjett.lokaler;
+
+                        // Forpleining
+                        if (budsjett.matDeltakere !== undefined) document.getElementById('okonomi_matDeltakere').value = budsjett.matDeltakere;
+                        if (budsjett.jmKostnad !== undefined) document.getElementById('okonomi_jmKostnad').value = budsjett.jmKostnad;
+
+                        // Andre utgifter
+                        if (budsjett.andreUtgifter) {
+                            andreUtgifter = budsjett.andreUtgifter;
+                            renderAndreUtgifter();
+                        }
+
+                        // Faktisk regnskap
+                        if (budsjett.faktiskInntekter !== undefined) document.getElementById('okonomi_faktiskInntekter').value = budsjett.faktiskInntekter;
+                        if (budsjett.faktiskUtgifter !== undefined) document.getElementById('okonomi_faktiskUtgifter').value = budsjett.faktiskUtgifter;
+
+                        // Notater
+                        if (budsjett.notater) document.getElementById('okonomi_notater').value = budsjett.notater;
+
+                        beregnOkonomi();
+                        console.log('Økonomibudsjett lastet fra server');
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste økonomibudsjett:', e);
+            }
+        }
+
+        // Eksporter økonomirapport til Excel
+        async function exportOkonomiRapport() {
+            const proveId = getCurrentTrialId();
+            const trialName = document.getElementById('trialName')?.value || 'Prove';
+
+            // Beregn alle verdier først
+            beregnOkonomi();
+
+            // Samle data
+            const ukAntall = parseInt(document.getElementById('okonomi_ukAntall')?.value) || 0;
+            const ukPris = parseInt(document.getElementById('okonomi_ukPris')?.value) || 0;
+            const akAntall = parseInt(document.getElementById('okonomi_akAntall')?.value) || 0;
+            const akPris = parseInt(document.getElementById('okonomi_akPris')?.value) || 0;
+            const vkAntall = parseInt(document.getElementById('okonomi_vkAntall')?.value) || 0;
+            const vkPris = parseInt(document.getElementById('okonomi_vkPris')?.value) || 0;
+
+            const totalStartere = ukAntall + akAntall + vkAntall;
+            const nkkAvgift = totalStartere * 45;
+            const fkfAvgift = totalStartere * 7.5;
+
+            const rows = [
+                { 'Post': 'ØKONOMIRAPPORT - ' + trialName, 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' },
+                { 'Post': 'Generert: ' + new Date().toLocaleString('nb-NO'), 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' },
+                { 'Post': '', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' },
+                { 'Post': '=== INNTEKTER ===', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' },
+                { 'Post': 'Startavgift UK', 'Antall': ukAntall, 'Enhetspris': ukPris, 'Budsjett': ukAntall * ukPris, 'Faktisk': '' },
+                { 'Post': 'Startavgift AK', 'Antall': akAntall, 'Enhetspris': akPris, 'Budsjett': akAntall * akPris, 'Faktisk': '' },
+                { 'Post': 'Startavgift VK', 'Antall': vkAntall, 'Enhetspris': vkPris, 'Budsjett': vkAntall * vkPris, 'Faktisk': '' },
+            ];
+
+            const jmAntall = parseInt(document.getElementById('okonomi_jmAntall')?.value) || 0;
+            const jmPris = parseInt(document.getElementById('okonomi_jmPris')?.value) || 0;
+            rows.push({ 'Post': 'Jegermiddag', 'Antall': jmAntall, 'Enhetspris': jmPris, 'Budsjett': jmAntall * jmPris, 'Faktisk': '' });
+
+            andreInntekter.forEach(i => {
+                rows.push({ 'Post': i.beskrivelse || 'Annen inntekt', 'Antall': 1, 'Enhetspris': i.belop, 'Budsjett': i.belop, 'Faktisk': '' });
+            });
+
+            const totalInntekter = parseInt(document.getElementById('okonomi_totalInntekter')?.textContent.replace(/[^0-9-]/g, '')) || 0;
+            rows.push({ 'Post': 'SUM INNTEKTER', 'Antall': '', 'Enhetspris': '', 'Budsjett': totalInntekter, 'Faktisk': parseInt(document.getElementById('okonomi_faktiskInntekter')?.value) || '' });
+
+            rows.push({ 'Post': '', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' });
+            rows.push({ 'Post': '=== UTGIFTER ===', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' });
+            rows.push({ 'Post': 'NKK Aktivitetsavgift', 'Antall': totalStartere, 'Enhetspris': 45, 'Budsjett': nkkAvgift, 'Faktisk': '' });
+            rows.push({ 'Post': 'FKF Dommerutdanningsfond', 'Antall': totalStartere, 'Enhetspris': 7.5, 'Budsjett': fkfAvgift, 'Faktisk': '' });
+
+            const dommerHonorar = parseInt(document.getElementById('okonomi_dommerHonorar')?.value) || 0;
+            const dommerReise = parseInt(document.getElementById('okonomi_dommerReise')?.value) || 0;
+            const dommerDiett = parseInt(document.getElementById('okonomi_dommerDiett')?.value) || 0;
+            rows.push({ 'Post': 'Dommerhonorar', 'Antall': '', 'Enhetspris': '', 'Budsjett': dommerHonorar, 'Faktisk': '' });
+            rows.push({ 'Post': 'Dommerreise', 'Antall': '', 'Enhetspris': '', 'Budsjett': dommerReise, 'Faktisk': '' });
+            rows.push({ 'Post': 'Dommer diett/overnatting', 'Antall': '', 'Enhetspris': '', 'Budsjett': dommerDiett, 'Faktisk': '' });
+
+            const terreng = parseInt(document.getElementById('okonomi_terreng')?.value) || 0;
+            const transport = parseInt(document.getElementById('okonomi_transport')?.value) || 0;
+            const lokaler = parseInt(document.getElementById('okonomi_lokaler')?.value) || 0;
+            rows.push({ 'Post': 'Terrengkostnader', 'Antall': '', 'Enhetspris': '', 'Budsjett': terreng, 'Faktisk': '' });
+            rows.push({ 'Post': 'Transport', 'Antall': '', 'Enhetspris': '', 'Budsjett': transport, 'Faktisk': '' });
+            rows.push({ 'Post': 'Leie lokaler', 'Antall': '', 'Enhetspris': '', 'Budsjett': lokaler, 'Faktisk': '' });
+
+            const matDeltakere = parseInt(document.getElementById('okonomi_matDeltakere')?.value) || 0;
+            const jmKostnad = parseInt(document.getElementById('okonomi_jmKostnad')?.value) || 0;
+            rows.push({ 'Post': 'Mat/drikke deltakere', 'Antall': '', 'Enhetspris': '', 'Budsjett': matDeltakere, 'Faktisk': '' });
+            rows.push({ 'Post': 'Jegermiddag (kostnad)', 'Antall': '', 'Enhetspris': '', 'Budsjett': jmKostnad, 'Faktisk': '' });
+
+            andreUtgifter.forEach(u => {
+                rows.push({ 'Post': u.beskrivelse || 'Annen utgift', 'Antall': 1, 'Enhetspris': u.belop, 'Budsjett': u.belop, 'Faktisk': '' });
+            });
+
+            const totalUtgifter = parseInt(document.getElementById('okonomi_totalUtgifter')?.textContent.replace(/[^0-9-]/g, '')) || 0;
+            rows.push({ 'Post': 'SUM UTGIFTER', 'Antall': '', 'Enhetspris': '', 'Budsjett': totalUtgifter, 'Faktisk': parseInt(document.getElementById('okonomi_faktiskUtgifter')?.value) || '' });
+
+            rows.push({ 'Post': '', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' });
+            rows.push({ 'Post': '=== RESULTAT ===', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' });
+
+            const budsjettResultat = totalInntekter - totalUtgifter;
+            const faktiskInntekter = parseInt(document.getElementById('okonomi_faktiskInntekter')?.value) || 0;
+            const faktiskUtgifter = parseInt(document.getElementById('okonomi_faktiskUtgifter')?.value) || 0;
+            const faktiskResultat = faktiskInntekter - faktiskUtgifter;
+
+            rows.push({ 'Post': 'RESULTAT', 'Antall': '', 'Enhetspris': '', 'Budsjett': budsjettResultat, 'Faktisk': (faktiskInntekter > 0 || faktiskUtgifter > 0) ? faktiskResultat : '' });
+
+            const notater = document.getElementById('okonomi_notater')?.value || '';
+            if (notater) {
+                rows.push({ 'Post': '', 'Antall': '', 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' });
+                rows.push({ 'Post': 'Notater:', 'Antall': notater, 'Enhetspris': '', 'Budsjett': '', 'Faktisk': '' });
+            }
+
+            // Generer Excel
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws['!cols'] = [{ wch: 35 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 15 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Økonomirapport');
+
+            const filename = `Okonomirapport_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            XLSX.writeFile(wb, filename);
+
+            alert('Økonomirapport eksportert!');
+        }
+
+        // Last økonomidata når økonomi-seksjonen vises
+        document.addEventListener('DOMContentLoaded', function() {
+            // Observer for når økonomi-seksjonen blir synlig
+            const okonomiSection = document.getElementById('okonomi');
+            if (okonomiSection) {
+                const observer = new MutationObserver((mutations) => {
+                    mutations.forEach((mutation) => {
+                        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                            if (!okonomiSection.classList.contains('hidden')) {
+                                loadOkonomiBudsjett();
+                            }
+                        }
+                    });
+                });
+                observer.observe(okonomiSection, { attributes: true });
+            }
+        });
+
         // ===== NKK OG FKF RAPPORT FUNKSJONER =====
 
         // Hent alle deltagende hunder fra partier
@@ -12192,7 +13005,7 @@
         const ADMIN_SECTIONS = [
             'oversikt', 'provedetaljer', 'opplasting', 'bekreftelser', 'vipps', 'partilister',
             'aversjonsbevis', 'venteliste', 'meldinger', 'jegermiddag-admin', 'eksport-kritikker',
-            'rapporter', 'team', 'aktivitetslogg'
+            'rapporter', 'okonomi', 'team', 'aktivitetslogg'
         ];
 
         // Sjekk om prøvedetaljer er fylt ut

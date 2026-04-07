@@ -173,6 +173,19 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Rapport-logg (for å spore sendte rapporter)
+  CREATE TABLE IF NOT EXISTS rapport_logg (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    rapport_type TEXT NOT NULL,  -- 'NKK', 'FKF', 'raseklubb', 'NJFF'
+    mottaker TEXT DEFAULT '',     -- epost eller organisasjon
+    generert_av TEXT DEFAULT '',  -- bruker som genererte
+    filnavn TEXT DEFAULT '',
+    antall_kritikker INTEGER DEFAULT 0,
+    detaljer TEXT DEFAULT '',     -- JSON med mer info
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Spørreundersøkelser
   CREATE TABLE IF NOT EXISTS undersokelser (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9639,6 +9652,86 @@ app.get("/api/backup", requireAdmin, (c) => {
   c.header("Content-Type", "application/octet-stream");
   c.header("Content-Disposition", `attachment; filename="fuglehund-${new Date().toISOString().slice(0, 10)}.db"`);
   return c.body(data);
+});
+
+// ============================================
+// RAPPORT-LOGG API
+// ============================================
+
+// Logg en generert/sendt rapport
+app.post("/api/prover/:id/rapport-logg", async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+
+  const {
+    rapport_type,  // 'NKK', 'FKF', 'raseklubb', 'NJFF'
+    mottaker,
+    generert_av,
+    filnavn,
+    antall_kritikker,
+    detaljer
+  } = body;
+
+  if (!rapport_type) {
+    return c.json({ error: "rapport_type er påkrevd" }, 400);
+  }
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO rapport_logg (prove_id, rapport_type, mottaker, generert_av, filnavn, antall_kritikker, detaljer)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      proveId,
+      rapport_type,
+      mottaker || '',
+      generert_av || '',
+      filnavn || '',
+      antall_kritikker || 0,
+      typeof detaljer === 'object' ? JSON.stringify(detaljer) : (detaljer || '')
+    );
+
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (e) {
+    console.error("Feil ved logging av rapport:", e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Hent rapport-logg for en prøve
+app.get("/api/prover/:id/rapport-logg", (c) => {
+  const proveId = c.req.param("id");
+
+  try {
+    const logg = db.prepare(`
+      SELECT * FROM rapport_logg
+      WHERE prove_id = ?
+      ORDER BY created_at DESC
+    `).all(proveId);
+
+    return c.json(logg);
+  } catch (e) {
+    console.error("Feil ved henting av rapport-logg:", e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Hent all rapport-logg (for oversikt)
+app.get("/api/rapport-logg", (c) => {
+  try {
+    const logg = db.prepare(`
+      SELECT rl.*, p.navn as prove_navn
+      FROM rapport_logg rl
+      LEFT JOIN prover p ON rl.prove_id = p.id
+      ORDER BY rl.created_at DESC
+      LIMIT 100
+    `).all();
+
+    return c.json(logg);
+  } catch (e) {
+    console.error("Feil ved henting av rapport-logg:", e);
+    return c.json({ error: e.message }, 500);
+  }
 });
 
 // --- Helper: Convert "Etternavn, Fornavn" to "Fornavn Etternavn" ---

@@ -9067,28 +9067,36 @@
             for (const rase of raser) {
                 const safeRaseName = rase.replace(/[\/\\:*?"<>|]/g, '_');
 
-                // 1. Generer Excel-fil
+                // 1. Generer Excel-fil med kolonner i riktig rekkefølge for raseklubbene
+                // Kolonner: Prøve-ID, prøve-dato, KL, SL, ES, EST, Stm, Stu, TS, MS, JA, FA, Slv, SB, Rev, Sam, Prem, Tilleggspremie
                 const rows = perRase[rase].map((k, idx) => {
                     const scores = k.rounds && k.rounds.length > 0 ? k.rounds[k.rounds.length - 1].scores : {};
+                    const proveId = getCurrentTrialId() || '';
+                    const proveDato = k.dato || k.date || document.getElementById('trialStart')?.value || '';
+
                     return {
-                        'Nr': k.nr || idx + 1,
-                        'Hundenavn': k.name || k.hundenavn || '',
+                        'Prøve-ID': proveId,
+                        'Prøve-dato': proveDato,
                         'Reg.nr': k.regnr || '',
-                        'Fører': k.handler || k.forer || '',
+                        'Hundenavn': k.name || k.hundenavn || '',
                         'Eier': k.owner || k.eier || '',
-                        'Klasse': k.klasse || '',
-                        'Parti': k.partyName || '',
-                        'Premie': k.prize || '',
-                        'Jaktlyst': scores.JAKTLYST || '',
-                        'Fart': scores.FART || '',
-                        'Selvstendighet': scores.SELVSTENDIGHET || '',
-                        'Søksbredde': scores.SOKSBREDDE || '',
-                        'Reviering': scores.REVIERING || '',
-                        'Samarbeid': scores.SAMARBEID || '',
-                        'Presisjon': scores.PRESISJON || '',
-                        'Reising': scores.REISING || '',
-                        'Slipptid (min)': scores.SLIPPTID || '',
-                        'Kritikk': k.critique || ''
+                        'Fører': k.handler || k.forer || '',
+                        'KL': k.klasse || '',
+                        'SL': scores.SLIPPTID || '',
+                        'ES': scores.EGNE_STAND || 0,  // Egne stand - ikke registrert ennå, blir 0
+                        'EST': scores.EGNE_STOKK || 0, // Egne støkk - ikke registrert ennå, blir 0
+                        'Stm': scores.STAND_M || 0,    // Stand med makker
+                        'Stu': scores.STAND_U || 0,    // Stand uten makker
+                        'TS': scores.TOMSTAND || 0,    // Tomstand
+                        'MS': scores.MAKKER_STAND || 0, // Makkerstand
+                        'JA': scores.JAKTLYST || '',
+                        'FA': scores.FART || '',
+                        'Slv': scores.SELVSTENDIGHET || '',
+                        'SB': scores.SOKSBREDDE || '',
+                        'Rev': scores.REVIERING || '',
+                        'Sam': scores.SAMARBEID || '',
+                        'Prem': k.prize || '',
+                        'CK/CACIT': k.tilleggspremie || k.cacit || ''
                     };
                 });
 
@@ -9096,9 +9104,54 @@
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Kritikker');
                 const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                zip.file(`${safeRaseName}/${safeRaseName}_data.xlsx`, xlsxData);
+                zip.file(`${safeRaseName}/${safeRaseName}_kritikker.xlsx`, xlsxData);
 
-                // 2. Generer HTML-kritikker (utskriftsvennlig format)
+                // 2. Generer premieliste (kun premierte hunder) - Excel
+                const premierteHunder = perRase[rase].filter(k => k.prize && k.prize !== '0' && k.prize !== 'HP');
+                if (premierteHunder.length > 0) {
+                    // Grupper per dato/dag
+                    const perDag = {};
+                    premierteHunder.forEach(k => {
+                        const dag = k.dato || k.date || document.getElementById('trialStart')?.value || 'Ukjent dato';
+                        if (!perDag[dag]) perDag[dag] = [];
+                        perDag[dag].push(k);
+                    });
+
+                    const premieRows = [];
+                    Object.keys(perDag).sort().forEach(dag => {
+                        premieRows.push({ 'Dato': dag, 'Reg.nr': '', 'Hundenavn': '', 'Eier/Fører': '', 'Rase': '', 'Premie': '', 'Dommer(e)': '' });
+                        perDag[dag].forEach(k => {
+                            premieRows.push({
+                                'Dato': '',
+                                'Reg.nr': k.regnr || '',
+                                'Hundenavn': k.name || k.hundenavn || '',
+                                'Eier/Fører': `${k.owner || k.eier || ''} / ${k.handler || k.forer || ''}`,
+                                'Rase': rase,
+                                'Premie': k.prize || '',
+                                'Dommer(e)': k.dommer || k.judge || ''
+                            });
+                        });
+                    });
+
+                    const premieWs = XLSX.utils.json_to_sheet(premieRows);
+                    const premieWb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(premieWb, premieWs, 'Premieliste');
+                    const premieXlsxData = XLSX.write(premieWb, { bookType: 'xlsx', type: 'array' });
+                    zip.file(`${safeRaseName}/${safeRaseName}_premieliste.xlsx`, premieXlsxData);
+
+                    // Premieliste som PDF
+                    const premiePdfContent = generatePremiePDF(premierteHunder, rase, trialName, perDag);
+                    zip.file(`${safeRaseName}/${safeRaseName}_premieliste.pdf`, premiePdfContent, { binary: true });
+                }
+
+                // 3. Generer PDF per kritikk (en fil per hund)
+                for (const kritikk of perRase[rase]) {
+                    const pdfContent = generateKritikkPDF(kritikk, rase, trialName);
+                    const hundeNavn = (kritikk.name || kritikk.hundenavn || 'Ukjent').replace(/[\/\\:*?"<>|]/g, '_');
+                    zip.file(`${safeRaseName}/kritikker_pdf/${hundeNavn}_kritikk.pdf`, pdfContent, { binary: true });
+                }
+
+                // 4. Generer HTML-kritikker (utskriftsvennlig format - beholder for bakoverkompatibilitet)
                 const htmlContent = generateKritikkerHTMLDocument(perRase[rase], rase, trialName);
                 zip.file(`${safeRaseName}/${safeRaseName}_kritikker.html`, htmlContent);
             }
@@ -9179,17 +9232,53 @@
             }
 
             // Generer og last ned ZIP
+            const zipFilnavn = `Kritikker_per_rase_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.zip`;
             const content = await zip.generateAsync({ type: 'blob' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(content);
-            link.download = `Kritikker_per_rase_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.zip`;
+            link.download = zipFilnavn;
             link.click();
             URL.revokeObjectURL(link.href);
+
+            // Logg rapport-generering til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const bruker = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
+                for (const rase of raser) {
+                    const kontakt = RASEKLUBB_KONTAKT[rase] || { klubb: 'Ukjent', epost: '-' };
+                    try {
+                        await fetch(`/api/prover/${proveId}/rapport-logg`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': token ? `Bearer ${token}` : ''
+                            },
+                            body: JSON.stringify({
+                                rapport_type: 'raseklubb',
+                                mottaker: kontakt.epost,
+                                generert_av: bruker.navn || bruker.telefon || 'Ukjent',
+                                filnavn: zipFilnavn,
+                                antall_kritikker: perRase[rase].length,
+                                detaljer: {
+                                    rase: rase,
+                                    klubb: kontakt.klubb,
+                                    inneholder: ['kritikker_excel', 'premieliste_excel', 'premieliste_pdf', 'kritikker_pdf']
+                                }
+                            })
+                        });
+                    } catch (e) {
+                        console.warn('Kunne ikke logge rapport for', rase, e);
+                    }
+                }
+            }
 
             // Vis detaljert melding
             let melding = `✅ Eksportert kritikker for ${raser.length} raser til ZIP-fil\n\n`;
             melding += 'Hver rase har fått:\n';
-            melding += '• Excel-fil med data (for statistikk)\n';
+            melding += '• Excel-fil med kritikker (for kopiering til hjemmeside)\n';
+            melding += '• Excel-fil med premieliste\n';
+            melding += '• PDF-fil med premieliste\n';
+            melding += '• PDF-filer per kritikk (én fil per hund)\n';
             melding += '• HTML-fil med kritikker (utskriftsvennlig)\n\n';
             melding += 'Raser inkludert:\n';
             raser.forEach(rase => {
@@ -9325,6 +9414,217 @@
                 </div>
             </div>
             `;
+        }
+
+        // Generer PDF for én kritikk
+        function generateKritikkPDF(kritikk, rase, trialName) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const scores = kritikk.rounds && kritikk.rounds.length > 0 ? kritikk.rounds[kritikk.rounds.length - 1].scores : {};
+            const proveDato = kritikk.dato || kritikk.date || document.getElementById('trialStart')?.value || '';
+
+            let y = 15;
+
+            // Header
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.text(trialName, 105, y, { align: 'center' });
+            y += 8;
+
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Kritikk - ${rase}`, 105, y, { align: 'center' });
+            y += 12;
+
+            // Hundeinformasjon
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            doc.text('HUNDEINFORMASJON', 15, y);
+            y += 6;
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`Hundenavn: ${kritikk.name || kritikk.hundenavn || ''}`, 15, y);
+            doc.text(`Reg.nr: ${kritikk.regnr || ''}`, 110, y);
+            y += 5;
+            doc.text(`Eier: ${kritikk.owner || kritikk.eier || ''}`, 15, y);
+            doc.text(`Fører: ${kritikk.handler || kritikk.forer || ''}`, 110, y);
+            y += 5;
+            doc.text(`Klasse: ${kritikk.klasse || ''}`, 15, y);
+            doc.text(`Parti: ${kritikk.partyName || kritikk.parti || ''}`, 70, y);
+            doc.text(`Dato: ${proveDato}`, 130, y);
+            y += 10;
+
+            // Egenskaper
+            doc.setFont('helvetica', 'bold');
+            doc.text('EGENSKAPER', 15, y);
+            y += 6;
+
+            doc.setFont('helvetica', 'normal');
+            const egenskaper = [
+                ['Jaktlyst (JA)', scores.JAKTLYST || '-'],
+                ['Fart (FA)', scores.FART || '-'],
+                ['Selvstendighet (Slv)', scores.SELVSTENDIGHET || '-'],
+                ['Søksbredde (SB)', scores.SOKSBREDDE || '-'],
+                ['Reviering (Rev)', scores.REVIERING || '-'],
+                ['Samarbeid (Sam)', scores.SAMARBEID || '-']
+            ];
+
+            let col = 0;
+            egenskaper.forEach(([label, value], idx) => {
+                const x = 15 + (col * 60);
+                doc.text(`${label}: ${value}`, x, y);
+                col++;
+                if (col >= 3) {
+                    col = 0;
+                    y += 5;
+                }
+            });
+            if (col !== 0) y += 5;
+            y += 5;
+
+            // Fuglearbeid
+            doc.setFont('helvetica', 'bold');
+            doc.text('FUGLEARBEID', 15, y);
+            y += 6;
+
+            doc.setFont('helvetica', 'normal');
+            const fuglearbeid = [
+                ['Slipptid (SL)', scores.SLIPPTID || '-'],
+                ['Egne stand (ES)', scores.EGNE_STAND || '0'],
+                ['Egne støkk (EST)', scores.EGNE_STOKK || '0'],
+                ['Stand m/makker (Stm)', scores.STAND_M || '0'],
+                ['Stand u/makker (Stu)', scores.STAND_U || '0'],
+                ['Tomstand (TS)', scores.TOMSTAND || '0'],
+                ['Makkerstand (MS)', scores.MAKKER_STAND || '0']
+            ];
+
+            col = 0;
+            fuglearbeid.forEach(([label, value]) => {
+                const x = 15 + (col * 60);
+                doc.text(`${label}: ${value}`, x, y);
+                col++;
+                if (col >= 3) {
+                    col = 0;
+                    y += 5;
+                }
+            });
+            if (col !== 0) y += 5;
+            y += 5;
+
+            // Premie
+            doc.setFont('helvetica', 'bold');
+            doc.text('RESULTAT', 15, y);
+            y += 6;
+
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Premie: ${kritikk.prize || 'Ikke premiert'}`, 15, y);
+            if (kritikk.tilleggspremie || kritikk.cacit) {
+                doc.text(`Tilleggspremie: ${kritikk.tilleggspremie || kritikk.cacit}`, 80, y);
+            }
+            y += 5;
+            doc.text(`Dommer: ${kritikk.dommer || kritikk.judge || ''}`, 15, y);
+            y += 10;
+
+            // Kritikktekst
+            doc.setFont('helvetica', 'bold');
+            doc.text('KRITIKK', 15, y);
+            y += 6;
+
+            doc.setFont('helvetica', 'normal');
+            const kritikkTekst = kritikk.critique || kritikk.kritikk || 'Ingen kritikk registrert.';
+            const splitText = doc.splitTextToSize(kritikkTekst, 180);
+            doc.text(splitText, 15, y);
+
+            // Footer
+            doc.setFontSize(8);
+            doc.setTextColor(128);
+            doc.text(`Generert: ${new Date().toLocaleString('nb-NO')} | fuglehundprove.no`, 105, 285, { align: 'center' });
+
+            return doc.output('arraybuffer');
+        }
+
+        // Generer premieliste som PDF
+        function generatePremiePDF(premierteHunder, rase, trialName, perDag) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            let y = 15;
+
+            // Header
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.text(trialName, 105, y, { align: 'center' });
+            y += 8;
+
+            doc.setFontSize(14);
+            doc.text(`Premieliste - ${rase}`, 105, y, { align: 'center' });
+            y += 6;
+
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${premierteHunder.length} premierte hunder`, 105, y, { align: 'center' });
+            y += 12;
+
+            // Per dag
+            const dager = Object.keys(perDag).sort();
+            dager.forEach(dag => {
+                // Sjekk om vi trenger ny side
+                if (y > 260) {
+                    doc.addPage();
+                    y = 15;
+                }
+
+                doc.setFontSize(11);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Dato: ${dag}`, 15, y);
+                y += 6;
+
+                // Tabellheader
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Reg.nr', 15, y);
+                doc.text('Hundenavn', 40, y);
+                doc.text('Eier/Fører', 90, y);
+                doc.text('Premie', 150, y);
+                doc.text('Dommer', 170, y);
+                y += 5;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+
+                perDag[dag].forEach(k => {
+                    if (y > 275) {
+                        doc.addPage();
+                        y = 15;
+                    }
+
+                    doc.text(k.regnr || '', 15, y);
+                    doc.text((k.name || k.hundenavn || '').substring(0, 25), 40, y);
+                    doc.text(`${(k.owner || k.eier || '').substring(0, 15)} / ${(k.handler || k.forer || '').substring(0, 15)}`, 90, y);
+                    doc.text(k.prize || '', 150, y);
+                    doc.text((k.dommer || k.judge || '').substring(0, 20), 170, y);
+                    y += 4;
+                });
+
+                y += 6;
+            });
+
+            // Footer
+            doc.setFontSize(8);
+            doc.setTextColor(128);
+            doc.text(`Generert: ${new Date().toLocaleString('nb-NO')} | fuglehundprove.no`, 105, 285, { align: 'center' });
+
+            return doc.output('arraybuffer');
         }
 
         // Generer samlet HTML-dokument med alle kritikker for en rase
@@ -11437,6 +11737,35 @@
                 statsPerKlasse
             }, 'NKK-rapport generert og lastet ned');
 
+            // Logg til rapport-logg for sporing
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const bruker = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
+                const token = localStorage.getItem('fuglehund_token');
+                try {
+                    await fetch(`/api/prover/${proveId}/rapport-logg`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({
+                            rapport_type: 'NKK',
+                            mottaker: 'nkk@nkk.no',
+                            generert_av: bruker.navn || bruker.telefon || 'Ukjent',
+                            filnavn: `NKK_Rapport_${trialName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.zip`,
+                            antall_kritikker: dogs.length,
+                            detaljer: {
+                                statsPerKlasse,
+                                inneholder: ['nkk_rapport_excel', 'kritikker_excel', 'premieoversikt_excel', 'dommeroversikt_excel']
+                            }
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Kunne ikke logge NKK-rapport:', e);
+                }
+            }
+
             alert(`✅ NKK-rapport generert med ${dogs.length} deltakere.\n\nMerk: Kritikker sendes IKKE til NKK, men til raseklubbene.`);
         }
 
@@ -12441,6 +12770,36 @@
                 totalAvgift,
                 harDvkJournal: !!cachedDvkJournal
             }, 'FKF-rapport generert og lastet ned');
+
+            // Logg til rapport-logg for sporing
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const bruker = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
+                const token = localStorage.getItem('fuglehund_token');
+                try {
+                    await fetch(`/api/prover/${proveId}/rapport-logg`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({
+                            rapport_type: 'FKF',
+                            mottaker: 'post@telemarksfuglehundklubb.no',
+                            generert_av: bruker.navn || bruker.telefon || 'Ukjent',
+                            filnavn: fileName,
+                            antall_kritikker: totalStartet,
+                            detaljer: {
+                                totalAvgift,
+                                harDvkJournal: !!cachedDvkJournal,
+                                inneholder: ['oppgjorsskjema', 'partistatistikk', 'rasestatistikk', 'premiestatistikk', 'dvk_kontrolljournal']
+                            }
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Kunne ikke logge FKF-rapport:', e);
+                }
+            }
 
             alert(`✅ FKF-rapport generert!\n\nAntall startende: ${totalStartet}\nAvgift til FKF: kr ${totalAvgift.toLocaleString('no-NO', { minimumFractionDigits: 2 })}\n\nHusk å betale til konto 9680.04.38699`);
         }

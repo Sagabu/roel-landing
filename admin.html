@@ -10835,11 +10835,52 @@
             };
 
             localStorage.setItem(getFkfRapportDraftKey(), JSON.stringify(draft));
+
+            // Synkroniser til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const token = localStorage.getItem('fuglehund_token');
+                fetch(`/api/storage/fkfRapportDraft_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: draft })
+                }).then(() => console.log('✅ FKF-utkast synkronisert til server'))
+                  .catch(err => console.warn('Kunne ikke synkronisere FKF-utkast:', err));
+            }
+
             alert('✅ Utkast lagret');
         }
 
-        function loadFKFDraft() {
-            const draft = JSON.parse(localStorage.getItem(getFkfRapportDraftKey()) || '{}');
+        async function loadFKFDraft() {
+            // Prøv å laste fra server først
+            const proveId = getCurrentTrialId();
+            let draft = {};
+
+            if (proveId) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/storage/fkfRapportDraft_${proveId}`, {
+                        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            draft = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                            localStorage.setItem(getFkfRapportDraftKey(), JSON.stringify(draft));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke laste FKF-draft fra server:', e);
+                }
+            }
+
+            // Fallback til localStorage
+            if (Object.keys(draft).length === 0) {
+                draft = JSON.parse(localStorage.getItem(getFkfRapportDraftKey()) || '{}');
+            }
 
             if (draft.refNr) document.getElementById('fkf_refNr').value = draft.refNr;
             if (draft.vaerForhold) document.getElementById('fkf_vaerForhold').value = draft.vaerForhold;
@@ -12050,16 +12091,52 @@
             }
 
             // Lagre til localStorage
-            localStorage.setItem(getAutomatikkInnstillingerKey(), JSON.stringify({
-                paminnelse,
-                utkast,
-                venteliste
-            }));
+            const innstillinger = { paminnelse, utkast, venteliste };
+            localStorage.setItem(getAutomatikkInnstillingerKey(), JSON.stringify(innstillinger));
+
+            // Synkroniser til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const token = localStorage.getItem('fuglehund_token');
+                fetch(`/api/storage/automatikkInnstillinger_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: innstillinger })
+                }).catch(err => console.warn('Kunne ikke synkronisere automatikk-innstillinger:', err));
+            }
         }
 
         // Last automatikk-innstillinger ved oppstart
-        function lastAutomatikkInnstillinger() {
-            const lagret = JSON.parse(localStorage.getItem(getAutomatikkInnstillingerKey()) || '{}');
+        async function lastAutomatikkInnstillinger() {
+            const proveId = getCurrentTrialId();
+            let lagret = {};
+
+            // Prøv server først
+            if (proveId) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/storage/automatikkInnstillinger_${proveId}`, {
+                        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            lagret = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                            localStorage.setItem(getAutomatikkInnstillingerKey(), JSON.stringify(lagret));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke laste automatikk-innstillinger fra server:', e);
+                }
+            }
+
+            // Fallback til localStorage
+            if (Object.keys(lagret).length === 0) {
+                lagret = JSON.parse(localStorage.getItem(getAutomatikkInnstillingerKey()) || '{}');
+            }
 
             const paminnelseEl = document.getElementById('autoPaminnelse');
             const utkastEl = document.getElementById('autoUtkast');

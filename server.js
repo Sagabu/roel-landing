@@ -787,6 +787,27 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_meldinger_fra ON meldinger(fra_telefon);
   CREATE INDEX IF NOT EXISTS idx_meldinger_parent ON meldinger(parent_id);
   CREATE INDEX IF NOT EXISTS idx_meldinger_lest ON meldinger(lest);
+
+  -- Partifordelingsregler (systemkonfigurasjon for hvordan hunder fordeles på partier)
+  CREATE TABLE IF NOT EXISTS partifordeling_regler (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    -- Eier/fører-regel: Alle hunder fra samme eier/fører på samme parti
+    eier_samme_parti INTEGER DEFAULT 1,
+    -- Slipp-regel: Hunder fra samme eier ikke i samme slipp (pos 1+2, 3+4, osv)
+    eier_ikke_samme_slipp INTEGER DEFAULT 1,
+    -- Identifisering av eier: 'telefon' = bruk telefonnr, 'navn' = bruk navn, 'begge' = telefon først, så navn
+    eier_identifikator TEXT DEFAULT 'begge',
+    -- Maks hunder per parti (UK/AK)
+    maks_per_parti_ukak INTEGER DEFAULT 14,
+    -- Maks hunder per parti (VK)
+    maks_per_parti_vk INTEGER DEFAULT 20,
+    -- Beskrivelse for admin (vises i UI)
+    beskrivelse TEXT DEFAULT 'Hunder fra samme eier/fører plasseres på samme parti, men ikke i samme slipp.',
+    -- Metadata
+    oppdatert_av TEXT DEFAULT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  INSERT OR IGNORE INTO partifordeling_regler (id) VALUES (1);
 `);
 
 // --- Migrations for existing databases ---
@@ -2884,6 +2905,90 @@ app.get("/api/admin/log", requireAdmin, (c) => {
   const limit = Number(c.req.query("limit") || 50);
   const rows = db.prepare("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?").all(limit);
   return c.json({ items: rows });
+});
+
+// ============================================
+// PARTIFORDELINGSREGLER API
+// ============================================
+
+// Hent partifordelingsregler (åpen for alle - brukes av frontend)
+app.get("/api/partifordeling/regler", (c) => {
+  const row = db.prepare("SELECT * FROM partifordeling_regler WHERE id = 1").get();
+  if (!row) {
+    // Returner standardverdier om ingen rad finnes
+    return c.json({
+      eier_samme_parti: true,
+      eier_ikke_samme_slipp: true,
+      eier_identifikator: 'begge',
+      maks_per_parti_ukak: 14,
+      maks_per_parti_vk: 20,
+      beskrivelse: 'Hunder fra samme eier/fører plasseres på samme parti, men ikke i samme slipp.'
+    });
+  }
+  return c.json({
+    eier_samme_parti: !!row.eier_samme_parti,
+    eier_ikke_samme_slipp: !!row.eier_ikke_samme_slipp,
+    eier_identifikator: row.eier_identifikator || 'begge',
+    maks_per_parti_ukak: row.maks_per_parti_ukak || 14,
+    maks_per_parti_vk: row.maks_per_parti_vk || 20,
+    beskrivelse: row.beskrivelse || '',
+    oppdatert_av: row.oppdatert_av,
+    updated_at: row.updated_at
+  });
+});
+
+// Oppdater partifordelingsregler (krever admin)
+app.put("/api/partifordeling/regler", requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      eier_samme_parti,
+      eier_ikke_samme_slipp,
+      eier_identifikator,
+      maks_per_parti_ukak,
+      maks_per_parti_vk,
+      beskrivelse
+    } = body;
+
+    // Valider eier_identifikator
+    const validIdentifikatorer = ['telefon', 'navn', 'begge'];
+    const ident = validIdentifikatorer.includes(eier_identifikator) ? eier_identifikator : 'begge';
+
+    // Hent bruker fra auth (hvis tilgjengelig)
+    const oppdatertAv = c.get('user')?.telefon || 'ukjent';
+
+    db.prepare(`
+      UPDATE partifordeling_regler SET
+        eier_samme_parti = ?,
+        eier_ikke_samme_slipp = ?,
+        eier_identifikator = ?,
+        maks_per_parti_ukak = ?,
+        maks_per_parti_vk = ?,
+        beskrivelse = ?,
+        oppdatert_av = ?,
+        updated_at = datetime('now')
+      WHERE id = 1
+    `).run(
+      eier_samme_parti ? 1 : 0,
+      eier_ikke_samme_slipp ? 1 : 0,
+      ident,
+      maks_per_parti_ukak || 14,
+      maks_per_parti_vk || 20,
+      beskrivelse || '',
+      oppdatertAv
+    );
+
+    // Logg endringen
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "partifordeling_regler_oppdatert",
+      `Regler oppdatert av ${oppdatertAv}: eier_samme_parti=${eier_samme_parti}, eier_ikke_samme_slipp=${eier_ikke_samme_slipp}`
+    );
+
+    return c.json({ ok: true, message: "Partifordelingsregler oppdatert" });
+  } catch (err) {
+    console.error("Feil ved oppdatering av partifordelingsregler:", err);
+    return c.json({ error: "Kunne ikke oppdatere regler" }, 500);
+  }
 });
 
 // ============================================

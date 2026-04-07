@@ -6039,15 +6039,53 @@
 
             // ============================================
             // EIER/FØRER-REGEL: Grupper hunder etter eier
+            // Reglene lastes fra server og lagres i denne globale variabelen
             // ============================================
 
-            // Hent unik identifikator for eier/fører (telefon eller navn)
+            // Global variabel for partifordelingsregler (lastes fra server)
+            let partifordelingsRegler = {
+                eier_samme_parti: true,
+                eier_ikke_samme_slipp: true,
+                eier_identifikator: 'begge', // 'telefon', 'navn', eller 'begge'
+                maks_per_parti_ukak: 14,
+                maks_per_parti_vk: 20,
+                beskrivelse: 'Hunder fra samme eier/fører plasseres på samme parti, men ikke i samme slipp.'
+            };
+
+            // Last partifordelingsregler fra server
+            async function lastPartifordelingsRegler() {
+                try {
+                    const res = await fetch('/api/partifordeling/regler');
+                    if (res.ok) {
+                        const data = await res.json();
+                        partifordelingsRegler = { ...partifordelingsRegler, ...data };
+                        console.log('[Partifordeling] Regler lastet fra server:', partifordelingsRegler);
+                    }
+                } catch (err) {
+                    console.warn('[Partifordeling] Kunne ikke laste regler fra server, bruker standardverdier:', err);
+                }
+            }
+
+            // Last regler ved oppstart
+            lastPartifordelingsRegler();
+
+            // Hent unik identifikator for eier/fører basert på konfigurasjon
             function getOwnerKey(dog) {
-                // Prioriter telefon (mest pålitelig), ellers bruk fører/eier-navn
+                const ident = partifordelingsRegler.eier_identifikator || 'begge';
                 const phone = (dog.telefon || dog.eierTelefon || '').replace(/\s/g, '');
-                if (phone && phone.length >= 8) return 'tlf_' + phone;
                 const name = (dog.forer || dog.eier || dog.handler || dog.owner || '').toLowerCase().trim();
-                return name ? 'navn_' + name : 'ukjent_' + Math.random();
+
+                if (ident === 'telefon') {
+                    // Kun telefon
+                    return (phone && phone.length >= 8) ? 'tlf_' + phone : 'ukjent_' + Math.random();
+                } else if (ident === 'navn') {
+                    // Kun navn
+                    return name ? 'navn_' + name : 'ukjent_' + Math.random();
+                } else {
+                    // 'begge' - prioriter telefon, fallback til navn
+                    if (phone && phone.length >= 8) return 'tlf_' + phone;
+                    return name ? 'navn_' + name : 'ukjent_' + Math.random();
+                }
             }
 
             // Grupper hunder etter eier - returnerer Map<ownerKey, dog[]>
@@ -6062,9 +6100,26 @@
             }
 
             // Fordel hunder på partier med eier-regel
-            // Alle hunder fra samme eier må på samme parti
+            // Alle hunder fra samme eier må på samme parti (hvis aktivert i reglene)
             function distributeWithOwnerRule(dogs, numParties, maxPerParty) {
                 if (numParties === 0 || dogs.length === 0) return { parties: [], overflow: [] };
+
+                // Sjekk om eier-samme-parti-regel er aktivert
+                if (!partifordelingsRegler.eier_samme_parti) {
+                    // Regel deaktivert - fordel jevnt uten eier-gruppering
+                    const parties = Array.from({ length: numParties }, () => []);
+                    const overflow = [];
+                    let partyIdx = 0;
+                    for (const dog of dogs) {
+                        if (parties[partyIdx].length < maxPerParty) {
+                            parties[partyIdx].push(dog);
+                        } else {
+                            overflow.push(dog);
+                        }
+                        partyIdx = (partyIdx + 1) % numParties;
+                    }
+                    return { parties, overflow };
+                }
 
                 const ownerGroups = groupByOwner(dogs);
                 const parties = Array.from({ length: numParties }, () => []);
@@ -6098,9 +6153,15 @@
             }
 
             // Arranger hunder i et parti slik at samme eier ikke er i samme slipp
-            // Slipp = posisjon 1+2, 3+4, 5+6 osv.
+            // Slipp = posisjon 1+2, 3+4, 5+6 osv. (hvis aktivert i reglene)
             function arrangeWithSlipRule(dogs) {
                 if (dogs.length <= 2) return dogs;
+
+                // Sjekk om slipp-regel er aktivert
+                if (!partifordelingsRegler.eier_ikke_samme_slipp) {
+                    // Regel deaktivert - returner hundene i opprinnelig rekkefølge
+                    return dogs;
+                }
 
                 const ownerGroups = groupByOwner(dogs);
                 const result = [];

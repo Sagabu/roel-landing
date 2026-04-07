@@ -808,6 +808,38 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now'))
   );
   INSERT OR IGNORE INTO partifordeling_regler (id) VALUES (1);
+
+  -- Avmeldinger (frafall fra prøve med årsak)
+  CREATE TABLE IF NOT EXISTS avmeldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pamelding_id INTEGER NOT NULL REFERENCES pameldinger(id),
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    hund_id INTEGER NOT NULL REFERENCES hunder(id),
+    forer_telefon TEXT NOT NULL,
+    -- Årsak til avmelding
+    arsak TEXT NOT NULL CHECK(arsak IN ('sykdom_hund', 'sykdom_forer', 'lopetid', 'annet')),
+    arsak_beskrivelse TEXT DEFAULT '',
+    -- Dokumentasjon (filsti til opplastet dokument)
+    dokumentasjon TEXT DEFAULT NULL,
+    dokumentasjon_type TEXT DEFAULT NULL,
+    -- Status og behandling
+    status TEXT DEFAULT 'mottatt' CHECK(status IN ('mottatt', 'behandlet', 'godkjent', 'avvist')),
+    behandlet_av TEXT DEFAULT NULL,
+    behandlet_dato TEXT DEFAULT NULL,
+    behandlet_kommentar TEXT DEFAULT '',
+    -- Refusjon
+    refusjon_belop INTEGER DEFAULT 0,
+    refusjon_prosent INTEGER DEFAULT 0,
+    refusjon_utbetalt INTEGER DEFAULT 0,
+    -- Venteliste-opprykk som følge av avmeldingen
+    opprykk_pamelding_id INTEGER DEFAULT NULL,
+    opprykk_varslet INTEGER DEFAULT 0,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_avmeldinger_prove ON avmeldinger(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_avmeldinger_status ON avmeldinger(status);
 `);
 
 // --- Migrations for existing databases ---
@@ -908,6 +940,8 @@ const migrations = [
   "ALTER TABLE prover ADD COLUMN nkkvara_telefon TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN dvk_telefon TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN dvk_navn TEXT DEFAULT ''",
+  // Automatisk venteliste-opprykk konfigurasjon
+  "ALTER TABLE prove_config ADD COLUMN auto_venteliste_opprykk INTEGER DEFAULT 1",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -6252,9 +6286,17 @@ function validerKlasse(fodselsdato, provedato, klasse, har1AK = false) {
 }
 
 // Hjelpefunksjon: Sjekk venteliste og opprykk
+// Returnerer liste over påmeldinger som rykket opp (for varsling)
 function oppdaterVenteliste(proveId, klasse) {
   const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
-  if (!config) return;
+  if (!config) return [];
+
+  // Sjekk om automatisk opprykk er aktivert (default: ja)
+  const autoOpprykk = config.auto_venteliste_opprykk !== 0;
+  if (!autoOpprykk) {
+    console.log(`[Venteliste] Automatisk opprykk er deaktivert for prøve ${proveId}`);
+    return [];
+  }
 
   const maksField = klasse === 'UK' ? 'maks_deltakere_uk' : klasse === 'AK' ? 'maks_deltakere_ak' : 'maks_deltakere_vk';
   const maks = config[maksField] || 40;
@@ -6265,13 +6307,17 @@ function oppdaterVenteliste(proveId, klasse) {
     WHERE prove_id = ? AND klasse = ? AND status IN ('pameldt', 'bekreftet')
   `).get(proveId, klasse).n;
 
+  const opprykkListe = [];
+
   if (antallPameldt < maks) {
     // Rykk opp fra venteliste
     const ledigePlasser = maks - antallPameldt;
     const venteliste = db.prepare(`
-      SELECT id, forer_telefon FROM pameldinger
-      WHERE prove_id = ? AND klasse = ? AND status = 'venteliste'
-      ORDER BY venteliste_plass ASC
+      SELECT p.id, p.forer_telefon, p.hund_id, h.navn as hund_navn
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      WHERE p.prove_id = ? AND p.klasse = ? AND p.status = 'venteliste'
+      ORDER BY p.venteliste_plass ASC
       LIMIT ?
     `).all(proveId, klasse, ledigePlasser);
 
@@ -6281,10 +6327,19 @@ function oppdaterVenteliste(proveId, klasse) {
         WHERE id = ?
       `).run(p.id);
 
-      // TODO: Send SMS-varsling om opprykk
-      console.log(`📱 Opprykk fra venteliste: ${p.forer_telefon} rykket opp til ${klasse}`);
+      opprykkListe.push({
+        pamelding_id: p.id,
+        forer_telefon: p.forer_telefon,
+        hund_id: p.hund_id,
+        hund_navn: p.hund_navn,
+        klasse: klasse
+      });
+
+      console.log(`📱 Opprykk fra venteliste: ${p.forer_telefon} (${p.hund_navn}) rykket opp til ${klasse}`);
     }
   }
+
+  return opprykkListe;
 }
 
 // Hent alle påmeldinger for en prøve
@@ -6512,6 +6567,247 @@ app.delete("/api/prover/:proveId/pameldinger/:id", requireAuth, async (c) => {
       `Avmeldt. Refusjon: ${refusjon.belop} kr (${refusjon.prosent}%)` :
       'Avmeldt fra prøven.'
   });
+});
+
+// ============================================
+// AVMELDING MED ÅRSAK (ny, forbedret avmelding)
+// ============================================
+
+// Meld av hund fra prøve med årsak (sendes til prøveledelsens innboks)
+app.post("/api/prover/:proveId/avmeldinger", requireAuth, async (c) => {
+  const proveId = c.req.param("proveId");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const { pamelding_id, arsak, arsak_beskrivelse } = body;
+
+  // Valider påkrevde felt
+  if (!pamelding_id || !arsak) {
+    return c.json({ error: "Mangler påkrevde felt (pamelding_id, arsak)" }, 400);
+  }
+
+  // Valider årsak
+  const gyldigeArsaker = ['sykdom_hund', 'sykdom_forer', 'lopetid', 'annet'];
+  if (!gyldigeArsaker.includes(arsak)) {
+    return c.json({ error: "Ugyldig årsak. Må være: " + gyldigeArsaker.join(', ') }, 400);
+  }
+
+  // Hent påmelding med hund-info
+  const pamelding = db.prepare(`
+    SELECT p.*, h.navn as hund_navn, h.regnr as hund_regnr
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    WHERE p.id = ? AND p.prove_id = ?
+  `).get(pamelding_id, proveId);
+
+  if (!pamelding) {
+    return c.json({ error: "Påmelding ikke funnet" }, 404);
+  }
+
+  // Sjekk tilgang (eier, fører, eller admin)
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(pamelding.hund_id);
+  const erEier = hund && hund.eier_telefon === bruker.telefon;
+  const erForer = pamelding.forer_telefon === bruker.telefon;
+  const erAdmin = ['admin', 'superadmin', 'klubbleder', 'proveleder', 'sekretaer'].includes(bruker.rolle);
+
+  if (!erEier && !erForer && !erAdmin) {
+    return c.json({ error: "Du har ikke tilgang til å avmelde denne hunden" }, 403);
+  }
+
+  // Sjekk at påmeldingen ikke allerede er avmeldt
+  if (pamelding.status === 'avmeldt') {
+    return c.json({ error: "Hunden er allerede avmeldt" }, 400);
+  }
+
+  // Hent prøve for refusjonsberegning og info
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+
+  // Beregn refusjon basert på NKK regler
+  let refusjon = { belop: 0, prosent: 0 };
+  if (pamelding.betalt && pamelding.betalt_belop > 0) {
+    if (pamelding.status === 'venteliste') {
+      // 100% refusjon for venteliste som ikke fikk plass
+      refusjon = { belop: pamelding.betalt_belop, prosent: 100 };
+    } else if (arsak === 'sykdom_hund' || arsak === 'sykdom_forer' || arsak === 'lopetid') {
+      // 75% refusjon ved dokumentert sykdom/løpetid (krever dokumentasjon)
+      const prosent = config?.refusjon_prosent || 75;
+      refusjon = { belop: Math.round(pamelding.betalt_belop * prosent / 100), prosent };
+    }
+    // 'annet' gir 0% refusjon (frivillig avmelding uten grunn)
+  }
+
+  // Opprett avmelding i ny tabell
+  const avmeldingResult = db.prepare(`
+    INSERT INTO avmeldinger (
+      pamelding_id, prove_id, hund_id, forer_telefon,
+      arsak, arsak_beskrivelse, refusjon_belop, refusjon_prosent
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    pamelding_id, proveId, pamelding.hund_id, bruker.telefon,
+    arsak, arsak_beskrivelse || '', refusjon.belop, refusjon.prosent
+  );
+
+  const avmeldingId = avmeldingResult.lastInsertRowid;
+
+  // Oppdater påmelding-status
+  db.prepare(`
+    UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(pamelding_id);
+
+  // Oppdater venteliste og få info om hvem som rykket opp
+  const opprykkListe = oppdaterVenteliste(proveId, pamelding.klasse);
+
+  // Registrer opprykk i avmeldingen (hvis noen rykket opp)
+  if (opprykkListe.length > 0) {
+    db.prepare(`
+      UPDATE avmeldinger SET opprykk_pamelding_id = ? WHERE id = ?
+    `).run(opprykkListe[0].pamelding_id, avmeldingId);
+  }
+
+  // Send melding til prøveledelsens innboks
+  const arsakTekst = {
+    'sykdom_hund': 'Sykdom hos hund',
+    'sykdom_forer': 'Sykdom hos fører',
+    'lopetid': 'Løpetid',
+    'annet': 'Annen årsak'
+  }[arsak];
+
+  const brukerNavn = bruker.fornavn && bruker.etternavn
+    ? `${bruker.fornavn} ${bruker.etternavn}`
+    : bruker.telefon;
+
+  let meldingTekst = `Avmelding fra ${brukerNavn}:\n\n`;
+  meldingTekst += `Hund: ${pamelding.hund_navn} (${pamelding.hund_regnr || 'uten regnr'})\n`;
+  meldingTekst += `Klasse: ${pamelding.klasse}\n`;
+  meldingTekst += `Årsak: ${arsakTekst}\n`;
+  if (arsak_beskrivelse) {
+    meldingTekst += `Beskrivelse: ${arsak_beskrivelse}\n`;
+  }
+  meldingTekst += `\nRefusjon: ${refusjon.prosent}%`;
+  if (refusjon.belop > 0) {
+    meldingTekst += ` (${refusjon.belop} kr)`;
+  }
+  if (arsak !== 'annet' && refusjon.prosent > 0) {
+    meldingTekst += `\n⚠️ Krever dokumentasjon for refusjon.`;
+  }
+
+  // Opprett melding i innboks
+  db.prepare(`
+    INSERT INTO meldinger (prove_id, fra_telefon, fra_navn, til_type, hund_id, hund_regnr, hund_navn, emne, melding)
+    VALUES (?, ?, ?, 'proveledelse', ?, ?, ?, ?, ?)
+  `).run(
+    proveId,
+    bruker.telefon,
+    brukerNavn,
+    pamelding.hund_id,
+    pamelding.hund_regnr || '',
+    pamelding.hund_navn,
+    `Avmelding: ${pamelding.hund_navn}`,
+    meldingTekst
+  );
+
+  // Logg
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "avmelding_registrert",
+    JSON.stringify({
+      avmelding_id: avmeldingId,
+      pamelding_id,
+      hund_navn: pamelding.hund_navn,
+      arsak,
+      refusjon,
+      opprykk: opprykkListe.length > 0 ? opprykkListe[0] : null
+    })
+  );
+
+  return c.json({
+    ok: true,
+    avmelding_id: avmeldingId,
+    refusjon,
+    opprykk: opprykkListe.length > 0 ? {
+      hund_navn: opprykkListe[0].hund_navn,
+      klasse: opprykkListe[0].klasse
+    } : null,
+    message: `Avmelding registrert. ${refusjon.prosent > 0 ? `Mulig refusjon: ${refusjon.prosent}% (krever dokumentasjon).` : 'Ingen refusjon.'}`
+  });
+});
+
+// Hent avmeldinger for en prøve (prøveledelse)
+app.get("/api/prover/:proveId/avmeldinger", (c) => {
+  const proveId = c.req.param("proveId");
+  const status = c.req.query("status"); // 'mottatt', 'behandlet', etc.
+
+  let query = `
+    SELECT a.*, h.navn as hund_navn, h.regnr as hund_regnr,
+           b.fornavn || ' ' || b.etternavn as forer_navn
+    FROM avmeldinger a
+    JOIN hunder h ON a.hund_id = h.id
+    LEFT JOIN brukere b ON a.forer_telefon = b.telefon
+    WHERE a.prove_id = ?
+  `;
+  const params = [proveId];
+
+  if (status) {
+    query += ` AND a.status = ?`;
+    params.push(status);
+  }
+
+  query += ` ORDER BY a.created_at DESC`;
+
+  const avmeldinger = db.prepare(query).all(...params);
+  return c.json({ items: avmeldinger, count: avmeldinger.length });
+});
+
+// Behandle avmelding (prøveledelse godkjenner/avviser refusjon)
+app.put("/api/prover/:proveId/avmeldinger/:id", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const avmelding = db.prepare("SELECT * FROM avmeldinger WHERE id = ? AND prove_id = ?").get(id, proveId);
+  if (!avmelding) {
+    return c.json({ error: "Avmelding ikke funnet" }, 404);
+  }
+
+  const { status, behandlet_kommentar, refusjon_utbetalt } = body;
+
+  // Oppdater avmelding
+  db.prepare(`
+    UPDATE avmeldinger SET
+      status = COALESCE(?, status),
+      behandlet_av = ?,
+      behandlet_dato = datetime('now'),
+      behandlet_kommentar = COALESCE(?, behandlet_kommentar),
+      refusjon_utbetalt = COALESCE(?, refusjon_utbetalt),
+      updated_at = datetime('now')
+    WHERE id = ?
+  `).run(status, bruker.telefon, behandlet_kommentar, refusjon_utbetalt ? 1 : 0, id);
+
+  const oppdatert = db.prepare("SELECT * FROM avmeldinger WHERE id = ?").get(id);
+  return c.json({ ok: true, avmelding: oppdatert });
+});
+
+// Hent mine aktive påmeldinger (for avmeldings-UI)
+app.get("/api/mine-pameldinger", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+
+  // Hent alle aktive påmeldinger der bruker er eier eller fører
+  const pameldinger = db.prepare(`
+    SELECT p.*,
+           pr.navn as prove_navn, pr.start_dato, pr.slutt_dato, pr.sted as prove_sted,
+           h.navn as hund_navn, h.regnr as hund_regnr, h.rase as hund_rase
+    FROM pameldinger p
+    JOIN prover pr ON p.prove_id = pr.id
+    JOIN hunder h ON p.hund_id = h.id
+    WHERE (p.forer_telefon = ? OR h.eier_telefon = ?)
+      AND p.status IN ('pameldt', 'bekreftet', 'venteliste')
+      AND pr.start_dato >= date('now', '-1 day')
+    ORDER BY pr.start_dato ASC
+  `).all(bruker.telefon, bruker.telefon);
+
+  return c.json({ items: pameldinger, count: pameldinger.length });
 });
 
 // Oppdater påmelding (admin)

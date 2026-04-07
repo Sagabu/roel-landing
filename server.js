@@ -809,6 +809,30 @@ db.exec(`
   );
   INSERT OR IGNORE INTO partifordeling_regler (id) VALUES (1);
 
+  -- Jegermiddag-påmeldinger (sosial middag under prøvehelgen)
+  CREATE TABLE IF NOT EXISTS jegermiddag_pameldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    bruker_telefon TEXT NOT NULL REFERENCES brukere(telefon),
+    -- Antall personer (inkl. hovedperson)
+    antall_personer INTEGER NOT NULL DEFAULT 1,
+    -- Spesielle hensyn
+    allergier TEXT DEFAULT '',
+    vegetar INTEGER DEFAULT 0,
+    annen_info TEXT DEFAULT '',
+    -- Status og betaling
+    status TEXT DEFAULT 'pameldt' CHECK(status IN ('pameldt', 'bekreftet', 'avmeldt', 'betalt')),
+    betalt INTEGER DEFAULT 0,
+    betalt_dato TEXT DEFAULT NULL,
+    belop INTEGER DEFAULT 0,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, bruker_telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_jegermiddag_prove ON jegermiddag_pameldinger(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_jegermiddag_bruker ON jegermiddag_pameldinger(bruker_telefon);
+
   -- Avmeldinger (frafall fra prøve med årsak)
   CREATE TABLE IF NOT EXISTS avmeldinger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -944,6 +968,15 @@ const migrations = [
   "ALTER TABLE prove_config ADD COLUMN auto_venteliste_opprykk INTEGER DEFAULT 1",
   // Løpetid-egenerklæring (JSON med skjemadata)
   "ALTER TABLE avmeldinger ADD COLUMN lopetid_egenerklaring TEXT DEFAULT NULL",
+  // Jegermiddag-konfigurasjon for prøver
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_aktivert INTEGER DEFAULT 0",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_dato TEXT DEFAULT NULL",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_tid TEXT DEFAULT '19:00'",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_sted TEXT DEFAULT ''",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_pris INTEGER DEFAULT 350",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_maks_personer INTEGER DEFAULT 100",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_info TEXT DEFAULT ''",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_frist TEXT DEFAULT NULL",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -6955,6 +6988,329 @@ app.put("/api/prover/:id/config", requireAdmin, async (c) => {
 
   const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
   return c.json(config);
+});
+
+// ============================================
+// JEGERMIDDAG API
+// ============================================
+
+// Hent jegermiddag-info for en prøve (offentlig)
+app.get("/api/prover/:id/jegermiddag", (c) => {
+  const proveId = c.req.param("id");
+
+  const config = db.prepare(`
+    SELECT jegermiddag_aktivert, jegermiddag_dato, jegermiddag_tid,
+           jegermiddag_sted, jegermiddag_pris, jegermiddag_maks_personer,
+           jegermiddag_info, jegermiddag_frist
+    FROM prove_config
+    WHERE prove_id = ?
+  `).get(proveId);
+
+  if (!config || !config.jegermiddag_aktivert) {
+    return c.json({ aktivert: false });
+  }
+
+  // Tell antall påmeldte
+  const stats = db.prepare(`
+    SELECT COUNT(*) as antall_pameldinger, SUM(antall_personer) as total_personer
+    FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND status != 'avmeldt'
+  `).get(proveId);
+
+  return c.json({
+    aktivert: true,
+    dato: config.jegermiddag_dato,
+    tid: config.jegermiddag_tid,
+    sted: config.jegermiddag_sted,
+    pris: config.jegermiddag_pris,
+    maks_personer: config.jegermiddag_maks_personer,
+    info: config.jegermiddag_info,
+    frist: config.jegermiddag_frist,
+    antall_pameldinger: stats?.antall_pameldinger || 0,
+    total_personer: stats?.total_personer || 0,
+    plasser_igjen: config.jegermiddag_maks_personer - (stats?.total_personer || 0)
+  });
+});
+
+// Oppdater jegermiddag-konfigurasjon (admin)
+app.put("/api/prover/:id/jegermiddag/config", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+
+  // Opprett prove_config hvis den ikke finnes
+  db.prepare("INSERT OR IGNORE INTO prove_config (prove_id) VALUES (?)").run(proveId);
+
+  const fields = [
+    "jegermiddag_aktivert", "jegermiddag_dato", "jegermiddag_tid",
+    "jegermiddag_sted", "jegermiddag_pris", "jegermiddag_maks_personer",
+    "jegermiddag_info", "jegermiddag_frist"
+  ];
+
+  const sets = [];
+  const vals = [];
+  for (const f of fields) {
+    if (f in body) {
+      sets.push(`${f} = ?`);
+      vals.push(body[f]);
+    }
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    db.prepare(`UPDATE prove_config SET ${sets.join(", ")} WHERE prove_id = ?`).run(...vals, proveId);
+  }
+
+  return c.json({ ok: true });
+});
+
+// Hent alle jegermiddag-påmeldinger for en prøve (admin)
+app.get("/api/prover/:id/jegermiddag/pameldinger", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const pameldinger = db.prepare(`
+    SELECT jp.*, b.fornavn, b.etternavn, b.telefon, b.epost
+    FROM jegermiddag_pameldinger jp
+    JOIN brukere b ON jp.bruker_telefon = b.telefon
+    WHERE jp.prove_id = ?
+    ORDER BY jp.created_at ASC
+  `).all(proveId);
+
+  // Statistikk
+  const stats = {
+    totalt_pameldinger: pameldinger.length,
+    totalt_personer: pameldinger.reduce((sum, p) => sum + (p.antall_personer || 1), 0),
+    antall_vegetar: pameldinger.filter(p => p.vegetar).reduce((sum, p) => sum + p.antall_personer, 0),
+    antall_med_allergi: pameldinger.filter(p => p.allergier && p.allergier.trim()).length,
+    antall_betalt: pameldinger.filter(p => p.betalt).length,
+    sum_betalt: pameldinger.filter(p => p.betalt).reduce((sum, p) => sum + (p.belop || 0), 0)
+  };
+
+  return c.json({ items: pameldinger, stats });
+});
+
+// Meld på til jegermiddag (deltaker)
+app.post("/api/prover/:id/jegermiddag/pamelding", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  // Sjekk at jegermiddag er aktivert
+  const config = db.prepare(`
+    SELECT jegermiddag_aktivert, jegermiddag_maks_personer, jegermiddag_pris, jegermiddag_frist
+    FROM prove_config WHERE prove_id = ?
+  `).get(proveId);
+
+  if (!config || !config.jegermiddag_aktivert) {
+    return c.json({ error: "Jegermiddag er ikke aktivert for denne prøven" }, 400);
+  }
+
+  // Sjekk frist
+  if (config.jegermiddag_frist) {
+    const frist = new Date(config.jegermiddag_frist);
+    if (new Date() > frist) {
+      return c.json({ error: "Påmeldingsfristen for jegermiddag har gått ut" }, 400);
+    }
+  }
+
+  // Sjekk om det er plass
+  const stats = db.prepare(`
+    SELECT SUM(antall_personer) as total
+    FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND status != 'avmeldt'
+  `).get(proveId);
+
+  const antallPersoner = body.antall_personer || 1;
+  if ((stats?.total || 0) + antallPersoner > config.jegermiddag_maks_personer) {
+    return c.json({ error: "Det er ikke nok ledige plasser" }, 400);
+  }
+
+  // Sjekk om bruker allerede er påmeldt
+  const eksisterende = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  if (eksisterende) {
+    return c.json({ error: "Du er allerede påmeldt jegermiddag" }, 400);
+  }
+
+  const belop = config.jegermiddag_pris * antallPersoner;
+
+  db.prepare(`
+    INSERT INTO jegermiddag_pameldinger
+    (prove_id, bruker_telefon, antall_personer, allergier, vegetar, annen_info, belop)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    proveId,
+    bruker.telefon,
+    antallPersoner,
+    body.allergier || '',
+    body.vegetar ? 1 : 0,
+    body.annen_info || '',
+    belop
+  );
+
+  const pamelding = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  return c.json({ ok: true, pamelding });
+});
+
+// Oppdater jegermiddag-påmelding (deltaker)
+app.put("/api/prover/:id/jegermiddag/pamelding", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const eksisterende = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  if (!eksisterende) {
+    return c.json({ error: "Du er ikke påmeldt jegermiddag" }, 404);
+  }
+
+  // Hent konfig for prisberegning
+  const config = db.prepare(`
+    SELECT jegermiddag_pris FROM prove_config WHERE prove_id = ?
+  `).get(proveId);
+
+  const antallPersoner = body.antall_personer || eksisterende.antall_personer;
+  const belop = (config?.jegermiddag_pris || 350) * antallPersoner;
+
+  db.prepare(`
+    UPDATE jegermiddag_pameldinger
+    SET antall_personer = ?, allergier = ?, vegetar = ?, annen_info = ?, belop = ?, updated_at = datetime('now')
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).run(
+    antallPersoner,
+    body.allergier || eksisterende.allergier,
+    body.vegetar ? 1 : 0,
+    body.annen_info || eksisterende.annen_info,
+    belop,
+    proveId,
+    bruker.telefon
+  );
+
+  const oppdatert = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  return c.json({ ok: true, pamelding: oppdatert });
+});
+
+// Meld av fra jegermiddag (deltaker)
+app.delete("/api/prover/:id/jegermiddag/pamelding", requireAuth, (c) => {
+  const proveId = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const eksisterende = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  if (!eksisterende) {
+    return c.json({ error: "Du er ikke påmeldt jegermiddag" }, 404);
+  }
+
+  // Marker som avmeldt (beholder historikk)
+  db.prepare(`
+    UPDATE jegermiddag_pameldinger
+    SET status = 'avmeldt', updated_at = datetime('now')
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).run(proveId, bruker.telefon);
+
+  return c.json({ ok: true });
+});
+
+// Hent min jegermiddag-påmelding for en prøve
+app.get("/api/prover/:id/jegermiddag/min-pamelding", requireAuth, (c) => {
+  const proveId = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const pamelding = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ? AND status != 'avmeldt'
+  `).get(proveId, bruker.telefon);
+
+  return c.json({ pamelding: pamelding || null });
+});
+
+// Oppdater betalingsstatus for jegermiddag-påmelding (admin)
+app.put("/api/prover/:proveId/jegermiddag/pameldinger/:id/betaling", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const pamelding = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE id = ? AND prove_id = ?
+  `).get(id, proveId);
+
+  if (!pamelding) {
+    return c.json({ error: "Påmelding ikke funnet" }, 404);
+  }
+
+  db.prepare(`
+    UPDATE jegermiddag_pameldinger
+    SET betalt = ?, betalt_dato = ?, status = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    body.betalt ? 1 : 0,
+    body.betalt ? (body.betalt_dato || new Date().toISOString().split('T')[0]) : null,
+    body.betalt ? 'betalt' : 'pameldt',
+    id
+  );
+
+  return c.json({ ok: true });
+});
+
+// Eksporter jegermiddag-liste til Excel (admin)
+app.get("/api/prover/:id/jegermiddag/eksport", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
+  const pameldinger = db.prepare(`
+    SELECT jp.*, b.fornavn, b.etternavn, b.telefon, b.epost
+    FROM jegermiddag_pameldinger jp
+    JOIN brukere b ON jp.bruker_telefon = b.telefon
+    WHERE jp.prove_id = ? AND jp.status != 'avmeldt'
+    ORDER BY jp.created_at ASC
+  `).all(proveId);
+
+  // Bygg Excel-data
+  const data = pameldinger.map((p, i) => ({
+    'Nr': i + 1,
+    'Navn': `${p.fornavn} ${p.etternavn}`,
+    'Telefon': p.telefon,
+    'E-post': p.epost || '',
+    'Antall personer': p.antall_personer,
+    'Allergier': p.allergier || '',
+    'Vegetar': p.vegetar ? 'Ja' : 'Nei',
+    'Annen info': p.annen_info || '',
+    'Beløp': `${p.belop} kr`,
+    'Betalt': p.betalt ? 'Ja' : 'Nei',
+    'Status': p.status
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Jegermiddag');
+
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+  const filename = `jegermiddag_${prove?.navn || proveId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`
+    }
+  });
 });
 
 // ============================================

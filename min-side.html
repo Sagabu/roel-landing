@@ -2523,11 +2523,6 @@
             const date = new Date(dateStr);
             return date.toLocaleDateString('no-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
         }
-
-        // Last meldinger ved oppstart
-        if (FuglehundAuth.isLoggedIn()) {
-            loadUserMessages();
-        }
     </script>
 
     <!-- Melding Modal -->
@@ -2975,12 +2970,15 @@
             window.loadDashboardDataWithAvmelding = newLoadDashboard;
         }
 
-        // Kjør loadMinePameldinger etter DOMContentLoaded hvis innlogget
+        // Kjør loadMinePameldinger og loadUserMessages etter DOMContentLoaded hvis innlogget
         document.addEventListener('DOMContentLoaded', async () => {
             // Vent litt så hovedlastingen kan kjøre først
             setTimeout(async () => {
                 if (FuglehundAuth?.isLoggedIn()) {
-                    await loadMinePameldinger();
+                    await Promise.all([
+                        loadMinePameldinger(),
+                        loadUserMessages() // Laster meldinger og oppdaterer ulest-badge
+                    ]);
                 }
             }, 500);
         });

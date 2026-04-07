@@ -3615,9 +3615,104 @@
             return trialId ? `trialVkConfig_${trialId}` : 'trialVkConfig';
         }
 
+        // Last VK-konfigurasjon fra server (ved oppstart og prøvebytte)
+        async function loadVkConfigFromServer() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                // Last VK-config
+                const configResp = await fetch(`/api/storage/trialVkConfig_${proveId}`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+                if (configResp.ok) {
+                    const data = await configResp.json();
+                    if (data.value) {
+                        localStorage.setItem(getTrialVkConfigKey(), JSON.stringify(data.value));
+                        console.log('✅ VK-konfigurasjon lastet fra server');
+                    }
+                }
+
+                // Last VK-type
+                const typeResp = await fetch(`/api/storage/trialVkType_${proveId}`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+                if (typeResp.ok) {
+                    const data = await typeResp.json();
+                    if (data.value) {
+                        localStorage.setItem('trialVkType', data.value);
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste VK-konfigurasjon fra server:', e);
+            }
+        }
+
         function getNkkSignaturerKey() {
             const trialId = getCurrentTrialId();
             return trialId ? `nkkSignaturer_${trialId}` : 'nkkSignaturer';
+        }
+
+        // Last signaturer fra server (dommer og NKK-rep signaturer)
+        async function loadSignaturerFromServer() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return { dommerSignaturer: {}, nkkSignaturer: {} };
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/signaturer`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+
+                if (!resp.ok) {
+                    return {
+                        dommerSignaturer: JSON.parse(localStorage.getItem(getDommerSignaturerKey()) || '{}'),
+                        nkkSignaturer: JSON.parse(localStorage.getItem(getNkkSignaturerKey()) || '{}')
+                    };
+                }
+
+                const serverSignaturer = await resp.json();
+
+                // Konverter server-format til localStorage-format
+                const dommerSignaturer = {};
+                const nkkSignaturer = {};
+
+                serverSignaturer.forEach(sig => {
+                    if (sig.dommer_signert_at) {
+                        dommerSignaturer[sig.parti] = {
+                            signert: true,
+                            signatur: sig.dommer_navn || 'Signert',
+                            dato: sig.dommer_signert_at,
+                            telefon: sig.dommer_telefon
+                        };
+                    }
+                    if (sig.nkkrep_signert_at) {
+                        if (!nkkSignaturer.nkkrep) {
+                            nkkSignaturer.nkkrep = {
+                                signert: true,
+                                fullSignatur: sig.nkkrep_navn || 'NKK-rep signert',
+                                dato: sig.nkkrep_signert_at
+                            };
+                        }
+                    }
+                });
+
+                // Cache til localStorage
+                localStorage.setItem(getDommerSignaturerKey(), JSON.stringify(dommerSignaturer));
+                if (Object.keys(nkkSignaturer).length > 0) {
+                    localStorage.setItem(getNkkSignaturerKey(), JSON.stringify(nkkSignaturer));
+                }
+
+                console.log('✅ Signaturer lastet fra server');
+                return { dommerSignaturer, nkkSignaturer };
+            } catch (e) {
+                console.warn('Kunne ikke laste signaturer fra server:', e);
+                return {
+                    dommerSignaturer: JSON.parse(localStorage.getItem(getDommerSignaturerKey()) || '{}'),
+                    nkkSignaturer: JSON.parse(localStorage.getItem(getNkkSignaturerKey()) || '{}')
+                };
+            }
         }
 
         function getDvkKontrollerKey() {
@@ -3661,6 +3756,12 @@
                 sekretariatStenger: document.getElementById('sekretariatStenger')?.value || '',
                 provelederNavn: document.getElementById('provelederNavn')?.value || '',
                 provelederTelefon: document.getElementById('provelederTelefon')?.value || '',
+                nkkRepNavn: document.getElementById('nkkRepNavn')?.value || '',
+                nkkRepTelefon: document.getElementById('nkkRepTelefon')?.value || '',
+                nkkVaraNavn: document.getElementById('nkkVaraNavn')?.value || '',
+                nkkVaraTelefon: document.getElementById('nkkVaraTelefon')?.value || '',
+                dvkNavn: document.getElementById('dvkNavn')?.value || '',
+                dvkTelefon: document.getElementById('dvkTelefon')?.value || '',
                 kravSauebevis: document.getElementById('kravSauebevis')?.checked || false,
                 // Standardkrav - alltid true
                 kravVaksinasjon: true,
@@ -3675,16 +3776,41 @@
                 tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
             };
 
+            const proveId = getCurrentTrialId();
+
             try {
-                // Save to localStorage
+                // Save to prøve-spesifikk localStorage-nøkkel
                 localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
 
-                // Also save to server
-                await fetch('/api/storage/praktiskInfo', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ value: praktiskInfo })
-                });
+                // Synkroniser til server med prøve-spesifikk nøkkel
+                const token = localStorage.getItem('fuglehund_token');
+                if (proveId) {
+                    await fetch(`/api/storage/praktiskInfo_${proveId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({ value: praktiskInfo })
+                    });
+
+                    // Oppdater også prøve-tabellen med roller (proveleder, nkkrep, dvk)
+                    await fetch(`/api/prover/${proveId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({
+                            proveleder_telefon: praktiskInfo.provelederTelefon || null,
+                            nkkrep_telefon: praktiskInfo.nkkRepTelefon || null,
+                            nkkvara_telefon: praktiskInfo.nkkVaraTelefon || null,
+                            dvk_telefon: praktiskInfo.dvkTelefon || null,
+                            dvk_navn: praktiskInfo.dvkNavn || null
+                        })
+                    });
+                    console.log('✅ Praktisk info synkronisert til server');
+                }
 
                 // Show success message
                 const btn = event.target.closest('button');
@@ -3705,20 +3831,32 @@
         }
 
         async function loadPraktiskInfo() {
+            const proveId = getCurrentTrialId();
+
             try {
-                // Try server first
-                const resp = await fetch('/api/storage/praktiskInfo');
-                if (resp.ok) {
-                    const data = await resp.json();
-                    if (data.value) {
-                        applyPraktiskInfo(data.value);
-                        return;
+                // Prøv å laste fra server først med prøve-spesifikk nøkkel
+                if (proveId) {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/storage/praktiskInfo_${proveId}`, {
+                        headers: {
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        }
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            applyPraktiskInfo(data.value);
+                            localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(data.value));
+                            console.log('✅ Praktisk info lastet fra server');
+                            return;
+                        }
                     }
                 }
             } catch (e) {
-                // Fallback to localStorage
+                console.warn('Kunne ikke laste praktisk info fra server:', e);
             }
 
+            // Fallback til localStorage
             const stored = localStorage.getItem(getPraktiskInfoKey());
             if (stored) {
                 applyPraktiskInfo(JSON.parse(stored));
@@ -4461,21 +4599,114 @@
             `).join('');
         }
 
-        // Lagre dommer-tildelinger (prøve-spesifikk)
+        // Lagre dommer-tildelinger (prøve-spesifikk) - synkroniserer til server
         function savePartyDommere() {
             localStorage.setItem(getPartyDommereKey(), JSON.stringify(partyDommere));
+            // Synkroniser til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                syncDommerTildelingerToServer(partyDommere, proveId);
+            }
         }
 
-        // Last dommer-tildelinger (prøve-spesifikk)
-        function loadPartyDommere() {
+        // Synkroniser dommertildelinger til server
+        async function syncDommerTildelingerToServer(partyDommere, proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                // For hvert parti, oppdater dommerne via bulk-update API
+                for (const [partiNavn, dommere] of Object.entries(partyDommere)) {
+                    if (!dommere || dommere.length === 0) {
+                        // Slett alle dommere for dette partiet
+                        await fetch(`/api/prover/${proveId}/dommer-tildelinger/parti/${encodeURIComponent(partiNavn)}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': token ? `Bearer ${token}` : ''
+                            },
+                            body: JSON.stringify({ dommere: [] })
+                        }).catch(() => {}); // Ignorer feil for tomme partier
+                        continue;
+                    }
+
+                    const resp = await fetch(`/api/prover/${proveId}/dommer-tildelinger/parti/${encodeURIComponent(partiNavn)}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({
+                            dommere: dommere.map(d => ({
+                                telefon: d.telefon,
+                                rolle: d.rolle || null
+                            }))
+                        })
+                    });
+                    if (!resp.ok) {
+                        console.warn(`⚠️ Kunne ikke synkronisere dommere for ${partiNavn}`);
+                    }
+                }
+                console.log('✅ Dommertildelinger synkronisert til server');
+            } catch (err) {
+                console.error('❌ Feil ved synkronisering av dommertildelinger:', err);
+            }
+        }
+
+        // Last dommer-tildelinger fra server
+        async function loadDommerTildelingerFromServer(proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/dommer-tildelinger`, {
+                    headers: {
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    }
+                });
+                if (!resp.ok) return {};
+
+                const tildelinger = await resp.json();
+                // Konverter fra API-format til partyDommere-format
+                const result = {};
+                for (const t of tildelinger) {
+                    if (!result[t.parti]) result[t.parti] = [];
+                    result[t.parti].push({
+                        telefon: t.dommer_telefon,
+                        navn: `${t.fornavn} ${t.etternavn}`,
+                        rolle: t.dommer_rolle
+                    });
+                }
+                return result;
+            } catch (err) {
+                console.error('Feil ved lasting av dommertildelinger fra server:', err);
+                return {};
+            }
+        }
+
+        // Last dommer-tildelinger (prøve-spesifikk) - server først, deretter localStorage
+        async function loadPartyDommere() {
+            const proveId = getCurrentTrialId();
             const saved = localStorage.getItem(getPartyDommereKey());
+
+            if (proveId) {
+                try {
+                    const serverData = await loadDommerTildelingerFromServer(proveId);
+                    if (Object.keys(serverData).length > 0) {
+                        partyDommere = serverData;
+                        localStorage.setItem(getPartyDommereKey(), JSON.stringify(partyDommere));
+                        console.log('✅ Dommertildelinger lastet fra server');
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke laste fra server, bruker localStorage');
+                }
+            }
+
+            // Fallback til localStorage
             if (saved) {
                 partyDommere = JSON.parse(saved);
             } else {
                 partyDommere = {};
             }
         }
-        loadPartyDommere();
+        // NB: loadPartyDommere() kalles nå asynkront fra loadSavedParties()
 
         // Vis søkeresultater for dommere
         function showDommerResults(partiNavn, partiId, query) {
@@ -5179,6 +5410,11 @@
                 // Prøv å laste fra server først (sikrer data på tvers av enheter)
                 const serverParties = await loadPartiesFromServer(proveId);
                 const serverVenteliste = await loadVentelisteFromServer(proveId);
+
+                // Last også dommertildelinger, VK-konfigurasjon og signaturer fra server
+                await loadPartyDommere();
+                await loadVkConfigFromServer();
+                await loadSignaturerFromServer();
 
                 const savedParties = serverParties.length > 0 ? serverParties : getTrialParties();
                 const savedVenteliste = serverVenteliste && Object.keys(serverVenteliste).length > 0
@@ -7149,17 +7385,28 @@
             };
             localStorage.setItem('trialVkType', vkTypeGlobal);
             localStorage.setItem(getTrialVkConfigKey(), JSON.stringify(vkConfig));
-            // Synkroniser til server
-            fetch('/api/storage/trialVkType', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ value: vkTypeGlobal })
-            }).catch(err => console.warn('Kunne ikke lagre vkType til server:', err));
-            fetch('/api/storage/trialVkConfig', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ value: vkConfig })
-            }).catch(err => console.warn('Kunne ikke lagre vkConfig til server:', err));
+            // Synkroniser til server med prøve-spesifikke nøkler
+            const proveId = getCurrentTrialId();
+            const token = localStorage.getItem('fuglehund_token');
+            if (proveId) {
+                fetch(`/api/storage/trialVkType_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: vkTypeGlobal })
+                }).catch(err => console.warn('Kunne ikke lagre vkType til server:', err));
+                fetch(`/api/storage/trialVkConfig_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: vkConfig })
+                }).then(() => console.log('✅ VK-konfigurasjon synkronisert til server'))
+                  .catch(err => console.warn('Kunne ikke lagre vkConfig til server:', err));
+            }
 
             // Save parties to localStorage
             setTrialParties(parties);
@@ -8819,8 +9066,10 @@
 
         // === NKK RAPPORT ===
 
-        function openNKKRapportModal() {
+        async function openNKKRapportModal() {
             document.getElementById('nkkRapportModal').classList.remove('hidden');
+            // Last signaturer fra server først
+            await loadSignaturerFromServer();
             populateNKKData();
             loadNKKDraft();
         }
@@ -8881,6 +9130,21 @@
                 fullSignatur: signaturTekst
             };
             localStorage.setItem(getNkkSignaturerKey(), JSON.stringify(signaturer));
+
+            // Synkroniser til server med prøve-spesifikk nøkkel
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const token = localStorage.getItem('fuglehund_token');
+                fetch(`/api/storage/nkkSignaturer_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: signaturer })
+                }).then(() => console.log('✅ NKK-signatur synkronisert til server'))
+                  .catch(err => console.warn('Kunne ikke synkronisere signatur:', err));
+            }
         }
 
         function toggleCACIT() {
@@ -9381,11 +9645,52 @@
             };
 
             localStorage.setItem(getNkkRapportDraftKey(), JSON.stringify(draft));
+
+            // Synkroniser til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const token = localStorage.getItem('fuglehund_token');
+                fetch(`/api/storage/nkkRapportDraft_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: draft })
+                }).then(() => console.log('✅ NKK-utkast synkronisert til server'))
+                  .catch(err => console.warn('Kunne ikke synkronisere NKK-utkast:', err));
+            }
+
             alert('✅ Utkast lagret');
         }
 
-        function loadNKKDraft() {
-            const draft = JSON.parse(localStorage.getItem(getNkkRapportDraftKey()) || '{}');
+        async function loadNKKDraft() {
+            // Prøv å laste fra server først
+            const proveId = getCurrentTrialId();
+            let draft = {};
+
+            if (proveId) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/storage/nkkRapportDraft_${proveId}`, {
+                        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            draft = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                            localStorage.setItem(getNkkRapportDraftKey(), JSON.stringify(draft));
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke laste NKK-draft fra server:', e);
+                }
+            }
+
+            // Fallback til localStorage
+            if (Object.keys(draft).length === 0) {
+                draft = JSON.parse(localStorage.getItem(getNkkRapportDraftKey()) || '{}');
+            }
 
             // Referansenr og prøvetype
             if (draft.refNr) document.getElementById('nkk_refNr').value = draft.refNr;
@@ -9831,9 +10136,49 @@
 
         // === DVK STATUS ===
 
-        function seDVKStatus() {
-            const kontroller = JSON.parse(localStorage.getItem(getDvkKontrollerKey()) || '[]');
-            const signatur = JSON.parse(localStorage.getItem(getDvkSignaturKey()) || '{}');
+        async function loadDvkDataFromServer() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return { kontroller: [], signatur: {} };
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const headers = { 'Authorization': token ? `Bearer ${token}` : '' };
+
+                // Last kontroller
+                const kontResp = await fetch(`/api/dvk-kontroller/${proveId}`, { headers });
+                const kontroller = kontResp.ok ? await kontResp.json() : [];
+
+                // Last signatur
+                const sigResp = await fetch(`/api/dvk-signatur/${proveId}`, { headers });
+                let signatur = {};
+                if (sigResp.ok) {
+                    const sigData = await sigResp.json();
+                    if (sigData && sigData.id) {
+                        signatur = {
+                            signert: true,
+                            fullSignatur: sigData.full_signatur,
+                            dato: sigData.signert_dato,
+                            tid: sigData.signert_tid
+                        };
+                    }
+                }
+
+                // Oppdater localStorage cache
+                localStorage.setItem(getDvkKontrollerKey(), JSON.stringify(kontroller));
+                localStorage.setItem(getDvkSignaturKey(), JSON.stringify(signatur));
+
+                return { kontroller, signatur };
+            } catch (e) {
+                console.warn('Kunne ikke laste DVK-data fra server:', e);
+                return {
+                    kontroller: JSON.parse(localStorage.getItem(getDvkKontrollerKey()) || '[]'),
+                    signatur: JSON.parse(localStorage.getItem(getDvkSignaturKey()) || '{}')
+                };
+            }
+        }
+
+        async function seDVKStatus() {
+            const { kontroller, signatur } = await loadDvkDataFromServer();
 
             let msg = `DVK-status\n\n`;
             msg += `Antall kontroller: ${kontroller.length}\n`;
@@ -9841,8 +10186,8 @@
             if (kontroller.length > 0) {
                 let ok = 0, veiledning = 0, tiltak = 0;
                 kontroller.forEach(k => {
-                    if (k.tiltak?.diskvalifikasjon || k.tiltak?.proveleder) tiltak++;
-                    else if (k.tiltak?.advarsel || k.tiltak?.dommer || k.tiltak?.veiledning) veiledning++;
+                    if (k.tiltak_diskvalifikasjon || k.tiltak_proveleder) tiltak++;
+                    else if (k.tiltak_advarsel || k.tiltak_dommer || k.tiltak_veiledning) veiledning++;
                     else ok++;
                 });
                 msg += `- OK: ${ok}\n- Veiledning gitt: ${veiledning}\n- Tiltak iverksatt: ${tiltak}\n\n`;
@@ -9857,12 +10202,11 @@
             alert(msg);
         }
 
-        function updateDVKStatusBadge() {
+        async function updateDVKStatusBadge() {
             const badge = document.getElementById('dvkStatusBadge');
             if (!badge) return;
 
-            const kontroller = JSON.parse(localStorage.getItem(getDvkKontrollerKey()) || '[]');
-            const signatur = JSON.parse(localStorage.getItem(getDvkSignaturKey()) || '{}');
+            const { kontroller, signatur } = await loadDvkDataFromServer();
 
             if (signatur.signert) {
                 badge.className = 'text-xs px-2 py-1 rounded-full bg-green-100 text-green-700';
@@ -12349,8 +12693,9 @@
             if (!prove) return;
 
             // Last inn prøve-spesifikke data på nytt
-            loadPartyDommere(); // Dommertildelinger
-            loadSavedParties(); // Partilister og deltakere
+            // NB: loadPartyDommere() kalles nå automatisk fra loadSavedParties()
+            loadSavedParties(); // Partilister, deltakere og dommertildelinger
+            loadPraktiskInfo(); // Praktisk info (proveleder, NKK-rep, DVK etc.)
             updatePublicShareUrl(); // Oppdater offentlig delingslenke
 
             // Oppdater header

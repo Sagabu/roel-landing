@@ -271,7 +271,7 @@ db.exec(`
     dommer_telefon TEXT REFERENCES brukere(telefon),
     parti TEXT NOT NULL,
     dommer_rolle INTEGER DEFAULT NULL,
-    UNIQUE(prove_id, dommer_telefon)
+    UNIQUE(prove_id, parti, dommer_telefon)
   );
 
   -- Partier (gruppering av hunder i en prøve)
@@ -1177,6 +1177,48 @@ try {
   db.pragma("foreign_keys = ON");
   if (!e.message.includes('already exists') && !e.message.includes('no such table: hunder_old')) {
     console.error("Migration warning:", e.message);
+  }
+}
+
+// Fix dommer_tildelinger UNIQUE constraint (allow same dommer on multiple parties)
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(dommer_tildelinger)").all();
+  if (tableInfo.length > 0) {
+    // Check if the UNIQUE constraint needs to be fixed by looking at index info
+    const indexList = db.prepare("PRAGMA index_list(dommer_tildelinger)").all();
+    const hasOldConstraint = indexList.some(idx => {
+      const indexInfo = db.prepare(`PRAGMA index_info(${idx.name})`).all();
+      // Old constraint: (prove_id, dommer_telefon) without parti
+      return indexInfo.length === 2 && !indexInfo.find(i => i.name === 'parti');
+    });
+
+    if (hasOldConstraint) {
+      console.log("🔧 Migrating dommer_tildelinger UNIQUE constraint...");
+      db.pragma("foreign_keys = OFF");
+      db.exec("BEGIN TRANSACTION");
+      db.exec("ALTER TABLE dommer_tildelinger RENAME TO dommer_tildelinger_old");
+      db.exec(`
+        CREATE TABLE dommer_tildelinger (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          prove_id TEXT REFERENCES prover(id),
+          dommer_telefon TEXT REFERENCES brukere(telefon),
+          parti TEXT NOT NULL,
+          dommer_rolle INTEGER DEFAULT NULL,
+          UNIQUE(prove_id, parti, dommer_telefon)
+        )
+      `);
+      db.exec("INSERT INTO dommer_tildelinger (id, prove_id, dommer_telefon, parti, dommer_rolle) SELECT id, prove_id, dommer_telefon, parti, dommer_rolle FROM dommer_tildelinger_old");
+      db.exec("DROP TABLE dommer_tildelinger_old");
+      db.exec("COMMIT");
+      db.pragma("foreign_keys = ON");
+      console.log("✅ Migrated dommer_tildelinger: UNIQUE constraint now includes parti");
+    }
+  }
+} catch (e) {
+  try { db.exec("ROLLBACK"); } catch {}
+  db.pragma("foreign_keys = ON");
+  if (!e.message.includes('already exists') && !e.message.includes('no such table')) {
+    console.error("dommer_tildelinger migration warning:", e.message);
   }
 }
 
@@ -5455,7 +5497,7 @@ app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
   try {
     db.prepare(`
       INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)
-      ON CONFLICT(prove_id, dommer_telefon) DO UPDATE SET parti = excluded.parti, dommer_rolle = excluded.dommer_rolle
+      ON CONFLICT(prove_id, parti, dommer_telefon) DO UPDATE SET dommer_rolle = excluded.dommer_rolle
     `).run(proveId, dommer_telefon, parti, dommer_rolle || null);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -5477,7 +5519,7 @@ app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireAdmin, (c) 
   return c.json({ success: true });
 });
 
-// Bulk-oppdater dommere for et parti
+// Bulk-oppdater dommere for et parti (tillater tom array for å fjerne alle)
 app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
   const parti = c.req.param("parti");
@@ -5486,17 +5528,22 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
 
   if (!Array.isArray(dommere)) return c.json({ error: "dommere må være en array" }, 400);
 
-  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
-  if (partiType === 'VK' && dommere.length !== 2) return c.json({ error: "VK-partier må ha nøyaktig 2 dommere" }, 400);
-  if (partiType === 'UKAK' && (dommere.length < 1 || dommere.length > 2)) return c.json({ error: "UK/AK-partier må ha 1-2 dommere" }, 400);
+  // Valider kun hvis det faktisk er dommere (tom array tillates for å fjerne alle)
+  if (dommere.length > 0) {
+    const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+    if (partiType === 'VK' && dommere.length > 2) return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
+    if (partiType === 'UKAK' && dommere.length > 2) return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+  }
 
   try {
     db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ? AND parti = ?").run(proveId, parti);
-    const insert = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
-    for (const d of dommere) {
-      insert.run(proveId, d.telefon, parti, d.rolle || null);
+    if (dommere.length > 0) {
+      const insert = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
+      for (const d of dommere) {
+        insert.run(proveId, d.telefon, parti, d.rolle || null);
+      }
     }
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_parti_oppdatert", `${parti}: ${dommere.map(d => d.telefon).join(', ')}`);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_parti_oppdatert", `${parti}: ${dommere.length > 0 ? dommere.map(d => d.telefon).join(', ') : '(fjernet alle)'}`);
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);

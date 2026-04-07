@@ -3043,6 +3043,63 @@
                     </div>
                 </div>
 
+                <!-- NKK Aktivitetsavgift -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-sm font-bold">6</span>
+                        NKK Aktivitetsavgift
+                    </h4>
+                    <div class="bg-blue-50 rounded-xl p-4">
+                        <p class="text-sm text-blue-700 mb-4">
+                            Arrangør skal betale aktivitetsavgift til NKK basert på antall startende hunder.
+                            Avgiften faktureres fra NKK etter at resultater er registrert i DogWeb Arra.
+                        </p>
+                        <div class="grid md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label class="block text-xs text-blue-600 mb-1">Avgift per starter (kr)</label>
+                                <input type="number" id="nkk_avgiftPerStarter" value="45" min="0" step="5" onchange="beregnNKKAktivitetsavgift()" class="w-full px-4 py-2 rounded-xl border border-blue-200 focus:border-blue-500 outline-none text-sm bg-white">
+                                <p class="text-xs text-blue-500 mt-1">Standard: kr 45,-</p>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-blue-600 mb-1">Antall startende</label>
+                                <input type="number" id="nkk_antallStartende" readonly class="w-full px-4 py-2 rounded-xl border border-blue-200 bg-blue-100/50 text-sm font-medium text-blue-800">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-blue-600 mb-1">Total aktivitetsavgift</label>
+                                <div class="w-full px-4 py-2 rounded-xl border border-blue-300 bg-blue-100 text-lg font-bold text-blue-800" id="nkk_totalAktivitetsavgift">kr 0,-</div>
+                            </div>
+                        </div>
+                        <div class="border-t border-blue-200 pt-4">
+                            <h5 class="text-sm font-medium text-blue-800 mb-2">Beregningsgrunnlag per klasse:</h5>
+                            <div class="grid grid-cols-3 gap-2 text-sm">
+                                <div class="bg-white rounded-lg p-2 text-center">
+                                    <span class="text-blue-600 text-xs">UK</span>
+                                    <p class="font-semibold text-blue-800" id="nkk_ukStartet">0</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-2 text-center">
+                                    <span class="text-blue-600 text-xs">AK</span>
+                                    <p class="font-semibold text-blue-800" id="nkk_akStartet">0</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-2 text-center">
+                                    <span class="text-blue-600 text-xs">VK</span>
+                                    <p class="font-semibold text-blue-800" id="nkk_vkStartet">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div class="flex items-start gap-2">
+                                <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <div class="text-xs text-amber-700">
+                                    <p class="font-medium">Viktig om fakturering:</p>
+                                    <p class="mt-1">NKK sender faktura etter at resultater er registrert i DogWeb Arra. Beløpet her er kun et estimat basert på antall startende hunder.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Vedlegg som inkluderes -->
                 <div class="bg-green-50 border border-green-200 rounded-xl p-4">
                     <h4 class="font-semibold text-green-800 mb-2">Vedlegg som inkluderes:</h4>
@@ -9072,6 +9129,8 @@
             await loadSignaturerFromServer();
             populateNKKData();
             await loadNKKDraft();
+            // Beregn NKK aktivitetsavgift
+            await loadNKKAktivitetsavgift();
         }
 
         function closeNKKRapportModal() {
@@ -9151,6 +9210,80 @@
             const section = document.getElementById('nkk_cacitSection');
             const checkbox = document.getElementById('nkk_harCACIT');
             section.classList.toggle('hidden', !checkbox.checked);
+        }
+
+        // NKK Aktivitetsavgift beregning
+        async function beregnNKKAktivitetsavgift() {
+            const stats = await calculateStats();
+            const avgiftPerStarter = parseFloat(document.getElementById('nkk_avgiftPerStarter')?.value) || 45;
+
+            const ukStartet = stats.perKlasse.UK?.startet || 0;
+            const akStartet = stats.perKlasse.AK?.startet || 0;
+            const vkStartet = stats.perKlasse.VK?.startet || 0;
+            const totalStartet = ukStartet + akStartet + vkStartet;
+            const totalAvgift = totalStartet * avgiftPerStarter;
+
+            // Oppdater UI
+            document.getElementById('nkk_ukStartet').textContent = ukStartet;
+            document.getElementById('nkk_akStartet').textContent = akStartet;
+            document.getElementById('nkk_vkStartet').textContent = vkStartet;
+            document.getElementById('nkk_antallStartende').value = totalStartet;
+            document.getElementById('nkk_totalAktivitetsavgift').textContent = `kr ${totalAvgift.toLocaleString('no-NO')},-`;
+
+            // Lagre til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                const aktivitetsavgiftData = {
+                    avgiftPerStarter,
+                    ukStartet,
+                    akStartet,
+                    vkStartet,
+                    totalStartet,
+                    totalAvgift,
+                    beregnetDato: new Date().toISOString()
+                };
+
+                const token = localStorage.getItem('fuglehund_token');
+                fetch(`/api/storage/nkkAktivitetsavgift_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: aktivitetsavgiftData })
+                }).then(() => console.log('✅ NKK aktivitetsavgift synkronisert til server'))
+                  .catch(err => console.warn('Kunne ikke synkronisere aktivitetsavgift:', err));
+            }
+
+            return { totalStartet, totalAvgift, avgiftPerStarter };
+        }
+
+        // Last inn tidligere lagret aktivitetsavgift-data
+        async function loadNKKAktivitetsavgift() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/storage/nkkAktivitetsavgift_${proveId}`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        const avgiftData = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                        if (avgiftData.avgiftPerStarter) {
+                            document.getElementById('nkk_avgiftPerStarter').value = avgiftData.avgiftPerStarter;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste aktivitetsavgift-data:', e);
+            }
+
+            // Beregn uansett med nåværende data
+            await beregnNKKAktivitetsavgift();
         }
 
         function populateNKKData() {
@@ -9641,7 +9774,10 @@
                 // CACIT
                 harCACIT: document.getElementById('nkk_harCACIT')?.checked || false,
                 cacitHund: document.getElementById('nkk_cacitHund')?.value || '',
-                cacitEier: document.getElementById('nkk_cacitEier')?.value || ''
+                cacitEier: document.getElementById('nkk_cacitEier')?.value || '',
+
+                // NKK Aktivitetsavgift
+                avgiftPerStarter: parseFloat(document.getElementById('nkk_avgiftPerStarter')?.value) || 45
             };
 
             localStorage.setItem(getNkkRapportDraftKey(), JSON.stringify(draft));
@@ -9740,6 +9876,11 @@
             }
             if (draft.cacitHund) document.getElementById('nkk_cacitHund').value = draft.cacitHund;
             if (draft.cacitEier) document.getElementById('nkk_cacitEier').value = draft.cacitEier;
+
+            // NKK Aktivitetsavgift
+            if (draft.avgiftPerStarter) {
+                document.getElementById('nkk_avgiftPerStarter').value = draft.avgiftPerStarter;
+            }
         }
 
         // Validerings-funksjon som sjekker alle krav før rapport kan genereres
@@ -10012,6 +10153,20 @@
                     'Verdi': document.getElementById('nkk_cacitEier')?.value || ''
                 });
             }
+
+            // NKK Aktivitetsavgift
+            const avgiftPerStarter = parseFloat(document.getElementById('nkk_avgiftPerStarter')?.value) || 45;
+            const aktivitetsavgiftTotal = totalStartet * avgiftPerStarter;
+            reportRows.push({ 'Felt': '', 'Verdi': '' });
+            reportRows.push({ 'Felt': '--- NKK AKTIVITETSAVGIFT ---', 'Verdi': '' });
+            reportRows.push({ 'Felt': 'Avgift per starter', 'Verdi': `kr ${avgiftPerStarter.toLocaleString('no-NO')},-` });
+            reportRows.push({ 'Felt': 'Antall startende (UK)', 'Verdi': statsPerKlasse.UK.startet });
+            reportRows.push({ 'Felt': 'Antall startende (AK)', 'Verdi': statsPerKlasse.AK.startet });
+            reportRows.push({ 'Felt': 'Antall startende (VK)', 'Verdi': statsPerKlasse.VK.startet });
+            reportRows.push({ 'Felt': 'Totalt antall startende', 'Verdi': totalStartet });
+            reportRows.push({ 'Felt': 'TOTAL AKTIVITETSAVGIFT TIL NKK', 'Verdi': `kr ${aktivitetsavgiftTotal.toLocaleString('no-NO')},-` });
+            reportRows.push({ 'Felt': '', 'Verdi': '' });
+            reportRows.push({ 'Felt': 'Merknad', 'Verdi': 'NKK sender faktura etter at resultater er registrert i DogWeb Arra' });
 
             const reportWs = XLSX.utils.json_to_sheet(reportRows);
             reportWs['!cols'] = [{ wch: 35 }, { wch: 60 }];

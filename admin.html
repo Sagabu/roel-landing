@@ -3489,6 +3489,60 @@
         }
 
         // ========================================
+        // PRØVE-SPESIFIKKE NØKLER FOR ANDRE DATA
+        // ========================================
+
+        function getPartyDommereKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `partyDommere_${trialId}` : 'partyDommere';
+        }
+
+        function getDommerSignaturerKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `dommerSignaturer_${trialId}` : 'dommerSignaturer';
+        }
+
+        function getTrialVkConfigKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `trialVkConfig_${trialId}` : 'trialVkConfig';
+        }
+
+        function getNkkSignaturerKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `nkkSignaturer_${trialId}` : 'nkkSignaturer';
+        }
+
+        function getDvkKontrollerKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `dvkKontroller_${trialId}` : 'dvkKontroller';
+        }
+
+        function getDvkSignaturKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `dvkSignatur_${trialId}` : 'dvkSignatur';
+        }
+
+        function getPraktiskInfoKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `praktiskInfo_${trialId}` : 'praktiskInfo';
+        }
+
+        function getNkkRapportDraftKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `nkkRapportDraft_${trialId}` : 'nkkRapportDraft';
+        }
+
+        function getFkfRapportDraftKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `fkfRapportDraft_${trialId}` : 'fkfRapportDraft';
+        }
+
+        function getAutomatikkInnstillingerKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `automatikkInnstillinger_${trialId}` : 'automatikkInnstillinger';
+        }
+
+        // ========================================
         // PRAKTISK INFO - SAVE AND LOAD
         // ========================================
         async function savePraktiskInfo() {
@@ -3515,7 +3569,7 @@
 
             try {
                 // Save to localStorage
-                localStorage.setItem('praktiskInfo', JSON.stringify(praktiskInfo));
+                localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
 
                 // Also save to server
                 await fetch('/api/storage/praktiskInfo', {
@@ -3557,7 +3611,7 @@
                 // Fallback to localStorage
             }
 
-            const stored = localStorage.getItem('praktiskInfo');
+            const stored = localStorage.getItem(getPraktiskInfoKey());
             if (stored) {
                 applyPraktiskInfo(JSON.parse(stored));
             }
@@ -4294,16 +4348,18 @@
             `).join('');
         }
 
-        // Lagre dommer-tildelinger
+        // Lagre dommer-tildelinger (prøve-spesifikk)
         function savePartyDommere() {
-            localStorage.setItem('partyDommere', JSON.stringify(partyDommere));
+            localStorage.setItem(getPartyDommereKey(), JSON.stringify(partyDommere));
         }
 
-        // Last dommer-tildelinger
+        // Last dommer-tildelinger (prøve-spesifikk)
         function loadPartyDommere() {
-            const saved = localStorage.getItem('partyDommere');
+            const saved = localStorage.getItem(getPartyDommereKey());
             if (saved) {
                 partyDommere = JSON.parse(saved);
+            } else {
+                partyDommere = {};
             }
         }
         loadPartyDommere();
@@ -4637,7 +4693,16 @@
             localStorage.removeItem(getTrialPartiesKey());
             localStorage.removeItem(getTrialVentelisteKey());
             localStorage.removeItem(getTrialParticipantsKey());
-            localStorage.removeItem('partyDommere');
+            localStorage.removeItem(getPartyDommereKey());
+            localStorage.removeItem(getDommerSignaturerKey());
+            localStorage.removeItem(getTrialVkConfigKey());
+            localStorage.removeItem(getNkkSignaturerKey());
+            localStorage.removeItem(getDvkKontrollerKey());
+            localStorage.removeItem(getDvkSignaturKey());
+            localStorage.removeItem(getPraktiskInfoKey());
+            localStorage.removeItem(getNkkRapportDraftKey());
+            localStorage.removeItem(getFkfRapportDraftKey());
+            localStorage.removeItem(getAutomatikkInnstillingerKey());
 
             // Nullstill statistikk
             document.getElementById('statTotal').textContent = '0';
@@ -5029,7 +5094,7 @@
 
         // Initialiser VK Trekning basert på prøvetype
         function initVkTrekning() {
-            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const vkConfig = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
             const vkType = vkConfig.type || localStorage.getItem('trialVkType') || 'none';
 
             const ikkeAktuelt = document.getElementById('vkTrekningIkkeAktuelt');
@@ -5119,7 +5184,7 @@
         let liveKvalifiserteInterval = null;
 
         async function refreshLiveKvalifiserte() {
-            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const vkConfig = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
             const is3Day = vkConfig.type === '3day';
 
             // Vis/skjul semi-seksjonen basert på VK-type
@@ -5595,7 +5660,7 @@
             }
 
             const parties = getTrialParties();
-            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const vkConfig = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
 
             if (currentTrekningType === 'semi') {
                 // Opprett semifinalepartier
@@ -5676,7 +5741,7 @@
 
         // Skriv ut kvalifiserte
         function printKvalifiserte() {
-            const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');
+            const vkConfig = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
             const typeNavn = currentTrekningType === 'semi' ? 'semifinale' : 'finale';
 
             let html = `
@@ -6954,7 +7019,7 @@
                     : 0
             };
             localStorage.setItem('trialVkType', vkTypeGlobal);
-            localStorage.setItem('trialVkConfig', JSON.stringify(vkConfig));
+            localStorage.setItem(getTrialVkConfigKey(), JSON.stringify(vkConfig));
             // Synkroniser til server
             fetch('/api/storage/trialVkType', {
                 method: 'PUT',
@@ -8678,7 +8743,7 @@
             }
 
             // Lagre signatur i localStorage
-            const signaturer = JSON.parse(localStorage.getItem('nkkSignaturer') || '{}');
+            const signaturer = JSON.parse(localStorage.getItem(getNkkSignaturerKey()) || '{}');
             signaturer[rolle] = {
                 navn: navn,
                 initialer: initialer,
@@ -8686,7 +8751,7 @@
                 tid: timeStr,
                 fullSignatur: signaturTekst
             };
-            localStorage.setItem('nkkSignaturer', JSON.stringify(signaturer));
+            localStorage.setItem(getNkkSignaturerKey(), JSON.stringify(signaturer));
         }
 
         function toggleCACIT() {
@@ -8784,8 +8849,8 @@
 
             // Dommerliste med dommerelever og signaturstatus
             const parties = getTrialParties();
-            const partyDommere = JSON.parse(localStorage.getItem('partyDommere') || '{}');
-            const dommerSignaturer = JSON.parse(localStorage.getItem('dommerSignaturer') || '{}');
+            const partyDommere = JSON.parse(localStorage.getItem(getPartyDommereKey()) || '{}');
+            const dommerSignaturer = JSON.parse(localStorage.getItem(getDommerSignaturerKey()) || '{}');
 
             let dommerHtml = '';
             parties.forEach(party => {
@@ -8808,7 +8873,7 @@
             document.getElementById('nkk_dommerListe').innerHTML = dommerHtml;
 
             // Prøveleder fra praktisk info
-            const praktiskInfo = JSON.parse(localStorage.getItem('praktiskInfo') || '{}');
+            const praktiskInfo = JSON.parse(localStorage.getItem(getPraktiskInfoKey()) || '{}');
             if (praktiskInfo.provelederNavn) {
                 document.getElementById('nkk_provelederNavn').value = praktiskInfo.provelederNavn;
             }
@@ -8826,7 +8891,7 @@
             }
 
             // Last inn tidligere signaturer
-            const signaturer = JSON.parse(localStorage.getItem('nkkSignaturer') || '{}');
+            const signaturer = JSON.parse(localStorage.getItem(getNkkSignaturerKey()) || '{}');
             if (signaturer.proveleder) {
                 const statusEl = document.getElementById('nkk_provelederSignStatus');
                 if (statusEl) {
@@ -9186,12 +9251,12 @@
                 cacitEier: document.getElementById('nkk_cacitEier')?.value || ''
             };
 
-            localStorage.setItem('nkkRapportDraft', JSON.stringify(draft));
+            localStorage.setItem(getNkkRapportDraftKey(), JSON.stringify(draft));
             alert('✅ Utkast lagret');
         }
 
         function loadNKKDraft() {
-            const draft = JSON.parse(localStorage.getItem('nkkRapportDraft') || '{}');
+            const draft = JSON.parse(localStorage.getItem(getNkkRapportDraftKey()) || '{}');
 
             // Referansenr og prøvetype
             if (draft.refNr) document.getElementById('nkk_refNr').value = draft.refNr;
@@ -9428,7 +9493,7 @@
             });
 
             // Hent signaturer
-            const signaturer = JSON.parse(localStorage.getItem('nkkSignaturer') || '{}');
+            const signaturer = JSON.parse(localStorage.getItem(getNkkSignaturerKey()) || '{}');
             const provelederSign = signaturer.proveleder?.fullSignatur || '(Ikke signert)';
             const nkkrepSign = signaturer.nkkrep?.fullSignatur || '(Ikke signert)';
 
@@ -9584,8 +9649,8 @@
 
             // 4. Dommerliste med dommerelever
             const parties = getTrialParties();
-            const partyDommere = JSON.parse(localStorage.getItem('partyDommere') || '{}');
-            const dommerSignaturer = JSON.parse(localStorage.getItem('dommerSignaturer') || '{}');
+            const partyDommere = JSON.parse(localStorage.getItem(getPartyDommereKey()) || '{}');
+            const dommerSignaturer = JSON.parse(localStorage.getItem(getDommerSignaturerKey()) || '{}');
 
             const dommerRows = [
                 { 'Parti': 'DOMMEROVERSIKT', 'Dommer': '', 'Dommerelev': '', 'Digital signatur': '' },
@@ -9638,8 +9703,8 @@
         // === DVK STATUS ===
 
         function seDVKStatus() {
-            const kontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
-            const signatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+            const kontroller = JSON.parse(localStorage.getItem(getDvkKontrollerKey()) || '[]');
+            const signatur = JSON.parse(localStorage.getItem(getDvkSignaturKey()) || '{}');
 
             let msg = `DVK-status\n\n`;
             msg += `Antall kontroller: ${kontroller.length}\n`;
@@ -9667,8 +9732,8 @@
             const badge = document.getElementById('dvkStatusBadge');
             if (!badge) return;
 
-            const kontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
-            const signatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+            const kontroller = JSON.parse(localStorage.getItem(getDvkKontrollerKey()) || '[]');
+            const signatur = JSON.parse(localStorage.getItem(getDvkSignaturKey()) || '{}');
 
             if (signatur.signert) {
                 badge.className = 'text-xs px-2 py-1 rounded-full bg-green-100 text-green-700';
@@ -10199,7 +10264,7 @@
             beregnFKFAvgift();
 
             // Prøveleder fra praktisk info
-            const praktiskInfo = JSON.parse(localStorage.getItem('praktiskInfo') || '{}');
+            const praktiskInfo = JSON.parse(localStorage.getItem(getPraktiskInfoKey()) || '{}');
             if (praktiskInfo.provelederNavn) {
                 document.getElementById('fkf_proveleder').value = praktiskInfo.provelederNavn;
             }
@@ -10296,12 +10361,12 @@
                 innsendingsDato: document.getElementById('fkf_innsendingsDato').value
             };
 
-            localStorage.setItem('fkfRapportDraft', JSON.stringify(draft));
+            localStorage.setItem(getFkfRapportDraftKey(), JSON.stringify(draft));
             alert('✅ Utkast lagret');
         }
 
         function loadFKFDraft() {
-            const draft = JSON.parse(localStorage.getItem('fkfRapportDraft') || '{}');
+            const draft = JSON.parse(localStorage.getItem(getFkfRapportDraftKey()) || '{}');
 
             if (draft.refNr) document.getElementById('fkf_refNr').value = draft.refNr;
             if (draft.vaerForhold) document.getElementById('fkf_vaerForhold').value = draft.vaerForhold;
@@ -10531,8 +10596,8 @@
 
             } else {
                 // Fallback til localStorage (gammel metode)
-                const dvkKontroller = JSON.parse(localStorage.getItem('dvkKontroller') || '[]');
-                const dvkSignatur = JSON.parse(localStorage.getItem('dvkSignatur') || '{}');
+                const dvkKontroller = JSON.parse(localStorage.getItem(getDvkKontrollerKey()) || '[]');
+                const dvkSignatur = JSON.parse(localStorage.getItem(getDvkSignaturKey()) || '{}');
 
                 dvkRows.push({ 'Felt': 'Antall kontroller gjennomført', 'Verdi': dvkKontroller.length });
                 dvkRows.push({ 'Felt': 'DVK signatur', 'Verdi': dvkSignatur.fullSignatur || '(Ikke signert)' });
@@ -11512,7 +11577,7 @@
             }
 
             // Lagre til localStorage
-            localStorage.setItem('automatikkInnstillinger', JSON.stringify({
+            localStorage.setItem(getAutomatikkInnstillingerKey(), JSON.stringify({
                 paminnelse,
                 utkast,
                 venteliste
@@ -11521,7 +11586,7 @@
 
         // Last automatikk-innstillinger ved oppstart
         function lastAutomatikkInnstillinger() {
-            const lagret = JSON.parse(localStorage.getItem('automatikkInnstillinger') || '{}');
+            const lagret = JSON.parse(localStorage.getItem(getAutomatikkInnstillingerKey()) || '{}');
 
             const paminnelseEl = document.getElementById('autoPaminnelse');
             const utkastEl = document.getElementById('autoUtkast');
@@ -11606,7 +11671,7 @@
                     premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
                     tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
                 };
-                localStorage.setItem('praktiskInfo', JSON.stringify(praktiskInfo));
+                localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
                 await fetch('/api/storage/praktiskInfo', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -11816,7 +11881,7 @@
                     premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
                     tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
                 };
-                localStorage.setItem('praktiskInfo', JSON.stringify(praktiskInfo));
+                localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
                 await fetch('/api/storage/praktiskInfo', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -12153,6 +12218,10 @@
 
             const prove = alleProver.find(p => p.id === proveId);
             if (!prove) return;
+
+            // Last inn prøve-spesifikke data på nytt
+            loadPartyDommere(); // Dommertildelinger
+            loadSavedParties(); // Partilister og deltakere
 
             // Oppdater header
             document.getElementById('trialHeaderName').textContent = prove.navn || prove.name;

@@ -1005,6 +1005,9 @@ const migrations = [
   "ALTER TABLE prove_config ADD COLUMN jegermiddag_maks_personer INTEGER DEFAULT 100",
   "ALTER TABLE prove_config ADD COLUMN jegermiddag_info TEXT DEFAULT ''",
   "ALTER TABLE prove_config ADD COLUMN jegermiddag_frist TEXT DEFAULT NULL",
+  // Uønsket adferd i kritikker (for NJFF-rapportering)
+  "ALTER TABLE kritikker ADD COLUMN uonsket_adferd INTEGER DEFAULT 0",
+  "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -7506,6 +7509,57 @@ app.put("/api/prover/:proveId/fratatte-aversjonsbevis/:id/meldt", requireAdmin, 
   return c.json({ ok: true });
 });
 
+// Hent hunder med uønsket adferd fra kritikker (for NJFF-visning)
+app.get("/api/prover/:id/uonsket-adferd", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent kritikker med uønsket adferd fra denne prøven
+  // Vi sjekker både det nye uonsket_adferd-feltet og adferd-tekstfeltet (for bakoverkompatibilitet)
+  const kritikker = db.prepare(`
+    SELECT
+      k.id as kritikk_id,
+      k.hund_id,
+      k.dato,
+      k.klasse,
+      k.parti,
+      k.uonsket_adferd,
+      k.uonsket_adferd_tekst,
+      k.adferd,
+      k.dommer_telefon,
+      h.navn as hund_navn,
+      h.regnr as hund_regnr,
+      h.rase as hund_rase,
+      h.eier_navn,
+      h.eier_telefon,
+      b.fornavn as dommer_fornavn,
+      b.etternavn as dommer_etternavn
+    FROM kritikker k
+    JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.prove_id = ?
+      AND (k.uonsket_adferd = 1 OR (k.adferd IS NOT NULL AND k.adferd != ''))
+    ORDER BY k.dato DESC, k.parti
+  `).all(proveId);
+
+  // Sjekk også hvilke av disse som allerede er registrert som fratatt
+  const fratatteIds = db.prepare(`
+    SELECT hund_id FROM fratatte_aversjonsbevis WHERE prove_id = ?
+  `).all(proveId).map(f => f.hund_id);
+
+  const resultat = kritikker.map(k => ({
+    ...k,
+    dommer_navn: [k.dommer_fornavn, k.dommer_etternavn].filter(Boolean).join(' ') || 'Ukjent dommer',
+    kommentar: k.uonsket_adferd_tekst || k.adferd || '',
+    allerede_fratatt: fratatteIds.includes(k.hund_id)
+  }));
+
+  return c.json({
+    items: resultat,
+    count: resultat.length,
+    ikke_fratatt_count: resultat.filter(r => !r.allerede_fratatt).length
+  });
+});
+
 // ============================================
 // TREKNING API
 // ============================================
@@ -8870,6 +8924,7 @@ app.post("/api/kritikker", requireDommer, async (c) => {
           jaktlyst = ?, fart = ?, selvstendighet = ?, soksbredde = ?, reviering = ?, samarbeid = ?,
           sek_spontan = ?, sek_forbi = ?, apport = ?, rapport_spontan = ?,
           adferd = ?, premie = ?, kritikk_tekst = ?,
+          uonsket_adferd = ?, uonsket_adferd_tekst = ?,
           status = ?, submitted_at = ?, updated_at = datetime('now')
         WHERE id = ?
       `).run(
@@ -8878,6 +8933,7 @@ app.post("/api/kritikker", requireDommer, async (c) => {
         body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
         body.sek_spontan || 0, body.sek_forbi || 0, body.apport, body.rapport_spontan ? 1 : 0,
         body.adferd || '', body.premie, body.kritikk_tekst,
+        body.uonsket_adferd ? 1 : 0, body.uonsket_adferd_tekst || '',
         body.status || 'submitted', new Date().toISOString(),
         existingKritikk.id
       );
@@ -8899,8 +8955,9 @@ app.post("/api/kritikker", requireDommer, async (c) => {
       stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid,
       jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
       sek_spontan, sek_forbi, apport, rapport_spontan,
-      adferd, premie, kritikk_tekst, status, submitted_at, submitted_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      adferd, premie, kritikk_tekst, uonsket_adferd, uonsket_adferd_tekst,
+      status, submitted_at, submitted_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     hund_id, body.prove_id, dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
     body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
@@ -8908,6 +8965,7 @@ app.post("/api/kritikker", requireDommer, async (c) => {
     body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
     body.sek_spontan || 0, body.sek_forbi || 0, body.apport, body.rapport_spontan ? 1 : 0,
     body.adferd || '', body.premie, body.kritikk_tekst,
+    body.uonsket_adferd ? 1 : 0, body.uonsket_adferd_tekst || '',
     body.status || 'submitted', new Date().toISOString(), dommer_telefon
   );
 
@@ -8940,7 +8998,8 @@ app.put("/api/kritikker/:id", requireDommer, async (c) => {
     "stand_m", "stand_u", "tomstand", "makker_stand", "sjanse", "slipptid",
     "jaktlyst", "fart", "selvstendighet", "soksbredde", "reviering", "samarbeid",
     "sek_spontan", "sek_forbi", "apport", "rapport_spontan",
-    "adferd", "premie", "kritikk_tekst"
+    "adferd", "premie", "kritikk_tekst",
+    "uonsket_adferd", "uonsket_adferd_tekst"
   ];
 
   const sets = [];

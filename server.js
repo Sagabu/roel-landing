@@ -8980,14 +8980,14 @@ app.get("/api/prover/:proveId/aversjonsbevis-oversikt", (c) => {
       h.aversjonsbevis_gyldig as gyldig,
       h.aversjonsbevis_bekreftet as bekreftet,
       h.aversjonsbevis_godkjent as godkjent,
-      d.parti,
-      d.klasse,
-      b.navn as eier_navn,
-      b.telefon as eier_telefon
-    FROM deltakere d
-    JOIN hunder h ON d.hund_id = h.id
-    LEFT JOIN brukere b ON h.eier_id = b.id
-    WHERE d.prove_id = ?
+      pd.klasse,
+      p.navn as parti,
+      pd.eier_navn,
+      pd.eier_telefon
+    FROM parti_deltakere pd
+    LEFT JOIN hunder h ON pd.hund_regnr = h.regnr
+    LEFT JOIN partier p ON pd.parti_id = p.id
+    WHERE pd.prove_id = ?
     ORDER BY h.aversjonsbevis IS NULL DESC, h.navn ASC
   `).all(proveId);
 

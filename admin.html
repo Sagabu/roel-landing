@@ -4332,10 +4332,13 @@
         }
 
         function applyPraktiskInfo(info) {
-            if (info.oppropSted) document.getElementById('oppropSted').value = info.oppropSted;
-            if (info.oppropTid) document.getElementById('oppropTid').value = info.oppropTid;
-            if (info.sekretariatApner) document.getElementById('sekretariatApner').value = info.sekretariatApner;
-            if (info.sekretariatStenger) document.getElementById('sekretariatStenger').value = info.sekretariatStenger;
+            // Bruk optional chaining for å unngå feil hvis elementer mangler
+            const el = (id) => document.getElementById(id);
+
+            if (info.oppropSted && el('oppropSted')) el('oppropSted').value = info.oppropSted;
+            if (info.oppropTid && el('oppropTid')) el('oppropTid').value = info.oppropTid;
+            if (info.sekretariatApner && el('sekretariatApner')) el('sekretariatApner').value = info.sekretariatApner;
+            if (info.sekretariatStenger && el('sekretariatStenger')) el('sekretariatStenger').value = info.sekretariatStenger;
 
             // Prøveleder (autocomplete)
             if (info.provelederNavn && info.provelederTelefon) {
@@ -4354,21 +4357,21 @@
                 velgBruker('dvk', info.dvkTelefon, info.dvkNavn);
             }
 
-            if (info.kravSauebevis !== undefined) document.getElementById('kravSauebevis').checked = info.kravSauebevis;
+            if (info.kravSauebevis !== undefined && el('kravSauebevis')) el('kravSauebevis').checked = info.kravSauebevis;
             // Standardkrav er nå alltid påkrevd - ingen behov for å sette checkboxer
-            if (info.jegermiddagDato) document.getElementById('trialJegermiddag').value = info.jegermiddagDato;
-            if (info.jegermiddagTid) document.getElementById('jegermiddagTid').value = info.jegermiddagTid;
-            if (info.jegermiddagPris) document.getElementById('jegermiddagPris').value = info.jegermiddagPris;
-            if (info.jegermiddagSted) document.getElementById('jegermiddagSted').value = info.jegermiddagSted;
-            if (info.jegermiddagPamelding) document.getElementById('jegermiddagPamelding').value = info.jegermiddagPamelding;
-            if (info.jegermiddagMaks) document.getElementById('jegermiddagMaks').value = info.jegermiddagMaks;
-            if (info.jegermiddagFrist) document.getElementById('jegermiddagFrist').value = info.jegermiddagFrist;
-            if (info.jegermiddagInfo) document.getElementById('jegermiddagInfo').value = info.jegermiddagInfo;
-            if (info.jegermiddagAktivert !== undefined) {
-                document.getElementById('jegermiddagAktivert').checked = info.jegermiddagAktivert;
+            if (info.jegermiddagDato && el('trialJegermiddag')) el('trialJegermiddag').value = info.jegermiddagDato;
+            if (info.jegermiddagTid && el('jegermiddagTid')) el('jegermiddagTid').value = info.jegermiddagTid;
+            if (info.jegermiddagPris && el('jegermiddagPris')) el('jegermiddagPris').value = info.jegermiddagPris;
+            if (info.jegermiddagSted && el('jegermiddagSted')) el('jegermiddagSted').value = info.jegermiddagSted;
+            if (info.jegermiddagPamelding && el('jegermiddagPamelding')) el('jegermiddagPamelding').value = info.jegermiddagPamelding;
+            if (info.jegermiddagMaks && el('jegermiddagMaks')) el('jegermiddagMaks').value = info.jegermiddagMaks;
+            if (info.jegermiddagFrist && el('jegermiddagFrist')) el('jegermiddagFrist').value = info.jegermiddagFrist;
+            if (info.jegermiddagInfo && el('jegermiddagInfo')) el('jegermiddagInfo').value = info.jegermiddagInfo;
+            if (info.jegermiddagAktivert !== undefined && el('jegermiddagAktivert')) {
+                el('jegermiddagAktivert').checked = info.jegermiddagAktivert;
                 toggleJegermiddagFelter();
             }
-            if (info.tilleggsinformasjon) document.getElementById('tilleggsinformasjon').value = info.tilleggsinformasjon;
+            if (info.tilleggsinformasjon && el('tilleggsinformasjon')) el('tilleggsinformasjon').value = info.tilleggsinformasjon;
 
             // Last jegermiddag-statistikk fra API hvis aktivert
             if (info.jegermiddagAktivert) {
@@ -4381,9 +4384,15 @@
         // ========================================
 
         function toggleJegermiddagFelter() {
-            const aktivert = document.getElementById('jegermiddagAktivert').checked;
+            const aktivertEl = document.getElementById('jegermiddagAktivert');
             const felter = document.getElementById('jegermiddagFelter');
             const gammelPamelding = document.getElementById('jegermiddagGammelPamelding');
+            const statsEl = document.getElementById('jegermiddagStats');
+
+            // Sjekk at elementene finnes
+            if (!aktivertEl || !felter || !gammelPamelding) return;
+
+            const aktivert = aktivertEl.checked;
 
             if (aktivert) {
                 felter.classList.remove('opacity-50', 'pointer-events-none');
@@ -4392,7 +4401,7 @@
             } else {
                 felter.classList.add('opacity-50', 'pointer-events-none');
                 gammelPamelding.classList.remove('hidden');
-                document.getElementById('jegermiddagStats').classList.add('hidden');
+                if (statsEl) statsEl.classList.add('hidden');
             }
         }
 
@@ -4774,10 +4783,14 @@
 
         // Update VK party configuration based on type selection
         function updateVKPartyConfig() {
-            const vkType = document.getElementById('vkTypeSelect').value;
-            document.getElementById('vk1DayConfig').classList.add('hidden');
-            document.getElementById('vk2DayConfig').classList.add('hidden');
-            document.getElementById('vkNoneConfig').classList.add('hidden');
+            const vkType = document.getElementById('vkTypeSelect')?.value;
+            // Disse elementene kan mangle - sjekk før bruk
+            const el1 = document.getElementById('vk1DayConfig');
+            const el2 = document.getElementById('vk2DayConfig');
+            const el3 = document.getElementById('vkNoneConfig');
+            if (el1) el1.classList.add('hidden');
+            if (el2) el2.classList.add('hidden');
+            if (el3) el3.classList.add('hidden');
 
             updateDayScheduleSummary();
         }
@@ -11737,17 +11750,16 @@
                 statsPerKlasse
             }, 'NKK-rapport generert og lastet ned');
 
-            // Logg til rapport-logg for sporing
-            const proveId = getCurrentTrialId();
+            // Logg til rapport-logg for sporing (bruker proveId fra øverst i funksjonen)
             if (proveId) {
                 const bruker = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
-                const token = localStorage.getItem('fuglehund_token');
+                const logToken = localStorage.getItem('fuglehund_token');
                 try {
                     await fetch(`/api/prover/${proveId}/rapport-logg`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': token ? `Bearer ${token}` : ''
+                            'Authorization': logToken ? `Bearer ${logToken}` : ''
                         },
                         body: JSON.stringify({
                             rapport_type: 'NKK',
@@ -13602,41 +13614,60 @@
         }
 
         function velgBruker(prefix, telefon, navn) {
-            // Sett skjulte felter
-            document.getElementById(`${prefix}Telefon`).value = telefon;
-            document.getElementById(`${prefix}Navn`).value = navn;
+            // Hjelper for trygg element-tilgang
+            const el = (id) => document.getElementById(id);
+
+            // Sett skjulte felter (sjekk at de finnes)
+            const telefonEl = el(`${prefix}Telefon`);
+            const navnEl = el(`${prefix}Navn`);
+            if (telefonEl) telefonEl.value = telefon;
+            if (navnEl) navnEl.value = navn;
 
             // Vis valgt bruker
-            const valgtDiv = document.getElementById(`${prefix}Valgt`);
-            document.getElementById(`${prefix}ValgtNavn`).textContent = navn;
-            document.getElementById(`${prefix}ValgtTelefon`).textContent = telefon;
-            valgtDiv.classList.remove('hidden');
+            const valgtDiv = el(`${prefix}Valgt`);
+            const valgtNavnEl = el(`${prefix}ValgtNavn`);
+            const valgtTelefonEl = el(`${prefix}ValgtTelefon`);
+            if (valgtNavnEl) valgtNavnEl.textContent = navn;
+            if (valgtTelefonEl) valgtTelefonEl.textContent = telefon;
+            if (valgtDiv) valgtDiv.classList.remove('hidden');
 
             // Skjul søkefelt og resultater
-            const sokInput = document.getElementById(`${prefix}Sok`);
-            sokInput.value = '';
-            sokInput.classList.add('hidden');
-            document.getElementById(`${prefix}Resultater`).classList.add('hidden');
-            document.getElementById(`${prefix}NyBruker`)?.classList.add('hidden');
+            const sokInput = el(`${prefix}Sok`);
+            if (sokInput) {
+                sokInput.value = '';
+                sokInput.classList.add('hidden');
+            }
+            el(`${prefix}Resultater`)?.classList.add('hidden');
+            el(`${prefix}NyBruker`)?.classList.add('hidden');
         }
 
         function fjernValgtBruker(prefix) {
+            const el = (id) => document.getElementById(id);
+
             // Tøm skjulte felter
-            document.getElementById(`${prefix}Telefon`).value = '';
-            document.getElementById(`${prefix}Navn`).value = '';
+            const telefonEl = el(`${prefix}Telefon`);
+            const navnEl = el(`${prefix}Navn`);
+            if (telefonEl) telefonEl.value = '';
+            if (navnEl) navnEl.value = '';
 
             // Skjul valgt bruker
-            document.getElementById(`${prefix}Valgt`).classList.add('hidden');
+            el(`${prefix}Valgt`)?.classList.add('hidden');
 
             // Vis søkefelt
-            const sokInput = document.getElementById(`${prefix}Sok`);
-            sokInput.classList.remove('hidden');
-            sokInput.focus();
+            const sokInput = el(`${prefix}Sok`);
+            if (sokInput) {
+                sokInput.classList.remove('hidden');
+                sokInput.focus();
+            }
         }
 
         async function sendInvitasjon(prefix) {
-            const navn = document.getElementById(`${prefix}NyNavn`).value.trim();
-            const telefon = document.getElementById(`${prefix}NyTelefon`).value.trim();
+            const el = (id) => document.getElementById(id);
+            const navnEl = el(`${prefix}NyNavn`);
+            const telefonInputEl = el(`${prefix}NyTelefon`);
+
+            const navn = navnEl?.value?.trim() || '';
+            const telefon = telefonInputEl?.value?.trim() || '';
 
             if (!navn) {
                 alert('Navn er påkrevd');
@@ -13669,18 +13700,22 @@
                 if (resp.ok) {
                     alert(`SMS-invitasjon sendt til ${telefon}`);
                     // Sett midlertidige verdier
-                    document.getElementById(`${prefix}Telefon`).value = formatertTelefon;
-                    document.getElementById(`${prefix}Navn`).value = navn;
+                    const telefonEl = el(`${prefix}Telefon`);
+                    const navnSkjultEl = el(`${prefix}Navn`);
+                    if (telefonEl) telefonEl.value = formatertTelefon;
+                    if (navnSkjultEl) navnSkjultEl.value = navn;
 
                     // Vis som valgt (venter på registrering)
-                    const valgtDiv = document.getElementById(`${prefix}Valgt`);
-                    document.getElementById(`${prefix}ValgtNavn`).textContent = navn + ' (invitert)';
-                    document.getElementById(`${prefix}ValgtTelefon`).textContent = telefon;
-                    valgtDiv.classList.remove('hidden');
+                    const valgtDiv = el(`${prefix}Valgt`);
+                    const valgtNavnEl = el(`${prefix}ValgtNavn`);
+                    const valgtTelefonEl = el(`${prefix}ValgtTelefon`);
+                    if (valgtNavnEl) valgtNavnEl.textContent = navn + ' (invitert)';
+                    if (valgtTelefonEl) valgtTelefonEl.textContent = telefon;
+                    if (valgtDiv) valgtDiv.classList.remove('hidden');
 
                     // Skjul søkefelt og ny bruker-skjema
-                    document.getElementById(`${prefix}Sok`).classList.add('hidden');
-                    document.getElementById(`${prefix}NyBruker`).classList.add('hidden');
+                    el(`${prefix}Sok`)?.classList.add('hidden');
+                    el(`${prefix}NyBruker`)?.classList.add('hidden');
                 } else {
                     const err = await resp.json();
                     alert(err.error || 'Kunne ikke sende SMS');

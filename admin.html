@@ -3890,20 +3890,25 @@
             });
         }
 
-        // Update share URL on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        // Update share URL - kalles ved oppstart og når prøve byttes
+        function updatePublicShareUrl() {
             const baseUrl = window.location.origin + window.location.pathname.replace('admin.html', '');
-            const urlParams = new URLSearchParams(window.location.search);
-            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
+            const trialId = getCurrentTrialId();
             const shareUrl = trialId ? `${baseUrl}partilister.html?prove=${trialId}` : `${baseUrl}partilister.html`;
+
             const urlEl = document.getElementById('publicShareUrl');
             if (urlEl) urlEl.textContent = shareUrl;
 
             // Also update the "Åpne" link
-            const openLink = document.querySelector('a[href="partilister.html"]');
-            if (openLink && trialId) {
-                openLink.href = `partilister.html?prove=${trialId}`;
+            const openLink = document.querySelector('a[href^="partilister.html"]');
+            if (openLink) {
+                openLink.href = trialId ? `partilister.html?prove=${trialId}` : 'partilister.html';
             }
+        }
+
+        // Update share URL on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updatePublicShareUrl();
         });
 
         // ========================================
@@ -12222,6 +12227,7 @@
             // Last inn prøve-spesifikke data på nytt
             loadPartyDommere(); // Dommertildelinger
             loadSavedParties(); // Partilister og deltakere
+            updatePublicShareUrl(); // Oppdater offentlig delingslenke
 
             // Oppdater header
             document.getElementById('trialHeaderName').textContent = prove.navn || prove.name;

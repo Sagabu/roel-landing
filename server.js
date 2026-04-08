@@ -956,6 +956,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_fratatte_prove ON fratatte_aversjonsbevis(prove_id);
   CREATE INDEX IF NOT EXISTS idx_fratatte_hund ON fratatte_aversjonsbevis(hund_id);
+
+  -- SMS sendt for prøveroller (for å unngå duplikater)
+  CREATE TABLE IF NOT EXISTS rolle_sms_sendt (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    rolle TEXT NOT NULL CHECK(rolle IN ('proveleder', 'nkkrep', 'nkkvara', 'dvk')),
+    telefon TEXT NOT NULL,
+    sendt_av TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, rolle, telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_rolle_sms_prove ON rolle_sms_sendt(prove_id);
 `);
 
 // --- Migrations for existing databases ---
@@ -1837,6 +1849,128 @@ app.post("/api/sms/proveleder-invitasjon", async (c) => {
 
   } catch (err) {
     console.error(`[Prøveleder-invit] Feil:`, err);
+    return c.json({ error: "Feil ved sending av SMS" }, 500);
+  }
+});
+
+// ============================================
+// ROLLE SMS-VARSLING (med duplikatbeskyttelse)
+// ============================================
+
+// Sjekk om SMS allerede er sendt for en rolle
+app.get("/api/prover/:id/rolle-sms/:rolle", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const rolle = c.req.param("rolle");
+
+  const validRoller = ['proveleder', 'nkkrep', 'nkkvara', 'dvk'];
+  if (!validRoller.includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  // Hent alle SMS sendt for denne rollen på denne prøven
+  const sendte = db.prepare(`
+    SELECT telefon, created_at FROM rolle_sms_sendt
+    WHERE prove_id = ? AND rolle = ?
+  `).all(proveId, rolle);
+
+  return c.json({
+    success: true,
+    sendte: sendte.map(s => ({ telefon: s.telefon, sendt: s.created_at }))
+  });
+});
+
+// Hent alle sendte rolle-SMS for en prøve
+app.get("/api/prover/:id/rolle-sms", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const sendte = db.prepare(`
+    SELECT rolle, telefon, created_at FROM rolle_sms_sendt
+    WHERE prove_id = ?
+  `).all(proveId);
+
+  // Grupper etter rolle
+  const grouped = {};
+  for (const s of sendte) {
+    if (!grouped[s.rolle]) grouped[s.rolle] = [];
+    grouped[s.rolle].push(s.telefon);
+  }
+
+  return c.json({ success: true, sendte: grouped });
+});
+
+// Send SMS-varsling for en rolle
+app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const { rolle, telefon, navn } = body;
+
+  const validRoller = ['proveleder', 'nkkrep', 'nkkvara', 'dvk'];
+  if (!validRoller.includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  const cleanTelefon = (telefon || "").replace(/\s/g, "");
+  if (!cleanTelefon || cleanTelefon.length < 8) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  // Hent prøveinfo
+  const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk om SMS allerede er sendt til dette nummeret for denne rollen
+  const eksisterende = db.prepare(`
+    SELECT id FROM rolle_sms_sendt
+    WHERE prove_id = ? AND rolle = ? AND telefon = ?
+  `).get(proveId, rolle, cleanTelefon);
+
+  if (eksisterende) {
+    return c.json({
+      success: false,
+      alleredeSendt: true,
+      message: "SMS er allerede sendt til dette nummeret for denne rollen"
+    });
+  }
+
+  // Lag SMS-melding basert på rolle
+  const rolleNavn = {
+    'proveleder': 'prøveleder',
+    'nkkrep': 'NKK-representant',
+    'nkkvara': 'NKK-vara',
+    'dvk': 'Dyrevelferdskontrollør (DVK)'
+  }[rolle];
+
+  const fornavn = (navn || "").split(" ")[0] || "Hei";
+  const smsMessage = `Hei ${fornavn}! Du har fått tildelt rollen som ${rolleNavn} for ${prove.navn}. Opprett bruker eller logg inn på fuglehundprove.no for å se din rolle.`;
+
+  try {
+    const smsResult = await sendSMS(cleanTelefon, smsMessage, { type: `rolle_${rolle}` });
+
+    if (!smsResult.success) {
+      console.error(`[Rolle-SMS] SMS feilet til ${cleanTelefon}:`, smsResult.error);
+      return c.json({ error: smsResult.error || "Kunne ikke sende SMS" }, 500);
+    }
+
+    // Registrer at SMS er sendt
+    db.prepare(`
+      INSERT INTO rolle_sms_sendt (prove_id, rolle, telefon, sendt_av)
+      VALUES (?, ?, ?, ?)
+    `).run(proveId, rolle, cleanTelefon, user?.telefon || null);
+
+    console.log(`[Rolle-SMS] SMS sendt til ${cleanTelefon} for rolle ${rolle} på prøve ${proveId}`);
+
+    return c.json({
+      success: true,
+      message: "SMS sendt",
+      rolle: rolleNavn
+    });
+
+  } catch (err) {
+    console.error(`[Rolle-SMS] Feil:`, err);
     return c.json({ error: "Feil ved sending av SMS" }, 500);
   }
 });

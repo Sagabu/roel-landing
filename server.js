@@ -1916,8 +1916,13 @@ app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
     return c.json({ error: "Ugyldig telefonnummer" }, 400);
   }
 
-  // Hent prøveinfo
-  const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
+  // Hent prøveinfo med klubbnavn
+  const prove = db.prepare(`
+    SELECT p.navn, k.navn as klubb_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
   if (!prove) {
     return c.json({ error: "Prøve ikke funnet" }, 404);
   }
@@ -1945,7 +1950,8 @@ app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
   }[rolle];
 
   const fornavn = (navn || "").split(" ")[0] || "Hei";
-  const smsMessage = `Hei ${fornavn}! Du har fått tildelt rollen som ${rolleNavn} for ${prove.navn}. Opprett bruker eller logg inn på fuglehundprove.no for å se din rolle.`;
+  const klubbHilsen = prove.klubb_navn ? `\n\nVennlig hilsen ${prove.klubb_navn}` : '';
+  const smsMessage = `Hei ${fornavn}! Du har fått tildelt rollen som ${rolleNavn} for ${prove.navn}. Opprett bruker eller logg inn på fuglehundprove.no for å se din rolle.${klubbHilsen}`;
 
   try {
     const smsResult = await sendSMS(cleanTelefon, smsMessage, { type: `rolle_${rolle}` });

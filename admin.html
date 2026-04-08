@@ -14019,8 +14019,26 @@
         // ========================================
         let sokTimeout = null;
 
+        // Normaliser telefonnummer - fjern alle ikke-tall unntatt ledende +
+        function normaliserTelefon(telefon) {
+            if (!telefon) return '';
+            const trimmed = telefon.trim();
+            if (trimmed.startsWith('+')) {
+                return '+' + trimmed.slice(1).replace(/\D/g, '');
+            }
+            return trimmed.replace(/\D/g, '');
+        }
+
+        // Sjekk om string ser ut som telefonnummer
+        function erTelefonnummer(str) {
+            const normalized = normaliserTelefon(str);
+            return normalized.length >= 8 && /^\+?\d{8,}$/.test(normalized);
+        }
+
         async function sokBruker(input, prefix) {
-            const query = input.value.trim();
+            const rawQuery = input.value.trim();
+            // Normaliser hvis det ser ut som telefonnummer
+            const query = erTelefonnummer(rawQuery) ? normaliserTelefon(rawQuery) : rawQuery;
             const resultatDiv = document.getElementById(`${prefix}Resultater`);
             const nyBrukerDiv = document.getElementById(`${prefix}NyBruker`);
 
@@ -14039,7 +14057,7 @@
                     const resp = await fetch(`/api/brukere/sok?q=${encodeURIComponent(query)}`);
                     if (resp.ok) {
                         const brukere = await resp.json();
-                        visResultater(brukere, prefix, query);
+                        visResultater(brukere, prefix, query, rawQuery);
                     }
                 } catch (err) {
                     console.error('Søkefeil:', err);
@@ -14047,7 +14065,7 @@
             }, 300);
         }
 
-        function visResultater(brukere, prefix, query) {
+        function visResultater(brukere, prefix, query, rawQuery) {
             const resultatDiv = document.getElementById(`${prefix}Resultater`);
             const nyBrukerDiv = document.getElementById(`${prefix}NyBruker`);
 
@@ -14059,10 +14077,13 @@
                     // Prøv å fylle inn søketeksten
                     const nyNavnEl = document.getElementById(`${prefix}NyNavn`);
                     const nyTelefonEl = document.getElementById(`${prefix}NyTelefon`);
-                    if (/^\d+$/.test(query)) {
-                        if (nyTelefonEl) nyTelefonEl.value = query;
+                    // Hvis det er et telefonnummer, normaliser og fyll inn
+                    if (erTelefonnummer(rawQuery || query)) {
+                        if (nyTelefonEl) nyTelefonEl.value = normaliserTelefon(rawQuery || query);
+                        if (nyNavnEl) nyNavnEl.value = ''; // Tøm navn, bruker må fylle inn
                     } else {
-                        if (nyNavnEl) nyNavnEl.value = query;
+                        if (nyNavnEl) nyNavnEl.value = rawQuery || query;
+                        if (nyTelefonEl) nyTelefonEl.value = '';
                     }
                 }
                 return;
@@ -14145,19 +14166,23 @@
             const telefonInputEl = el(`${prefix}NyTelefon`);
 
             const navn = navnEl?.value?.trim() || '';
-            const telefon = telefonInputEl?.value?.trim() || '';
+            const telefonRaw = telefonInputEl?.value?.trim() || '';
 
             if (!navn) {
                 alert('Navn er påkrevd');
                 return;
             }
-            if (!telefon || telefon.length < 8) {
-                alert('Gyldig telefonnummer er påkrevd');
+
+            // Normaliser telefonnummer - fjern alt unntatt tall og eventuell +
+            const telefon = normaliserTelefon(telefonRaw);
+
+            if (!telefon || telefon.replace(/\D/g, '').length < 8) {
+                alert('Gyldig telefonnummer er påkrevd (minst 8 siffer)');
                 return;
             }
 
-            // Formater telefonnummer
-            let formatertTelefon = telefon.replace(/\s/g, '');
+            // Formater telefonnummer med landkode
+            let formatertTelefon = telefon;
             if (!formatertTelefon.startsWith('+47') && !formatertTelefon.startsWith('47')) {
                 formatertTelefon = '+47' + formatertTelefon;
             } else if (formatertTelefon.startsWith('47') && !formatertTelefon.startsWith('+')) {
@@ -14176,7 +14201,7 @@
                 });
 
                 if (resp.ok) {
-                    alert(`SMS-invitasjon sendt til ${telefon}`);
+                    alert(`SMS-invitasjon sendt til ${formatertTelefon}`);
                     // Sett midlertidige verdier
                     const telefonEl = el(`${prefix}Telefon`);
                     const navnSkjultEl = el(`${prefix}Navn`);
@@ -14188,8 +14213,22 @@
                     const valgtNavnEl = el(`${prefix}ValgtNavn`);
                     const valgtTelefonEl = el(`${prefix}ValgtTelefon`);
                     if (valgtNavnEl) valgtNavnEl.textContent = navn + ' (invitert)';
-                    if (valgtTelefonEl) valgtTelefonEl.textContent = telefon;
+                    if (valgtTelefonEl) valgtTelefonEl.textContent = formatertTelefon;
                     if (valgtDiv) valgtDiv.classList.remove('hidden');
+
+                    // Vis SMS-wrapper men med allerede sendt-status
+                    const smsWrapper = el(`${prefix}SmsWrapper`);
+                    const smsCheckbox = el(`${prefix}SendSms`);
+                    const smsSendtEl = el(`${prefix}SmsSendt`);
+                    if (smsWrapper) {
+                        smsWrapper.classList.remove('hidden');
+                        // SMS er allerede sendt via invitasjon, så vis det
+                        if (smsCheckbox) smsCheckbox.checked = false;
+                        if (smsSendtEl) {
+                            smsSendtEl.textContent = '✓ Invitasjons-SMS allerede sendt';
+                            smsSendtEl.classList.remove('hidden');
+                        }
+                    }
 
                     // Skjul søkefelt og ny bruker-skjema
                     el(`${prefix}Sok`)?.classList.add('hidden');
@@ -14583,6 +14622,27 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ value: praktiskInfo })
                 });
+
+                // Lagre roller til prover-tabellen (for Team-visning og tilgangsstyring)
+                if (proveId) {
+                    await fetch(`/api/prover/${proveId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('fuglehund_token')}`
+                        },
+                        body: JSON.stringify({
+                            proveleder_telefon: normaliserTelefon(praktiskInfo.provelederTelefon) || null,
+                            proveleder_navn: praktiskInfo.provelederNavn || null,
+                            nkkrep_telefon: normaliserTelefon(praktiskInfo.nkkRepTelefon) || null,
+                            nkkrep_navn: praktiskInfo.nkkRepNavn || null,
+                            nkkvara_telefon: normaliserTelefon(praktiskInfo.nkkVaraTelefon) || null,
+                            nkkvara_navn: praktiskInfo.nkkVaraNavn || null,
+                            dvk_telefon: normaliserTelefon(praktiskInfo.dvkTelefon) || null,
+                            dvk_navn: praktiskInfo.dvkNavn || null
+                        })
+                    });
+                }
 
                 // Lagre jegermiddag-konfigurasjon til API hvis aktivert
                 if (proveId && praktiskInfo.jegermiddagAktivert) {
@@ -15447,48 +15507,103 @@
 
                 const data = await resp.json();
                 const team = data.team || [];
+                const roller = data.roller || [];
 
                 const tbody = document.getElementById('teamTableBody');
                 if (!tbody) return;
 
-                if (team.length === 0) {
+                // Rolle-etiketter for alle typer
+                const rolleLabels = {
+                    'admin': { label: 'Administrator', color: 'purple' },
+                    'sekretariat': { label: 'Sekretariat', color: 'teal' },
+                    'hjelper': { label: 'Hjelper', color: 'slate' },
+                    'proveleder': { label: 'Prøveleder', color: 'amber' },
+                    'nkkrep': { label: 'NKK-representant', color: 'blue' },
+                    'nkkvara': { label: 'NKK-vara', color: 'sky' },
+                    'dvk': { label: 'Dyrevelferdskontrollør', color: 'green' }
+                };
+
+                // Kombiner roller og team-medlemmer
+                const allePersoner = [...roller, ...team];
+
+                if (allePersoner.length === 0) {
                     tbody.innerHTML = `
-                        <tr>
-                            <td colspan="5" class="px-6 py-8 text-center text-bark-500">
-                                Ingen team-medlemmer lagt til ennå
-                            </td>
-                        </tr>
+                        <div class="px-6 py-8 text-center text-bark-500">
+                            Ingen team-medlemmer eller roller tildelt ennå
+                        </div>
                     `;
                     return;
                 }
 
-                const rolleLabels = {
-                    'admin': { label: 'Administrator', color: 'purple' },
-                    'sekretariat': { label: 'Sekretariat', color: 'teal' },
-                    'hjelper': { label: 'Hjelper', color: 'slate' }
-                };
+                let html = '';
 
-                tbody.innerHTML = team.map(m => {
-                    const r = rolleLabels[m.rolle] || { label: m.rolle, color: 'gray' };
-                    return `
-                        <tr class="border-b border-bark-100 last:border-0">
-                            <td class="px-6 py-4">
-                                <div class="font-medium text-bark-800">${m.navn}</div>
-                                ${m.beskrivelse ? `<div class="text-xs text-bark-500">${m.beskrivelse}</div>` : ''}
-                            </td>
-                            <td class="px-6 py-4 text-bark-600">${m.telefon}</td>
-                            <td class="px-6 py-4 text-bark-600">${m.epost || '-'}</td>
-                            <td class="px-6 py-4">
-                                <span class="px-2 py-1 bg-${r.color}-100 text-${r.color}-700 text-xs rounded-full">${r.label}</span>
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <button onclick="removeTeamMember(${m.id}, '${m.navn.replace(/'/g, "\\'")}')" class="text-red-500 hover:text-red-700 text-sm">
-                                    Fjern
-                                </button>
-                            </td>
-                        </tr>
+                // Vis roller fra prøvedetaljer først (med egen seksjon)
+                if (roller.length > 0) {
+                    html += `
+                        <div class="px-4 py-2 bg-amber-50 border-b border-amber-200">
+                            <span class="text-xs font-semibold text-amber-700 uppercase">Offisielle roller</span>
+                        </div>
                     `;
-                }).join('');
+                    roller.forEach(m => {
+                        const r = rolleLabels[m.rolle] || { label: m.rolle, color: 'gray' };
+                        const navnDisplay = m.navn || `(${m.telefon})`;
+                        const harBruker = m.navn && !m.navn.startsWith('(');
+                        html += `
+                            <div class="grid grid-cols-6 gap-0 border-b border-bark-100 items-center hover:bg-bark-50">
+                                <div class="px-4 py-3">
+                                    <div class="font-medium text-bark-800">${navnDisplay}</div>
+                                    ${!harBruker ? '<div class="text-xs text-amber-600">Venter på registrering</div>' : ''}
+                                </div>
+                                <div class="px-4 py-3 text-bark-600 text-sm">-</div>
+                                <div class="px-4 py-3 text-bark-600 text-sm">${m.telefon}</div>
+                                <div class="px-4 py-3">
+                                    <span class="px-2 py-1 bg-${r.color}-100 text-${r.color}-700 text-xs rounded-full">${r.label}</span>
+                                </div>
+                                <div class="px-4 py-3">
+                                    <span class="text-xs ${harBruker ? 'text-green-600' : 'text-amber-600'}">${harBruker ? '✓ Registrert' : 'Invitert'}</span>
+                                </div>
+                                <div class="px-4 py-3 text-sm text-bark-400">
+                                    <span class="text-xs italic">Endre i Prøvedetaljer</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                // Vis team-medlemmer
+                if (team.length > 0) {
+                    html += `
+                        <div class="px-4 py-2 bg-purple-50 border-b border-purple-200 ${roller.length > 0 ? 'mt-2' : ''}">
+                            <span class="text-xs font-semibold text-purple-700 uppercase">Team-medlemmer</span>
+                        </div>
+                    `;
+                    team.forEach(m => {
+                        const r = rolleLabels[m.rolle] || { label: m.rolle, color: 'gray' };
+                        html += `
+                            <div class="grid grid-cols-6 gap-0 border-b border-bark-100 items-center hover:bg-bark-50">
+                                <div class="px-4 py-3">
+                                    <div class="font-medium text-bark-800">${m.navn}</div>
+                                    ${m.beskrivelse ? `<div class="text-xs text-bark-500">${m.beskrivelse}</div>` : ''}
+                                </div>
+                                <div class="px-4 py-3 text-bark-600 text-sm">${m.epost || '-'}</div>
+                                <div class="px-4 py-3 text-bark-600 text-sm">${m.telefon}</div>
+                                <div class="px-4 py-3">
+                                    <span class="px-2 py-1 bg-${r.color}-100 text-${r.color}-700 text-xs rounded-full">${r.label}</span>
+                                </div>
+                                <div class="px-4 py-3">
+                                    <span class="text-xs text-green-600">✓ Aktiv</span>
+                                </div>
+                                <div class="px-4 py-3 text-right">
+                                    <button onclick="removeTeamMember(${m.id}, '${m.navn.replace(/'/g, "\\'")}')" class="text-red-500 hover:text-red-700 text-sm">
+                                        Fjern
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                tbody.innerHTML = html;
             } catch (err) {
                 console.error('Feil ved lasting av team:', err);
             }

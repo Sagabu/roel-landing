@@ -1087,6 +1087,10 @@ const migrations = [
   "ALTER TABLE prover ADD COLUMN nkkvara_telefon TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN dvk_telefon TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN dvk_navn TEXT DEFAULT ''",
+  // Navnefelter for roller (for inviterte personer som ikke er registrert ennå)
+  "ALTER TABLE prover ADD COLUMN proveleder_navn TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN nkkrep_navn TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN nkkvara_navn TEXT DEFAULT NULL",
   // Automatisk venteliste-opprykk konfigurasjon
   "ALTER TABLE prove_config ADD COLUMN auto_venteliste_opprykk INTEGER DEFAULT 1",
   // Løpetid-egenerklæring (JSON med skjemadata)
@@ -2008,13 +2012,73 @@ app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
 app.get("/api/prover/:id/team", requireAdmin, (c) => {
   const proveId = c.req.param("id");
 
+  // Hent team-medlemmer fra prove_team tabellen
   const team = db.prepare(`
     SELECT * FROM prove_team
     WHERE prove_id = ?
     ORDER BY rolle, navn
   `).all(proveId);
 
-  return c.json({ success: true, team });
+  // Hent roller fra prøvedetaljer (prøveleder, NKK-rep, NKK-vara, DVK)
+  const prove = db.prepare(`
+    SELECT proveleder_telefon, proveleder_navn,
+           nkkrep_telefon, nkkrep_navn,
+           nkkvara_telefon, nkkvara_navn,
+           dvk_telefon, dvk_navn
+    FROM prover WHERE id = ?
+  `).get(proveId);
+
+  const roller = [];
+  if (prove) {
+    // Hjelpefunksjon for å slå opp bruker basert på telefon
+    const hentBrukerNavn = (telefon, fallbackNavn) => {
+      if (!telefon) return null;
+      const bruker = db.prepare(`SELECT fornavn, etternavn FROM brukere WHERE telefon = ?`).get(telefon);
+      if (bruker) {
+        return `${bruker.fornavn} ${bruker.etternavn}`;
+      }
+      return fallbackNavn || `(${telefon})`;
+    };
+
+    if (prove.proveleder_telefon) {
+      roller.push({
+        id: 'rolle_proveleder',
+        telefon: prove.proveleder_telefon,
+        navn: hentBrukerNavn(prove.proveleder_telefon, prove.proveleder_navn),
+        rolle: 'proveleder',
+        fra_provedetaljer: true
+      });
+    }
+    if (prove.nkkrep_telefon) {
+      roller.push({
+        id: 'rolle_nkkrep',
+        telefon: prove.nkkrep_telefon,
+        navn: hentBrukerNavn(prove.nkkrep_telefon, prove.nkkrep_navn),
+        rolle: 'nkkrep',
+        fra_provedetaljer: true
+      });
+    }
+    if (prove.nkkvara_telefon) {
+      roller.push({
+        id: 'rolle_nkkvara',
+        telefon: prove.nkkvara_telefon,
+        navn: hentBrukerNavn(prove.nkkvara_telefon, prove.nkkvara_navn),
+        rolle: 'nkkvara',
+        fra_provedetaljer: true
+      });
+    }
+    if (prove.dvk_telefon) {
+      roller.push({
+        id: 'rolle_dvk',
+        telefon: prove.dvk_telefon,
+        navn: hentBrukerNavn(prove.dvk_telefon, prove.dvk_navn),
+        rolle: 'dvk',
+        fra_provedetaljer: true
+      });
+    }
+  }
+
+  return c.json({ success: true, team, roller });
 });
 
 // Legg til team-medlem
@@ -6734,7 +6798,7 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
       return c.json({ error: "Prøve ikke funnet" }, 404);
     }
 
-    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "nkkrep_telefon", "nkkvara_telefon", "dvk_telefon", "dvk_navn", "status"];
+    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "proveleder_navn", "nkkrep_telefon", "nkkrep_navn", "nkkvara_telefon", "nkkvara_navn", "dvk_telefon", "dvk_navn", "status"];
     const sets = [];
     const vals = [];
 

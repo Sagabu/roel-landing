@@ -968,6 +968,25 @@ db.exec(`
     UNIQUE(prove_id, rolle, telefon)
   );
   CREATE INDEX IF NOT EXISTS idx_rolle_sms_prove ON rolle_sms_sendt(prove_id);
+
+  -- Team-medlemmer for prøver (admin-tilgang)
+  CREATE TABLE IF NOT EXISTS prove_team (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    telefon TEXT NOT NULL,
+    navn TEXT NOT NULL,
+    epost TEXT DEFAULT NULL,
+    rolle TEXT NOT NULL CHECK(rolle IN ('admin', 'sekretariat', 'hjelper')),
+    beskrivelse TEXT DEFAULT NULL,
+    invitert_av TEXT DEFAULT NULL,
+    invitasjon_sendt INTEGER DEFAULT 0,
+    akseptert INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_prove_team_prove ON prove_team(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_prove_team_telefon ON prove_team(telefon);
 `);
 
 // --- Migrations for existing databases ---
@@ -1979,6 +1998,137 @@ app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
     console.error(`[Rolle-SMS] Feil:`, err);
     return c.json({ error: "Feil ved sending av SMS" }, 500);
   }
+});
+
+// ============================================
+// TEAM MEDLEMMER API
+// ============================================
+
+// Hent team-medlemmer for en prøve
+app.get("/api/prover/:id/team", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const team = db.prepare(`
+    SELECT * FROM prove_team
+    WHERE prove_id = ?
+    ORDER BY rolle, navn
+  `).all(proveId);
+
+  return c.json({ success: true, team });
+});
+
+// Legg til team-medlem
+app.post("/api/prover/:id/team", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const { telefon, navn, epost, rolle, beskrivelse, sendSms } = body;
+
+  const cleanTelefon = (telefon || "").replace(/\s/g, "");
+  if (!cleanTelefon || cleanTelefon.length < 8) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+  if (!navn) {
+    return c.json({ error: "Navn er påkrevd" }, 400);
+  }
+  if (!rolle || !['admin', 'sekretariat', 'hjelper'].includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  // Hent prøveinfo
+  const prove = db.prepare(`
+    SELECT p.navn, k.navn as klubb_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk om medlem allerede finnes
+  const eksisterende = db.prepare(`
+    SELECT id FROM prove_team WHERE prove_id = ? AND telefon = ?
+  `).get(proveId, cleanTelefon);
+
+  if (eksisterende) {
+    return c.json({ error: "Denne personen er allerede lagt til i teamet" }, 409);
+  }
+
+  try {
+    // Legg til team-medlem
+    const result = db.prepare(`
+      INSERT INTO prove_team (prove_id, telefon, navn, epost, rolle, beskrivelse, invitert_av, invitasjon_sendt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(proveId, cleanTelefon, navn, epost || null, rolle, beskrivelse || null, user?.telefon || null, sendSms ? 1 : 0);
+
+    // Send SMS hvis ønsket
+    if (sendSms) {
+      const rolleNavn = {
+        'admin': 'administrator',
+        'sekretariat': 'sekretariat',
+        'hjelper': 'hjelper'
+      }[rolle];
+
+      const fornavn = (navn || "").split(" ")[0] || "Hei";
+      const klubbHilsen = prove.klubb_navn ? `\n\nVennlig hilsen ${prove.klubb_navn}` : '';
+      const smsMessage = `Hei ${fornavn}! Du er lagt til som ${rolleNavn} for ${prove.navn}. ${rolle === 'admin' ? 'Du har nå admin-tilgang til prøven. ' : ''}Logg inn på fuglehundprove.no for å se din rolle.${klubbHilsen}`;
+
+      await sendSMS(cleanTelefon, smsMessage, { type: `team_${rolle}` });
+    }
+
+    console.log(`[Team] Lagt til ${navn} (${cleanTelefon}) som ${rolle} for prøve ${proveId}`);
+
+    return c.json({
+      success: true,
+      message: "Team-medlem lagt til",
+      id: result.lastInsertRowid
+    });
+
+  } catch (err) {
+    console.error(`[Team] Feil:`, err);
+    return c.json({ error: "Kunne ikke legge til team-medlem" }, 500);
+  }
+});
+
+// Fjern team-medlem
+app.delete("/api/prover/:id/team/:teamId", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const teamId = c.req.param("teamId");
+
+  const result = db.prepare(`
+    DELETE FROM prove_team WHERE id = ? AND prove_id = ?
+  `).run(teamId, proveId);
+
+  if (result.changes === 0) {
+    return c.json({ error: "Team-medlem ikke funnet" }, 404);
+  }
+
+  return c.json({ success: true, message: "Team-medlem fjernet" });
+});
+
+// Oppdater team-medlem rolle
+app.patch("/api/prover/:id/team/:teamId", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const teamId = c.req.param("teamId");
+  const body = await c.req.json();
+
+  const { rolle, beskrivelse } = body;
+
+  if (rolle && !['admin', 'sekretariat', 'hjelper'].includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  db.prepare(`
+    UPDATE prove_team SET
+      rolle = COALESCE(?, rolle),
+      beskrivelse = COALESCE(?, beskrivelse),
+      updated_at = datetime('now')
+    WHERE id = ? AND prove_id = ?
+  `).run(rolle || null, beskrivelse || null, teamId, proveId);
+
+  return c.json({ success: true, message: "Team-medlem oppdatert" });
 });
 
 // ============================================
@@ -8490,11 +8640,11 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
   }
 });
 
-// Hent prøver for en bruker (der brukeren har en rolle ELLER er påmeldt som deltaker)
+// Hent prøver for en bruker (der brukeren har en rolle ELLER er påmeldt som deltaker ELLER er team-medlem)
 app.get("/api/brukere/:telefon/prover", (c) => {
   const telefon = c.req.param("telefon");
 
-  // Finn prøver der bruker er prøveleder, NKK-rep, dommer, NKK-vara, DVK, eller DELTAKER (påmeldt)
+  // Finn prøver der bruker er prøveleder, NKK-rep, dommer, NKK-vara, DVK, DELTAKER, eller TEAM-MEDLEM
   const prover = db.prepare(`
     SELECT DISTINCT p.*, k.navn as klubb_navn,
            CASE
@@ -8517,7 +8667,8 @@ app.get("/api/brukere/:telefon/prover", (c) => {
                WHERE pd.prove_id = p.id AND pd.forer_telefon = ?
              ) THEN 1
              ELSE 0
-           END as er_deltaker
+           END as er_deltaker,
+           (SELECT rolle FROM prove_team WHERE prove_id = p.id AND telefon = ?) as team_rolle
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
     WHERE p.proveleder_telefon = ?
@@ -8535,10 +8686,13 @@ app.get("/api/brukere/:telefon/prover", (c) => {
          SELECT pd.prove_id FROM parti_deltakere pd
          WHERE pd.forer_telefon = ?
        )
+       OR p.id IN (
+         SELECT prove_id FROM prove_team WHERE telefon = ?
+       )
     ORDER BY p.start_dato DESC
   `).all(
-    telefon, telefon, telefon, telefon, telefon, telefon, telefon,
-    telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon
+    telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon,
+    telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon
   );
 
   // Hent dommer-info for hver prøve
@@ -8551,7 +8705,8 @@ app.get("/api/brukere/:telefon/prover", (c) => {
       klasser: JSON.parse(p.klasser || '{}'),
       partier: JSON.parse(p.partier || '{}'),
       dommerInfo: dommerInfo || null,
-      erDeltaker: p.er_deltaker === 1
+      erDeltaker: p.er_deltaker === 1,
+      teamRolle: p.team_rolle || null
     };
   });
 

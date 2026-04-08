@@ -1381,6 +1381,29 @@
                             });
                         }
 
+                        // Sjekk om bruker er team-medlem (fra API-responsen)
+                        if (prove.teamRolle || prove.team_rolle) {
+                            const teamRolle = prove.teamRolle || prove.team_rolle;
+                            const teamRolleInfo = {
+                                'admin': { label: 'Team-admin', color: 'purple', hasAdminAccess: true },
+                                'sekretariat': { label: 'Sekretariat', color: 'teal', hasAdminAccess: false },
+                                'hjelper': { label: 'Hjelper', color: 'slate', hasAdminAccess: false }
+                            }[teamRolle] || { label: 'Team', color: 'gray', hasAdminAccess: false };
+
+                            trial.roles.push({
+                                type: 'team',
+                                label: teamRolleInfo.label,
+                                icon: 'user',
+                                color: teamRolleInfo.color,
+                                link: teamRolleInfo.hasAdminAccess ? `admin.html?proveId=${prove.id}` : null
+                            });
+
+                            // Team-admin får også isTrialAdmin
+                            if (teamRolleInfo.hasAdminAccess) {
+                                isTrialAdmin = true;
+                            }
+                        }
+
                         // Sjekk om bruker har klubbleder-rolle
                         if (cachedUserData?.rolle?.includes('klubbleder') && cachedUserData.klubbAdmin) {
                             const klubbId = cachedUserData.klubbAdmin.klubb_id;
@@ -1394,8 +1417,8 @@
                             });
                         }
 
-                        // Legg til prøve hvis bruker har roller ELLER er påmeldt deltaker
-                        if (trial.roles.length > 0 || prove.erDeltaker || prove.er_deltaker === 1) {
+                        // Legg til prøve hvis bruker har roller ELLER er påmeldt deltaker ELLER er team-medlem
+                        if (trial.roles.length > 0 || prove.erDeltaker || prove.er_deltaker === 1 || prove.teamRolle || prove.team_rolle) {
                             trials.push(trial);
                         }
                     }

@@ -8490,24 +8490,56 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
   }
 });
 
-// Hent prøver for en bruker (der brukeren har en rolle)
+// Hent prøver for en bruker (der brukeren har en rolle ELLER er påmeldt som deltaker)
 app.get("/api/brukere/:telefon/prover", (c) => {
   const telefon = c.req.param("telefon");
 
-  // Finn prøver der bruker er prøveleder, NKK-rep, eller dommer
+  // Finn prøver der bruker er prøveleder, NKK-rep, dommer, NKK-vara, DVK, eller DELTAKER (påmeldt)
   const prover = db.prepare(`
     SELECT DISTINCT p.*, k.navn as klubb_navn,
            CASE
              WHEN p.proveleder_telefon = ? THEN 'proveleder'
              WHEN p.nkkrep_telefon = ? THEN 'nkkrep'
+             WHEN p.nkkvara_telefon = ? THEN 'nkkvara'
+             WHEN p.dvk_telefon = ? THEN 'dvk'
              ELSE NULL
-           END as admin_rolle
+           END as admin_rolle,
+           CASE
+             WHEN EXISTS (
+               SELECT 1 FROM pameldinger pm
+               JOIN hunder h ON pm.hund_id = h.id
+               WHERE pm.prove_id = p.id
+                 AND (pm.forer_telefon = ? OR h.eier_telefon = ?)
+                 AND pm.status NOT IN ('avmeldt')
+             ) THEN 1
+             WHEN EXISTS (
+               SELECT 1 FROM parti_deltakere pd
+               WHERE pd.prove_id = p.id AND pd.forer_telefon = ?
+             ) THEN 1
+             ELSE 0
+           END as er_deltaker
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
-    WHERE p.proveleder_telefon = ? OR p.nkkrep_telefon = ?
+    WHERE p.proveleder_telefon = ?
+       OR p.nkkrep_telefon = ?
+       OR p.nkkvara_telefon = ?
+       OR p.dvk_telefon = ?
        OR p.id IN (SELECT prove_id FROM dommer_tildelinger WHERE dommer_telefon = ?)
+       OR p.id IN (
+         SELECT pm.prove_id FROM pameldinger pm
+         JOIN hunder h ON pm.hund_id = h.id
+         WHERE (pm.forer_telefon = ? OR h.eier_telefon = ?)
+           AND pm.status NOT IN ('avmeldt')
+       )
+       OR p.id IN (
+         SELECT pd.prove_id FROM parti_deltakere pd
+         WHERE pd.forer_telefon = ?
+       )
     ORDER BY p.start_dato DESC
-  `).all(telefon, telefon, telefon, telefon, telefon);
+  `).all(
+    telefon, telefon, telefon, telefon, telefon, telefon, telefon,
+    telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon
+  );
 
   // Hent dommer-info for hver prøve
   const getDommerInfo = db.prepare("SELECT parti, dommer_rolle FROM dommer_tildelinger WHERE prove_id = ? AND dommer_telefon = ?");
@@ -8518,7 +8550,8 @@ app.get("/api/brukere/:telefon/prover", (c) => {
       ...p,
       klasser: JSON.parse(p.klasser || '{}'),
       partier: JSON.parse(p.partier || '{}'),
-      dommerInfo: dommerInfo || null
+      dommerInfo: dommerInfo || null,
+      erDeltaker: p.er_deltaker === 1
     };
   });
 

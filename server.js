@@ -1892,13 +1892,16 @@ async function sendSMS(telefon, message, options = {}) {
       const resp = await fetch(url.toString());
       const data = await resp.json();
 
-      if (data.msgOkCount && data.msgOkCount > 0) {
-        const msgId = data.ids ? data.ids[0] : null;
+      // Sveve kan returnere data direkte eller pakket i "response"-objekt
+      const sveveData = data.response || data;
+
+      if (sveveData.msgOkCount && sveveData.msgOkCount > 0) {
+        const msgId = sveveData.ids ? sveveData.ids[0] : null;
         console.log(`📱 [Sveve] SMS sendt til ${svevePhone} (ID: ${msgId})`);
         logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, msgId, 'sent', klubb_id);
         return { success: true, provider: 'sveve', id: msgId };
       } else {
-        const errorMsg = data.errors ? data.errors.join(', ') : JSON.stringify(data);
+        const errorMsg = sveveData.errors ? sveveData.errors.join(', ') : JSON.stringify(data);
         console.error("Sveve SMS error:", errorMsg);
         logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'failed', klubb_id);
         return { success: false, error: errorMsg, provider: 'sveve' };

@@ -5941,8 +5941,20 @@ app.post("/api/prover/:id/dommer-foresporsler", requireAuth, async (c) => {
       "dommer_forespurt", `Forespørsel sendt til ${dommer_navn} (${dommer_telefon}) for prøve ${prove.navn}`
     );
 
-    // Send SMS til dommer hvis konfigurert
-    if (smsProvider !== 'dev') {
+    // Sjekk om bedømming er utenfor systemet (manuell bedømming med penn og papir)
+    let bedommingUtenforSystemet = false;
+    try {
+      const praktiskInfoRow = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(`praktiskInfo_${proveId}`);
+      if (praktiskInfoRow && praktiskInfoRow.value) {
+        const praktiskInfo = JSON.parse(praktiskInfoRow.value);
+        bedommingUtenforSystemet = praktiskInfo.bedommingUtenforSystemet === true;
+      }
+    } catch (e) {
+      console.warn("Kunne ikke sjekke bedømmingsmetode:", e.message);
+    }
+
+    // Send SMS til dommer hvis konfigurert OG bedømming er i systemet
+    if (smsProvider !== 'dev' && !bedommingUtenforSystemet) {
       const smsText = `Hei ${dommer_navn.split(' ')[0]}! Du er forespurt som dommer på ${prove.navn} (${prove.start_dato}). Logg inn på fuglehundprove.no for å svare. Mvh ${user.fornavn || 'Prøveleder'}`;
       try {
         await sendSms(dommer_telefon, smsText);
@@ -5952,6 +5964,8 @@ app.post("/api/prover/:id/dommer-foresporsler", requireAuth, async (c) => {
       } catch (smsErr) {
         console.error("SMS-feil:", smsErr.message);
       }
+    } else if (bedommingUtenforSystemet) {
+      console.log(`[SMS SKIP] Bedømming utenfor systemet - ingen SMS til dommer ${dommer_telefon} for prøve ${proveId}`);
     }
 
     return c.json({ success: true, id: result.lastInsertRowid });

@@ -8,7 +8,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { config } from "dotenv";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, createCipheriv, createDecipheriv, scryptSync } from "crypto";
 import bcrypt from "bcrypt";
 
 // Load environment variables
@@ -41,6 +41,43 @@ const JWT_SECRET_FINAL = JWT_SECRET || "DEV-ONLY-INSECURE-SECRET-DO-NOT-USE-IN-P
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
+// --- Kryptering for sensitive data (Vipps API-nøkler etc.) ---
+// Bruker AES-256-GCM med nøkkel derivert fra JWT_SECRET
+const ENCRYPTION_KEY = scryptSync(JWT_SECRET_FINAL, 'fuglehund-salt-v1', 32);
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+
+function encryptSensitive(plaintext) {
+  if (!plaintext) return null;
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
+  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  // Format: iv:authTag:encrypted
+  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+}
+
+function decryptSensitive(ciphertext) {
+  if (!ciphertext) return null;
+  // Sjekk om det er gammel ukryptert verdi (migration support)
+  if (!ciphertext.includes(':')) {
+    return ciphertext; // Returnerer ukryptert for bakoverkompatibilitet
+  }
+  try {
+    const [ivHex, authTagHex, encrypted] = ciphertext.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    console.error('[Decrypt] Feil ved dekryptering:', err.message);
+    return ciphertext; // Returner original ved feil (kan være ukryptert)
+  }
+}
+
 // --- SMS config (Sveve prioritert, Twilio som backup) ---
 const SVEVE_USER = process.env.SVEVE_USER || "";
 const SVEVE_PASS = process.env.SVEVE_PASS || "";
@@ -65,6 +102,12 @@ const masseSmsRateLimit = new Map(); // proveId -> { lastSent: timestamp, count:
 const MASSE_SMS_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutter mellom utsendelser
 const MASSE_SMS_MAX_PER_HOUR = 3; // Maks 3 utsendelser per time per prøve
 const smsProvider = sveveConfigured ? "sveve" : (twilioConfigured ? "twilio" : "dev");
+
+// SMS-køsystem konfigurasjon
+const SMS_QUEUE_BATCH_SIZE = 10; // Antall SMS å sende per batch
+const SMS_QUEUE_BATCH_DELAY_MS = 1000; // Delay mellom hver SMS i batch
+const SMS_QUEUE_INTERVAL_MS = 5000; // Hvor ofte køen sjekkes
+let smsQueueProcessing = false;
 
 // Warn if using default secret
 if (SITE_PIN) {
@@ -1115,6 +1158,27 @@ const migrations = [
   "ALTER TABLE prove_config ADD COLUMN vk_kval_dag INTEGER DEFAULT NULL",
   "ALTER TABLE prove_config ADD COLUMN vk_semi_dag INTEGER DEFAULT NULL",
   "ALTER TABLE prove_config ADD COLUMN vk_finale_dag INTEGER DEFAULT NULL",
+  // Forbedret fullmakt-matching med epost
+  "ALTER TABLE ventende_fullmakter ADD COLUMN eier_epost TEXT DEFAULT NULL",
+  "ALTER TABLE ventende_fullmakter ADD COLUMN forer_epost TEXT DEFAULT NULL",
+  // SMS-køsystem
+  `CREATE TABLE IF NOT EXISTS sms_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telefon TEXT NOT NULL,
+    melding TEXT NOT NULL,
+    type TEXT DEFAULT 'general',
+    klubb_id INTEGER,
+    prove_id TEXT,
+    priority INTEGER DEFAULT 5,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')),
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    error_message TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    processed_at TEXT,
+    scheduled_for TEXT DEFAULT (datetime('now'))
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_sms_queue_status ON sms_queue(status, scheduled_for)",
   // Uønsket adferd i kritikker (for NJFF-rapportering)
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd INTEGER DEFAULT 0",
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
@@ -1847,6 +1911,138 @@ async function sendSMS(telefon, message, options = {}) {
   }
 
   return { success: false, error: 'No SMS provider configured' };
+}
+
+// ============================================
+// SMS-KØSYSTEM
+// ============================================
+
+// Legg til SMS i køen (returnerer umiddelbart)
+function queueSMS(telefon, melding, options = {}) {
+  const {
+    type = 'general',
+    klubb_id = null,
+    prove_id = null,
+    priority = 5, // 1 = høyest, 10 = lavest
+    scheduledFor = null
+  } = options;
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO sms_queue (telefon, melding, type, klubb_id, prove_id, priority, scheduled_for)
+      VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+    `).run(telefon, melding, type, klubb_id, prove_id, priority, scheduledFor);
+
+    return { success: true, queueId: result.lastInsertRowid };
+  } catch (err) {
+    console.error('[SMS Queue] Feil ved kølegging:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Legg til flere SMS i køen (for masse-utsending)
+function queueBulkSMS(mottakere, melding, options = {}) {
+  const { type = 'masse_sms', klubb_id = null, prove_id = null, priority = 7 } = options;
+
+  const insert = db.prepare(`
+    INSERT INTO sms_queue (telefon, melding, type, klubb_id, prove_id, priority)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let queued = 0;
+  let failed = 0;
+
+  const transaction = db.transaction(() => {
+    for (const mottaker of mottakere) {
+      try {
+        const telefon = typeof mottaker === 'string' ? mottaker : mottaker.telefon;
+        insert.run(telefon, melding, type, klubb_id, prove_id, priority);
+        queued++;
+      } catch (e) {
+        failed++;
+      }
+    }
+  });
+
+  transaction();
+
+  console.log(`[SMS Queue] ${queued} SMS lagt i kø, ${failed} feilet`);
+  return { queued, failed };
+}
+
+// Prosesser SMS-køen (kjøres periodisk)
+async function processSmsQueue() {
+  if (smsQueueProcessing) return; // Unngå overlapp
+  smsQueueProcessing = true;
+
+  try {
+    // Hent ventende SMS som er klare for sending
+    const pending = db.prepare(`
+      SELECT * FROM sms_queue
+      WHERE status = 'pending'
+        AND scheduled_for <= datetime('now')
+        AND attempts < max_attempts
+      ORDER BY priority ASC, created_at ASC
+      LIMIT ?
+    `).all(SMS_QUEUE_BATCH_SIZE);
+
+    if (pending.length === 0) {
+      smsQueueProcessing = false;
+      return;
+    }
+
+    console.log(`[SMS Queue] Prosesserer ${pending.length} SMS...`);
+
+    for (const sms of pending) {
+      // Marker som processing
+      db.prepare("UPDATE sms_queue SET status = 'processing', attempts = attempts + 1 WHERE id = ?").run(sms.id);
+
+      try {
+        const result = await sendSMS(sms.telefon, sms.melding, {
+          type: sms.type,
+          klubb_id: sms.klubb_id
+        });
+
+        if (result.success) {
+          db.prepare(`
+            UPDATE sms_queue SET status = 'sent', processed_at = datetime('now') WHERE id = ?
+          `).run(sms.id);
+        } else {
+          const newStatus = sms.attempts + 1 >= sms.max_attempts ? 'failed' : 'pending';
+          db.prepare(`
+            UPDATE sms_queue SET status = ?, error_message = ? WHERE id = ?
+          `).run(newStatus, result.error || 'Ukjent feil', sms.id);
+        }
+      } catch (err) {
+        const newStatus = sms.attempts + 1 >= sms.max_attempts ? 'failed' : 'pending';
+        db.prepare(`
+          UPDATE sms_queue SET status = ?, error_message = ? WHERE id = ?
+        `).run(newStatus, err.message, sms.id);
+      }
+
+      // Kort delay mellom hver SMS for å unngå rate limiting hos leverandør
+      await new Promise(resolve => setTimeout(resolve, SMS_QUEUE_BATCH_DELAY_MS));
+    }
+  } catch (err) {
+    console.error('[SMS Queue] Feil ved prosessering:', err.message);
+  } finally {
+    smsQueueProcessing = false;
+  }
+}
+
+// Start SMS-køprosessering
+setInterval(processSmsQueue, SMS_QUEUE_INTERVAL_MS);
+
+// Hent køstatus (for admin)
+function getSmsQueueStats() {
+  return db.prepare(`
+    SELECT
+      status,
+      COUNT(*) as count,
+      MIN(created_at) as oldest
+    FROM sms_queue
+    GROUP BY status
+  `).all();
 }
 
 function cleanExpired() {
@@ -4384,6 +4580,17 @@ app.get("/api/klubber", (c) => {
 });
 
 // Hent én klubb
+// Helper: Fjern sensitive Vipps-nøkler fra klubb-objekt før retur til frontend
+function sanitizeKlubbForResponse(klubb) {
+  if (!klubb) return klubb;
+  const { vipps_client_secret, vipps_subscription_key, ...safe } = klubb;
+  // Returner kun om nøkler er konfigurert (ikke selve nøklene)
+  return {
+    ...safe,
+    vipps_configured: !!(klubb.vipps_client_id && klubb.vipps_client_secret && klubb.vipps_subscription_key)
+  };
+}
+
 app.get("/api/klubber/:id", (c) => {
   const id = c.req.param("id");
   const row = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
@@ -4397,7 +4604,8 @@ app.get("/api/klubber/:id", (c) => {
     WHERE ka.klubb_id = ?
   `).all(id);
 
-  return c.json({ ...row, admins });
+  // Fjern sensitive Vipps-nøkler fra respons
+  return c.json({ ...sanitizeKlubbForResponse(row), admins });
 });
 
 // Hent prøver for en klubb
@@ -4434,10 +4642,19 @@ app.put("/api/klubber/:id", async (c) => {
   if (body.nettside !== undefined) { updates.push("nettside = ?"); params.push(body.nettside); }
   if (body.adresse !== undefined) { updates.push("adresse = ?"); params.push(body.adresse); }
   if (body.sted !== undefined) { updates.push("sted = ?"); params.push(body.sted); }
-  // Vipps Business API-felter
-  if (body.vipps_client_id !== undefined) { updates.push("vipps_client_id = ?"); params.push(body.vipps_client_id); }
-  if (body.vipps_client_secret !== undefined) { updates.push("vipps_client_secret = ?"); params.push(body.vipps_client_secret); }
-  if (body.vipps_subscription_key !== undefined) { updates.push("vipps_subscription_key = ?"); params.push(body.vipps_subscription_key); }
+  // Vipps Business API-felter (sensitive data krypteres)
+  if (body.vipps_client_id !== undefined) {
+    updates.push("vipps_client_id = ?");
+    params.push(body.vipps_client_id ? encryptSensitive(body.vipps_client_id) : null);
+  }
+  if (body.vipps_client_secret !== undefined) {
+    updates.push("vipps_client_secret = ?");
+    params.push(body.vipps_client_secret ? encryptSensitive(body.vipps_client_secret) : null);
+  }
+  if (body.vipps_subscription_key !== undefined) {
+    updates.push("vipps_subscription_key = ?");
+    params.push(body.vipps_subscription_key ? encryptSensitive(body.vipps_subscription_key) : null);
+  }
   if (body.vipps_merchant_serial !== undefined) { updates.push("vipps_merchant_serial = ?"); params.push(body.vipps_merchant_serial); }
   if (body.vipps_api_modus !== undefined) { updates.push("vipps_api_modus = ?"); params.push(body.vipps_api_modus); }
   if (body.logo !== undefined) {
@@ -5310,6 +5527,44 @@ app.get("/api/superadmin/sms-stats", (c) => {
   });
 });
 
+// Hent SMS-kø status
+app.get("/api/superadmin/sms-queue", (c) => {
+  const stats = getSmsQueueStats();
+
+  // Hent de siste 20 køede/feilede
+  const recent = db.prepare(`
+    SELECT id, telefon, type, status, attempts, error_message, created_at, processed_at
+    FROM sms_queue
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all();
+
+  return c.json({
+    stats,
+    recent,
+    config: {
+      batchSize: SMS_QUEUE_BATCH_SIZE,
+      batchDelay: SMS_QUEUE_BATCH_DELAY_MS,
+      interval: SMS_QUEUE_INTERVAL_MS
+    }
+  });
+});
+
+// Tøm feilede SMS fra kø
+app.delete("/api/superadmin/sms-queue/failed", (c) => {
+  const result = db.prepare("DELETE FROM sms_queue WHERE status = 'failed'").run();
+  return c.json({ deleted: result.changes });
+});
+
+// Retry feilede SMS
+app.post("/api/superadmin/sms-queue/retry-failed", (c) => {
+  const result = db.prepare(`
+    UPDATE sms_queue SET status = 'pending', attempts = 0, error_message = NULL
+    WHERE status = 'failed'
+  `).run();
+  return c.json({ reset: result.changes });
+});
+
 // Hent alle klubber som har sendt/mottatt SMS
 app.get("/api/superadmin/sms-klubber", (c) => {
   const klubber = db.prepare(`
@@ -5717,13 +5972,18 @@ async function getVippsAccessToken(klubb) {
     : 'https://apitest.vipps.no';
 
   try {
+    // Dekrypter Vipps-nøkler (støtter både krypterte og ukrypterte verdier)
+    const clientId = decryptSensitive(klubb.vipps_client_id);
+    const clientSecret = decryptSensitive(klubb.vipps_client_secret);
+    const subscriptionKey = decryptSensitive(klubb.vipps_subscription_key);
+
     const response = await fetch(`${baseUrl}/accesstoken/get`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'client_id': klubb.vipps_client_id,
-        'client_secret': klubb.vipps_client_secret,
-        'Ocp-Apim-Subscription-Key': klubb.vipps_subscription_key,
+        'client_id': clientId,
+        'client_secret': clientSecret,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
         'Merchant-Serial-Number': klubb.vipps_merchant_serial
       },
       body: ''
@@ -5786,12 +6046,13 @@ async function createVippsPayment(klubb, mottaker, belop, beskrivelse, returnUrl
   };
 
   try {
+    const subscriptionKey = decryptSensitive(klubb.vipps_subscription_key);
     const response = await fetch(`${baseUrl}/epayment/v1/payments`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
-        'Ocp-Apim-Subscription-Key': klubb.vipps_subscription_key,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
         'Merchant-Serial-Number': klubb.vipps_merchant_serial,
         'Idempotency-Key': reference,
         'Vipps-System-Name': 'Fuglehundprove',
@@ -5830,11 +6091,12 @@ async function checkVippsPaymentStatus(klubb, reference) {
     : 'https://apitest.vipps.no';
 
   try {
+    const subscriptionKey = decryptSensitive(klubb.vipps_subscription_key);
     const response = await fetch(`${baseUrl}/epayment/v1/payments/${reference}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
-        'Ocp-Apim-Subscription-Key': klubb.vipps_subscription_key,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
         'Merchant-Serial-Number': klubb.vipps_merchant_serial
       }
     });
@@ -10844,6 +11106,8 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
         forer_navn TEXT NOT NULL,
         eier_telefon TEXT,
         forer_telefon TEXT,
+        eier_epost TEXT,
+        forer_epost TEXT,
         status TEXT DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(prove_id, hund_regnr, forer_navn)
@@ -10851,8 +11115,8 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
     `);
 
     const insertVentendeFullmakt = db.prepare(`
-      INSERT OR IGNORE INTO ventende_fullmakter (prove_id, hund_regnr, hund_navn, eier_navn, forer_navn)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO ventende_fullmakter (prove_id, hund_regnr, hund_navn, eier_navn, forer_navn, eier_epost, forer_epost)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     let fullmakterOpprettet = 0;
@@ -10901,6 +11165,8 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
         // Opprett ventende fullmakt hvis fører er forskjellig fra eier
         const eierNavn = (p.eier || '').trim();
         const forerNavn = (p.forer || '').trim();
+        const eierEpost = (p.eier_epost || p.eierEpost || '').trim().toLowerCase();
+        const forerEpost = (p.forer_epost || p.forerEpost || '').trim().toLowerCase();
 
         if (eierNavn && forerNavn && eierNavn.toLowerCase() !== forerNavn.toLowerCase()) {
           try {
@@ -10909,7 +11175,9 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
               regnr,
               p.hundenavn || p.navn,
               eierNavn,
-              forerNavn
+              forerNavn,
+              eierEpost || null,
+              forerEpost || null
             );
             fullmakterOpprettet++;
           } catch (e) {
@@ -10937,24 +11205,31 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
   }
 });
 
-// --- Koble bruker til hunder basert på e-post/navn ---
+// --- Koble bruker til hunder basert på e-post/telefon/navn ---
 // Denne kalles IKKE automatisk lenger - brukeren kobler manuelt via regnr-søk
 // Men vi beholder den for bakoverkompatibilitet og for å aktivere ventende fullmakter
 app.post("/api/koble-hunder", requireAuth, async (c) => {
   try {
     const bruker = c.get("bruker");
     const telefon = bruker.telefon;
+    const epost = (bruker.epost || '').trim().toLowerCase();
     const fullNavn = `${bruker.fornavn || ''} ${bruker.etternavn || ''}`.trim();
+    const navnLower = fullNavn.toLowerCase();
 
     // 1. Sjekk om brukeren er FØRER i noen ventende fullmakter
+    // Matching-prioritet: 1) Telefon (eksakt), 2) Epost (eksakt), 3) Navn (fuzzy)
     // Når fører registrerer seg, opprettes fullmakt automatisk
     const ventendeForForer = db.prepare(`
       SELECT vf.*, h.id as hund_id, h.eier_telefon
       FROM ventende_fullmakter vf
       LEFT JOIN hunder h ON h.regnr = vf.hund_regnr
       WHERE vf.status = 'pending'
-        AND LOWER(vf.forer_navn) LIKE ?
-    `).all(`%${fullNavn.toLowerCase()}%`);
+        AND (
+          vf.forer_telefon = ?
+          OR (? != '' AND LOWER(vf.forer_epost) = ?)
+          OR LOWER(REPLACE(vf.forer_navn, ' ', '')) = LOWER(REPLACE(?, ' ', ''))
+        )
+    `).all(telefon, epost, epost, fullNavn);
 
     let fullmakterAktivert = 0;
 
@@ -11010,12 +11285,17 @@ app.post("/api/koble-hunder", requireAuth, async (c) => {
     }
 
     // 2. Sjekk om brukeren er EIER - oppdater ventende fullmakter med eier_telefon
+    // Matching-prioritet: 1) Telefon (eksakt), 2) Epost (eksakt), 3) Navn (eksakt uten mellomrom)
     const ventendeForEier = db.prepare(`
       SELECT vf.id, vf.hund_regnr, vf.forer_navn, vf.forer_telefon
       FROM ventende_fullmakter vf
       WHERE vf.status = 'pending'
-        AND LOWER(vf.eier_navn) LIKE ?
-    `).all(`%${fullNavn.toLowerCase()}%`);
+        AND (
+          vf.eier_telefon = ?
+          OR (? != '' AND LOWER(vf.eier_epost) = ?)
+          OR LOWER(REPLACE(vf.eier_navn, ' ', '')) = LOWER(REPLACE(?, ' ', ''))
+        )
+    `).all(telefon, epost, epost, fullNavn);
 
     const updateVentendeEier = db.prepare(`
       UPDATE ventende_fullmakter SET eier_telefon = ? WHERE id = ?

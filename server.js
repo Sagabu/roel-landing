@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { config } from "dotenv";
 import { createHash, randomBytes } from "crypto";
+import bcrypt from "bcrypt";
 
 // Load environment variables
 config();
@@ -1109,6 +1110,11 @@ const migrations = [
   "ALTER TABLE prove_config ADD COLUMN jegermiddag_maks_personer INTEGER DEFAULT 100",
   "ALTER TABLE prove_config ADD COLUMN jegermiddag_info TEXT DEFAULT ''",
   "ALTER TABLE prove_config ADD COLUMN jegermiddag_frist TEXT DEFAULT NULL",
+  // VK-konfigurasjon for fler-dagers VK
+  "ALTER TABLE prove_config ADD COLUMN vk_type TEXT DEFAULT '1dag' CHECK(vk_type IN ('1dag', '2dag', '3dag'))",
+  "ALTER TABLE prove_config ADD COLUMN vk_kval_dag INTEGER DEFAULT NULL",
+  "ALTER TABLE prove_config ADD COLUMN vk_semi_dag INTEGER DEFAULT NULL",
+  "ALTER TABLE prove_config ADD COLUMN vk_finale_dag INTEGER DEFAULT NULL",
   // Uønsket adferd i kritikker (for NJFF-rapportering)
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd INTEGER DEFAULT 0",
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
@@ -1638,20 +1644,61 @@ const requireDommer = async (c, next) => {
 };
 
 // ============================================
-// PASSWORD HELPERS
+// PASSWORD HELPERS (bcrypt med SHA256-fallback)
 // ============================================
 
-function hashPassword(password) {
-  const salt = randomBytes(16).toString('hex');
-  const hash = createHash('sha256').update(password + salt).digest('hex');
-  return `${salt}:${hash}`;
+// Bcrypt cost factor (10-12 er anbefalt for produksjon)
+const BCRYPT_ROUNDS = 10;
+
+// Hash passord med bcrypt (async)
+async function hashPasswordAsync(password) {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
+// Synkron versjon for bakoverkompatibilitet (bruker bcrypt sync)
+function hashPassword(password) {
+  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
+}
+
+// Verifiser passord - støtter både bcrypt og legacy SHA256
+async function verifyPasswordAsync(password, storedHash) {
+  if (!storedHash) return false;
+
+  // Bcrypt-hasher starter med $2a$ eller $2b$
+  if (storedHash.startsWith('$2')) {
+    return bcrypt.compare(password, storedHash);
+  }
+
+  // Legacy SHA256 format: salt:hash
+  return verifyPasswordLegacy(password, storedHash);
+}
+
+// Synkron versjon for enklere bruk
 function verifyPassword(password, storedHash) {
   if (!storedHash) return false;
+
+  // Bcrypt-hasher starter med $2a$ eller $2b$
+  if (storedHash.startsWith('$2')) {
+    return bcrypt.compareSync(password, storedHash);
+  }
+
+  // Legacy SHA256 format: salt:hash
+  return verifyPasswordLegacy(password, storedHash);
+}
+
+// Legacy SHA256 verifisering (for gamle passord)
+function verifyPasswordLegacy(password, storedHash) {
   const [salt, hash] = storedHash.split(':');
+  if (!salt || !hash) return false;
   const checkHash = createHash('sha256').update(password + salt).digest('hex');
   return hash === checkHash;
+}
+
+// Sjekk om passord-hash bør oppgraderes til bcrypt
+function needsHashUpgrade(storedHash) {
+  if (!storedHash) return false;
+  // SHA256 hasher har formatet salt:hash, bcrypt starter med $2
+  return !storedHash.startsWith('$2');
 }
 
 // Sjekk om bruker trenger re-verifisering (>60 dager siden siste innlogging)
@@ -2774,6 +2821,17 @@ app.post("/api/auth/login-password", async (c) => {
   // Sjekk passord
   if (!verifyPassword(passord, bruker.passord_hash)) {
     return c.json({ error: "Feil passord" }, 401);
+  }
+
+  // Oppgrader passord-hash til bcrypt hvis det er legacy SHA256
+  if (needsHashUpgrade(bruker.passord_hash)) {
+    try {
+      const newHash = hashPassword(passord);
+      db.prepare("UPDATE brukere SET passord_hash = ? WHERE telefon = ?").run(newHash, telefon);
+      console.log(`[Auth] Oppgradert passord-hash til bcrypt for ${telefon}`);
+    } catch (e) {
+      console.error(`[Auth] Feil ved oppgradering av passord-hash: ${e.message}`);
+    }
   }
 
   // Sjekk om re-verifisering kreves (>60 dager)
@@ -7812,6 +7870,10 @@ app.get("/api/prover/:id/config", (c) => {
       maks_deltakere_ak: 40,
       maks_deltakere_vk: 20,
       vk_dag: null,
+      vk_type: '1dag',
+      vk_kval_dag: null,
+      vk_semi_dag: null,
+      vk_finale_dag: null,
       pris_hogfjell: 1350,
       pris_lavland: 1050,
       pris_skog: 900,
@@ -7833,6 +7895,9 @@ app.put("/api/prover/:id/config", requireAdmin, async (c) => {
 
   const fields = [
     "maks_deltakere_uk", "maks_deltakere_ak", "maks_deltakere_vk",
+    "vk_dag",  // For 1-dags VK: hvilken dag VK går
+    "vk_type", // '1dag', '2dag', '3dag'
+    "vk_kval_dag", "vk_semi_dag", "vk_finale_dag", // For fler-dagers VK
     "pris_hogfjell", "pris_lavland", "pris_skog", "pris_apport",
     "frist_pamelding", "frist_avmelding", "refusjon_prosent",
     "krever_sauebevis", "krever_vaksinasjon", "krever_rabies"
@@ -7959,6 +8024,36 @@ app.post("/api/prover/:id/jegermiddag/pamelding", requireAuth, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
+
+  // Sjekk at brukeren er påmeldt prøven (som fører eller har hund påmeldt)
+  const erPameldt = db.prepare(`
+    SELECT COUNT(*) as count FROM pameldinger
+    WHERE prove_id = ? AND (forer_telefon = ? OR eier_telefon = ?)
+  `).get(proveId, bruker.telefon, bruker.telefon);
+
+  // Sjekk også om brukeren er team-medlem eller har en offisiell rolle
+  const erTeam = db.prepare(`
+    SELECT COUNT(*) as count FROM prove_team
+    WHERE prove_id = ? AND telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  const prove = db.prepare(`
+    SELECT proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon
+    FROM prover WHERE id = ?
+  `).get(proveId);
+
+  const erOffisiellRolle = prove && (
+    prove.proveleder_telefon === bruker.telefon ||
+    prove.nkkrep_telefon === bruker.telefon ||
+    prove.nkkvara_telefon === bruker.telefon ||
+    prove.dvk_telefon === bruker.telefon
+  );
+
+  if (!erPameldt?.count && !erTeam?.count && !erOffisiellRolle) {
+    return c.json({
+      error: "Du må være påmeldt prøven (som deltaker, team-medlem eller med offisiell rolle) for å melde deg på jegermiddag"
+    }, 403);
+  }
 
   // Sjekk at jegermiddag er aktivert
   const config = db.prepare(`

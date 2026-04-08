@@ -2597,36 +2597,56 @@
 
                                 <div>
                                     <label class="block text-sm font-medium text-bark-700 mb-2">Melding</label>
-                                    <textarea rows="3" placeholder="Skriv din melding her..."
-                                        class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none resize-none"></textarea>
-                                    <p class="text-xs text-bark-500 mt-1">Maks 160 tegn per SMS. Lengre meldinger deles opp.</p>
+                                    <textarea id="smsMeldingTekst" rows="3" placeholder="Skriv din melding her..."
+                                        class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none resize-none"
+                                        oninput="oppdaterSmsTegnteller()"></textarea>
+                                    <p class="text-xs text-bark-500 mt-1">
+                                        <span id="smsTegnTeller">0</span>/160 tegn.
+                                        <span id="smsAntallMeldinger" class="text-warm-600 font-medium hidden">(blir 2 SMS)</span>
+                                    </p>
                                 </div>
 
                                 <div class="flex gap-3">
-                                    <button class="bg-warm-500 hover:bg-warm-600 text-white px-6 py-2 rounded-xl font-medium transition">
+                                    <button onclick="sendMasseSms()" class="bg-warm-500 hover:bg-warm-600 text-white px-6 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                                        </svg>
                                         Send SMS
                                     </button>
-                                    <button class="bg-white border border-earth-300 hover:bg-earth-50 text-bark-700 px-6 py-2 rounded-xl font-medium transition">
+                                    <button onclick="forhåndsvisSms()" class="bg-white border border-earth-300 hover:bg-earth-50 text-bark-700 px-6 py-2 rounded-xl font-medium transition">
                                         Forhåndsvis
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Ferdige maler - collapsible -->
-                            <details class="mt-4">
-                                <summary class="cursor-pointer text-sm font-medium text-bark-600 hover:text-bark-800">Ferdige maler</summary>
-                                <div class="mt-2 space-y-2">
-                                    <button class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 transition">
-                                        <p class="font-medium text-bark-800 text-sm">Partilister er klare</p>
-                                        <p class="text-xs text-bark-500">Hei! Partilistene for [prøve] er nå klare...</p>
+                            <!-- Ferdige maler -->
+                            <details class="mt-4" open>
+                                <summary class="cursor-pointer text-sm font-medium text-bark-600 hover:text-bark-800 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    Ferdige maler (klikk for å bruke)
+                                </summary>
+                                <div class="mt-3 space-y-2">
+                                    <button onclick="brukSmsMal('partilister')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 hover:border-warm-300 transition group">
+                                        <p class="font-medium text-bark-800 text-sm group-hover:text-warm-700">📋 Partilister er klare</p>
+                                        <p class="text-xs text-bark-500 mt-1">Hei! Partilistene for {prøvenavn} er nå klare. Se hvilken plass du har fått på fuglehundprove.no. Mvh {arrangør}</p>
                                     </button>
-                                    <button class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 transition">
-                                        <p class="font-medium text-bark-800 text-sm">Påminnelse (48 timer)</p>
-                                        <p class="text-xs text-bark-500">Du har ikke bekreftet deltakelse...</p>
+                                    <button onclick="brukSmsMal('paaminnelse')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 hover:border-warm-300 transition group">
+                                        <p class="font-medium text-bark-800 text-sm group-hover:text-warm-700">⏰ Påminnelse (48 timer)</p>
+                                        <p class="text-xs text-bark-500 mt-1">Hei! Du har ikke bekreftet deltakelse på {prøvenavn} ennå. Bekreft eller meld av innen {frist}. Mvh {arrangør}</p>
                                     </button>
-                                    <button class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 transition">
-                                        <p class="font-medium text-bark-800 text-sm">Plass ledig fra venteliste</p>
-                                        <p class="text-xs text-bark-500">Gratulerer! Du har fått plass...</p>
+                                    <button onclick="brukSmsMal('venteliste')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 hover:border-warm-300 transition group">
+                                        <p class="font-medium text-bark-800 text-sm group-hover:text-warm-700">🎉 Plass ledig fra venteliste</p>
+                                        <p class="text-xs text-bark-500 mt-1">Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprove.no. Mvh {arrangør}</p>
+                                    </button>
+                                    <button onclick="brukSmsMal('avlysning')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-red-50 hover:border-red-300 transition group">
+                                        <p class="font-medium text-bark-800 text-sm group-hover:text-red-700">❌ Avlysning/endring</p>
+                                        <p class="text-xs text-bark-500 mt-1">Viktig melding om {prøvenavn}: {melding}. Ta kontakt ved spørsmål. Mvh {arrangør}</p>
+                                    </button>
+                                    <button onclick="brukSmsMal('velkomst')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-green-50 hover:border-green-300 transition group">
+                                        <p class="font-medium text-bark-800 text-sm group-hover:text-green-700">👋 Velkomstmelding</p>
+                                        <p class="text-xs text-bark-500 mt-1">Velkommen til {prøvenavn} {dato}! Opprop kl. {opprop} ved {sted}. Lykke til! Mvh {arrangør}</p>
                                     </button>
                                 </div>
                             </details>
@@ -15157,6 +15177,207 @@
         }
 
         // =============================================
+        // =============================================
+        // SMS MASSE-UTSENDING OG MALER
+        // =============================================
+
+        // SMS-maler med plassholdere
+        const smsMaler = {
+            partilister: {
+                tekst: 'Hei! Partilistene for {prøvenavn} er nå klare. Se hvilken plass du har fått på fuglehundprove.no. Mvh {arrangør}',
+                mottakere: 'all'
+            },
+            paaminnelse: {
+                tekst: 'Hei! Du har ikke bekreftet deltakelse på {prøvenavn} ennå. Bekreft eller meld av innen {frist}. Mvh {arrangør}',
+                mottakere: 'unconfirmed'
+            },
+            venteliste: {
+                tekst: 'Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprove.no. Mvh {arrangør}',
+                mottakere: 'waitlist'
+            },
+            avlysning: {
+                tekst: 'Viktig melding om {prøvenavn}: [skriv årsak her]. Ta kontakt ved spørsmål. Mvh {arrangør}',
+                mottakere: 'all'
+            },
+            velkomst: {
+                tekst: 'Velkommen til {prøvenavn} {dato}! Opprop kl. {opprop} ved {sted}. Lykke til! Mvh {arrangør}',
+                mottakere: 'confirmed'
+            }
+        };
+
+        // Hent prøvedata for utfylling av maler
+        function getProveDataForSms() {
+            const proveNavn = document.getElementById('trialName')?.value || 'prøven';
+            const arrangør = document.getElementById('organizerName')?.value || 'Arrangøren';
+            const datoFra = document.getElementById('trialDateFrom')?.value || '';
+            const praktiskInfo = JSON.parse(localStorage.getItem(getPraktiskInfoKey()) || '{}');
+
+            // Formater dato
+            let datoStr = '';
+            if (datoFra) {
+                const d = new Date(datoFra);
+                datoStr = d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
+            }
+
+            // Beregn frist (48 timer før prøvestart)
+            let fristStr = '';
+            if (datoFra) {
+                const fristDato = new Date(datoFra);
+                fristDato.setDate(fristDato.getDate() - 2);
+                fristStr = fristDato.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
+            }
+
+            return {
+                prøvenavn: proveNavn,
+                arrangør: arrangør,
+                dato: datoStr,
+                frist: fristStr,
+                opprop: praktiskInfo.sekretariatApner || '08:00',
+                sted: praktiskInfo.oppropSted || 'sekretariatet'
+            };
+        }
+
+        // Erstatt plassholdere i mal
+        function erstattPlassholdere(tekst) {
+            const data = getProveDataForSms();
+            return tekst
+                .replace(/{prøvenavn}/g, data.prøvenavn)
+                .replace(/{arrangør}/g, data.arrangør)
+                .replace(/{dato}/g, data.dato)
+                .replace(/{frist}/g, data.frist)
+                .replace(/{opprop}/g, data.opprop)
+                .replace(/{sted}/g, data.sted);
+        }
+
+        // Bruk en SMS-mal
+        function brukSmsMal(malNavn) {
+            const mal = smsMaler[malNavn];
+            if (!mal) return;
+
+            const tekstfelt = document.getElementById('smsMeldingTekst');
+            const mottakerSelect = document.getElementById('smsMottakere');
+
+            // Fyll inn tekst med utfylte plassholdere
+            tekstfelt.value = erstattPlassholdere(mal.tekst);
+
+            // Sett riktig mottakergruppe
+            if (mottakerSelect) {
+                mottakerSelect.value = mal.mottakere;
+            }
+
+            // Oppdater tegnteller
+            oppdaterSmsTegnteller();
+
+            // Scroll til tekstfeltet
+            tekstfelt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            tekstfelt.focus();
+        }
+
+        // Oppdater tegnteller
+        function oppdaterSmsTegnteller() {
+            const tekstfelt = document.getElementById('smsMeldingTekst');
+            const teller = document.getElementById('smsTegnTeller');
+            const antallMeldinger = document.getElementById('smsAntallMeldinger');
+
+            if (!tekstfelt || !teller) return;
+
+            const lengde = tekstfelt.value.length;
+            teller.textContent = lengde;
+
+            // Vis antall SMS hvis over 160 tegn
+            if (lengde > 160) {
+                const antall = Math.ceil(lengde / 153); // 153 tegn per SMS ved sammenkobling
+                antallMeldinger.textContent = `(blir ${antall} SMS)`;
+                antallMeldinger.classList.remove('hidden');
+            } else {
+                antallMeldinger.classList.add('hidden');
+            }
+        }
+
+        // Forhåndsvis SMS
+        function forhåndsvisSms() {
+            const tekst = document.getElementById('smsMeldingTekst')?.value || '';
+            const mottakerType = document.getElementById('smsMottakere')?.value || 'all';
+
+            if (!tekst.trim()) {
+                alert('Skriv inn en melding først');
+                return;
+            }
+
+            const mottakerNavn = {
+                'all': 'Alle påmeldte',
+                'confirmed': 'Kun bekreftede',
+                'unconfirmed': 'Ikke bekreftet',
+                'urgent': 'Haster - under 24t',
+                'waitlist': 'Venteliste'
+            };
+
+            const data = getProveDataForSms();
+            alert(`📱 Forhåndsvisning av SMS\n\n` +
+                  `Til: ${mottakerNavn[mottakerType] || mottakerType}\n` +
+                  `Prøve: ${data.prøvenavn}\n\n` +
+                  `---\n${tekst}\n---\n\n` +
+                  `Lengde: ${tekst.length} tegn`);
+        }
+
+        // Send masse-SMS
+        async function sendMasseSms() {
+            const tekst = document.getElementById('smsMeldingTekst')?.value?.trim() || '';
+            const mottakerType = document.getElementById('smsMottakere')?.value || 'all';
+            const proveId = getCurrentTrialId();
+
+            if (!tekst) {
+                alert('Skriv inn en melding først');
+                return;
+            }
+
+            if (!proveId) {
+                alert('Ingen prøve er valgt');
+                return;
+            }
+
+            // Bekreft sending
+            const mottakerNavn = {
+                'all': 'alle påmeldte',
+                'confirmed': 'alle bekreftede',
+                'unconfirmed': 'de som ikke har bekreftet',
+                'urgent': 'de som haster (under 24t)',
+                'waitlist': 'de på venteliste'
+            };
+
+            if (!confirm(`Send SMS til ${mottakerNavn[mottakerType]}?\n\nMelding:\n"${tekst.substring(0, 100)}${tekst.length > 100 ? '...' : ''}"\n\nDette kan ikke angres.`)) {
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/sms/masse`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        melding: tekst,
+                        mottakere: mottakerType
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (resp.ok) {
+                    alert(`✅ SMS sendt!\n\n${data.sendt || 0} meldinger sendt\n${data.feilet || 0} feilet`);
+                    document.getElementById('smsMeldingTekst').value = '';
+                    oppdaterSmsTegnteller();
+                } else {
+                    alert('Feil: ' + (data.error || 'Kunne ikke sende SMS'));
+                }
+            } catch (e) {
+                console.error('Feil ved SMS-utsending:', e);
+                alert('Feil ved sending: ' + e.message);
+            }
+        }
+
         // MELDINGER FRA DELTAKERE (INNBOKS)
         // =============================================
         let adminMessages = [];

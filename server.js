@@ -2318,6 +2318,57 @@ app.post("/api/auth/register/verify", async (c) => {
     }
   }
 
+  // ============================================
+  // AUTO-KOBLE HUNDER FRA DELTAKERLISTE
+  // Når eier og fører er samme person i deltakerlisten,
+  // kobles hunden automatisk til brukerens "Mine hunder"
+  // ============================================
+  let hunderKoblet = 0;
+  try {
+    const fullNavn = `${fornavn} ${etternavn}`.trim().toLowerCase();
+
+    // Finn påmeldinger der brukerens navn matcher eier ELLER fører
+    // (mange deltakerlister har samme navn på begge)
+    const matchendePameldinger = db.prepare(`
+      SELECT pd.hund_regnr, pd.hund_navn, pd.rase, pd.eier_navn, pd.forer_navn, pd.prove_id
+      FROM parti_deltakere pd
+      WHERE (LOWER(pd.eier_navn) LIKE ? OR LOWER(pd.forer_navn) LIKE ?)
+        AND pd.hund_regnr IS NOT NULL
+        AND pd.hund_regnr != ''
+    `).all(`%${fullNavn}%`, `%${fullNavn}%`);
+
+    for (const pm of matchendePameldinger) {
+      // Sjekk om hunden allerede finnes i systemet
+      let hund = db.prepare("SELECT id, eier_telefon FROM hunder WHERE regnr = ?").get(pm.hund_regnr);
+
+      if (hund) {
+        // Hund finnes - oppdater eier hvis ikke satt
+        if (!hund.eier_telefon) {
+          db.prepare("UPDATE hunder SET eier_telefon = ? WHERE id = ?").run(telefon, hund.id);
+          hunderKoblet++;
+          console.log(`[Auto-koble] Hund ${pm.hund_regnr} (${pm.hund_navn}) koblet til bruker ${telefon}`);
+        }
+      } else {
+        // Hund finnes ikke - opprett den med denne brukeren som eier
+        const result = db.prepare(`
+          INSERT INTO hunder (regnr, navn, rase, eier_telefon)
+          VALUES (?, ?, ?, ?)
+        `).run(pm.hund_regnr, pm.hund_navn || 'Ukjent', pm.rase || '', telefon);
+        hunderKoblet++;
+        console.log(`[Auto-koble] Ny hund ${pm.hund_regnr} (${pm.hund_navn}) opprettet for bruker ${telefon}`);
+      }
+    }
+
+    if (hunderKoblet > 0) {
+      db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+        "auto_koble_hunder",
+        `${hunderKoblet} hund(er) automatisk koblet til bruker ${telefon} (${fornavn} ${etternavn}) fra deltakerliste`
+      );
+    }
+  } catch (e) {
+    console.error("[Auto-koble] Feil ved kobling av hunder:", e.message);
+  }
+
   // Generer JWT
   const token = jwt.sign(
     {
@@ -6702,6 +6753,121 @@ app.get("/api/prover/:id/pameldinger", (c) => {
   }
 
   return c.json({ pameldinger, antall, config });
+});
+
+// ============================================
+// MASSE-SMS TIL DELTAKERE
+// ============================================
+app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+  const { melding, mottakere } = body;
+
+  if (!melding || !melding.trim()) {
+    return c.json({ error: "Melding er påkrevd" }, 400);
+  }
+
+  // Hent prøve for logging
+  const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Bygg spørring basert på mottakertype
+  let whereClause = "p.prove_id = ? AND p.status != 'avmeldt'";
+  const params = [proveId];
+
+  switch (mottakere) {
+    case 'confirmed':
+      whereClause += " AND p.status = 'bekreftet'";
+      break;
+    case 'unconfirmed':
+      whereClause += " AND p.status = 'pameldt'";
+      break;
+    case 'waitlist':
+      whereClause += " AND p.status = 'venteliste'";
+      break;
+    case 'urgent':
+      // De som ikke har bekreftet og prøven starter innen 48 timer
+      whereClause += " AND p.status = 'pameldt'";
+      break;
+    // 'all' - ingen ekstra filter
+  }
+
+  // Hent unike telefonnumre fra både parti_deltakere og pameldinger
+  const deltakere = db.prepare(`
+    SELECT DISTINCT
+      COALESCE(pd.forer_telefon, p.forer_telefon) as telefon,
+      COALESCE(pd.forer_navn, b.fornavn || ' ' || b.etternavn) as navn
+    FROM pameldinger p
+    LEFT JOIN parti_deltakere pd ON pd.prove_id = p.prove_id AND pd.hund_regnr = (SELECT regnr FROM hunder WHERE id = p.hund_id)
+    LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+    WHERE ${whereClause}
+      AND COALESCE(pd.forer_telefon, p.forer_telefon) IS NOT NULL
+      AND COALESCE(pd.forer_telefon, p.forer_telefon) != ''
+  `).all(...params);
+
+  // Filtrer og formater telefonnumre
+  const unikeTelefoner = new Map();
+  for (const d of deltakere) {
+    if (d.telefon && !unikeTelefoner.has(d.telefon)) {
+      unikeTelefoner.set(d.telefon, d.navn || 'Deltaker');
+    }
+  }
+
+  if (unikeTelefoner.size === 0) {
+    return c.json({ error: "Ingen mottakere funnet for valgt gruppe", sendt: 0, feilet: 0 }, 400);
+  }
+
+  // Send SMS til alle
+  let sendt = 0;
+  let feilet = 0;
+
+  for (const [telefon, navn] of unikeTelefoner) {
+    try {
+      // Formater telefonnummer
+      let phone = telefon.replace(/\s/g, '');
+      if (!phone.startsWith('+')) {
+        phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
+      }
+
+      const result = await sendSMS(phone, melding, { type: 'masse_sms', prove_id: proveId });
+      if (result.success) {
+        sendt++;
+      } else {
+        feilet++;
+        console.error(`[Masse-SMS] Feil til ${telefon}:`, result.error);
+      }
+    } catch (e) {
+      feilet++;
+      console.error(`[Masse-SMS] Exception til ${telefon}:`, e.message);
+    }
+  }
+
+  // Logg utsendelsen
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "masse_sms_sendt",
+    JSON.stringify({
+      prove_id: proveId,
+      prove_navn: prove.navn,
+      mottakere: mottakere,
+      antall_mottakere: unikeTelefoner.size,
+      sendt: sendt,
+      feilet: feilet,
+      melding: melding.substring(0, 100),
+      utfort_av: bruker.telefon
+    })
+  );
+
+  console.log(`[Masse-SMS] ${prove.navn}: ${sendt}/${unikeTelefoner.size} sendt, ${feilet} feilet`);
+
+  return c.json({
+    success: true,
+    sendt,
+    feilet,
+    totalt: unikeTelefoner.size
+  });
 });
 
 // Meld på til prøve

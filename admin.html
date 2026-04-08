@@ -1905,8 +1905,8 @@
                             </button>
                         </div>
 
-                        <!-- FKF Rapport -->
-                        <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-5 border border-emerald-200">
+                        <!-- FKF Rapport (skjules ved manuell bedømming) -->
+                        <div id="fkfRapportSection" class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-5 border border-emerald-200">
                             <div class="flex items-center gap-3 mb-4">
                                 <div class="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center">
                                     <span class="text-white font-bold text-sm">FKF</span>
@@ -1934,6 +1934,19 @@
                                 </svg>
                                 Generer FKF-rapport
                             </button>
+                        </div>
+
+                        <!-- Manuell bedømming info (vises kun ved manuell bedømming) -->
+                        <div id="fkfManuellInfo" class="hidden bg-amber-50 rounded-xl p-5 border border-amber-200">
+                            <div class="flex items-start gap-3">
+                                <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <div>
+                                    <h3 class="font-semibold text-amber-800 mb-1">FKF-rapport ikke tilgjengelig</h3>
+                                    <p class="text-sm text-amber-700">Denne prøven bruker manuell bedømming (penn og papir). FKF-rapport med kritikkdata genereres kun ved digital bedømming.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -2287,11 +2300,45 @@
                             <p class="text-sm text-vk-400">1-dags VK har ikke kval/semifinale/finale - alle hunder bedømmes samme dag.</p>
                         </div>
 
+                        <!-- Manuell kvalifisering (vises kun når bedømming er utenfor systemet) -->
+                        <div id="vkManuellKvalifisering" class="hidden">
+                            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200 mb-6">
+                                <div class="flex items-start gap-3">
+                                    <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                                    </svg>
+                                    <div>
+                                        <p class="font-semibold text-amber-800 mb-1">Manuell bedømming aktivert</p>
+                                        <p class="text-sm text-amber-700">Siden dommerne ikke fører kritikker digitalt, må du manuelt krysse av hvilke hunder som går videre til neste runde. Kryss av i listen nedenfor basert på dommernes papirlister.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Velg parti og kryss av -->
+                            <div class="bg-white rounded-xl border border-bark-200 overflow-hidden">
+                                <div class="px-4 py-3 bg-bark-50 border-b border-bark-200 flex items-center justify-between">
+                                    <h4 class="font-semibold text-bark-800">Marker kvalifiserte hunder</h4>
+                                    <select id="manuellKvalPartiValg" onchange="loadManuellKvalParti()" class="text-sm border border-bark-200 rounded-lg px-3 py-1.5">
+                                        <option value="">-- Velg parti --</option>
+                                    </select>
+                                </div>
+                                <div id="manuellKvalHundeListe" class="p-4">
+                                    <p class="text-center text-bark-400 py-6">Velg et parti fra listen ovenfor</p>
+                                </div>
+                                <div id="manuellKvalActions" class="hidden px-4 py-3 bg-bark-50 border-t border-bark-200 flex items-center justify-between">
+                                    <span id="manuellKvalCount" class="text-sm text-bark-600">0 av 0 valgt</span>
+                                    <button onclick="lagreManuellKvalifisering()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                                        Lagre kvalifiserte
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Hovedinnhold (vises kun for 2-dagers og 3-dagers VK) -->
                         <div id="vkTrekningInnhold" class="space-y-6">
 
                             <!-- LIVE LISTE OVER KVALIFISERTE HUNDER -->
-                            <div class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 overflow-hidden">
+                            <div id="liveKvalifiserteContainer" class="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 overflow-hidden">
                                 <div class="px-4 py-3 bg-emerald-100 border-b border-emerald-200 flex items-center justify-between">
                                     <div class="flex items-center gap-3">
                                         <div class="flex items-center gap-2">
@@ -4442,6 +4489,28 @@
 
             // Last bedømmingsmetode
             lastBedomMethod(info);
+
+            // Oppdater UI basert på bedømmingsmetode
+            oppdaterBedomMethodUI();
+        }
+
+        // Oppdater UI elementer basert på om bedømming er utenfor systemet
+        function oppdaterBedomMethodUI() {
+            const isManuell = erBedommingUtenforSystemet();
+
+            // FKF-rapport seksjon
+            const fkfSection = document.getElementById('fkfRapportSection');
+            const fkfManuellInfo = document.getElementById('fkfManuellInfo');
+
+            if (fkfSection && fkfManuellInfo) {
+                if (isManuell) {
+                    fkfSection.classList.add('hidden');
+                    fkfManuellInfo.classList.remove('hidden');
+                } else {
+                    fkfSection.classList.remove('hidden');
+                    fkfManuellInfo.classList.add('hidden');
+                }
+            }
         }
 
         // ========================================
@@ -6010,16 +6079,22 @@
 
             const ikkeAktuelt = document.getElementById('vkTrekningIkkeAktuelt');
             const innhold = document.getElementById('vkTrekningInnhold');
+            const manuellKval = document.getElementById('vkManuellKvalifisering');
+            const liveContainer = document.getElementById('liveKvalifiserteContainer');
             const btnSemi = document.getElementById('btnTrekkSemi');
             const btnFinale = document.getElementById('btnTrekkFinale');
             const btnFinaleFraKval = document.getElementById('btnTrekkFinaleFraKval');
 
             if (!ikkeAktuelt || !innhold) return;
 
+            // Sjekk om bedømming er utenfor systemet
+            const isManuellBedomming = erBedommingUtenforSystemet();
+
             if (vkType === '1day' || vkType === 'none') {
                 // 1-dags VK - trekning ikke aktuelt
                 ikkeAktuelt.classList.remove('hidden');
                 innhold.classList.add('hidden');
+                manuellKval?.classList.add('hidden');
             } else if (vkType === '2day') {
                 // 2-dagers VK - kun Kval → Finale
                 ikkeAktuelt.classList.add('hidden');
@@ -6027,6 +6102,13 @@
                 btnSemi?.classList.add('hidden');
                 btnFinale?.classList.add('hidden');
                 btnFinaleFraKval?.classList.remove('hidden');
+
+                // Hvis manuell bedømming, vis manuell kvalifisering
+                if (isManuellBedomming && manuellKval && liveContainer) {
+                    manuellKval.classList.remove('hidden');
+                    liveContainer.classList.add('hidden');
+                    initManuellKvalifisering();
+                }
             } else if (vkType === '3day') {
                 // 3-dagers VK - Kval → Semi og Semi → Finale
                 ikkeAktuelt.classList.add('hidden');
@@ -6034,13 +6116,22 @@
                 btnSemi?.classList.remove('hidden');
                 btnFinale?.classList.remove('hidden');
                 btnFinaleFraKval?.classList.add('hidden');
+
+                // Hvis manuell bedømming, vis manuell kvalifisering
+                if (isManuellBedomming && manuellKval && liveContainer) {
+                    manuellKval.classList.remove('hidden');
+                    liveContainer.classList.add('hidden');
+                    initManuellKvalifisering();
+                }
             }
 
             // Hent antall kvalifiserte for visning på knappene
             loadKvalifiserteCount();
 
-            // Start live-oppdatering av kvalifiserte hunder
-            startLiveKvalifiserteUpdates();
+            // Start live-oppdatering av kvalifiserte hunder (kun hvis digital bedømming)
+            if (!isManuellBedomming) {
+                startLiveKvalifiserteUpdates();
+            }
         }
 
         // Last antall kvalifiserte for visning på knappene
@@ -6226,6 +6317,197 @@
             if (liveKvalifiserteInterval) {
                 clearInterval(liveKvalifiserteInterval);
                 liveKvalifiserteInterval = null;
+            }
+        }
+
+        // ========================================
+        // MANUELL KVALIFISERING (for bedømming utenfor systemet)
+        // ========================================
+
+        let manuellKvalData = {}; // Holder styr på avkryssede hunder
+
+        function initManuellKvalifisering() {
+            const partiSelect = document.getElementById('manuellKvalPartiValg');
+            if (!partiSelect) return;
+
+            // Hent VK-partier fra localStorage
+            const parties = getTrialParties();
+            const vkParties = parties.filter(p => p.class === 'vk' || p.class === 'vk-kval' || p.class === 'vk-semi');
+
+            // Populer dropdown
+            partiSelect.innerHTML = '<option value="">-- Velg parti --</option>';
+            vkParties.forEach(party => {
+                const option = document.createElement('option');
+                option.value = party.name || party.id;
+                let label = party.name || party.id;
+                if (party.class === 'vk-kval') label += ' (Kval)';
+                if (party.class === 'vk-semi') label += ' (Semi)';
+                option.textContent = label;
+                partiSelect.appendChild(option);
+            });
+
+            // Last lagrede kvalifiseringer
+            loadManuellKvalLagret();
+        }
+
+        async function loadManuellKvalLagret() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+
+            try {
+                const resp = await fetch(`/api/storage/manuellKvalifisering_${proveId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        manuellKvalData = data.value;
+                    }
+                }
+            } catch (e) {
+                // Fallback til localStorage
+                const stored = localStorage.getItem(`manuellKvalifisering_${proveId}`);
+                if (stored) manuellKvalData = JSON.parse(stored);
+            }
+        }
+
+        function loadManuellKvalParti() {
+            const partiSelect = document.getElementById('manuellKvalPartiValg');
+            const liste = document.getElementById('manuellKvalHundeListe');
+            const actions = document.getElementById('manuellKvalActions');
+
+            if (!partiSelect || !liste) return;
+
+            const partiNavn = partiSelect.value;
+            if (!partiNavn) {
+                liste.innerHTML = '<p class="text-center text-bark-400 py-6">Velg et parti fra listen ovenfor</p>';
+                actions?.classList.add('hidden');
+                return;
+            }
+
+            // Finn partiet
+            const parties = getTrialParties();
+            const party = parties.find(p => (p.name || p.id) === partiNavn);
+
+            if (!party || !party.dogs || party.dogs.length === 0) {
+                liste.innerHTML = '<p class="text-center text-bark-400 py-6">Ingen hunder i dette partiet</p>';
+                actions?.classList.add('hidden');
+                return;
+            }
+
+            // Hent lagrede avkrysninger for dette partiet
+            const lagredeKval = manuellKvalData[partiNavn] || {};
+
+            // Bygg liste med avkryssningsbokser
+            liste.innerHTML = `
+                <div class="space-y-2">
+                    ${party.dogs.map(dog => {
+                        const isChecked = lagredeKval[dog.nr] === true;
+                        return `
+                            <label class="flex items-center gap-3 p-3 rounded-lg border ${isChecked ? 'border-emerald-300 bg-emerald-50' : 'border-bark-200 bg-white'} cursor-pointer hover:bg-bark-50 transition" data-dog-nr="${dog.nr}">
+                                <input type="checkbox"
+                                    class="manuell-kval-check w-5 h-5 text-emerald-600 border-bark-300 rounded focus:ring-emerald-500"
+                                    data-nr="${dog.nr}"
+                                    ${isChecked ? 'checked' : ''}
+                                    onchange="oppdaterManuellKvalUI(this)">
+                                <div class="flex-1">
+                                    <div class="font-medium text-bark-800">${dog.hundenavn || dog.name || 'Ukjent'}</div>
+                                    <div class="text-sm text-bark-500">${dog.rase || ''} • Nr ${dog.nr} • ${dog.klasse || ''}</div>
+                                </div>
+                                <span class="text-xs ${isChecked ? 'text-emerald-600 font-medium' : 'text-bark-400'}">${isChecked ? 'Kvalifisert' : ''}</span>
+                            </label>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+
+            actions?.classList.remove('hidden');
+            oppdaterManuellKvalCount();
+        }
+
+        function oppdaterManuellKvalUI(checkbox) {
+            const label = checkbox.closest('label');
+            if (!label) return;
+
+            if (checkbox.checked) {
+                label.classList.remove('border-bark-200', 'bg-white');
+                label.classList.add('border-emerald-300', 'bg-emerald-50');
+                const statusSpan = label.querySelector('span:last-child');
+                if (statusSpan) {
+                    statusSpan.textContent = 'Kvalifisert';
+                    statusSpan.classList.remove('text-bark-400');
+                    statusSpan.classList.add('text-emerald-600', 'font-medium');
+                }
+            } else {
+                label.classList.remove('border-emerald-300', 'bg-emerald-50');
+                label.classList.add('border-bark-200', 'bg-white');
+                const statusSpan = label.querySelector('span:last-child');
+                if (statusSpan) {
+                    statusSpan.textContent = '';
+                    statusSpan.classList.remove('text-emerald-600', 'font-medium');
+                    statusSpan.classList.add('text-bark-400');
+                }
+            }
+
+            oppdaterManuellKvalCount();
+        }
+
+        function oppdaterManuellKvalCount() {
+            const checkboxes = document.querySelectorAll('.manuell-kval-check');
+            const checked = document.querySelectorAll('.manuell-kval-check:checked');
+            const countEl = document.getElementById('manuellKvalCount');
+            if (countEl) {
+                countEl.textContent = `${checked.length} av ${checkboxes.length} valgt`;
+            }
+        }
+
+        async function lagreManuellKvalifisering() {
+            const partiSelect = document.getElementById('manuellKvalPartiValg');
+            if (!partiSelect || !partiSelect.value) return;
+
+            const partiNavn = partiSelect.value;
+            const checkboxes = document.querySelectorAll('.manuell-kval-check');
+
+            // Samle opp avkrysninger
+            const kvalifiserte = {};
+            checkboxes.forEach(cb => {
+                kvalifiserte[cb.dataset.nr] = cb.checked;
+            });
+
+            // Oppdater manuellKvalData
+            manuellKvalData[partiNavn] = kvalifiserte;
+
+            // Lagre til server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                try {
+                    await fetch(`/api/storage/manuellKvalifisering_${proveId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: manuellKvalData })
+                    });
+                    localStorage.setItem(`manuellKvalifisering_${proveId}`, JSON.stringify(manuellKvalData));
+
+                    // Også lagre i vkResultater-format for kompatibilitet med trekning
+                    const vkResultat = {
+                        partyName: partiNavn,
+                        vkType: 'kval', // Anta kval, kan forbedres
+                        kvalifisertTilFinale: kvalifiserte,
+                        manueltKryssetAv: true,
+                        timestamp: new Date().toISOString()
+                    };
+                    await fetch(`/api/storage/vkResultater_${partiNavn}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: vkResultat })
+                    });
+
+                    alert('Kvalifiserte hunder lagret!');
+
+                    // Oppdater tellere
+                    loadKvalifiserteCount();
+                } catch (err) {
+                    console.error('Feil ved lagring:', err);
+                    alert('Kunne ikke lagre: ' + err.message);
+                }
             }
         }
 
@@ -11417,6 +11699,13 @@
             const proveId = getCurrentTrialId();
             const token = localStorage.getItem('fuglehund_token');
             const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+            // Sjekk om bedømming er utenfor systemet - da hopper vi over validering
+            if (erBedommingUtenforSystemet()) {
+                // Returner tom liste - ingen krav ved manuell bedømming
+                console.log('[Validering] Bedømming utenfor systemet - hopper over validering');
+                return [];
+            }
 
             const mangler = [];
 

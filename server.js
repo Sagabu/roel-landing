@@ -6762,7 +6762,7 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
-  const { melding, mottakere } = body;
+  const { melding, mottakere, mottakerliste } = body;
 
   if (!melding || !melding.trim()) {
     return c.json({ error: "Melding er påkrevd" }, 400);
@@ -6774,50 +6774,49 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
     return c.json({ error: "Prøve ikke funnet" }, 404);
   }
 
-  // Bygg spørring basert på mottakertype
-  let whereClause = "p.prove_id = ? AND p.status != 'avmeldt'";
-  const params = [proveId];
-
-  switch (mottakere) {
-    case 'confirmed':
-      whereClause += " AND p.status = 'bekreftet'";
-      break;
-    case 'unconfirmed':
-      whereClause += " AND p.status = 'pameldt'";
-      break;
-    case 'waitlist':
-      whereClause += " AND p.status = 'venteliste'";
-      break;
-    case 'urgent':
-      // De som ikke har bekreftet og prøven starter innen 48 timer
-      whereClause += " AND p.status = 'pameldt'";
-      break;
-    // 'all' - ingen ekstra filter
-  }
-
-  // Hent unike telefonnumre fra både parti_deltakere og pameldinger
-  const deltakere = db.prepare(`
-    SELECT DISTINCT
-      COALESCE(pd.forer_telefon, p.forer_telefon) as telefon,
-      COALESCE(pd.forer_navn, b.fornavn || ' ' || b.etternavn) as navn
-    FROM pameldinger p
-    LEFT JOIN parti_deltakere pd ON pd.prove_id = p.prove_id AND pd.hund_regnr = (SELECT regnr FROM hunder WHERE id = p.hund_id)
-    LEFT JOIN brukere b ON p.forer_telefon = b.telefon
-    WHERE ${whereClause}
-      AND COALESCE(pd.forer_telefon, p.forer_telefon) IS NOT NULL
-      AND COALESCE(pd.forer_telefon, p.forer_telefon) != ''
-  `).all(...params);
-
-  // Filtrer og formater telefonnumre
+  // Bruk mottakerliste fra frontend hvis tilgjengelig (cached partiliste)
+  // Dette sikrer at listen er "frosset" til tidspunktet den ble lastet
   const unikeTelefoner = new Map();
-  for (const d of deltakere) {
-    if (d.telefon && !unikeTelefoner.has(d.telefon)) {
-      unikeTelefoner.set(d.telefon, d.navn || 'Deltaker');
+
+  if (mottakerliste && Array.isArray(mottakerliste) && mottakerliste.length > 0) {
+    // Bruk den forhåndsinnlastede listen fra frontend
+    for (const m of mottakerliste) {
+      if (m.telefon && !unikeTelefoner.has(m.telefon)) {
+        unikeTelefoner.set(m.telefon, m.navn || 'Deltaker');
+      }
+    }
+  } else if (mottakere === 'waitlist') {
+    // Venteliste hentes alltid fra database
+    const venteliste = db.prepare(`
+      SELECT DISTINCT p.forer_telefon as telefon, b.fornavn || ' ' || b.etternavn as navn
+      FROM pameldinger p
+      LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE p.prove_id = ? AND p.status = 'venteliste'
+        AND p.forer_telefon IS NOT NULL AND p.forer_telefon != ''
+    `).all(proveId);
+
+    for (const v of venteliste) {
+      if (v.telefon) {
+        unikeTelefoner.set(v.telefon, v.navn || 'Deltaker');
+      }
+    }
+  } else {
+    // Fallback: Hent alle fra parti_deltakere (for bakoverkompatibilitet)
+    const deltakere = db.prepare(`
+      SELECT DISTINCT forer_telefon as telefon, forer_navn as navn
+      FROM parti_deltakere
+      WHERE prove_id = ? AND forer_telefon IS NOT NULL AND forer_telefon != ''
+    `).all(proveId);
+
+    for (const d of deltakere) {
+      if (d.telefon && !unikeTelefoner.has(d.telefon)) {
+        unikeTelefoner.set(d.telefon, d.navn || 'Deltaker');
+      }
     }
   }
 
   if (unikeTelefoner.size === 0) {
-    return c.json({ error: "Ingen mottakere funnet for valgt gruppe", sendt: 0, feilet: 0 }, 400);
+    return c.json({ error: "Ingen mottakere funnet. Sjekk at partilister er lastet inn.", sendt: 0, feilet: 0 }, 400);
   }
 
   // Send SMS til alle

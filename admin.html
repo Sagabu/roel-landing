@@ -2586,13 +2586,14 @@
                             <div class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-bark-700 mb-2">Mottakere</label>
-                                    <select id="smsRecipients" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
-                                        <option value="all">Alle påmeldte (0)</option>
-                                        <option value="confirmed">Kun bekreftede (0)</option>
-                                        <option value="unconfirmed">Ikke bekreftet (0)</option>
-                                        <option value="urgent">Haster - under 24t (0)</option>
-                                        <option value="waitlist">Venteliste (0)</option>
+                                    <select id="smsMottakere" onchange="oppdaterSmsMottakerInfo()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                        <option value="all">Alle deltakere</option>
+                                        <option value="waitlist">Venteliste</option>
+                                        <optgroup label="── Partier ──" id="smsPartiOptgroup">
+                                            <!-- Fylles dynamisk fra partilister -->
+                                        </optgroup>
                                     </select>
+                                    <p id="smsMottakerInfo" class="text-xs text-bark-500 mt-1">Velg mottakere ovenfor</p>
                                 </div>
 
                                 <div>
@@ -14956,6 +14957,7 @@
             await loadSavedParties(); // Partilister, deltakere og dommertildelinger
             await loadPraktiskInfo(); // Praktisk info (proveleder, NKK-rep, DVK etc.)
             updatePublicShareUrl(); // Oppdater offentlig delingslenke
+            loadSmsPartier(); // Last partier for SMS-mottakerlisten
 
             // Oppdater header
             document.getElementById('trialHeaderName').textContent = prove.navn || prove.name;
@@ -15082,6 +15084,8 @@
                         document.getElementById('valgtProveStats').classList.remove('hidden');
                         document.getElementById('valgtProveNavn').textContent = prove.navn || prove.name;
                     }
+                    // Last inn partier for SMS-mottakerlisten
+                    loadSmsPartier();
                 }, 500);
             }
 
@@ -15181,6 +15185,9 @@
         // SMS MASSE-UTSENDING OG MALER
         // =============================================
 
+        // Cache for SMS-partilister (lagres ved lasting, ikke oppdateres dynamisk)
+        let smsPartiCache = null;
+
         // SMS-maler med plassholdere
         const smsMaler = {
             partilister: {
@@ -15188,8 +15195,8 @@
                 mottakere: 'all'
             },
             paaminnelse: {
-                tekst: 'Hei! Du har ikke bekreftet deltakelse på {prøvenavn} ennå. Bekreft eller meld av innen {frist}. Mvh {arrangør}',
-                mottakere: 'unconfirmed'
+                tekst: 'Hei! Husk å bekrefte deltakelse på {prøvenavn}. Bekreft eller meld av innen {frist}. Mvh {arrangør}',
+                mottakere: 'all'
             },
             venteliste: {
                 tekst: 'Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprove.no. Mvh {arrangør}',
@@ -15201,9 +15208,106 @@
             },
             velkomst: {
                 tekst: 'Velkommen til {prøvenavn} {dato}! Opprop kl. {opprop} ved {sted}. Lykke til! Mvh {arrangør}',
-                mottakere: 'confirmed'
+                mottakere: 'all'
             }
         };
+
+        // Last inn partier for SMS-mottakerlisten
+        async function loadSmsPartier() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+
+            try {
+                const resp = await fetch(`/api/prover/${proveId}/partier`);
+                if (!resp.ok) return;
+
+                const data = await resp.json();
+                const partier = data.partier || data || [];
+
+                // Lagre i cache - denne oppdateres KUN ved ny lasting av siden
+                smsPartiCache = {};
+
+                const optgroup = document.getElementById('smsPartiOptgroup');
+                if (!optgroup) return;
+
+                // Tøm eksisterende options
+                optgroup.innerHTML = '';
+
+                // Grupper partier per klasse
+                const partierPerKlasse = {};
+                for (const parti of partier) {
+                    const klasse = parti.klasse || 'Ukjent';
+                    if (!partierPerKlasse[klasse]) {
+                        partierPerKlasse[klasse] = [];
+                    }
+                    partierPerKlasse[klasse].push(parti);
+
+                    // Lagre deltakere i cache med parti-ID som nøkkel
+                    // Dette sikrer at listen er "frosset" til når den ble lastet
+                    const partiKey = `parti_${parti.id}`;
+                    smsPartiCache[partiKey] = {
+                        navn: `${klasse} Parti ${parti.parti_nummer || parti.nummer || '?'}`,
+                        deltakere: (parti.deltakere || []).map(d => ({
+                            telefon: d.forer_telefon || d.telefon,
+                            navn: d.forer_navn || d.navn || 'Ukjent'
+                        })).filter(d => d.telefon)
+                    };
+                }
+
+                // Legg til options gruppert per klasse
+                for (const klasse of ['UK', 'AK', 'VK']) {
+                    if (!partierPerKlasse[klasse]) continue;
+
+                    for (const parti of partierPerKlasse[klasse]) {
+                        const partiKey = `parti_${parti.id}`;
+                        const antall = smsPartiCache[partiKey]?.deltakere?.length || 0;
+                        const opt = document.createElement('option');
+                        opt.value = partiKey;
+                        opt.textContent = `${klasse} Parti ${parti.parti_nummer || parti.nummer || '?'} (${antall} pers)`;
+                        optgroup.appendChild(opt);
+                    }
+                }
+
+                // Oppdater mottakerinfo
+                oppdaterSmsMottakerInfo();
+
+            } catch (e) {
+                console.error('Feil ved lasting av SMS-partier:', e);
+            }
+        }
+
+        // Oppdater mottakerinfo basert på valg
+        function oppdaterSmsMottakerInfo() {
+            const select = document.getElementById('smsMottakere');
+            const info = document.getElementById('smsMottakerInfo');
+            if (!select || !info) return;
+
+            const value = select.value;
+
+            if (value === 'all') {
+                // Tell alle unike telefonnumre fra cache
+                let alleTelefoner = new Set();
+                if (smsPartiCache) {
+                    for (const parti of Object.values(smsPartiCache)) {
+                        for (const d of parti.deltakere) {
+                            if (d.telefon) alleTelefoner.add(d.telefon);
+                        }
+                    }
+                }
+                info.textContent = `Sender til alle deltakere (${alleTelefoner.size} personer)`;
+            } else if (value === 'waitlist') {
+                info.textContent = 'Sender til alle på venteliste';
+            } else if (value.startsWith('parti_')) {
+                const parti = smsPartiCache?.[value];
+                if (parti) {
+                    info.textContent = `Sender til ${parti.navn} (${parti.deltakere.length} personer)`;
+                } else {
+                    info.textContent = 'Parti ikke funnet i cache';
+                }
+            } else {
+                info.textContent = 'Velg mottakere ovenfor';
+            }
+        }
 
         // Hent prøvedata for utfylling av maler
         function getProveDataForSms() {
@@ -15260,13 +15364,17 @@
             // Fyll inn tekst med utfylte plassholdere
             tekstfelt.value = erstattPlassholdere(mal.tekst);
 
-            // Sett riktig mottakergruppe
-            if (mottakerSelect) {
-                mottakerSelect.value = mal.mottakere;
+            // Sett riktig mottakergruppe (kun hvis det er en gyldig option)
+            if (mottakerSelect && mal.mottakere) {
+                const options = Array.from(mottakerSelect.options).map(o => o.value);
+                if (options.includes(mal.mottakere)) {
+                    mottakerSelect.value = mal.mottakere;
+                }
             }
 
-            // Oppdater tegnteller
+            // Oppdater tegnteller og info
             oppdaterSmsTegnteller();
+            oppdaterSmsMottakerInfo();
 
             // Scroll til tekstfeltet
             tekstfelt.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -15304,17 +15412,30 @@
                 return;
             }
 
-            const mottakerNavn = {
-                'all': 'Alle påmeldte',
-                'confirmed': 'Kun bekreftede',
-                'unconfirmed': 'Ikke bekreftet',
-                'urgent': 'Haster - under 24t',
-                'waitlist': 'Venteliste'
-            };
+            // Finn mottakernavn
+            let mottakerBeskrivelse = 'Ukjent';
+            if (mottakerType === 'all') {
+                let antall = 0;
+                if (smsPartiCache) {
+                    const alle = new Set();
+                    for (const p of Object.values(smsPartiCache)) {
+                        for (const d of p.deltakere) {
+                            if (d.telefon) alle.add(d.telefon);
+                        }
+                    }
+                    antall = alle.size;
+                }
+                mottakerBeskrivelse = `Alle deltakere (${antall} personer)`;
+            } else if (mottakerType === 'waitlist') {
+                mottakerBeskrivelse = 'Venteliste';
+            } else if (mottakerType.startsWith('parti_') && smsPartiCache?.[mottakerType]) {
+                const parti = smsPartiCache[mottakerType];
+                mottakerBeskrivelse = `${parti.navn} (${parti.deltakere.length} personer)`;
+            }
 
             const data = getProveDataForSms();
             alert(`📱 Forhåndsvisning av SMS\n\n` +
-                  `Til: ${mottakerNavn[mottakerType] || mottakerType}\n` +
+                  `Til: ${mottakerBeskrivelse}\n` +
                   `Prøve: ${data.prøvenavn}\n\n` +
                   `---\n${tekst}\n---\n\n` +
                   `Lengde: ${tekst.length} tegn`);
@@ -15336,16 +15457,56 @@
                 return;
             }
 
-            // Bekreft sending
-            const mottakerNavn = {
-                'all': 'alle påmeldte',
-                'confirmed': 'alle bekreftede',
-                'unconfirmed': 'de som ikke har bekreftet',
-                'urgent': 'de som haster (under 24t)',
-                'waitlist': 'de på venteliste'
-            };
+            // Bygg mottakerliste fra cache
+            let mottakere = [];
 
-            if (!confirm(`Send SMS til ${mottakerNavn[mottakerType]}?\n\nMelding:\n"${tekst.substring(0, 100)}${tekst.length > 100 ? '...' : ''}"\n\nDette kan ikke angres.`)) {
+            if (mottakerType === 'all') {
+                // Alle unike deltakere fra alle partier
+                const sett = new Map();
+                if (smsPartiCache) {
+                    for (const parti of Object.values(smsPartiCache)) {
+                        for (const d of parti.deltakere) {
+                            if (d.telefon && !sett.has(d.telefon)) {
+                                sett.set(d.telefon, d);
+                            }
+                        }
+                    }
+                }
+                mottakere = Array.from(sett.values());
+            } else if (mottakerType === 'waitlist') {
+                // Hent venteliste fra server (kan ikke caches på samme måte)
+                try {
+                    const resp = await fetch(`/api/prover/${proveId}/venteliste`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        mottakere = (data.venteliste || []).map(v => ({
+                            telefon: v.forer_telefon || v.telefon,
+                            navn: v.forer_navn || v.navn || 'Ukjent'
+                        })).filter(m => m.telefon);
+                    }
+                } catch (e) {
+                    console.error('Feil ved henting av venteliste:', e);
+                }
+            } else if (mottakerType.startsWith('parti_') && smsPartiCache?.[mottakerType]) {
+                mottakere = smsPartiCache[mottakerType].deltakere;
+            }
+
+            if (mottakere.length === 0) {
+                alert('Ingen mottakere funnet. Sjekk at partilister er lastet inn.');
+                return;
+            }
+
+            // Finn beskrivelse for bekreftelse
+            let mottakerBeskrivelse = `${mottakere.length} personer`;
+            if (mottakerType.startsWith('parti_') && smsPartiCache?.[mottakerType]) {
+                mottakerBeskrivelse = smsPartiCache[mottakerType].navn + ` (${mottakere.length} pers)`;
+            } else if (mottakerType === 'all') {
+                mottakerBeskrivelse = `alle deltakere (${mottakere.length} pers)`;
+            } else if (mottakerType === 'waitlist') {
+                mottakerBeskrivelse = `venteliste (${mottakere.length} pers)`;
+            }
+
+            if (!confirm(`Send SMS til ${mottakerBeskrivelse}?\n\nMelding:\n"${tekst.substring(0, 100)}${tekst.length > 100 ? '...' : ''}"\n\nDette kan ikke angres.`)) {
                 return;
             }
 
@@ -15359,7 +15520,9 @@
                     },
                     body: JSON.stringify({
                         melding: tekst,
-                        mottakere: mottakerType
+                        mottakere: mottakerType,
+                        // Send med cached mottakerliste for å sikre konsistens
+                        mottakerliste: mottakere
                     })
                 });
 

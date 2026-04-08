@@ -58,6 +58,11 @@ const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID ||
 const twilioConfigured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_PHONE_NUMBER || TWILIO_MESSAGING_SERVICE_SID));
 
 // SMS provider prioritet: Sveve > Twilio > Dev mode
+
+// Rate limiting for masse-SMS (per prøve: maks 2 utsendelser per time)
+const masseSmsRateLimit = new Map(); // proveId -> { lastSent: timestamp, count: number }
+const MASSE_SMS_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutter mellom utsendelser
+const MASSE_SMS_MAX_PER_HOUR = 3; // Maks 3 utsendelser per time per prøve
 const smsProvider = sveveConfigured ? "sveve" : (twilioConfigured ? "twilio" : "dev");
 
 // Warn if using default secret
@@ -2226,9 +2231,8 @@ app.post("/api/auth/login", async (c) => {
     return c.json({ error: "Verifiseringskode påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234, eller testnumre (9990xxxx) med kode 0000
-  const isTestBypass = (telefon === "90852833" && kode === "1234") ||
-                       (telefon.startsWith("9990") && kode === "0000");
+  // Admin-bypass: telefon 90852833 med kode 1234 (Aleksander Roel)
+  const isTestBypass = (telefon === "90852833" && kode === "1234");
 
   if (isTestBypass) {
     // Test-bypass: Godkjent direkte
@@ -2361,9 +2365,8 @@ app.post("/api/auth/verify-code-only", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234, eller testnumre (9990xxxx) med kode 000000
-  const isTestBypass = (telefon === "90852833" && code === "1234") ||
-                       (telefon.startsWith("9990") && code === "000000");
+  // Bypass for utvikler (Aleksander Roel): telefon 90852833 med kode 1234
+  const isTestBypass = (telefon === "90852833" && code === "1234");
 
   // Hash koden før sammenligning (OTP lagres hashet i databasen)
   const codeHash = hashOTP(code, telefon);
@@ -2393,9 +2396,8 @@ app.post("/api/auth/verify-code", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234, eller testnumre (9990xxxx) med kode 000000
-  const isTestBypass = (telefon === "90852833" && code === "1234") ||
-                       (telefon.startsWith("9990") && code === "000000");
+  // Bypass for utvikler (Aleksander Roel): telefon 90852833 med kode 1234
+  const isTestBypass = (telefon === "90852833" && code === "1234");
 
   // Hash koden før sammenligning
   const codeHash = hashOTP(code, telefon);
@@ -2762,25 +2764,20 @@ app.post("/api/auth/login-password", async (c) => {
     return c.json({ error: "Passord er påkrevd" }, 400);
   }
 
-  // Test-bypass: telefonnumre som starter med 9990 kan bruke "0000" som passord
-  const isTestBypass = telefon.startsWith("9990") && passord === "0000";
-
-  // For testbrukere: hent bruker uten å sjekke verifisert-status
-  const bruker = isTestBypass
-    ? db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon)
-    : db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
+  // Hent verifisert bruker
+  const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
 
   if (!bruker) {
     return c.json({ error: "Bruker ikke funnet eller ikke verifisert" }, 401);
   }
 
-  // Hopp over passord-sjekk for testbrukere
-  if (!isTestBypass && !verifyPassword(passord, bruker.passord_hash)) {
+  // Sjekk passord
+  if (!verifyPassword(passord, bruker.passord_hash)) {
     return c.json({ error: "Feil passord" }, 401);
   }
 
-  // Sjekk om re-verifisering kreves (>60 dager) - hopp over for testbrukere
-  if (!isTestBypass && needsReverification(bruker.siste_innlogging)) {
+  // Sjekk om re-verifisering kreves (>60 dager)
+  if (needsReverification(bruker.siste_innlogging)) {
     return c.json({
       requiresVerification: true,
       message: "Det er over 60 dager siden siste innlogging. Verifiser med SMS-kode.",
@@ -5947,6 +5944,51 @@ app.post("/api/vipps-foresporsler/:id/sjekk-status", async (c) => {
   });
 });
 
+// Offentlig endepunkt for callback-siden å sjekke betalingsstatus
+// Returnerer kun status, ingen sensitiv info
+app.get("/api/vipps/foresporsel/:id/status", async (c) => {
+  const foresporselId = c.req.param("id");
+
+  // Hent mottaker-info for denne forespørselen
+  const mottaker = db.prepare(`
+    SELECT vm.status, vm.betalt_dato, vf.belop
+    FROM vipps_mottakere vm
+    JOIN vipps_foresporsler vf ON vm.foresporsel_id = vf.id
+    WHERE vm.vipps_reference = ? OR vf.id = ?
+    LIMIT 1
+  `).get(foresporselId, foresporselId);
+
+  if (!mottaker) {
+    // Prøv å finne direkte i forespørsler-tabellen
+    const foresporsel = db.prepare(`
+      SELECT belop FROM vipps_foresporsler WHERE id = ?
+    `).get(foresporselId);
+
+    if (!foresporsel) {
+      return c.json({ error: "Forespørsel ikke funnet", status: "ukjent" }, 404);
+    }
+
+    // Returner pending hvis vi ikke har mottaker-status ennå
+    return c.json({ status: "venter", belop: foresporsel.belop });
+  }
+
+  // Map intern status til brukervenlig status
+  let statusText = mottaker.status;
+  if (mottaker.status === 'betalt') {
+    statusText = 'PAID';
+  } else if (mottaker.status === 'venter') {
+    statusText = 'PENDING';
+  } else if (mottaker.status === 'kansellert' || mottaker.status === 'avbrutt') {
+    statusText = 'CANCELLED';
+  }
+
+  return c.json({
+    status: statusText,
+    belop: mottaker.belop || null,
+    betaltDato: mottaker.betalt_dato || null
+  });
+});
+
 // Webhook-endepunkt for Vipps (mottar statusoppdateringer automatisk)
 app.post("/api/vipps/webhook", async (c) => {
   const body = await c.req.json();
@@ -7122,6 +7164,31 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
     return c.json({ error: "Melding er påkrevd" }, 400);
   }
 
+  // Rate limiting - beskytt mot utilsiktet spam
+  const now = Date.now();
+  const rateLimitKey = `prove_${proveId}`;
+  const rateData = masseSmsRateLimit.get(rateLimitKey) || { lastSent: 0, timestamps: [] };
+
+  // Fjern gamle timestamps (eldre enn 1 time)
+  rateData.timestamps = rateData.timestamps.filter(t => now - t < 60 * 60 * 1000);
+
+  // Sjekk cooldown siden siste utsendelse
+  if (now - rateData.lastSent < MASSE_SMS_COOLDOWN_MS) {
+    const gjenstår = Math.ceil((MASSE_SMS_COOLDOWN_MS - (now - rateData.lastSent)) / 1000);
+    return c.json({
+      error: `Vent ${gjenstår} sekunder før neste utsendelse. Dette beskytter mot utilsiktet dobbelt-sending.`,
+      cooldown: gjenstår
+    }, 429);
+  }
+
+  // Sjekk maks antall utsendelser per time
+  if (rateData.timestamps.length >= MASSE_SMS_MAX_PER_HOUR) {
+    return c.json({
+      error: `Maks ${MASSE_SMS_MAX_PER_HOUR} masse-SMS utsendelser per time. Prøv igjen senere.`,
+      maxReached: true
+    }, 429);
+  }
+
   // Hent prøve for logging
   const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
   if (!prove) {
@@ -7197,6 +7264,11 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
       console.error(`[Masse-SMS] Exception til ${telefon}:`, e.message);
     }
   }
+
+  // Oppdater rate limiting etter vellykket utsendelse
+  rateData.lastSent = now;
+  rateData.timestamps.push(now);
+  masseSmsRateLimit.set(rateLimitKey, rateData);
 
   // Logg utsendelsen
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -8410,12 +8482,15 @@ app.post("/api/prover/:id/trekning", requireAdmin, async (c) => {
   });
 });
 
-// Hent trekning/partilister
+// Hent trekning/partilister (OFFENTLIG - uten telefonnumre)
+// GDPR: Dette endepunktet er offentlig tilgjengelig, så telefonnumre fjernes
 app.get("/api/prover/:id/partier", (c) => {
   const proveId = c.req.param("id");
 
   const pameldinger = db.prepare(`
-    SELECT p.*, h.navn as hund_navn, h.regnr, h.rase,
+    SELECT p.id, p.prove_id, p.hund_id, p.parti, p.startnummer, p.klasse,
+           p.makker_hund_id, p.status, p.created_at,
+           h.navn as hund_navn, h.regnr, h.rase,
            b.fornavn || ' ' || b.etternavn as forer_navn,
            e.fornavn || ' ' || e.etternavn as eier_navn,
            mh.navn as makker_navn, mh.regnr as makker_regnr
@@ -8445,6 +8520,8 @@ app.get("/api/prover/:id/partier", (c) => {
 // ========================================
 
 // Hent alle partier med deltakere for en prøve
+// VIKTIG: Dette endepunktet er OFFENTLIG - telefonnumre MÅ IKKE eksponeres!
+// Admin-versjonen med telefonnumre er /api/prover/:id/partilister/admin
 app.get("/api/prover/:id/partilister", (c) => {
   const proveId = c.req.param("id");
 
@@ -8463,6 +8540,54 @@ app.get("/api/prover/:id/partilister", (c) => {
   `).all(proveId);
 
   // Bygg opp struktur som matcher localStorage-formatet
+  // GDPR: Telefonnumre fjernes fra offentlig API
+  const result = partier.map(parti => ({
+    id: parti.id,
+    name: parti.navn,
+    displayName: parti.display_navn || parti.navn,
+    type: parti.type,
+    date: parti.dato,
+    klasse: parti.klasse,
+    dogs: deltakere
+      .filter(d => d.parti_id === parti.id)
+      .map(d => ({
+        regnr: d.hund_regnr,
+        hundenavn: d.hund_navn,
+        rase: d.rase,
+        kjonn: d.kjonn,
+        klasse: d.klasse,
+        eier: d.eier_navn,
+        // eierTelefon fjernet fra offentlig API (GDPR)
+        forer: d.forer_navn,
+        // forerTelefon fjernet fra offentlig API (GDPR)
+        startnummer: d.startnummer,
+        confirmed: d.bekreftet === 1,
+        status: d.status
+      }))
+  }));
+
+  return c.json(result);
+});
+
+// Admin-versjon med telefonnumre (krever autentisering)
+app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent partier
+  const partier = db.prepare(`
+    SELECT * FROM partier WHERE prove_id = ? ORDER BY sortering, dato, navn
+  `).all(proveId);
+
+  // Hent deltakere for hvert parti
+  const deltakere = db.prepare(`
+    SELECT pd.*, p.navn as parti_navn
+    FROM parti_deltakere pd
+    JOIN partier p ON pd.parti_id = p.id
+    WHERE pd.prove_id = ?
+    ORDER BY pd.startnummer
+  `).all(proveId);
+
+  // Full versjon med telefonnumre for admin
   const result = partier.map(parti => ({
     id: parti.id,
     name: parti.navn,

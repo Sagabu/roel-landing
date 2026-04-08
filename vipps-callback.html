@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Betaling fullfort - Fuglehundprove</title>
+    <title>Betaling - Fuglehundprove</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -20,7 +20,20 @@
     </script>
 </head>
 <body class="bg-bark-50 min-h-screen flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+    <!-- Loading state -->
+    <div id="loading" class="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+        <div class="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+            <svg class="w-10 h-10 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-bark-800 mb-2">Sjekker betalingsstatus...</h1>
+        <p class="text-bark-600">Vennligst vent mens vi bekrefter betalingen.</p>
+    </div>
+
+    <!-- Success state (hidden by default) -->
+    <div id="success" class="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center hidden">
         <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -28,15 +41,121 @@
         </div>
 
         <h1 class="text-2xl font-bold text-bark-800 mb-2">Takk for betalingen!</h1>
-        <p class="text-bark-600 mb-6">Betalingen din er registrert. Du kan lukke dette vinduet.</p>
+        <p class="text-bark-600 mb-6">Betalingen din er registrert.</p>
 
         <div class="bg-bark-50 rounded-xl p-4 mb-6">
-            <p class="text-sm text-bark-500">Du vil motta en bekreftelse fra Vipps.</p>
+            <p class="text-sm text-bark-500" id="paymentDetails">Beløp: <span id="amount"></span></p>
         </div>
 
         <a href="/" class="inline-block bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-xl font-medium transition">
             Tilbake til forsiden
         </a>
     </div>
+
+    <!-- Error state (hidden by default) -->
+    <div id="error" class="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center hidden">
+        <div class="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg class="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold text-bark-800 mb-2">Betaling ikke fullført</h1>
+        <p class="text-bark-600 mb-6" id="errorMessage">Betalingen ble avbrutt eller mislyktes.</p>
+
+        <a href="/" class="inline-block bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-xl font-medium transition">
+            Tilbake til forsiden
+        </a>
+    </div>
+
+    <!-- Pending state (hidden by default) -->
+    <div id="pending" class="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center hidden">
+        <div class="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg class="w-10 h-10 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold text-bark-800 mb-2">Venter på betaling</h1>
+        <p class="text-bark-600 mb-6">Betalingen er startet, men ikke fullført ennå. Fullfør i Vipps-appen.</p>
+
+        <a href="/" class="inline-block bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-xl font-medium transition">
+            Tilbake til forsiden
+        </a>
+    </div>
+
+    <script>
+        async function checkPaymentStatus() {
+            // Hent forespørsel-ID fra URL
+            const params = new URLSearchParams(window.location.search);
+            const fid = params.get('fid');
+
+            if (!fid) {
+                showError('Mangler referanse-ID. Ugyldig callback-URL.');
+                return;
+            }
+
+            try {
+                // Sjekk status hos backend
+                const response = await fetch(`/api/vipps/foresporsel/${fid}/status`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showError(data.error || 'Kunne ikke sjekke betalingsstatus');
+                    return;
+                }
+
+                // Vis riktig status basert på svar
+                switch (data.status) {
+                    case 'PAID':
+                    case 'CAPTURED':
+                    case 'betalt':
+                        showSuccess(data.belop);
+                        break;
+                    case 'PENDING':
+                    case 'CREATED':
+                    case 'venter':
+                        showPending();
+                        break;
+                    case 'CANCELLED':
+                    case 'EXPIRED':
+                    case 'REJECTED':
+                    case 'avbrutt':
+                    case 'avvist':
+                        showError('Betalingen ble avbrutt eller avvist.');
+                        break;
+                    default:
+                        showError(`Ukjent status: ${data.status}`);
+                }
+            } catch (err) {
+                console.error('Feil ved statussjekk:', err);
+                showError('Kunne ikke kontakte serveren. Prøv igjen senere.');
+            }
+        }
+
+        function showSuccess(belop) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('success').classList.remove('hidden');
+            if (belop) {
+                document.getElementById('amount').textContent = `${belop} kr`;
+            } else {
+                document.getElementById('paymentDetails').classList.add('hidden');
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        function showPending() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('pending').classList.remove('hidden');
+        }
+
+        // Start statussjekk ved lasting
+        checkPaymentStatus();
+    </script>
 </body>
 </html>

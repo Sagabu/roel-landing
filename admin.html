@@ -4701,15 +4701,59 @@
 
         // Send Vipps-forespørsel for jegermiddag
         async function sendJegermiddagVipps(telefon, navn, belop) {
-            // Bruk eksisterende Vipps-forespørsel modal
-            document.getElementById('vippsPhone').value = telefon;
-            document.getElementById('vippsName').value = navn;
-            document.getElementById('vippsAmount').value = belop;
-            document.getElementById('vippsMessage').value = `Jegermiddag - ${navn}`;
-            document.getElementById('vippsType').value = 'Jegermiddag';
+            // Sjekk at Vipps er konfigurert
+            if (!vippsKlubbNummer && !vippsApiConfig) {
+                alert('Vipps er ikke konfigurert for denne klubben. Gå til Klubbinnstillinger for å legge til Vipps-nummer.');
+                return;
+            }
 
-            // Åpne Vipps-modal
-            document.getElementById('vippsModal').classList.remove('hidden');
+            // Bekreft sending
+            if (!confirm(`Send Vipps-forespørsel til ${navn}?\n\nBeløp: ${belop} kr\nTil: ${telefon}`)) {
+                return;
+            }
+
+            const proveId = localStorage.getItem('currentTrialId');
+            if (!proveId) {
+                alert('Ingen aktiv prøve valgt');
+                return;
+            }
+
+            try {
+                const userPhone = localStorage.getItem('userPhone') || '';
+                const endpoint = vippsModus === 'api'
+                    ? `/api/prover/${proveId}/vipps-epayment`
+                    : `/api/prover/${proveId}/vipps-foresporsler`;
+
+                const payload = {
+                    opprettet_av: userPhone,
+                    beskrivelse: `Jegermiddag - ${navn}`,
+                    belop: belop,
+                    mottakere: [{ telefon, navn }]
+                };
+
+                if (vippsModus === 'enkel') {
+                    payload.vipps_nummer = vippsKlubbNummer;
+                    payload.send_sms = true;
+                }
+
+                const resp = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.error || 'Kunne ikke sende forespørsel');
+                }
+
+                const result = await resp.json();
+                alert(`✅ Vipps-forespørsel sendt til ${navn}!`);
+
+            } catch (e) {
+                console.error('Feil ved Vipps-utsending:', e);
+                alert('Feil: ' + e.message);
+            }
         }
 
         // Load praktisk info on page load
@@ -14333,15 +14377,18 @@
                     premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
                     tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
                 };
+                const proveId = localStorage.getItem('currentTrialId');
                 localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
-                await fetch('/api/storage/praktiskInfo', {
+
+                // Lagre til server med prøve-spesifikk nøkkel for at SMS-blokkering skal fungere
+                const storageKey = proveId ? `praktiskInfo_${proveId}` : 'praktiskInfo';
+                await fetch(`/api/storage/${storageKey}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ value: praktiskInfo })
                 });
 
                 // Lagre jegermiddag-konfigurasjon til API hvis aktivert
-                const proveId = localStorage.getItem('currentTrialId');
                 if (proveId && praktiskInfo.jegermiddagAktivert) {
                     await fetch(`/api/prover/${proveId}/jegermiddag/config`, {
                         method: 'PUT',
@@ -14544,7 +14591,10 @@
                     tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
                 };
                 localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
-                await fetch('/api/storage/praktiskInfo', {
+
+                // Lagre til server med prøve-spesifikk nøkkel for at SMS-blokkering skal fungere
+                const storageKey = trialId ? `praktiskInfo_${trialId}` : 'praktiskInfo';
+                await fetch(`/api/storage/${storageKey}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ value: praktiskInfo })

@@ -4996,12 +4996,19 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     return c.json({ error: "Denne forespørselen er allerede behandlet" }, 400);
   }
 
-  // Generer klubb-ID fra navn
-  const klubbId = foresporsel.navn
+  // Generer klubb-ID fra navn - med unikkhetssjekk
+  let baseKlubbId = foresporsel.navn
     .toLowerCase()
     .replace(/[^a-zæøå0-9\s]/g, '')
     .replace(/\s+/g, '-')
     .substring(0, 30);
+
+  let klubbId = baseKlubbId;
+  let suffix = 1;
+  while (db.prepare("SELECT id FROM klubber WHERE id = ?").get(klubbId)) {
+    klubbId = `${baseKlubbId}-${suffix}`;
+    suffix++;
+  }
 
   // Opprett klubb med passord_hash fra forespørselen
   db.prepare(`
@@ -5018,7 +5025,7 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
   );
 
   // Opprett bruker for leder hvis ikke finnes
-  const existingUser = db.prepare("SELECT telefon, passord_hash FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
+  const existingUser = db.prepare("SELECT telefon, passord_hash, rolle FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
   if (!existingUser) {
     const nameParts = foresporsel.leder_navn.split(' ');
     const fornavn = nameParts[0] || '';
@@ -5029,17 +5036,20 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
       VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?, 1, ?)
     `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '', now);
   } else {
-    // Oppdater rolle til å inkludere klubbleder og sett passord hvis mangler
-    if (!existingUser.passord_hash && foresporsel.passord_hash) {
-      db.prepare(`
-        UPDATE brukere SET rolle = rolle || ',klubbleder', passord_hash = ?
-        WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
-      `).run(foresporsel.passord_hash, foresporsel.leder_telefon);
-    } else {
-      db.prepare(`
-        UPDATE brukere SET rolle = rolle || ',klubbleder'
-        WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
-      `).run(foresporsel.leder_telefon);
+    // Legg til klubbleder-rolle hvis den ikke finnes (deduplisert)
+    const eksisterendeRoller = (existingUser.rolle || '').split(',').map(r => r.trim()).filter(r => r);
+    if (!eksisterendeRoller.includes('klubbleder')) {
+      eksisterendeRoller.push('klubbleder');
+      const nyRolle = [...new Set(eksisterendeRoller)].join(',');
+
+      if (!existingUser.passord_hash && foresporsel.passord_hash) {
+        db.prepare(`UPDATE brukere SET rolle = ?, passord_hash = ? WHERE telefon = ?`).run(nyRolle, foresporsel.passord_hash, foresporsel.leder_telefon);
+      } else {
+        db.prepare(`UPDATE brukere SET rolle = ? WHERE telefon = ?`).run(nyRolle, foresporsel.leder_telefon);
+      }
+    } else if (!existingUser.passord_hash && foresporsel.passord_hash) {
+      // Brukeren har allerede klubbleder-rolle, men mangler passord
+      db.prepare(`UPDATE brukere SET passord_hash = ? WHERE telefon = ?`).run(foresporsel.passord_hash, foresporsel.leder_telefon);
     }
   }
 
@@ -5050,19 +5060,33 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     VALUES (?, ?, ?)
   `).run(foresporsel.leder_telefon, klubbId, lederRolle);
 
-  // Behandle ekstra admins
+  // Behandle ekstra admins - opprett brukerprofil hvis de ikke finnes
   try {
     const ekstraAdmins = JSON.parse(foresporsel.ekstra_admins || '[]');
+    const now = new Date().toISOString();
     for (const admin of ekstraAdmins) {
       if (admin.phone) {
         const adminTlf = normalizePhone(admin.phone);
+
+        // Opprett brukerprofil hvis den ikke finnes
+        const eksisterendeAdmin = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(adminTlf);
+        if (!eksisterendeAdmin) {
+          db.prepare(`
+            INSERT INTO brukere (telefon, fornavn, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+            VALUES (?, '', 'deltaker', 1, ?)
+          `).run(adminTlf, now);
+          console.log(`📱 Brukerprofil opprettet for ekstra admin: ${adminTlf}`);
+        }
+
         db.prepare(`
           INSERT OR IGNORE INTO klubb_admins (telefon, klubb_id, rolle)
           VALUES (?, ?, 'admin')
         `).run(adminTlf, klubbId);
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.error("Feil ved behandling av ekstra admins:", e);
+  }
 
   // Oppdater forespørsel-status
   db.prepare(`

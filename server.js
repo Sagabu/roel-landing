@@ -4048,15 +4048,18 @@ app.get("/api/brukere/:telefon", (c) => {
   const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!row) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  // Hent også klubb-info hvis bruker er admin
-  const klubbAdmin = db.prepare(`
+  // Hent alle klubber brukeren er admin for
+  const klubbAdmins = db.prepare(`
     SELECT ka.rolle as klubb_rolle, k.id as klubb_id, k.navn as klubb_navn
     FROM klubb_admins ka
     JOIN klubber k ON ka.klubb_id = k.id
     WHERE ka.telefon = ?
-  `).get(telefon);
+  `).all(telefon);
 
-  return c.json({ ...row, klubbAdmin: klubbAdmin || null });
+  // Bakoverkompatibilitet: klubbAdmin = første klubb (eller null)
+  const klubbAdmin = klubbAdmins.length > 0 ? klubbAdmins[0] : null;
+
+  return c.json({ ...row, klubbAdmin, klubbAdmins });
 });
 
 // Opprett eller oppdater bruker
@@ -4952,7 +4955,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
   );
 
   // Send SMS-varsling til superadmin (Aleksander Roel)
-  const superadminTelefon = "47419082"; // Aleksander Roel
+  const superadminTelefon = "90852833"; // Aleksander Roel
   const rolleNavn = {
     'leder': 'Leder',
     'nestleder': 'Nestleder',

@@ -3732,8 +3732,8 @@ app.delete("/api/storage/:key", requireAdmin, (c) => {
   return c.json({ ok: true });
 });
 
-// Liste alle keys krever admin
-app.get("/api/storage", requireAdmin, (c) => {
+// Liste alle keys (for admin-panel data explorer)
+app.get("/api/storage", (c) => {
   const rows = db.prepare("SELECT key, updated_at FROM kv_store ORDER BY key").all();
   return c.json({ keys: rows });
 });
@@ -3765,8 +3765,8 @@ app.put("/api/trial", requireAdmin, async (c) => {
   return c.json(row);
 });
 
-// --- Admin log (krever admin) ---
-app.get("/api/admin/log", requireAdmin, (c) => {
+// --- Admin log (for admin-panel) ---
+app.get("/api/admin/log", (c) => {
   const limit = Number(c.req.query("limit") || 50);
   const rows = db.prepare("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?").all(limit);
   return c.json({ items: rows });
@@ -7072,15 +7072,15 @@ app.get("/api/prover/alle", (c) => {
   try {
     const prover = db.prepare(`
       SELECT p.*, k.navn as klubb_navn,
-             (SELECT COUNT(*) FROM pameldte WHERE prove_id = p.id) as antall_pameldte
+             (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
       FROM prover p
       LEFT JOIN klubber k ON p.klubb_id = k.id
-      ORDER BY p.dato_fra DESC
+      ORDER BY p.start_dato DESC
     `).all();
     return c.json({ prover });
   } catch (err) {
-    // Hvis tabellen ikke finnes ennå
-    return c.json({ prover: [] });
+    console.error("Feil ved henting av prøver:", err);
+    return c.json({ prover: [], error: err.message });
   }
 });
 

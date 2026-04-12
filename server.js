@@ -3775,23 +3775,43 @@ app.get("/api/admin/log", (c) => {
   let whereClause = "1=1";
   const params = [];
 
-  // Filter på klubb
+  // Hent klubber og prøver for filter-dropdowns
+  const klubber = db.prepare("SELECT id, navn FROM klubber ORDER BY navn").all();
+  const alleProver = db.prepare("SELECT id, navn, klubb_id FROM prover ORDER BY start_dato DESC").all();
+
+  // Filter på klubb - finn alle prøve-IDer for denne klubben
   if (klubbId) {
-    whereClause += " AND (klubb_id = ? OR detail LIKE ?)";
-    params.push(klubbId, `%${klubbId}%`);
+    const klubbProver = alleProver.filter(p => p.klubb_id === klubbId);
+    const klubbNavn = klubber.find(k => k.id === klubbId)?.navn || '';
+
+    if (klubbProver.length > 0) {
+      // Søk etter klubb-id, klubbnavn, eller prøve-IDer som tilhører klubben
+      const proveIds = klubbProver.map(p => p.id);
+      const proveNavner = klubbProver.map(p => p.navn);
+      const searchTerms = [klubbId, klubbNavn, ...proveIds, ...proveNavner].filter(t => t);
+      const likeClauses = searchTerms.map(() => "detail LIKE ?").join(" OR ");
+      whereClause += ` AND (${likeClauses})`;
+      searchTerms.forEach(t => params.push(`%${t}%`));
+    } else {
+      // Bare søk på klubb-id og klubbnavn
+      whereClause += " AND (detail LIKE ? OR detail LIKE ?)";
+      params.push(`%${klubbId}%`, `%${klubbNavn}%`);
+    }
   }
 
   // Filter på prøve
   if (proveId) {
-    whereClause += " AND (prove_id = ? OR detail LIKE ?)";
-    params.push(proveId, `%${proveId}%`);
+    const prove = alleProver.find(p => p.id === proveId);
+    const proveNavn = prove?.navn || '';
+    whereClause += " AND (detail LIKE ? OR detail LIKE ?)";
+    params.push(`%${proveId}%`, `%${proveNavn}%`);
   }
 
   // Filter på type
   if (type === "innlogging") {
     whereClause += " AND action LIKE '%innlogg%'";
   } else if (type === "prove") {
-    whereClause += " AND (action LIKE '%prove%' OR action LIKE '%prøve%' OR action LIKE '%pamelding%' OR action LIKE '%kritikk%')";
+    whereClause += " AND (action LIKE '%prove%' OR action LIKE '%prøve%' OR action LIKE '%pamelding%' OR action LIKE '%kritikk%' OR action LIKE '%trial%')";
   } else if (type === "bruker") {
     whereClause += " AND (action LIKE '%bruker%' OR action LIKE '%dommer%' OR action LIKE '%samtykke%')";
   } else if (type === "klubb") {
@@ -3802,9 +3822,11 @@ app.get("/api/admin/log", (c) => {
 
   const rows = db.prepare(`SELECT * FROM admin_log WHERE ${whereClause} ORDER BY id DESC LIMIT ?`).all(...params, limit);
 
-  // Hent også liste over klubber og prøver for filter-dropdowns
-  const klubber = db.prepare("SELECT id, navn FROM klubber ORDER BY navn").all();
-  const prover = db.prepare("SELECT id, navn FROM prover ORDER BY start_dato DESC").all();
+  // For prøve-dropdown: filtrer basert på valgt klubb
+  let prover = alleProver;
+  if (klubbId) {
+    prover = alleProver.filter(p => p.klubb_id === klubbId);
+  }
 
   return c.json({ items: rows, klubber, prover });
 });

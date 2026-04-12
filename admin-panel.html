@@ -2604,7 +2604,7 @@ fuglehundprove.no`;
         }
     }
 
-    let logFiltersInitialized = false;
+    let logKlubberInitialized = false;
 
     async function loadLog() {
         const klubbId = document.getElementById('logKlubbFilter')?.value || '';
@@ -2619,26 +2619,33 @@ fuglehundprove.no`;
         const r = await fetch('/api/admin/log?' + params.toString());
         const { items, klubber, prover } = await r.json();
 
-        // Oppdater filter-dropdowns (kun første gang)
-        if (!logFiltersInitialized && klubber && prover) {
+        // Oppdater klubb-dropdown (kun første gang)
+        if (!logKlubberInitialized && klubber) {
             const klubbSelect = document.getElementById('logKlubbFilter');
-            const proveSelect = document.getElementById('logProveFilter');
-
             klubber.forEach(k => {
                 const opt = document.createElement('option');
                 opt.value = k.id;
                 opt.textContent = k.navn;
                 klubbSelect.appendChild(opt);
             });
+            logKlubberInitialized = true;
+        }
 
+        // Oppdater prøve-dropdown basert på valgt klubb (oppdateres hver gang)
+        const proveSelect = document.getElementById('logProveFilter');
+        const currentProveValue = proveSelect.value;
+        proveSelect.innerHTML = '<option value="">Alle prøver</option>';
+        if (prover) {
             prover.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
                 opt.textContent = p.navn;
                 proveSelect.appendChild(opt);
             });
-
-            logFiltersInitialized = true;
+            // Behold valgt prøve hvis den fortsatt finnes i listen
+            if (currentProveValue && prover.some(p => p.id === currentProveValue)) {
+                proveSelect.value = currentProveValue;
+            }
         }
 
         const container = document.getElementById('adminLog');

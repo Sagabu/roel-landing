@@ -5167,7 +5167,7 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
   try {
     await sendSMS(
       foresporsel.leder_telefon,
-      `Hei! "${foresporsel.navn}" er godkjent. Du har tilgang til klubbens profil via "Min side" på fuglehundprove.no`,
+      `Gratulerer! "${foresporsel.navn}" er nå godkjent på fuglehundprove.no. Logg inn med ditt mobilnummer og passord for å administrere klubben og opprette prøver. Velkommen!`,
       { type: 'klubb_godkjent' }
     );
     console.log(`📱 SMS sendt til ${foresporsel.leder_telefon} om godkjent klubb: ${foresporsel.navn}`);
@@ -5200,6 +5200,24 @@ app.post("/api/klubb-foresporsel/:id/avslaa", async (c) => {
     "klubb_avslatt",
     `Avslått klubb-forespørsel: ${foresporsel.navn} - ${grunn || 'Ingen grunn oppgitt'}`
   );
+
+  // Send SMS til søker om avslag
+  try {
+    let smsText = `Hei! Din forespørsel om å opprette "${foresporsel.navn}" på fuglehundprove.no ble dessverre ikke godkjent.`;
+    if (grunn) {
+      smsText += ` Begrunnelse: ${grunn}`;
+    }
+    smsText += ` Ta kontakt på post@fuglehundprove.no ved spørsmål.`;
+
+    await sendSMS(
+      foresporsel.leder_telefon,
+      smsText,
+      { type: 'klubb_avslatt' }
+    );
+    console.log(`📱 SMS sendt til ${foresporsel.leder_telefon} om avslått klubb: ${foresporsel.navn}`);
+  } catch (smsErr) {
+    console.error("Kunne ikke sende avslags-SMS:", smsErr);
+  }
 
   return c.json({ success: true });
 });

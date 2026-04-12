@@ -3813,9 +3813,10 @@ app.get("/api/admin/log", (c) => {
   } else if (type === "prove") {
     whereClause += " AND (action LIKE '%prove%' OR action LIKE '%prøve%' OR action LIKE '%pamelding%' OR action LIKE '%kritikk%' OR action LIKE '%trial%')";
   } else if (type === "bruker") {
-    whereClause += " AND (action LIKE '%bruker%' OR action LIKE '%dommer%' OR action LIKE '%samtykke%')";
+    // Bruker-endringer: registrering, sletting, rolle-endring, samtykke - MEN IKKE innlogging
+    whereClause += " AND (action IN ('bruker_registrert', 'bruker_slettet', 'bruker_rolle_endret', 'samtykke_registrert', 'samtykke_registrert_admin', 'samtykke_trukket') OR (action LIKE '%dommer%' AND action NOT LIKE '%innlogg%'))";
   } else if (type === "klubb") {
-    whereClause += " AND action LIKE '%klubb%'";
+    whereClause += " AND (action LIKE '%klubb%' OR action IN ('klubb_foresporsel', 'klubb_godkjent', 'klubb_avslatt', 'klubb_opprettet'))";
   } else if (type === "sms") {
     whereClause += " AND action LIKE '%sms%'";
   }

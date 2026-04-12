@@ -2604,8 +2604,6 @@ fuglehundprove.no`;
         }
     }
 
-    let logKlubberInitialized = false;
-
     async function loadLog() {
         const klubbId = document.getElementById('logKlubbFilter')?.value || '';
         const proveId = document.getElementById('logProveFilter')?.value || '';
@@ -2619,16 +2617,21 @@ fuglehundprove.no`;
         const r = await fetch('/api/admin/log?' + params.toString());
         const { items, klubber, prover } = await r.json();
 
-        // Oppdater klubb-dropdown (kun første gang)
-        if (!logKlubberInitialized && klubber) {
-            const klubbSelect = document.getElementById('logKlubbFilter');
+        // Oppdater klubb-dropdown (alltid, for å fange opp nye klubber)
+        const klubbSelect = document.getElementById('logKlubbFilter');
+        const currentKlubbValue = klubbSelect.value;
+        klubbSelect.innerHTML = '<option value="">Alle klubber</option>';
+        if (klubber) {
             klubber.forEach(k => {
                 const opt = document.createElement('option');
                 opt.value = k.id;
                 opt.textContent = k.navn;
                 klubbSelect.appendChild(opt);
             });
-            logKlubberInitialized = true;
+            // Behold valgt klubb
+            if (currentKlubbValue && klubber.some(k => k.id === currentKlubbValue)) {
+                klubbSelect.value = currentKlubbValue;
+            }
         }
 
         // Oppdater prøve-dropdown basert på valgt klubb (oppdateres hver gang)

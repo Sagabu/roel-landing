@@ -707,18 +707,33 @@
             </div>
         </div>
 
-        <!-- Data Explorer -->
-        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-4 md:p-6">
-            <h2 class="text-base md:text-lg font-serif font-bold text-bark-800 mb-4">Data (localStorage - SQLite)</h2>
-            <div id="dataExplorer" class="space-y-2 md:space-y-3">
-                <p class="text-bark-400">Laster...</p>
-            </div>
-        </div>
-
         <!-- Admin Log -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-4 md:p-6">
-            <h2 class="text-base md:text-lg font-serif font-bold text-bark-800 mb-4">Endringslogg</h2>
-            <div id="adminLog" class="space-y-2 text-sm">
+            <div class="flex flex-col gap-3 mb-4">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                        <h2 class="text-base md:text-lg font-serif font-bold text-bark-800">Endringslogg</h2>
+                        <p class="text-xs md:text-sm text-bark-500">Oversikt over handlinger i systemet</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <select id="logKlubbFilter" onchange="loadLog()" class="flex-1 sm:flex-none px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none min-w-[150px]">
+                        <option value="">Alle klubber</option>
+                    </select>
+                    <select id="logProveFilter" onchange="loadLog()" class="flex-1 sm:flex-none px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none min-w-[150px]">
+                        <option value="">Alle prøver</option>
+                    </select>
+                    <select id="logTypeFilter" onchange="loadLog()" class="flex-1 sm:flex-none px-3 py-2 border border-bark-200 rounded-lg text-sm focus:border-warm-500 focus:outline-none min-w-[150px]">
+                        <option value="">Alle typer</option>
+                        <option value="innlogging">Innlogginger</option>
+                        <option value="prove">Prøve-endringer</option>
+                        <option value="bruker">Bruker-endringer</option>
+                        <option value="klubb">Klubb-endringer</option>
+                        <option value="sms">SMS</option>
+                    </select>
+                </div>
+            </div>
+            <div id="adminLog" class="space-y-2 text-sm max-h-96 overflow-y-auto">
                 <p class="text-bark-400">Laster...</p>
             </div>
         </div>
@@ -2589,56 +2604,104 @@ fuglehundprove.no`;
         }
     }
 
-    async function loadData() {
-        const r = await fetch('/api/storage');
-        const { keys } = await r.json();
-        const container = document.getElementById('dataExplorer');
-        if (keys.length === 0) {
-            container.innerHTML = '<p class="text-bark-400">Ingen data lagret ennå. Bruk prøvesidene for å generere data.</p>';
-            return;
-        }
-        container.innerHTML = keys.map(k => `
-            <details class="border border-bark-200 rounded-xl">
-                <summary class="px-2 md:px-4 py-2 md:py-3 cursor-pointer hover:bg-bark-50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
-                    <span class="font-medium text-bark-700 text-sm md:text-base break-all">${k.key}</span>
-                    <span class="text-xs text-bark-400">${k.updated_at}</span>
-                </summary>
-                <div class="px-2 md:px-4 py-2 md:py-3 bg-bark-50 border-t border-bark-200">
-                    <pre id="data-${k.key}" class="text-xs text-bark-600 overflow-x-auto max-h-64 whitespace-pre-wrap break-words">Laster...</pre>
-                </div>
-            </details>
-        `).join('');
-        // Lazy load values on expand
-        container.querySelectorAll('details').forEach(d => {
-            d.addEventListener('toggle', async () => {
-                if (!d.open) return;
-                const key = d.querySelector('summary span').textContent;
-                const pre = d.querySelector('pre');
-                if (pre.textContent !== 'Laster...') return;
-                const resp = await fetch(`/api/storage/${encodeURIComponent(key)}`);
-                const { value } = await resp.json();
-                pre.textContent = JSON.stringify(value, null, 2);
-            });
-        });
-    }
+    let logFiltersInitialized = false;
 
     async function loadLog() {
-        const r = await fetch('/api/admin/log');
-        const { items } = await r.json();
+        const klubbId = document.getElementById('logKlubbFilter')?.value || '';
+        const proveId = document.getElementById('logProveFilter')?.value || '';
+        const type = document.getElementById('logTypeFilter')?.value || '';
+
+        const params = new URLSearchParams();
+        if (klubbId) params.append('klubb_id', klubbId);
+        if (proveId) params.append('prove_id', proveId);
+        if (type) params.append('type', type);
+
+        const r = await fetch('/api/admin/log?' + params.toString());
+        const { items, klubber, prover } = await r.json();
+
+        // Oppdater filter-dropdowns (kun første gang)
+        if (!logFiltersInitialized && klubber && prover) {
+            const klubbSelect = document.getElementById('logKlubbFilter');
+            const proveSelect = document.getElementById('logProveFilter');
+
+            klubber.forEach(k => {
+                const opt = document.createElement('option');
+                opt.value = k.id;
+                opt.textContent = k.navn;
+                klubbSelect.appendChild(opt);
+            });
+
+            prover.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.navn;
+                proveSelect.appendChild(opt);
+            });
+
+            logFiltersInitialized = true;
+        }
+
         const container = document.getElementById('adminLog');
         if (items.length === 0) {
-            container.innerHTML = '<p class="text-bark-400">Ingen handlinger ennå.</p>';
+            container.innerHTML = '<p class="text-bark-400 text-center py-4">Ingen handlinger funnet med valgte filtre.</p>';
             return;
         }
-        container.innerHTML = items.map(i => `
-            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start py-2 border-b border-bark-100 last:border-0 gap-1">
-                <div class="min-w-0 flex-1">
-                    <span class="text-xs md:text-sm font-medium text-bark-700">${i.action}</span>
-                    <p class="text-xs text-bark-400 mt-0.5 break-words">${i.detail?.substring(0, 120) || ''}</p>
-                </div>
-                <span class="text-xs text-bark-400 whitespace-nowrap sm:ml-4">${i.created_at}</span>
-            </div>
-        `).join('');
+
+        // Formater handlingstype til lesbart navn
+        const formatAction = (action) => {
+            const mapping = {
+                'bruker_innlogget': '🔑 Innlogging',
+                'bruker_registrert': '👤 Bruker registrert',
+                'bruker_slettet': '🗑️ Bruker slettet',
+                'klubb_foresporsel': '📋 Klubb-forespørsel',
+                'klubb_godkjent': '✅ Klubb godkjent',
+                'klubb_avslatt': '❌ Klubb avslått',
+                'prove_opprettet': '📅 Prøve opprettet',
+                'prove_oppdatert': '✏️ Prøve oppdatert',
+                'pamelding': '🐕 Påmelding',
+                'kritikk_lagret': '📝 Kritikk lagret',
+                'sms_sendt': '📱 SMS sendt',
+                'auto_dommer_tildelt': '⚖️ Dommer tildelt',
+                'trial_update': '⚙️ Prøve-konfig oppdatert'
+            };
+            return mapping[action] || action;
+        };
+
+        // Grupper etter dato
+        const grouped = {};
+        items.forEach(i => {
+            const date = i.created_at?.split(' ')[0] || 'Ukjent dato';
+            if (!grouped[date]) grouped[date] = [];
+            grouped[date].push(i);
+        });
+
+        let html = '';
+        for (const [date, logs] of Object.entries(grouped)) {
+            html += `<div class="text-xs font-medium text-bark-500 bg-bark-50 px-2 py-1 rounded mt-2 first:mt-0">${date}</div>`;
+            logs.forEach(i => {
+                let detailText = '';
+                try {
+                    const detail = JSON.parse(i.detail || '{}');
+                    if (detail.telefon) detailText = `Tlf: ${detail.telefon}`;
+                    else if (detail.navn) detailText = detail.navn;
+                    else detailText = i.detail?.substring(0, 80) || '';
+                } catch {
+                    detailText = i.detail?.substring(0, 80) || '';
+                }
+
+                html += `
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start py-2 border-b border-bark-100 last:border-0 gap-1">
+                        <div class="min-w-0 flex-1">
+                            <span class="text-xs md:text-sm font-medium text-bark-700">${formatAction(i.action)}</span>
+                            <p class="text-xs text-bark-400 mt-0.5 break-words">${detailText}</p>
+                        </div>
+                        <span class="text-xs text-bark-400 whitespace-nowrap sm:ml-4">${i.created_at?.split(' ')[1] || ''}</span>
+                    </div>
+                `;
+            });
+        }
+
+        container.innerHTML = html;
     }
 
     // ============================================
@@ -4683,7 +4746,6 @@ Med vennlig hilsen,
         loadKlubbForesporsel(),
         loadSurveys(),
         loadBrukere(),
-        loadData(),
         loadLog(),
         loadSamtykker(),
         loadKlubber(),

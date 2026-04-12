@@ -3767,9 +3767,46 @@ app.put("/api/trial", requireAdmin, async (c) => {
 
 // --- Admin log (for admin-panel) ---
 app.get("/api/admin/log", (c) => {
-  const limit = Number(c.req.query("limit") || 50);
-  const rows = db.prepare("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?").all(limit);
-  return c.json({ items: rows });
+  const limit = Number(c.req.query("limit") || 100);
+  const klubbId = c.req.query("klubb_id") || "";
+  const proveId = c.req.query("prove_id") || "";
+  const type = c.req.query("type") || "";
+
+  let whereClause = "1=1";
+  const params = [];
+
+  // Filter på klubb
+  if (klubbId) {
+    whereClause += " AND (klubb_id = ? OR detail LIKE ?)";
+    params.push(klubbId, `%${klubbId}%`);
+  }
+
+  // Filter på prøve
+  if (proveId) {
+    whereClause += " AND (prove_id = ? OR detail LIKE ?)";
+    params.push(proveId, `%${proveId}%`);
+  }
+
+  // Filter på type
+  if (type === "innlogging") {
+    whereClause += " AND action LIKE '%innlogg%'";
+  } else if (type === "prove") {
+    whereClause += " AND (action LIKE '%prove%' OR action LIKE '%prøve%' OR action LIKE '%pamelding%' OR action LIKE '%kritikk%')";
+  } else if (type === "bruker") {
+    whereClause += " AND (action LIKE '%bruker%' OR action LIKE '%dommer%' OR action LIKE '%samtykke%')";
+  } else if (type === "klubb") {
+    whereClause += " AND action LIKE '%klubb%'";
+  } else if (type === "sms") {
+    whereClause += " AND action LIKE '%sms%'";
+  }
+
+  const rows = db.prepare(`SELECT * FROM admin_log WHERE ${whereClause} ORDER BY id DESC LIMIT ?`).all(...params, limit);
+
+  // Hent også liste over klubber og prøver for filter-dropdowns
+  const klubber = db.prepare("SELECT id, navn FROM klubber ORDER BY navn").all();
+  const prover = db.prepare("SELECT id, navn FROM prover ORDER BY start_dato DESC").all();
+
+  return c.json({ items: rows, klubber, prover });
 });
 
 // ============================================

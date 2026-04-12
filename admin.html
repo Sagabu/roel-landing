@@ -4085,6 +4085,10 @@
 
         function getCurrentTrialId() {
             const urlParams = new URLSearchParams(window.location.search);
+            // Hvis nyProve=true, returner tom streng (ingen gammel prøve)
+            if (urlParams.get('nyProve') === 'true' && !urlParams.get('trial')) {
+                return '';
+            }
             return urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
         }
 
@@ -4886,9 +4890,72 @@
         // ========================================
         (async function loadTrialData() {
             const urlParams = new URLSearchParams(window.location.search);
-            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
             const klubbId = urlParams.get('klubbId');
             const nyProve = urlParams.get('nyProve');
+
+            // Hvis nyProve=true, tøm gammel prøve-data og start med blanke felter
+            if (nyProve === 'true') {
+                console.log('[Admin] Oppretter ny prøve - tømmer gammel data');
+                localStorage.removeItem('currentTrialId');
+                localStorage.removeItem('trialVkType');
+                localStorage.removeItem('trialStartDate');
+
+                // Tøm alle skjemafelter
+                const fieldsToReset = [
+                    'trialName', 'trialDateFrom', 'trialDateTo', 'trialLocation',
+                    'provelederSearch', 'provelederTelefon',
+                    'nkkRepSearch', 'nkkRepTelefon',
+                    'nkkVaraSearch', 'nkkVaraTelefon',
+                    'dvkSearch', 'dvkTelefon'
+                ];
+                fieldsToReset.forEach(fieldId => {
+                    const field = document.getElementById(fieldId);
+                    if (field) field.value = '';
+                });
+
+                // Reset VK-type til standard
+                const vkTypeSelect = document.getElementById('vkTypeSelect');
+                if (vkTypeSelect) vkTypeSelect.value = 'none';
+
+                // Reset skjulte telefon-felt
+                ['proveleder', 'nkkRep', 'nkkVara', 'dvk'].forEach(rolle => {
+                    const hiddenInput = document.getElementById(rolle + 'Telefon');
+                    if (hiddenInput) hiddenInput.value = '';
+                });
+
+                // Nullstill globale arrays for å unngå at gammel prøve-data henger igjen
+                if (typeof currentParticipants !== 'undefined') currentParticipants = [];
+                if (typeof fkfDommere !== 'undefined') fkfDommere = [];
+                if (typeof partyDommere !== 'undefined') partyDommere = {};
+                if (typeof kvalifiserteHunder !== 'undefined') kvalifiserteHunder = [];
+                if (typeof manuellKvalData !== 'undefined') manuellKvalData = {};
+                if (typeof adminAversjonsData !== 'undefined') adminAversjonsData = [];
+                if (typeof andreInntekter !== 'undefined') andreInntekter = [];
+                if (typeof andreUtgifter !== 'undefined') andreUtgifter = [];
+                if (typeof vippsForesporsler !== 'undefined') vippsForesporsler = [];
+                if (typeof vippsValgteMottakere !== 'undefined') vippsValgteMottakere = [];
+                if (typeof adminMessages !== 'undefined') adminMessages = [];
+
+                // Tøm UI-elementer som kan vise gammel data
+                const elementsToEmpty = [
+                    'participantList', 'partiesContainer', 'ventelisteContainer',
+                    'kritikkDashboard', 'adminAversjonsbevisListe'
+                ];
+                elementsToEmpty.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = '';
+                });
+
+                // Reset statistikk-kort
+                const statsToReset = ['totalDogs', 'ukDogs', 'akDogs', 'vkDogs'];
+                statsToReset.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = '0';
+                });
+            }
+
+            // Hent trialId kun hvis det IKKE er ny prøve
+            const trialId = nyProve === 'true' ? null : (urlParams.get('trial') || localStorage.getItem('currentTrialId'));
 
             // Hvis klubbId er satt, hent klubbdata og autofyll arrangør
             if (klubbId) {

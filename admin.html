@@ -4613,7 +4613,7 @@
         }
 
         async function loadJegermiddagStats() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
@@ -4652,7 +4652,7 @@
         }
 
         async function loadJegermiddagPameldinger() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             const container = document.getElementById('jegermiddagPameldingListe');
@@ -4727,7 +4727,7 @@
         }
 
         async function toggleJegermiddagBetaling(pameldingId, betalt) {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
@@ -4750,7 +4750,7 @@
         }
 
         async function exportJegermiddagExcel() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
@@ -4785,7 +4785,7 @@
                 return;
             }
 
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) {
                 alert('Ingen aktiv prøve valgt');
                 return;
@@ -4839,7 +4839,7 @@
             const baseUrl = window.location.origin + window.location.pathname.replace('admin.html', '');
             // Include proveId in share link for unique party lists per trial
             const urlParams = new URLSearchParams(window.location.search);
-            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
+            const trialId = getCurrentTrialId();
             const shareUrl = trialId ? `${baseUrl}partilister.html?prove=${trialId}` : `${baseUrl}partilister.html`;
 
             // Update the displayed URL
@@ -4934,12 +4934,17 @@
                 if (typeof andreUtgifter !== 'undefined') andreUtgifter = [];
                 if (typeof vippsForesporsler !== 'undefined') vippsForesporsler = [];
                 if (typeof vippsValgteMottakere !== 'undefined') vippsValgteMottakere = [];
+                if (typeof vippsKlubbNummer !== 'undefined') vippsKlubbNummer = null;
+                if (typeof vippsKlubbNavn !== 'undefined') vippsKlubbNavn = 'Klubben';
+                if (typeof vippsApiConfig !== 'undefined') vippsApiConfig = null;
+                if (typeof vippsStatistikkData !== 'undefined') vippsStatistikkData = null;
                 if (typeof adminMessages !== 'undefined') adminMessages = [];
 
                 // Tøm UI-elementer som kan vise gammel data
                 const elementsToEmpty = [
                     'participantList', 'partiesContainer', 'ventelisteContainer',
-                    'kritikkDashboard', 'adminAversjonsbevisListe'
+                    'kritikkDashboard', 'adminAversjonsbevisListe',
+                    'vippsList', 'vippsValgteMottakere', 'vippsPartiButtons'
                 ];
                 elementsToEmpty.forEach(id => {
                     const el = document.getElementById(id);
@@ -8585,7 +8590,7 @@
 
         // Load saved logo from database (prøve eller klubb)
         async function loadProveOrKlubbLogo() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
@@ -8610,7 +8615,7 @@
 
         adminLogoInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
 
             if (file && proveId) {
                 // Vis loading
@@ -12403,7 +12408,7 @@
 
         // Varsle NKK-rep om ventende rapport (SMS)
         async function varsleNkkRep(rapportType) {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) {
                 alert('Ingen prøve valgt. Lagre prøvedetaljer først.');
                 return;
@@ -12434,7 +12439,7 @@
 
         // Lagre rapport-versjon til audit-trail
         async function saveRapportVersjon(rapportType, data, beskrivelse) {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return null;
 
             try {
@@ -12555,7 +12560,7 @@
                 return;
             }
 
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) {
                 alert('Ingen prøve valgt');
                 return;
@@ -12607,7 +12612,7 @@
         }
 
         async function loadNJFFListe() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             const container = document.getElementById('njffListe');
@@ -12675,7 +12680,7 @@
         async function slettFratattAversjon(id) {
             if (!confirm('Er du sikker på at du vil slette denne registreringen? Hundens aversjonsbevis vil bli gjenopprettet.')) return;
 
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
@@ -12694,7 +12699,7 @@
         }
 
         async function exportNJFFRapport() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) {
                 alert('Ingen prøve valgt');
                 return;
@@ -12730,7 +12735,7 @@
         // ========================================
 
         async function lastUonsketAdferd() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) {
                 document.getElementById('uonsketAdferdBadge').textContent = '–';
                 document.getElementById('uonsketAdferdListe').innerHTML =
@@ -13410,7 +13415,7 @@
         // Initialiser Vipps-seksjonen
         async function initVipps() {
             const urlParams = new URLSearchParams(window.location.search);
-            const trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+            const trialId = getCurrentTrialId();
             const klubbId = localStorage.getItem('currentKlubbId');
 
             try {
@@ -13726,7 +13731,7 @@
 
             const userPhone = localStorage.getItem('userPhone') || '';
             const urlParams = new URLSearchParams(window.location.search);
-            const proveId = urlParams.get('trial') || localStorage.getItem('currentTrialId') || 'ukjent';
+            const proveId = getCurrentTrialId() || 'ukjent';
 
             try {
                 // Velg riktig API-endepunkt basert på modus
@@ -13861,7 +13866,7 @@
 
         async function loadVippsForesporsler() {
             const urlParams = new URLSearchParams(window.location.search);
-            const proveId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
 
             if (!proveId) {
                 console.log('Ingen prøve-ID, kan ikke laste Vipps-forespørsler');
@@ -14305,7 +14310,7 @@
 
         // Last sendte rolle-SMS for å vise status
         async function loadSendteRolleSms() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
@@ -14353,7 +14358,7 @@
 
         // Send SMS for roller som har checkbox avkrysset
         async function sendRolleSmsVarslinger() {
-            const proveId = localStorage.getItem('currentTrialId');
+            const proveId = getCurrentTrialId();
             if (!proveId) return { sendt: 0, feil: [] };
 
             const roller = [
@@ -14668,7 +14673,7 @@
                     premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
                     tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
                 };
-                const proveId = localStorage.getItem('currentTrialId');
+                const proveId = getCurrentTrialId();
                 localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
 
                 // Lagre til server med prøve-spesifikk nøkkel for at SMS-blokkering skal fungere
@@ -14771,7 +14776,7 @@
             try {
                 // Hent eksisterende prøve-ID fra URL eller localStorage
                 const urlParams = new URLSearchParams(window.location.search);
-                let trialId = urlParams.get('trial') || localStorage.getItem('currentTrialId');
+                let trialId = getCurrentTrialId();
 
                 // Hent klubb-ID fra userSession
                 const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');

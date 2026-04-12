@@ -5314,6 +5314,7 @@ app.get("/api/superadmin/sms-samtykke/export", (c) => {
 // ============================================
 
 // Hent samtykke-oversikt med søk og filter
+// Bruker sms_samtykke (settes ved registrering) som primært samtykke-felt
 app.get("/api/superadmin/samtykker", (c) => {
   const search = c.req.query("search") || "";
   const filter = c.req.query("filter") || "alle";
@@ -5329,15 +5330,18 @@ app.get("/api/superadmin/samtykker", (c) => {
     params.push(searchParam, searchParam, searchParam, searchParam);
   }
 
-  // Filter
+  // Filter - bruk sms_samtykke som primært felt
   if (filter === "med_samtykke") {
-    whereClause += " AND samtykke_gitt IS NOT NULL";
+    whereClause += " AND sms_samtykke = 1";
   } else if (filter === "uten_samtykke") {
-    whereClause += " AND samtykke_gitt IS NULL";
+    whereClause += " AND (sms_samtykke IS NULL OR sms_samtykke = 0)";
   }
 
   const brukere = db.prepare(`
-    SELECT telefon, fornavn, etternavn, epost, rolle, samtykke_gitt, created_at
+    SELECT telefon, fornavn, etternavn, epost, rolle,
+           sms_samtykke, sms_samtykke_tidspunkt,
+           CASE WHEN sms_samtykke = 1 THEN sms_samtykke_tidspunkt ELSE NULL END as samtykke_gitt,
+           created_at
     FROM brukere
     WHERE ${whereClause}
     ORDER BY created_at DESC
@@ -5346,7 +5350,7 @@ app.get("/api/superadmin/samtykker", (c) => {
 
   // Statistikk
   const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
-  const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE samtykke_gitt IS NOT NULL").get().n;
+  const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE sms_samtykke = 1").get().n;
 
   return c.json({
     brukere,
@@ -5400,9 +5404,10 @@ app.post("/api/superadmin/samtykke/:telefon", (c) => {
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(telefon);
+  const now = new Date().toISOString();
+  db.prepare("UPDATE brukere SET sms_samtykke = 1, sms_samtykke_tidspunkt = ? WHERE telefon = ?").run(now, telefon);
 
-  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+  return c.json({ ok: true, samtykke_gitt: now, sms_samtykke: true });
 });
 
 // Trekk samtykke (superadmin)
@@ -5412,7 +5417,7 @@ app.delete("/api/superadmin/samtykke/:telefon", (c) => {
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  db.prepare("UPDATE brukere SET samtykke_gitt = NULL WHERE telefon = ?").run(telefon);
+  db.prepare("UPDATE brukere SET sms_samtykke = 0, sms_samtykke_tidspunkt = NULL WHERE telefon = ?").run(telefon);
 
   return c.json({ ok: true });
 });
@@ -5420,12 +5425,12 @@ app.delete("/api/superadmin/samtykke/:telefon", (c) => {
 // Eksporter samtykker til CSV
 app.get("/api/superadmin/samtykker/eksport", (c) => {
   const brukere = db.prepare(`
-    SELECT telefon, fornavn, etternavn, epost, rolle, samtykke_gitt, created_at
+    SELECT telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt, created_at
     FROM brukere
-    ORDER BY samtykke_gitt DESC NULLS LAST, created_at DESC
+    ORDER BY sms_samtykke_tidspunkt DESC NULLS LAST, created_at DESC
   `).all();
 
-  const header = "Telefon,Fornavn,Etternavn,E-post,Rolle,Samtykke gitt,Bruker opprettet";
+  const header = "Telefon,Fornavn,Etternavn,E-post,Rolle,SMS-samtykke,Samtykke tidspunkt,Bruker opprettet";
   const rows = brukere.map(b => {
     return [
       b.telefon,
@@ -5433,7 +5438,8 @@ app.get("/api/superadmin/samtykker/eksport", (c) => {
       b.etternavn || '',
       b.epost || '',
       b.rolle || 'deltaker',
-      b.samtykke_gitt || 'Mangler',
+      b.sms_samtykke ? 'Ja' : 'Nei',
+      b.sms_samtykke_tidspunkt || 'Mangler',
       b.created_at || ''
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });

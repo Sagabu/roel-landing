@@ -4974,7 +4974,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
 
   const normalizedPhone = normalizePhone(lederTelefon);
 
-  // Opprett brukerprofil umiddelbart (hvis ikke finnes) - med SMS-samtykke siden de registrerer seg selv
+  // Opprett brukerprofil umiddelbart (hvis ikke finnes) - med SMS-samtykke og verifisert siden de har bekreftet via SMS
   const existingUser = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(normalizedPhone);
   if (!existingUser) {
     const nameParts = lederNavn.trim().split(' ');
@@ -4982,13 +4982,13 @@ app.post("/api/klubb-foresporsel", async (c) => {
     const etternavn = nameParts.slice(1).join(' ') || '';
     const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt)
-      VALUES (?, ?, ?, ?, 'deltaker', ?, 1, ?)
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt, verifisert)
+      VALUES (?, ?, ?, ?, 'deltaker', ?, 1, ?, 1)
     `).run(normalizedPhone, fornavn, etternavn, lederEpost, passordHash, now);
   } else if (passordHash) {
-    // Oppdater passord hvis bruker finnes men ikke har passord
+    // Oppdater passord og sett verifisert hvis bruker finnes men ikke har passord
     db.prepare(`
-      UPDATE brukere SET passord_hash = ? WHERE telefon = ? AND (passord_hash IS NULL OR passord_hash = '')
+      UPDATE brukere SET passord_hash = ?, verifisert = 1 WHERE telefon = ? AND (passord_hash IS NULL OR passord_hash = '')
     `).run(passordHash, normalizedPhone);
   }
 
@@ -5088,31 +5088,34 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
   );
 
   // Opprett bruker for leder hvis ikke finnes
-  const existingUser = db.prepare("SELECT telefon, passord_hash, rolle FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
+  const existingUser = db.prepare("SELECT telefon, passord_hash, rolle, verifisert FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
   if (!existingUser) {
     const nameParts = foresporsel.leder_navn.split(' ');
     const fornavn = nameParts[0] || '';
     const etternavn = nameParts.slice(1).join(' ') || '';
     const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt)
-      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?, 1, ?)
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt, verifisert)
+      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?, 1, ?, 1)
     `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '', now);
   } else {
-    // Legg til klubbleder-rolle hvis den ikke finnes (deduplisert)
+    // Legg til klubbleder-rolle hvis den ikke finnes (deduplisert) + sett verifisert
     const eksisterendeRoller = (existingUser.rolle || '').split(',').map(r => r.trim()).filter(r => r);
     if (!eksisterendeRoller.includes('klubbleder')) {
       eksisterendeRoller.push('klubbleder');
       const nyRolle = [...new Set(eksisterendeRoller)].join(',');
 
       if (!existingUser.passord_hash && foresporsel.passord_hash) {
-        db.prepare(`UPDATE brukere SET rolle = ?, passord_hash = ? WHERE telefon = ?`).run(nyRolle, foresporsel.passord_hash, foresporsel.leder_telefon);
+        db.prepare(`UPDATE brukere SET rolle = ?, passord_hash = ?, verifisert = 1 WHERE telefon = ?`).run(nyRolle, foresporsel.passord_hash, foresporsel.leder_telefon);
       } else {
-        db.prepare(`UPDATE brukere SET rolle = ? WHERE telefon = ?`).run(nyRolle, foresporsel.leder_telefon);
+        db.prepare(`UPDATE brukere SET rolle = ?, verifisert = 1 WHERE telefon = ?`).run(nyRolle, foresporsel.leder_telefon);
       }
     } else if (!existingUser.passord_hash && foresporsel.passord_hash) {
-      // Brukeren har allerede klubbleder-rolle, men mangler passord
-      db.prepare(`UPDATE brukere SET passord_hash = ? WHERE telefon = ?`).run(foresporsel.passord_hash, foresporsel.leder_telefon);
+      // Brukeren har allerede klubbleder-rolle, men mangler passord - oppdater passord og sett verifisert
+      db.prepare(`UPDATE brukere SET passord_hash = ?, verifisert = 1 WHERE telefon = ?`).run(foresporsel.passord_hash, foresporsel.leder_telefon);
+    } else if (!existingUser.verifisert) {
+      // Sørg for at brukeren er verifisert
+      db.prepare(`UPDATE brukere SET verifisert = 1 WHERE telefon = ?`).run(foresporsel.leder_telefon);
     }
   }
 

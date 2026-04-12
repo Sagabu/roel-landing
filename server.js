@@ -1140,6 +1140,8 @@ const migrations = [
   "ALTER TABLE prover ADD COLUMN proveleder_navn TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN nkkrep_navn TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN nkkvara_navn TEXT DEFAULT NULL",
+  // Prøvetype (høyfjell_host, høyfjell_vinter, lavland_host, skogsfugl_host, skogsfugl_vinter, fullkombinert, apport)
+  "ALTER TABLE prover ADD COLUMN prove_type TEXT DEFAULT 'høyfjell_host'",
   // Automatisk venteliste-opprykk konfigurasjon
   "ALTER TABLE prove_config ADD COLUMN auto_venteliste_opprykk INTEGER DEFAULT 1",
   // Løpetid-egenerklæring (JSON med skjemadata)
@@ -7222,7 +7224,8 @@ app.post("/api/prover", requireAdmin, async (c) => {
       dvk_telefon = null,
       dvk_navn = '',
       klasser = { uk: true, ak: true, vk: true },
-      partier = {}
+      partier = {},
+      prove_type = 'høyfjell_host'
     } = body;
 
     if (!navn) {
@@ -7233,8 +7236,8 @@ app.post("/api/prover", requireAdmin, async (c) => {
     }
 
     db.prepare(`
-      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon, dvk_navn, klasser, partier, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt')
+      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon, dvk_navn, klasser, partier, status, prove_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt', ?)
     `).run(
       id,
       navn,
@@ -7248,7 +7251,8 @@ app.post("/api/prover", requireAdmin, async (c) => {
       dvk_telefon,
       dvk_navn,
       JSON.stringify(klasser),
-      JSON.stringify(partier)
+      JSON.stringify(partier),
+      prove_type
     );
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -7277,7 +7281,7 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
       return c.json({ error: "Prøve ikke funnet" }, 404);
     }
 
-    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "proveleder_navn", "nkkrep_telefon", "nkkrep_navn", "nkkvara_telefon", "nkkvara_navn", "dvk_telefon", "dvk_navn", "status"];
+    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "proveleder_navn", "nkkrep_telefon", "nkkrep_navn", "nkkvara_telefon", "nkkvara_navn", "dvk_telefon", "dvk_navn", "status", "prove_type"];
     const sets = [];
     const vals = [];
 

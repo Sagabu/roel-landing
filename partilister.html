@@ -267,7 +267,7 @@
 
         // Hjelpefunksjon for å få ukedag-navn basert på dag-nummer
         function getDayName(dayNumber) {
-            const startDate = proveConfig?.startDate || proveConfig?.start_dato;
+            const startDate = proveConfig?.startDato || proveConfig?.startDate || proveConfig?.start_dato;
             if (!startDate) return `Dag ${dayNumber}`;
 
             const start = new Date(startDate);
@@ -275,7 +275,11 @@
             targetDate.setDate(start.getDate() + (dayNumber - 1));
 
             const weekdays = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
-            return weekdays[targetDate.getDay()];
+            const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
+            const ukedag = weekdays[targetDate.getDay()];
+            const dato = targetDate.getDate();
+            const maned = months[targetDate.getMonth()];
+            return `${ukedag} ${dato}. ${maned}`;
         }
 
         // Load praktisk info
@@ -733,10 +737,38 @@
                 }
             }
 
+            // Hent VK samlet liste (hvis ikke fordelt til partier ennå)
+            let vkSamletListe = null;
+            if (proveId) {
+                try {
+                    const vkResp = await fetch(`/api/storage/vkSamletListe_${proveId}`);
+                    if (vkResp.ok) {
+                        const vkData = await vkResp.json();
+                        if (vkData.value && vkData.value.hunder && vkData.value.hunder.length > 0 && !vkData.value.fordelt) {
+                            vkSamletListe = vkData.value;
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // Hent ventelister
+            let venteliste = { dag1: { uk: [], ak: [] }, dag2: { uk: [], ak: [] }, dag3: { uk: [], ak: [] }, dag4: { uk: [], ak: [] }, vk: [] };
+            if (proveId) {
+                try {
+                    const vlResp = await fetch(`/api/prover/${proveId}/venteliste`);
+                    if (vlResp.ok) {
+                        venteliste = await vlResp.json();
+                    }
+                } catch (e) {}
+            }
+
             // Store globally
             allParties = parties;
+            window._vkSamletListe = vkSamletListe;
+            window._venteliste = venteliste;
 
-            if (!parties || parties.length === 0) {
+            const harData = parties.length > 0 || vkSamletListe;
+            if (!harData) {
                 return;
             }
 
@@ -772,30 +804,128 @@
                 return true;
             });
 
-            if (filteredParties.length === 0) {
-                container.innerHTML = `
+            let html = '';
+
+            // Partier
+            if (filteredParties.length > 0) {
+                html += filteredParties.map(party => renderPartyCard(party)).join('');
+            }
+
+            // VK Deltakerliste (vises under VK-tab hvis ikke fordelt ennå)
+            const vkSamlet = window._vkSamletListe;
+            if (currentClass.startsWith('vk') && vkSamlet && !vkSamlet.fordelt) {
+                html += renderVkDeltakerlistePublic(vkSamlet);
+            }
+
+            // Venteliste for gjeldende dag og klasse
+            const vl = window._venteliste || {};
+            const dagKey = `dag${currentDay}`;
+            if (currentClass === 'ukak') {
+                const ukVL = vl[dagKey]?.uk || [];
+                const akVL = vl[dagKey]?.ak || [];
+                if (ukVL.length > 0) html += renderVentelistePublic('UK', ukVL);
+                if (akVL.length > 0) html += renderVentelistePublic('AK', akVL);
+            } else if (currentClass.startsWith('vk')) {
+                const vkVL = vl.vk || [];
+                if (vkVL.length > 0) html += renderVentelistePublic('VK', vkVL);
+            }
+
+            if (!html) {
+                html = `
                     <div class="text-center py-16">
                         <svg class="w-16 h-16 text-bark-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                         </svg>
-                        <h3 class="text-xl font-serif font-semibold text-bark-700 mb-2">Ingen partier</h3>
-                        <p class="text-bark-500">Det er ingen ${currentClass === 'ukak' ? 'UK/AK' : 'VK'}-partier på dag ${currentDay} ennå.</p>
+                        <h3 class="text-xl font-serif font-semibold text-bark-700 mb-2">Ingen partier ennå</h3>
+                        <p class="text-bark-500">Partilistene er ikke publisert ennå.</p>
                     </div>
                 `;
-                return;
             }
 
-            // Render parties with live ranking panel
-            container.innerHTML = filteredParties.map(party => renderPartyCard(party)).join('');
+            container.innerHTML = html;
 
-            // Load signatures for all parties, live data only for VK
+            // Load signatures and live data
             filteredParties.forEach(party => {
                 loadPartySignature(party.id);
-                // Kun last live-rangering for VK-partier
                 if (party.type.startsWith('vk')) {
                     loadPartyLiveRanking(party);
                 }
             });
+        }
+
+        // Render VK Deltakerliste for offentlig visning
+        function renderVkDeltakerlistePublic(samlet) {
+            const hunder = samlet.hunder || [];
+            const maks = samlet.maksPlasser || 0;
+            const rader = hunder.map((h, i) => `
+                <div class="grid grid-cols-4 gap-0 ${i % 2 === 0 ? 'bg-white' : 'bg-bark-50'} border-b border-bark-100 items-center">
+                    <div class="px-3 py-2 text-center text-sm font-medium text-bark-600">${i + 1}</div>
+                    <div class="px-3 py-2"><div class="font-semibold text-bark-900 text-sm">${escapeHtml(h.hundenavn || h.navn || '')}</div><div class="text-xs text-bark-500">${escapeHtml(h.regnr || '')}</div></div>
+                    <div class="px-3 py-2 text-sm text-bark-700">${escapeHtml(h.rase || '–')}</div>
+                    <div class="px-3 py-2 text-sm text-bark-700">${escapeHtml(h.forer || h.eier || '–')}</div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="bg-white rounded-2xl shadow-md border border-amber-200 overflow-hidden mb-6">
+                    <div class="bg-gradient-to-r from-amber-50 to-amber-100 px-5 py-4 border-b border-amber-200 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold font-serif text-amber-900">Deltakere VK</h3>
+                            <p class="text-xs text-amber-700 mt-1">Partier er ikke fordelt ennå — endringer kan forekomme</p>
+                        </div>
+                        <span class="px-3 py-1 bg-white rounded-full text-sm font-semibold text-amber-800 border border-amber-300">${hunder.length}/${maks}</span>
+                    </div>
+                    <div class="bg-bark-100 grid grid-cols-4 gap-0 border-b-2 border-bark-200">
+                        <div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>
+                        <div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>
+                        <div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Rase</div>
+                        <div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Fører</div>
+                    </div>
+                    <div>${rader}</div>
+                </div>
+            `;
+        }
+
+        // Render venteliste for offentlig visning
+        function renderVentelistePublic(klasse, hunder) {
+            if (!hunder || hunder.length === 0) return '';
+
+            const farger = {
+                'UK': { bg: 'from-blue-50 to-blue-100', border: 'border-blue-200', text: 'text-blue-900', badge: 'text-blue-800 border-blue-300' },
+                'AK': { bg: 'from-green-50 to-green-100', border: 'border-green-200', text: 'text-green-900', badge: 'text-green-800 border-green-300' },
+                'VK': { bg: 'from-amber-50 to-amber-100', border: 'border-amber-200', text: 'text-amber-900', badge: 'text-amber-800 border-amber-300' }
+            };
+            const f = farger[klasse] || farger['AK'];
+
+            const rader = hunder.map((h, i) => `
+                <div class="grid grid-cols-4 gap-0 ${i % 2 === 0 ? 'bg-white' : 'bg-bark-50'} border-b border-bark-100 items-center">
+                    <div class="px-3 py-2 text-center text-sm font-medium text-bark-600">${i + 1}</div>
+                    <div class="px-3 py-2"><div class="font-semibold text-bark-900 text-sm">${escapeHtml(h.hundenavn || h.navn || '')}</div><div class="text-xs text-bark-500">${escapeHtml(h.regnr || '')}</div></div>
+                    <div class="px-3 py-2 text-sm text-bark-700">${escapeHtml(h.rase || '–')}</div>
+                    <div class="px-3 py-2 text-sm text-bark-700">${escapeHtml(h.forer || h.eier || '–')}</div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="bg-white rounded-2xl shadow-sm border ${f.border} overflow-hidden mb-4">
+                    <div class="bg-gradient-to-r ${f.bg} px-5 py-3 border-b ${f.border} flex items-center justify-between">
+                        <h4 class="text-base font-bold font-serif ${f.text}">Venteliste ${klasse}</h4>
+                        <span class="px-3 py-1 bg-white rounded-full text-sm font-semibold ${f.badge} border">${hunder.length}</span>
+                    </div>
+                    <div class="bg-bark-100 grid grid-cols-4 gap-0 border-b border-bark-200">
+                        <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>
+                        <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>
+                        <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase text-left">Rase</div>
+                        <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase text-left">Fører</div>
+                    </div>
+                    <div>${rader}</div>
+                </div>
+            `;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
         }
 
         // Render a single party card with live ranking

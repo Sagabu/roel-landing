@@ -5770,13 +5770,13 @@
 
             const pendingCount = totalInParties - confirmedCount;
 
-            // Tell opp venteliste
-            const dag1Uk = venteliste.dag1?.uk?.length || 0;
-            const dag1Ak = venteliste.dag1?.ak?.length || 0;
-            const dag2Uk = venteliste.dag2?.uk?.length || 0;
-            const dag2Ak = venteliste.dag2?.ak?.length || 0;
-            const vkVenteliste = venteliste.vk?.length || 0;
-            const totalVenteliste = dag1Uk + dag1Ak + dag2Uk + dag2Ak + vkVenteliste;
+            // Tell opp venteliste (støtter 1-4 dager)
+            let totalVenteliste = venteliste.vk?.length || 0;
+            for (let d = 1; d <= 4; d++) {
+                const dagKey = `dag${d}`;
+                totalVenteliste += (venteliste[dagKey]?.uk?.length || 0);
+                totalVenteliste += (venteliste[dagKey]?.ak?.length || 0);
+            }
 
             // Totalt = i partier + på venteliste
             const total = totalInParties + totalVenteliste;
@@ -6407,13 +6407,14 @@
                     renderAllParties(savedParties);
 
                     // Vis venteliste hvis den finnes
-                    if (savedVenteliste && (
-                        (savedVenteliste.dag1?.uk?.length > 0) ||
-                        (savedVenteliste.dag1?.ak?.length > 0) ||
-                        (savedVenteliste.dag2?.uk?.length > 0) ||
-                        (savedVenteliste.dag2?.ak?.length > 0) ||
-                        (savedVenteliste.vk?.length > 0)
-                    )) {
+                    let harVenteliste = (savedVenteliste?.vk?.length > 0);
+                    for (let d = 1; d <= 4; d++) {
+                        if ((savedVenteliste?.[`dag${d}`]?.uk?.length > 0) ||
+                            (savedVenteliste?.[`dag${d}`]?.ak?.length > 0)) {
+                            harVenteliste = true;
+                        }
+                    }
+                    if (harVenteliste) {
                         renderVenteliste(savedVenteliste);
                     }
 
@@ -8621,27 +8622,50 @@
             const vkDogs = currentParticipants.filter(p => p.klasse === 'VK');
 
             // Get prøveleder's party configuration
-            const dag1Partier = parseInt(document.getElementById('ukakPartierDag1').value) || 0;
-            const dag2Partier = parseInt(document.getElementById('ukakPartierDag2').value) || 0;
-            const totalUkAkPartier = dag1Partier + dag2Partier;
+            // Systemet støtter opp til 4 prøvedager dynamisk
+            const antallProvedager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
+            const dagPartier = []; // dagPartier[0] = partier dag 1, [1] = dag 2, osv.
+            for (let d = 1; d <= 4; d++) {
+                const el = document.getElementById(`ukakPartierDag${d}`);
+                dagPartier[d - 1] = el ? (parseInt(el.value) || 0) : 0;
+            }
 
             const maxPerPartyUKAK = 14;  // UK/AK: maks 14 hunder per parti
             const maxPerPartyVK = 20;    // VK: maks 20 hunder per parti
 
-            // Calculate capacity based on prøveleder's choices
-            const dag1Kapasitet = dag1Partier * maxPerPartyUKAK;
-            const dag2Kapasitet = dag2Partier * maxPerPartyUKAK;
-            const totalUkAkKapasitet = dag1Kapasitet + dag2Kapasitet;
+            // Calculate capacity per dag
+            const dagKapasitet = dagPartier.map(p => p * maxPerPartyUKAK);
+            const totalUkAkKapasitet = dagKapasitet.reduce((s, k) => s + k, 0);
 
-            // Combine UK and AK dogs for distribution
-            // Sort by class preference: UK first (dag-specific), then AK
-            const ukDag1 = ukDogs.filter(p => p.dag === 1 || p.klasseRaw === 'UK1');
-            const ukDag2 = ukDogs.filter(p => p.dag === 2 || p.klasseRaw === 'UK2');
-            const ukUspesifisert = ukDogs.filter(p => !p.dag && !['UK1', 'UK2'].includes(p.klasseRaw));
+            // Separer hunder per dag (klasseRaw kan inneholde UK1, AK1, UK2, AK2, UK3, AK3, UK4, AK4, etc.)
+            // Hunder med klasseRaw 'UK' eller 'AK' uten dagnummer er "uspesifisert"
+            const ukPerDag = [[], [], [], []]; // indeks 0 = dag 1
+            const akPerDag = [[], [], [], []];
+            const ukUspesifisert = [];
+            const akUspesifisert = [];
 
-            const akDag1 = akDogs.filter(p => p.dag === 1 || p.klasseRaw === 'AK1');
-            const akDag2 = akDogs.filter(p => p.dag === 2 || p.klasseRaw === 'AK2');
-            const akUspesifisert = akDogs.filter(p => !p.dag && !['AK1', 'AK2'].includes(p.klasseRaw));
+            for (const dog of ukDogs) {
+                let assigned = false;
+                for (let d = 1; d <= 4; d++) {
+                    if (dog.klasseRaw === `UK${d}` || dog.dag === d) {
+                        ukPerDag[d - 1].push(dog);
+                        assigned = true;
+                        break;
+                    }
+                }
+                if (!assigned) ukUspesifisert.push(dog);
+            }
+            for (const dog of akDogs) {
+                let assigned = false;
+                for (let d = 1; d <= 4; d++) {
+                    if (dog.klasseRaw === `AK${d}` || dog.dag === d) {
+                        akPerDag[d - 1].push(dog);
+                        assigned = true;
+                        break;
+                    }
+                }
+                if (!assigned) akUspesifisert.push(dog);
+            }
 
             // Helper function for even distribution
             function getEvenDistribution(total, numParties) {
@@ -8847,15 +8871,16 @@
             const startDate = new Date(trialStartDate);
 
             const parties = [];
-            // Separate ventelister per klasse og dag
+            // Separate ventelister per klasse og dag (dynamisk for 1-4 dager)
             const venteliste = {
                 dag1: { uk: [], ak: [] },
                 dag2: { uk: [], ak: [] },
+                dag3: { uk: [], ak: [] },
+                dag4: { uk: [], ak: [] },
                 vk: []  // VK har egen venteliste (ikke dag-spesifikk)
             };
 
-            // Hjelpefunksjon: sorter hunder etter påmeldingsdato (eldste først)
-            // Hunder uten dato beholdes i originalrekkefølge og plasseres BAK de med dato
+            // Hjelpefunksjoner
             function sorterEtterDato(hunder) {
                 const medDato = hunder.filter(h => h.pameldingsDato);
                 const utenDato = hunder.filter(h => !h.pameldingsDato);
@@ -8863,211 +8888,105 @@
                 return [...medDato, ...utenDato];
             }
 
-            // Sjekk om det mangler datoer i en klasse (trigger manuell valg ved overskudd)
             function manglerDato(hunder) {
                 return hunder.some(h => !h.pameldingsDato);
             }
 
-            // ============================================
-            // Pre-sortering: Sorter alle pools etter dato slik at senest påmeldte
-            // havner bakerst og blir tatt til venteliste først ved overskudd.
-            // ============================================
-
-            // Flagg som indikerer om UK/AK-fordeling krever manuell valg
-            // (settes hvis det er overskudd og minst én hund mangler dato)
+            // Flagg: UK/AK-fordeling krever manuell valg (når dato mangler ved overskudd)
             let ukakTrengerManuellValg = false;
-            const ukakOverskudd = { dag1: [], dag2: [] };
-
-            // Build dag 1 parties - UK først, så AK
-            let dag1UkPool = [...ukDag1];
-            let dag1AkPool = [...akDag1];
-
-            // Legg til uspesifiserte til dag 1 først (UK først, så AK)
-            const dag1UkPlass = Math.min(dag1Kapasitet, dag1UkPool.length + ukUspesifisert.length);
-            while (dag1UkPool.length < dag1UkPlass && ukUspesifisert.length > 0) {
-                dag1UkPool.push(ukUspesifisert.shift());
-            }
-
-            const dag1TotalUk = dag1UkPool.length;
-            const dag1AkPlass = dag1Kapasitet - dag1TotalUk;
-            while (dag1AkPool.length < dag1AkPlass && akUspesifisert.length > 0) {
-                dag1AkPool.push(akUspesifisert.shift());
-            }
-
-            // Sorter hver pool etter dato (eldst påmeldt først) slik at senest påmeldte
-            // havner bakerst og blir de første som går på venteliste ved overskudd
-            dag1UkPool = sorterEtterDato(dag1UkPool);
-            dag1AkPool = sorterEtterDato(dag1AkPool);
 
             // ============================================
-            // Ny 6+8-fordelingsregel for dag 1
-            // Mål: 6 UK + 8 AK per parti. Hvis ubalansert, fyll opp til 14 totalt.
-            // Ved overskudd: sist påmeldte i sin klasse går på venteliste.
+            // Fordel UK/AK for hver prøvedag (1 til antallProvedager)
+            // Samme regler per dag: 6+8 mål, datosortering, eier-regel, slipp-regel
             // ============================================
-            const dag1MalUk = dag1Partier * 6; // Ideelt UK-antall
-            const dag1MalAk = dag1Partier * 8; // Ideelt AK-antall
+            for (let dagNr = 1; dagNr <= antallProvedager; dagNr++) {
+                const antallPartierDag = dagPartier[dagNr - 1];
+                const kapasitetDag = dagKapasitet[dagNr - 1];
+                if (antallPartierDag === 0) continue;
 
-            let dag1UkAntall = dag1UkPool.length;
-            let dag1AkAntall = dag1AkPool.length;
+                let ukPool = [...ukPerDag[dagNr - 1]];
+                let akPool = [...akPerDag[dagNr - 1]];
 
-            // Hvis total overstiger kapasitet, bestem hvem som går på venteliste
-            if (dag1UkAntall + dag1AkAntall > dag1Kapasitet) {
-                // Sjekk om vi mangler dato-info (da kreves manuell valg)
-                const ukManglerDato = manglerDato(dag1UkPool);
-                const akManglerDato = manglerDato(dag1AkPool);
-
-                // 6+8-målregel (gjelder uansett dato-status)
-                let ukSkalFaaPlass, akSkalFaaPlass;
-
-                if (dag1UkAntall <= dag1MalUk && dag1AkAntall > dag1MalAk) {
-                    // Få UK, mange AK: alle UK får plass, AK fyller resten
-                    ukSkalFaaPlass = dag1UkAntall;
-                    akSkalFaaPlass = dag1Kapasitet - ukSkalFaaPlass;
-                } else if (dag1AkAntall <= dag1MalAk && dag1UkAntall > dag1MalUk) {
-                    // Få AK, mange UK: alle AK får plass, UK fyller resten
-                    akSkalFaaPlass = dag1AkAntall;
-                    ukSkalFaaPlass = dag1Kapasitet - akSkalFaaPlass;
-                } else {
-                    // Begge overstiger mål - hold dem til ideelt mål 6+8
-                    ukSkalFaaPlass = dag1MalUk;
-                    akSkalFaaPlass = dag1MalAk;
+                // Uspesifiserte hunder: fyll tidligere dager først med UK, så AK
+                const ukPlass = Math.min(kapasitetDag, ukPool.length + ukUspesifisert.length);
+                while (ukPool.length < ukPlass && ukUspesifisert.length > 0) {
+                    ukPool.push(ukUspesifisert.shift());
+                }
+                const akPlass = kapasitetDag - ukPool.length;
+                while (akPool.length < akPlass && akUspesifisert.length > 0) {
+                    akPool.push(akUspesifisert.shift());
                 }
 
-                // Overskudd UK -> venteliste (sist påmeldt først, eller bak i filen hvis ingen dato)
-                if (dag1UkAntall > ukSkalFaaPlass) {
-                    venteliste.dag1.uk.push(...dag1UkPool.slice(ukSkalFaaPlass));
-                    dag1UkPool = dag1UkPool.slice(0, ukSkalFaaPlass);
-                }
-                if (dag1AkAntall > akSkalFaaPlass) {
-                    venteliste.dag1.ak.push(...dag1AkPool.slice(akSkalFaaPlass));
-                    dag1AkPool = dag1AkPool.slice(0, akSkalFaaPlass);
+                // Sorter hver pool etter dato (eldst påmeldt først)
+                ukPool = sorterEtterDato(ukPool);
+                akPool = sorterEtterDato(akPool);
+
+                // 6+8-mål
+                const malUk = antallPartierDag * 6;
+                const malAk = antallPartierDag * 8;
+
+                if (ukPool.length + akPool.length > kapasitetDag) {
+                    const ukManglerDato = manglerDato(ukPool);
+                    const akManglerDato = manglerDato(akPool);
+
+                    let ukSkalFaaPlass, akSkalFaaPlass;
+                    if (ukPool.length <= malUk && akPool.length > malAk) {
+                        ukSkalFaaPlass = ukPool.length;
+                        akSkalFaaPlass = kapasitetDag - ukSkalFaaPlass;
+                    } else if (akPool.length <= malAk && ukPool.length > malUk) {
+                        akSkalFaaPlass = akPool.length;
+                        ukSkalFaaPlass = kapasitetDag - akSkalFaaPlass;
+                    } else {
+                        ukSkalFaaPlass = malUk;
+                        akSkalFaaPlass = malAk;
+                    }
+
+                    if (ukPool.length > ukSkalFaaPlass) {
+                        venteliste[`dag${dagNr}`].uk.push(...ukPool.slice(ukSkalFaaPlass));
+                        ukPool = ukPool.slice(0, ukSkalFaaPlass);
+                    }
+                    if (akPool.length > akSkalFaaPlass) {
+                        venteliste[`dag${dagNr}`].ak.push(...akPool.slice(akSkalFaaPlass));
+                        akPool = akPool.slice(0, akSkalFaaPlass);
+                    }
+
+                    if (ukManglerDato || akManglerDato) {
+                        ukakTrengerManuellValg = true;
+                    }
                 }
 
-                // Hvis dato mangler, varsle admin om at valget er automatisk
-                if (ukManglerDato || akManglerDato) {
-                    ukakTrengerManuellValg = true;
-                }
-            }
+                // Kombiner (UK først for bedre fordeling)
+                const hunderPaaDagen = [...ukPool, ...akPool];
+                if (hunderPaaDagen.length === 0) continue;
 
-            // Kombiner for dag 1 (UK først for bedre fordeling)
-            let dag1Hunder = [...dag1UkPool, ...dag1AkPool];
-
-            // Distribute dag 1 dogs across dag 1 parties - MED EIER-REGEL OG SLIPP-REGEL
-            if (dag1Partier > 0 && dag1Hunder.length > 0) {
-                // Bruk eier-regel: alle hunder fra samme eier på samme parti
-                const { parties: dag1PartiHunder, overflow: dag1Overflow } = distributeWithOwnerRule(
-                    dag1Hunder,
-                    dag1Partier,
+                // Fordel med eier-regel (samme eier/fører samme parti, kun innen samme dag)
+                const { parties: partiHunder, overflow: partiOverflow } = distributeWithOwnerRule(
+                    hunderPaaDagen,
+                    antallPartierDag,
                     maxPerPartyUKAK
                 );
 
-                // Legg overflow på venteliste
-                dag1Overflow.forEach(d => {
-                    if (d.klasse === 'UK') venteliste.dag1.uk.push(d);
-                    else venteliste.dag1.ak.push(d);
+                // Legg overflow på venteliste (per klasse)
+                partiOverflow.forEach(d => {
+                    if (d.klasse === 'UK') venteliste[`dag${dagNr}`].uk.push(d);
+                    else venteliste[`dag${dagNr}`].ak.push(d);
                 });
 
-                for (let i = 0; i < dag1Partier; i++) {
-                    // Arranger med slipp-regel: samme eier ikke i samme slipp
-                    const partyDogs = arrangeWithSlipRule(dag1PartiHunder[i] || []);
+                // Opprett parti-objekter
+                for (let i = 0; i < antallPartierDag; i++) {
+                    const partyDogs = arrangeWithSlipRule(partiHunder[i] || []);
                     const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
                     const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
 
                     const partyDate = new Date(startDate);
+                    partyDate.setDate(partyDate.getDate() + (dagNr - 1));
 
                     const partyNum = parties.filter(p => p.type === 'ukak').length + 1;
                     parties.push({
                         name: `UK/AK Parti ${partyNum}`,
                         partyNum: partyNum,
                         type: 'ukak',
-                        day: 1,
-                        date: partyDate.toISOString().split('T')[0],
-                        dogs: partyDogs,
-                        ukCount: ukCount,
-                        akCount: akCount
-                    });
-                }
-            }
-
-            // Build dag 2 parties - UK først, så AK
-            let dag2UkPool = [...ukDag2, ...ukUspesifisert];  // Resterende uspesifiserte UK
-            let dag2AkPool = [...akDag2, ...akUspesifisert];  // Resterende uspesifiserte AK
-
-            // Sorter pools etter dato
-            dag2UkPool = sorterEtterDato(dag2UkPool);
-            dag2AkPool = sorterEtterDato(dag2AkPool);
-
-            // 6+8-fordelingsregel for dag 2 (samme logikk som dag 1)
-            const dag2MalUk = dag2Partier * 6;
-            const dag2MalAk = dag2Partier * 8;
-
-            let dag2UkAntall = dag2UkPool.length;
-            let dag2AkAntall = dag2AkPool.length;
-
-            if (dag2UkAntall + dag2AkAntall > dag2Kapasitet) {
-                const ukManglerDato2 = manglerDato(dag2UkPool);
-                const akManglerDato2 = manglerDato(dag2AkPool);
-
-                let ukSkalFaaPlass2, akSkalFaaPlass2;
-
-                if (dag2UkAntall <= dag2MalUk && dag2AkAntall > dag2MalAk) {
-                    ukSkalFaaPlass2 = dag2UkAntall;
-                    akSkalFaaPlass2 = dag2Kapasitet - ukSkalFaaPlass2;
-                } else if (dag2AkAntall <= dag2MalAk && dag2UkAntall > dag2MalUk) {
-                    akSkalFaaPlass2 = dag2AkAntall;
-                    ukSkalFaaPlass2 = dag2Kapasitet - akSkalFaaPlass2;
-                } else {
-                    ukSkalFaaPlass2 = dag2MalUk;
-                    akSkalFaaPlass2 = dag2MalAk;
-                }
-
-                if (dag2UkAntall > ukSkalFaaPlass2) {
-                    venteliste.dag2.uk.push(...dag2UkPool.slice(ukSkalFaaPlass2));
-                    dag2UkPool = dag2UkPool.slice(0, ukSkalFaaPlass2);
-                }
-                if (dag2AkAntall > akSkalFaaPlass2) {
-                    venteliste.dag2.ak.push(...dag2AkPool.slice(akSkalFaaPlass2));
-                    dag2AkPool = dag2AkPool.slice(0, akSkalFaaPlass2);
-                }
-
-                if (ukManglerDato2 || akManglerDato2) {
-                    ukakTrengerManuellValg = true;
-                }
-            }
-
-            // Kombiner for dag 2 (UK først)
-            let dag2Hunder = [...dag2UkPool, ...dag2AkPool];
-
-            // Distribute dag 2 dogs across dag 2 parties - MED EIER-REGEL OG SLIPP-REGEL
-            if (dag2Partier > 0 && dag2Hunder.length > 0) {
-                // Bruk eier-regel: alle hunder fra samme eier på samme parti
-                const { parties: dag2PartiHunder, overflow: dag2Overflow } = distributeWithOwnerRule(
-                    dag2Hunder,
-                    dag2Partier,
-                    maxPerPartyUKAK
-                );
-
-                // Legg overflow på venteliste
-                dag2Overflow.forEach(d => {
-                    if (d.klasse === 'UK') venteliste.dag2.uk.push(d);
-                    else venteliste.dag2.ak.push(d);
-                });
-
-                for (let i = 0; i < dag2Partier; i++) {
-                    // Arranger med slipp-regel: samme eier ikke i samme slipp
-                    const partyDogs = arrangeWithSlipRule(dag2PartiHunder[i] || []);
-                    const ukCount = partyDogs.filter(d => d.klasse === 'UK').length;
-                    const akCount = partyDogs.filter(d => d.klasse === 'AK').length;
-
-                    const partyDate = new Date(startDate);
-                    partyDate.setDate(partyDate.getDate() + 1);
-
-                    const partyNum2 = parties.filter(p => p.type === 'ukak').length + 1;
-                    parties.push({
-                        name: `UK/AK Parti ${partyNum2}`,
-                        partyNum: partyNum2,
-                        type: 'ukak',
-                        day: 2,
+                        day: dagNr,
                         date: partyDate.toISOString().split('T')[0],
                         dogs: partyDogs,
                         ukCount: ukCount,
@@ -9221,31 +9140,25 @@
                 message += `• ${party.name}: ${party.dogs.length} hunder\n`;
             });
 
-            // Add waitlist info per klasse
-            const dag1Uk = venteliste.dag1?.uk || [];
-            const dag1Ak = venteliste.dag1?.ak || [];
-            const dag2Uk = venteliste.dag2?.uk || [];
-            const dag2Ak = venteliste.dag2?.ak || [];
+            // Add waitlist info per klasse og dag (dynamisk for 1-4 dager)
             const vkVenteliste = venteliste.vk || [];
-            const totalVenteliste = dag1Uk.length + dag1Ak.length + dag2Uk.length + dag2Ak.length + vkVenteliste.length;
+            let totalVenteliste = vkVenteliste.length;
+            for (let d = 1; d <= antallProvedager; d++) {
+                totalVenteliste += (venteliste[`dag${d}`]?.uk?.length || 0);
+                totalVenteliste += (venteliste[`dag${d}`]?.ak?.length || 0);
+            }
 
             if (totalVenteliste > 0) {
                 message += `\n⚠️ VENTELISTE:\n`;
-                if (dag1Uk.length > 0 || dag1Ak.length > 0) {
-                    const day1Name = getDayName(1);
-                    message += `• ${day1Name}: `;
-                    const dag1Parts = [];
-                    if (dag1Uk.length > 0) dag1Parts.push(`${dag1Uk.length} UK`);
-                    if (dag1Ak.length > 0) dag1Parts.push(`${dag1Ak.length} AK`);
-                    message += dag1Parts.join(', ') + ` på venteliste\n`;
-                }
-                if (dag2Uk.length > 0 || dag2Ak.length > 0) {
-                    const day2Name = getDayName(2);
-                    message += `• ${day2Name}: `;
-                    const dag2Parts = [];
-                    if (dag2Uk.length > 0) dag2Parts.push(`${dag2Uk.length} UK`);
-                    if (dag2Ak.length > 0) dag2Parts.push(`${dag2Ak.length} AK`);
-                    message += dag2Parts.join(', ') + ` på venteliste\n`;
+                for (let d = 1; d <= antallProvedager; d++) {
+                    const dagVenteliste = venteliste[`dag${d}`] || { uk: [], ak: [] };
+                    if (dagVenteliste.uk.length > 0 || dagVenteliste.ak.length > 0) {
+                        const dayName = getDayName(d);
+                        const parts = [];
+                        if (dagVenteliste.uk.length > 0) parts.push(`${dagVenteliste.uk.length} UK`);
+                        if (dagVenteliste.ak.length > 0) parts.push(`${dagVenteliste.ak.length} AK`);
+                        message += `• ${dayName}: ${parts.join(', ')} på venteliste\n`;
+                    }
                 }
                 if (vkVenteliste.length > 0) {
                     message += `• VK: ${vkVenteliste.length} på venteliste\n`;

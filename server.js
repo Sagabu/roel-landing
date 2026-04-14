@@ -9345,10 +9345,12 @@ app.get("/api/prover/:id/venteliste", (c) => {
     SELECT * FROM venteliste WHERE prove_id = ? ORDER BY dag, klasse, prioritet
   `).all(proveId);
 
-  // Grupper etter dag og klasse (matcher localStorage-format)
+  // Grupper etter dag og klasse (matcher localStorage-format, støtter 1-4 dager)
   const result = {
     dag1: { uk: [], ak: [] },
     dag2: { uk: [], ak: [] },
+    dag3: { uk: [], ak: [] },
+    dag4: { uk: [], ak: [] },
     vk: []
   };
 
@@ -9364,12 +9366,10 @@ app.get("/api/prover/:id/venteliste", (c) => {
 
     if (v.klasse === 'VK') {
       result.vk.push(entry);
-    } else if (v.dag === 1) {
-      if (v.klasse === 'UK') result.dag1.uk.push(entry);
-      else result.dag1.ak.push(entry);
-    } else if (v.dag === 2) {
-      if (v.klasse === 'UK') result.dag2.uk.push(entry);
-      else result.dag2.ak.push(entry);
+    } else if (v.dag >= 1 && v.dag <= 4) {
+      const dagKey = `dag${v.dag}`;
+      if (v.klasse === 'UK') result[dagKey].uk.push(entry);
+      else result[dagKey].ak.push(entry);
     }
   }
 
@@ -9397,43 +9397,26 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
 
     let total = 0;
 
-    // Dag 1 UK
-    if (Array.isArray(venteliste.dag1?.uk)) {
-      let prio = 0;
-      for (const v of venteliste.dag1.uk) {
-        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'UK', 1, v.eier, v.forer, prio++);
-        total++;
+    // UK og AK per dag (støtter 1-4 dager dynamisk)
+    for (let d = 1; d <= 4; d++) {
+      const dagKey = `dag${d}`;
+      if (Array.isArray(venteliste[dagKey]?.uk)) {
+        let prio = 0;
+        for (const v of venteliste[dagKey].uk) {
+          insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'UK', d, v.eier, v.forer, prio++);
+          total++;
+        }
+      }
+      if (Array.isArray(venteliste[dagKey]?.ak)) {
+        let prio = 0;
+        for (const v of venteliste[dagKey].ak) {
+          insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'AK', d, v.eier, v.forer, prio++);
+          total++;
+        }
       }
     }
 
-    // Dag 1 AK
-    if (Array.isArray(venteliste.dag1?.ak)) {
-      let prio = 0;
-      for (const v of venteliste.dag1.ak) {
-        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'AK', 1, v.eier, v.forer, prio++);
-        total++;
-      }
-    }
-
-    // Dag 2 UK
-    if (Array.isArray(venteliste.dag2?.uk)) {
-      let prio = 0;
-      for (const v of venteliste.dag2.uk) {
-        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'UK', 2, v.eier, v.forer, prio++);
-        total++;
-      }
-    }
-
-    // Dag 2 AK
-    if (Array.isArray(venteliste.dag2?.ak)) {
-      let prio = 0;
-      for (const v of venteliste.dag2.ak) {
-        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'AK', 2, v.eier, v.forer, prio++);
-        total++;
-      }
-    }
-
-    // VK
+    // VK (ikke dag-spesifikk)
     if (Array.isArray(venteliste.vk)) {
       let prio = 0;
       for (const v of venteliste.vk) {

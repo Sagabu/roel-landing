@@ -1422,7 +1422,7 @@
                 // Liggende format — tilpasset innholdsbredde
                 const imgWidth = 1100;
                 const el = document.createElement('div');
-                el.style.cssText = `position:absolute;left:0;top:0;width:${imgWidth}px;min-width:${imgWidth}px;font-family:Arial,Helvetica,sans-serif;background:white;padding:20px;z-index:99999;`;
+                el.style.cssText = `position:absolute;left:0;top:0;width:${imgWidth}px;min-width:${imgWidth}px;font-family:Arial,Helvetica,sans-serif;padding:20px;z-index:99999;background:white;`;
                 document.body.appendChild(el);
 
                 // Klasse-farge
@@ -1467,6 +1467,20 @@
                     ctx.fillStyle = 'rgba(255,255,255,0.60)';
                     ctx.fillRect(0, 0, imgWidth, 800);
                     bgBase64 = cvs.toDataURL('image/jpeg', 0.8);
+
+                    // Lag ytre ramme-versjon (10% overlay — bildet nesten fullt synlig)
+                    const outerCvs = document.createElement('canvas');
+                    outerCvs.width = imgWidth; outerCvs.height = 800;
+                    const outerCtx = outerCvs.getContext('2d');
+                    outerCtx.drawImage(img, (imgWidth-w)/2, (800-h)/2, w, h);
+                    outerCtx.fillStyle = 'rgba(255,255,255,0.10)';
+                    outerCtx.fillRect(0, 0, imgWidth, 800);
+                    const outerBg = outerCvs.toDataURL('image/jpeg', 0.8);
+                    el.style.backgroundImage = `url('${outerBg}')`;
+                    el.style.backgroundSize = `${imgWidth}px 800px`;
+                    el.style.backgroundPosition = 'top center';
+                    el.style.backgroundRepeat = 'no-repeat';
+                    el.style.backgroundColor = '#333';
                 } catch(e) { console.warn('Bg-bilde feilet:', e); }
 
                 const bgCss = bgBase64

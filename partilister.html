@@ -1418,9 +1418,9 @@
 
                 const isVK = party.type?.startsWith('vk');
 
-                // Mobilvennlig bredde (passer mobilskjerm i portrett)
+                // Bredere format — utnytter plassen bedre, mindre avlangt
                 const el = document.createElement('div');
-                el.style.cssText = 'position:absolute;left:-9999px;top:0;width:420px;font-family:Inter,system-ui,sans-serif;';
+                el.style.cssText = 'position:absolute;left:-9999px;top:0;width:700px;font-family:Inter,system-ui,sans-serif;';
                 document.body.appendChild(el);
 
                 // Klasse-farge
@@ -1439,43 +1439,84 @@
                              `<span style="display:inline-block;padding:2px 8px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:6px;font-size:10px;font-weight:700;">AK: ${akCount}</span>`;
                 }
 
-                // html2canvas rendrer <table> pålitelig (flex og background-size:cover feiler)
+                // Hent bakgrunnsbilde som base64
+                const bgImg = getPartiBgImage(partyId);
+                let bgBase64 = '';
+                try {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        img.src = bgImg;
+                    });
+                    const cvs = document.createElement('canvas');
+                    cvs.width = 700; cvs.height = 700;
+                    const ctx = cvs.getContext('2d');
+                    // Tegn bildet skalert til canvas (simulerer cover)
+                    const scale = Math.max(700/img.width, 700/img.height);
+                    const w = img.width * scale, h = img.height * scale;
+                    ctx.drawImage(img, (700-w)/2, (700-h)/2, w, h);
+                    // Legg lys overlay
+                    ctx.fillStyle = 'rgba(247,243,238,0.82)';
+                    ctx.fillRect(0, 0, 700, 700);
+                    bgBase64 = cvs.toDataURL('image/jpeg', 0.7);
+                } catch(e) { console.warn('Bg-bilde feilet:', e); }
+
+                const bgCss = bgBase64
+                    ? `background-image:url('${bgBase64}');background-size:700px 700px;background-position:top center;background-repeat:no-repeat;`
+                    : 'background:#F7F3EE;';
+
+                // 4-kolonners tabell: Nr | Hund | Eier/Fører | Klasse
                 const hundeRader = (party.dogs || []).map((dog, i) => {
                     const kl = dog.klasse || (isVK ? 'VK' : 'AK');
                     const f = klasseFarge(kl);
-                    const bg = i % 2 === 0 ? '#ffffff' : '#FAF7F4';
+                    const bg = i % 2 === 0 ? 'rgba(255,255,255,0.55)' : 'rgba(250,247,244,0.55)';
                     return `<tr style="background:${bg};">
-                        <td style="padding:10px 12px;text-align:center;vertical-align:middle;border-bottom:1px solid #EAD8CF;width:36px;">
-                            <div style="width:28px;height:28px;border-radius:14px;background:#EAD8CF;text-align:center;line-height:28px;font-size:12px;font-weight:700;color:#5A2812;">${i+1}</div>
+                        <td style="padding:8px 10px;text-align:center;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);width:40px;">
+                            <div style="width:26px;height:26px;border-radius:13px;background:rgba(234,216,207,0.8);text-align:center;line-height:26px;font-size:12px;font-weight:700;color:#5A2812;margin:0 auto;">${i+1}</div>
                         </td>
-                        <td style="padding:10px 8px;vertical-align:middle;border-bottom:1px solid #EAD8CF;">
-                            <div style="font-weight:600;font-size:14px;color:#3D1B0C;margin-bottom:2px;">${dog.hundenavn || dog.navn || ''}</div>
-                            <div style="font-size:11px;color:#7D6A54;">${dog.regnr || ''} · ${dog.forer || dog.eier || ''}</div>
+                        <td style="padding:8px 10px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);">
+                            <div style="font-weight:600;font-size:14px;color:#3D1B0C;">${dog.hundenavn || dog.navn || ''}</div>
+                            <div style="font-size:10px;color:#7D6A54;margin-top:1px;">${dog.regnr || ''} · ${dog.rase || ''}</div>
                         </td>
-                        <td style="padding:10px 12px;text-align:center;vertical-align:middle;border-bottom:1px solid #EAD8CF;width:44px;">
-                            <div style="display:inline-block;padding:3px 8px;background:${f.bg};color:${f.txt};border:1px solid ${f.border};border-radius:6px;font-size:11px;font-weight:700;text-align:center;">${kl}</div>
+                        <td style="padding:8px 10px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);color:#5A2812;font-size:13px;">
+                            ${dog.forer || dog.eier || ''}
+                        </td>
+                        <td style="padding:8px 10px;text-align:center;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);width:48px;">
+                            <div style="display:inline-block;padding:3px 8px;background:${f.bg};color:${f.txt};border:1px solid ${f.border};border-radius:6px;font-size:11px;font-weight:700;">${kl}</div>
                         </td>
                     </tr>`;
                 }).join('');
 
                 el.innerHTML = `
-                    <div style="background:#3D1B0C;color:white;padding:18px 20px;">
-                        <div style="font-size:11px;color:#D4A989;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px;">Partiliste</div>
+                    <div style="background:#3D1B0C;color:white;padding:16px 20px;">
+                        <div style="font-size:10px;color:#D4A989;text-transform:uppercase;letter-spacing:2px;margin-bottom:4px;">Partiliste</div>
                         <div style="font-size:20px;font-weight:700;font-family:Georgia,serif;">${trialName}</div>
-                        <div style="font-size:12px;color:#B8977A;margin-top:4px;">${trialDetails}</div>
+                        <div style="font-size:12px;color:#B8977A;margin-top:3px;">${trialDetails}</div>
                     </div>
                     <table style="width:100%;border-collapse:collapse;background:#5A2812;color:white;">
                         <tr>
-                            <td style="padding:12px 20px;font-size:17px;font-weight:700;font-family:Georgia,serif;">${party.name}</td>
-                            <td style="padding:12px 20px;text-align:right;white-space:nowrap;">${badges}
-                                <span style="display:inline-block;padding:4px 12px;background:rgba(255,255,255,0.2);border-radius:20px;font-size:12px;font-weight:600;margin-left:6px;">${party.dogs?.length || 0} hunder</span>
+                            <td style="padding:10px 20px;font-size:16px;font-weight:700;font-family:Georgia,serif;">${party.name}</td>
+                            <td style="padding:10px 20px;text-align:right;white-space:nowrap;">${badges}
+                                <span style="display:inline-block;padding:3px 12px;background:rgba(255,255,255,0.2);border-radius:20px;font-size:12px;font-weight:600;margin-left:4px;">${party.dogs?.length || 0} hunder</span>
                             </td>
                         </tr>
                     </table>
-                    <table style="width:100%;border-collapse:collapse;background:white;">
-                        ${hundeRader}
+                    <table style="width:100%;border-collapse:collapse;background:#F7F3EE;">
+                        <tr style="background:rgba(234,216,207,0.5);">
+                            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:40px;">Nr</th>
+                            <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Hund</th>
+                            <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Eier/Fører</th>
+                            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:48px;">Klasse</th>
+                        </tr>
                     </table>
-                    <div style="padding:12px 20px;text-align:center;font-size:11px;color:#9A8268;background:#F7F3EE;">
+                    <div style="${bgCss}">
+                        <table style="width:100%;border-collapse:collapse;">
+                            ${hundeRader}
+                        </table>
+                    </div>
+                    <div style="padding:10px 20px;text-align:center;font-size:10px;color:#9A8268;background:#EAD8CF;">
                         fuglehundprove.no · ${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO',{hour:'2-digit',minute:'2-digit'})}
                     </div>
                 `;

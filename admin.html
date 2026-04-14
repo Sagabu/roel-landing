@@ -5093,7 +5093,8 @@
                                 startDate: apiTrial.start_dato,
                                 endDate: apiTrial.slutt_dato,
                                 location: apiTrial.sted,
-                                club: { name: apiTrial.klubb_navn || '' },
+                                // Arrangør: bruk prøve-spesifikk override hvis satt, ellers klubb_navn
+                                club: { name: apiTrial.arrangor_navn || apiTrial.klubb_navn || '' },
                                 classes: apiTrial.klasser,
                                 // Rolle-data fra API
                                 proveleder_telefon: apiTrial.proveleder_telefon,
@@ -8713,55 +8714,88 @@
 
         adminLogoInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            const proveId = getCurrentTrialId();
+            if (!file) return;
 
-            if (file && proveId) {
-                // Vis loading
-                adminLogoPlaceholder.innerHTML = '<div class="animate-pulse text-warm-500 text-xs">Laster opp...</div>';
-                adminLogoPlaceholder.classList.remove('hidden');
-                adminLogo.classList.add('hidden');
+            let proveId = getCurrentTrialId();
+
+            // Hvis ingen prøve eksisterer ennå, krev at minimum-data er fylt ut og opprett prøven
+            if (!proveId) {
+                const trialName = document.getElementById('trialName')?.value?.trim() || '';
+                const trialDate = document.getElementById('trialDateFrom')?.value || '';
+                const trialDateTo = document.getElementById('trialDateTo')?.value || trialDate;
+                const trialLocation = document.getElementById('trialLocation')?.value?.trim() || '';
+                const organizerName = document.getElementById('organizerName')?.value?.trim() || '';
+
+                if (!trialName || !trialDate) {
+                    alert('Fyll inn prøvenavn og dato før du laster opp logo. Da blir logoen koblet til prøven og bevart permanent.');
+                    adminLogoInput.value = '';
+                    return;
+                }
+
+                const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+                const klubbId = localStorage.getItem('currentKlubbId') || userSession.clubId || null;
+                const proveTypeNew = document.getElementById('proveType')?.value || 'høyfjell_host';
 
                 try {
-                    // Last opp til database via API
-                    const formData = new FormData();
-                    formData.append('logo', file);
-
-                    const resp = await fetch(`/api/prover/${proveId}/logo`, {
+                    const createResp = await fetch('/api/prover', {
                         method: 'POST',
-                        body: formData
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            navn: trialName,
+                            sted: trialLocation,
+                            start_dato: trialDate,
+                            slutt_dato: trialDateTo,
+                            klubb_id: klubbId,
+                            klasser: { uk: true, ak: true, vk: true },
+                            prove_type: proveTypeNew,
+                            arrangor_navn: organizerName || null
+                        })
                     });
 
-                    if (!resp.ok) {
-                        const err = await resp.json();
-                        throw new Error(err.error || 'Opplasting feilet');
+                    if (!createResp.ok) {
+                        const errData = await createResp.json().catch(() => ({}));
+                        alert('Kunne ikke opprette prøve: ' + (errData.error || 'Ukjent feil'));
+                        adminLogoInput.value = '';
+                        return;
                     }
 
-                    // Vis logoen lokalt
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        adminLogo.src = event.target.result;
-                        adminLogo.classList.remove('hidden');
-                        adminLogoPlaceholder.classList.add('hidden');
-                    };
-                    reader.readAsDataURL(file);
+                    const data = await createResp.json();
+                    proveId = data.id;
 
-                    if (typeof FuglehundToast !== 'undefined') {
-                        FuglehundToast.success('Logo lastet opp og lagret i database');
-                    }
+                    // Oppdater URL slik at reload henter riktig prøve
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('trial', proveId);
+                    newUrl.searchParams.delete('nyProve');
+                    window.history.replaceState({}, '', newUrl);
+                    localStorage.setItem('currentTrialId', proveId);
                 } catch (err) {
-                    console.error('Logo upload feilet:', err);
-                    adminLogoPlaceholder.innerHTML = `
-                        <svg class="w-10 h-10 text-warm-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                        <span class="text-xs text-warm-400">Last opp</span>
-                    `;
-                    if (typeof FuglehundToast !== 'undefined') {
-                        FuglehundToast.error(err.message || 'Kunne ikke laste opp logo');
-                    }
+                    alert('Kunne ikke opprette prøve: ' + err.message);
+                    adminLogoInput.value = '';
+                    return;
                 }
-            } else if (file) {
-                // Fallback hvis ingen prøve er valgt - vis lokalt
+            }
+
+            // Vis loading
+            adminLogoPlaceholder.innerHTML = '<div class="animate-pulse text-warm-500 text-xs">Laster opp...</div>';
+            adminLogoPlaceholder.classList.remove('hidden');
+            adminLogo.classList.add('hidden');
+
+            try {
+                // Last opp til database via API
+                const formData = new FormData();
+                formData.append('logo', file);
+
+                const resp = await fetch(`/api/prover/${proveId}/logo`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.error || 'Opplasting feilet');
+                }
+
+                // Vis logoen lokalt
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     adminLogo.src = event.target.result;
@@ -8769,6 +8803,21 @@
                     adminLogoPlaceholder.classList.add('hidden');
                 };
                 reader.readAsDataURL(file);
+
+                if (typeof FuglehundToast !== 'undefined') {
+                    FuglehundToast.success('Logo lastet opp og lagret i database');
+                }
+            } catch (err) {
+                console.error('Logo upload feilet:', err);
+                adminLogoPlaceholder.innerHTML = `
+                    <svg class="w-10 h-10 text-warm-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <span class="text-xs text-warm-400">Last opp</span>
+                `;
+                if (typeof FuglehundToast !== 'undefined') {
+                    FuglehundToast.error(err.message || 'Kunne ikke laste opp logo');
+                }
             }
         });
 
@@ -14750,7 +14799,8 @@
                             slutt_dato: trialDateTo,
                             klubb_id: klubbId,
                             klasser: { uk: true, ak: true, vk: true },
-                            prove_type: proveTypeNew
+                            prove_type: proveTypeNew,
+                            arrangor_navn: organizerName || null
                         })
                     });
 
@@ -14826,7 +14876,7 @@
                     body: JSON.stringify({ value: praktiskInfo })
                 });
 
-                // Lagre roller til prover-tabellen (for Team-visning og tilgangsstyring)
+                // Lagre roller + arrangør + prøvenavn/dato/sted til prover-tabellen
                 if (proveId) {
                     const proveType = document.getElementById('proveType')?.value || 'høyfjell_host';
                     await fetch(`/api/prover/${proveId}`, {
@@ -14836,6 +14886,10 @@
                             'Authorization': `Bearer ${localStorage.getItem('fuglehund_token')}`
                         },
                         body: JSON.stringify({
+                            navn: trialName,
+                            sted: trialLocation,
+                            start_dato: trialDate,
+                            slutt_dato: trialDateTo,
                             proveleder_telefon: normaliserTelefon(praktiskInfo.provelederTelefon) || null,
                             proveleder_navn: praktiskInfo.provelederNavn || null,
                             nkkrep_telefon: normaliserTelefon(praktiskInfo.nkkRepTelefon) || null,
@@ -14844,7 +14898,8 @@
                             nkkvara_navn: praktiskInfo.nkkVaraNavn || null,
                             dvk_telefon: normaliserTelefon(praktiskInfo.dvkTelefon) || null,
                             dvk_navn: praktiskInfo.dvkNavn || null,
-                            prove_type: proveType
+                            prove_type: proveType,
+                            arrangor_navn: organizerName || null
                         })
                     });
                 }

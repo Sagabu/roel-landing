@@ -8,10 +8,36 @@
 const FuglehundAuth = (function() {
   const TOKEN_KEY = 'fuglehund_token';
   const USER_KEY = 'fuglehund_user';
+  const LAST_ACTIVITY_KEY = 'fuglehund_last_activity';
+
+  // Sesjon-timeouts
+  const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;      // 60 min uten aktivitet → logg ut
+  const ACTIVITY_CHECK_INTERVAL_MS = 60 * 1000;      // Sjekk hvert minutt
+  const ACTIVITY_UPDATE_THROTTLE_MS = 30 * 1000;     // Oppdater last_activity maks hvert 30 sek
+
+  let lastActivityUpdate = 0;
 
   // Hent lagret token
   function getToken() {
     return localStorage.getItem(TOKEN_KEY);
+  }
+
+  // Oppdater "siste aktivitet"-tidspunkt
+  function touchActivity() {
+    const now = Date.now();
+    // Throttle: ikke oppdater oftere enn hvert 30 sekund
+    if (now - lastActivityUpdate < ACTIVITY_UPDATE_THROTTLE_MS) return;
+    lastActivityUpdate = now;
+    try {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+    } catch {}
+  }
+
+  // Sjekk om sesjon har utløpt pga. inaktivitet
+  function isSessionExpiredByInactivity() {
+    const lastActivity = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY) || '0', 10);
+    if (!lastActivity) return false; // Ingen aktivitetssporing ennå - ikke utløpt
+    return (Date.now() - lastActivity) > INACTIVITY_TIMEOUT_MS;
   }
 
   // Hent lagret brukerinfo
@@ -39,24 +65,43 @@ const FuglehundAuth = (function() {
     return null;
   }
 
-  // Sjekk om bruker er innlogget
+  // Sjekk om bruker er innlogget (gyldig JWT OG ikke utløpt pga. inaktivitet)
   function isLoggedIn() {
     // Sjekk JWT token - INGEN fallback til localStorage
     // LocalStorage kan manipuleres av brukeren, JWT kan ikke
     const token = getToken();
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        const exp = payload.exp * 1000;
-        if (Date.now() < exp) return true;
-      } catch {
-        // Ugyldig token - fjern det
-        localStorage.removeItem(TOKEN_KEY);
+    if (!token) return false;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const exp = payload.exp * 1000;
+      if (Date.now() >= exp) {
+        // JWT har utløpt - rydd opp
+        clearSession();
+        return false;
       }
+    } catch {
+      // Ugyldig token - fjern det
+      clearSession();
+      return false;
     }
 
-    // Ingen gyldig JWT = ikke innlogget
-    return false;
+    // Sjekk inaktivitets-timeout
+    if (isSessionExpiredByInactivity()) {
+      console.log('[Auth] Sesjon utløpt pga. inaktivitet');
+      clearSession();
+      return false;
+    }
+
+    return true;
+  }
+
+  // Rydd opp sesjons-data fra localStorage
+  function clearSession() {
+    const sessionKeys = ['userSession', 'judgeSession', 'userProfile', TOKEN_KEY, USER_KEY, LAST_ACTIVITY_KEY];
+    sessionKeys.forEach(key => {
+      try { localStorage.removeItem(key); } catch {}
+    });
   }
 
   // Sjekk rolle - KUN basert på JWT-verifisert brukerinfo
@@ -183,6 +228,10 @@ const FuglehundAuth = (function() {
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.bruker));
 
+    // Start aktivitetssporing ved innlogging
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    lastActivityUpdate = Date.now();
+
     // Prøv å koble hunder fra deltakerliste til denne brukeren
     try {
       const kobleResp = await fetch('/api/koble-hunder', {
@@ -222,8 +271,7 @@ const FuglehundAuth = (function() {
     }
 
     // Fjern ALLE session-typer
-    const sessionKeys = ['userSession', 'judgeSession', 'userProfile', TOKEN_KEY, USER_KEY];
-    sessionKeys.forEach(key => localStorage.removeItem(key));
+    clearSession();
   }
 
   // Hent Authorization header for API-kall
@@ -385,15 +433,68 @@ const FuglehundAuth = (function() {
     return true;
   }
 
+  // Håndter sesjon-utløp: logg ut og redirect til innloggingsside
+  function handleSessionExpired(reason) {
+    console.log('[Auth] Sesjon utløpt:', reason);
+    clearSession();
+
+    const page = window.location.pathname.split('/').pop() || 'index.html';
+    const requiresAuth = PROTECTED_PAGES[page] !== undefined;
+
+    if (requiresAuth) {
+      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/deltaker.html?expired=1&returnTo=${returnTo}`;
+    }
+    // Hvis siden ikke krever auth (f.eks. index.html), gjør ingenting - bare rydd opp
+  }
+
+  // Sett opp aktivitetssporing når bruker er innlogget
+  function setupActivityTracking() {
+    // Events som regnes som "aktivitet"
+    const activityEvents = ['click', 'keydown', 'scroll', 'mousemove', 'touchstart'];
+    activityEvents.forEach(evt => {
+      document.addEventListener(evt, touchActivity, { passive: true, capture: true });
+    });
+
+    // Periodisk sjekk av sesjon-status (hvert minutt)
+    setInterval(() => {
+      if (!getToken()) return; // Ikke innlogget - ingen sjekk trengs
+      if (!isLoggedIn()) {
+        handleSessionExpired('inaktivitet eller utløpt JWT');
+      }
+    }, ACTIVITY_CHECK_INTERVAL_MS);
+
+    // Sjekk også ved tabbytte/returning til vinduet
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && getToken()) {
+        if (!isLoggedIn()) {
+          handleSessionExpired('sesjon utløp mens tab var inaktiv');
+        } else {
+          touchActivity();
+        }
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      if (getToken() && !isLoggedIn()) {
+        handleSessionExpired('sesjon utløp mens vindu var inaktivt');
+      }
+    });
+  }
+
   // Auto-oppdater UI når DOM er klar
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       checkPageAccess();
       updateUI();
+      setupActivityTracking();
+      if (getToken()) touchActivity();
     });
   } else {
     checkPageAccess();
     updateUI();
+    setupActivityTracking();
+    if (getToken()) touchActivity();
   }
 
   // Refresh token i bakgrunnen

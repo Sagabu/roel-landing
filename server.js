@@ -24,7 +24,9 @@ const DB_PATH = process.env.DB_PATH ? join(__dirname, process.env.DB_PATH) : joi
 const PORT = Number(process.env.PORT || 8889);
 // JWT_SECRET MÅ settes i produksjon - ingen default verdi tillatt
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+// Sesjon: 12 timer absolutt maks (krever re-login selv ved aktiv bruk)
+// Inaktivitets-timeout håndteres i frontend (60 min)
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
 
 if (!JWT_SECRET) {
   if (process.env.NODE_ENV === 'production') {

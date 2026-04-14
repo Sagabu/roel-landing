@@ -57,7 +57,7 @@
     </header>
 
     <!-- Page Title Section med bakgrunnsbilde -->
-    <div class="text-white py-10 relative" style="background: linear-gradient(to right, rgba(61,27,12,0.88), rgba(90,40,18,0.82)), url('images/landscape.jpg'); background-size: cover; background-position: center;">
+    <div class="text-white py-10 relative" style="background: linear-gradient(to right, rgba(61,27,12,0.75), rgba(90,40,18,0.70)), url('images/partilister-header.jpg'); background-size: cover; background-position: center 40%;">
         <div class="max-w-6xl mx-auto px-6 relative z-10">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                 <div>
@@ -569,24 +569,33 @@
                 tabs.push({ id: 'venteliste-ak', label: `Venteliste AK (${vl[dagKey].ak.length})`, icon: '⏳' });
             }
 
-            // VK: Deltakerliste (hvis ikke fordelt) eller VK-partier (hvis fordelt)
+            // VK-dag logikk: bestem hvilken dag VK-kval og VK-finale tilhører
             const vkPartier = allParties.filter(p => p.type === 'vk' || p.type === 'vk-kval' || p.type === 'vk-finale');
-            const harVkPartierPaaDagen = vkPartier.some(p => (p.day || 1) === currentDay);
+            const antallDager = proveConfig?.antallDager || 2;
 
-            if (vkSamlet && !vkSamlet.fordelt && vkSamlet.hunder?.length > 0) {
+            // VK kval-dag = første dag (default), VK finale-dag = siste dag
+            const vkKvalDag = proveConfig?.vkKvalDag || 1;
+            const vkFinaleDag = proveConfig?.vkFinaleDag || antallDager;
+
+            // VK Deltakerliste vises KUN på kval-dagen (ikke finale-dagen)
+            if (currentDay === vkKvalDag && vkSamlet && !vkSamlet.fordelt && vkSamlet.hunder?.length > 0) {
                 tabs.push({ id: 'vk-deltakere', label: `Deltakere VK (${vkSamlet.hunder.length})`, icon: '📋' });
             }
 
-            if (harVkPartierPaaDagen) {
-                const vkPaaDagen = vkPartier.filter(p => (p.day || 1) === currentDay);
-                vkPaaDagen.forEach(p => {
-                    const label = p.name || (p.type === 'vk-finale' ? 'VK Finale' : p.type === 'vk-kval' ? 'VK Kval' : 'VK');
-                    tabs.push({ id: `vk-parti-${p.id || p.name}`, label: label, icon: '🏆', partyRef: p });
-                });
+            // Fordelte VK-partier vises på riktig dag
+            const vkPaaDagen = vkPartier.filter(p => (p.day || 1) === currentDay);
+            vkPaaDagen.forEach(p => {
+                const label = p.name || (p.type === 'vk-finale' ? 'VK Finale' : p.type === 'vk-kval' ? 'VK Kval' : 'VK');
+                tabs.push({ id: `vk-parti-${p.id || p.name}`, label: label, icon: '🏆', partyRef: p });
+            });
+
+            // VK Finale-fane vises på finale-dagen (tom til prøveledelsen fyller inn)
+            if (currentDay === vkFinaleDag && !vkPaaDagen.some(p => p.type === 'vk-finale')) {
+                tabs.push({ id: 'vk-finale-tom', label: 'VK Finale', icon: '🏆' });
             }
 
-            // Venteliste VK
-            if ((vl.vk?.length || 0) > 0) {
+            // Venteliste VK vises KUN på kval-dagen
+            if (currentDay === vkKvalDag && (vl.vk?.length || 0) > 0) {
                 tabs.push({ id: 'venteliste-vk', label: `Venteliste VK (${vl.vk.length})`, icon: '⏳' });
             }
 
@@ -837,6 +846,22 @@
                 html += renderVentelistePublic('VK', vkVL);
             } else if (currentClass === 'vk-deltakere') {
                 if (vkSamlet) html += renderVkDeltakerlistePublic(vkSamlet);
+            } else if (currentClass === 'vk-finale-tom') {
+                // VK Finale som ikke er satt opp ennå
+                html += `
+                    <div class="bg-white rounded-2xl shadow-md border border-amber-200 overflow-hidden">
+                        <div class="bg-gradient-to-r from-amber-50 to-amber-100 px-5 py-4 border-b border-amber-200">
+                            <h3 class="text-lg font-bold font-serif text-amber-900">VK Finale</h3>
+                        </div>
+                        <div class="text-center py-12">
+                            <svg class="w-12 h-12 text-amber-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <p class="text-bark-600 font-medium">Finalepartiet er ikke satt opp ennå</p>
+                            <p class="text-bark-500 text-sm mt-1">Oppdateres av prøveledelsen etter VK Kval</p>
+                        </div>
+                    </div>
+                `;
             } else if (currentClass.startsWith('vk-parti-')) {
                 // Spesifikt VK-parti
                 const partyId = currentClass.replace('vk-parti-', '');
@@ -950,9 +975,21 @@
         }
 
         // Render a single party card with live ranking
+        // Tilfeldig bakgrunnsbilde per parti (16 bilder tilgjengelig)
+        function getPartiBgImage(partyName) {
+            let hash = 0;
+            for (let i = 0; i < partyName.length; i++) {
+                hash = ((hash << 5) - hash) + partyName.charCodeAt(i);
+                hash |= 0;
+            }
+            const imgNr = (Math.abs(hash) % 16) + 1;
+            return `images/partilister/bg-${String(imgNr).padStart(2, '0')}.jpg`;
+        }
+
         function renderPartyCard(party) {
             const isVK = party.type.startsWith('vk');
             const partyId = party.id || party.name;
+            const bgImg = getPartiBgImage(partyId);
 
             // UK/AK class badges
             let classBadges = '';
@@ -970,8 +1007,8 @@
             else if (party.type === 'vk-finale') typeLabel = 'VK Finale';
 
             return `
-                <div class="bg-white rounded-2xl shadow-sm border border-bark-100 overflow-hidden mb-6">
-                    <div class="px-6 py-4 bg-bark-50 border-b border-bark-100">
+                <div class="bg-white rounded-2xl shadow-md border border-bark-200 overflow-hidden mb-6">
+                    <div class="px-6 py-5 border-b border-bark-200 relative" style="background: linear-gradient(to right, rgba(247,243,238,0.88), rgba(247,243,238,0.82)), url('${bgImg}'); background-size: cover; background-position: center;">
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <div class="flex items-center gap-3">
                                 <h3 class="text-lg font-serif font-semibold text-bark-900">${party.name}</h3>

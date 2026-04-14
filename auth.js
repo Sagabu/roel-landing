@@ -290,6 +290,11 @@ const FuglehundAuth = (function() {
 
     const response = await fetch(url, { ...options, headers });
 
+    // Vellykket API-kall teller som aktivitet (dommer som poller live-rangering, etc.)
+    if (response.ok) {
+      touchActivity();
+    }
+
     // Hvis 401, er token utløpt - logg ut
     if (response.status === 401) {
       logout();
@@ -455,6 +460,18 @@ const FuglehundAuth = (function() {
     activityEvents.forEach(evt => {
       document.addEventListener(evt, touchActivity, { passive: true, capture: true });
     });
+
+    // Wrap global fetch slik at alle vellykkede API-kall teller som aktivitet
+    // Dette dekker polling (dommer-VK live rangering), auto-save, direkte fetch-kall osv.
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = async function(...args) {
+      const response = await _origFetch(...args);
+      // Kun vellykkede kall (2xx) teller som aktivitet
+      if (response.ok && getToken()) {
+        touchActivity();
+      }
+      return response;
+    };
 
     // Periodisk sjekk av sesjon-status (hvert minutt)
     setInterval(() => {

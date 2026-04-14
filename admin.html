@@ -4542,6 +4542,9 @@
         // PRAKTISK INFO - SAVE AND LOAD
         // ========================================
         async function savePraktiskInfo() {
+            // Hent bedømmingsmetode fra radio (ikke fra window.bedommingUtenforSystemet som kan være stale)
+            const bedomMethodChecked = document.querySelector('input[name="bedomMethod"]:checked')?.value || 'digital';
+
             const praktiskInfo = {
                 oppropSted: document.getElementById('oppropSted')?.value || '',
                 oppropTid: document.getElementById('oppropTid')?.value || '',
@@ -4556,6 +4559,8 @@
                 dvkNavn: document.getElementById('dvkNavn')?.value || '',
                 dvkTelefon: document.getElementById('dvkTelefon')?.value || '',
                 kravSauebevis: document.getElementById('kravSauebevis')?.checked || false,
+                // Bedømmingsmetode - KRITISK at denne lagres slik at manuell-valget ikke går tapt
+                bedommingUtenforSystemet: bedomMethodChecked === 'manuell',
                 // Standardkrav - alltid true
                 kravVaksinasjon: true,
                 kravEierattest: true,
@@ -15396,16 +15401,24 @@
         }
 
         // Last bedømmingsmetode fra lagret data
+        // VIKTIG: Hvis feltet mangler i lagret data, behold nåværende valg (ikke nullstill!)
         function lastBedomMethod(praktiskInfo) {
-            const isManuell = praktiskInfo?.bedommingUtenforSystemet === true;
             const digitalRadio = document.querySelector('input[name="bedomMethod"][value="digital"]');
             const manuellRadio = document.querySelector('input[name="bedomMethod"][value="manuell"]');
 
-            if (isManuell && manuellRadio) {
-                manuellRadio.checked = true;
-            } else if (digitalRadio) {
-                digitalRadio.checked = true;
+            // Sjekk om feltet er EKSPLISITT satt (true eller false) vs. undefined/null/mangler
+            const feltErEksplisittSatt = praktiskInfo &&
+                typeof praktiskInfo.bedommingUtenforSystemet === 'boolean';
+
+            if (feltErEksplisittSatt) {
+                const isManuell = praktiskInfo.bedommingUtenforSystemet === true;
+                if (isManuell && manuellRadio) {
+                    manuellRadio.checked = true;
+                } else if (!isManuell && digitalRadio) {
+                    digitalRadio.checked = true;
+                }
             }
+            // Hvis feltet mangler (undefined/null): behold nåværende valg for å unngå tilfeldig reset
 
             oppdaterBedomMethod();
         }

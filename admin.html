@@ -2196,6 +2196,69 @@
                     </div>
                 </section>
 
+                <!-- VK Deltakerliste - vises før fordeling til partier -->
+                <section id="vkDeltakerlisteSection" class="hidden space-y-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
+                        <div class="section-bg-hund-stand px-6 py-5 border-b border-bark-100 flex items-center justify-between flex-wrap gap-3">
+                            <div>
+                                <h2 class="text-xl font-bold font-serif text-bark-900">VK Deltakerliste</h2>
+                                <p class="text-sm text-bark-600 mt-1">Samlet liste over VK-påmeldte. Fordeling til partier gjøres manuelt av prøveledelsen.</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="text-right">
+                                    <div class="text-3xl font-bold text-warm-800"><span id="vkDeltakerAntall">0</span><span class="text-bark-400">/<span id="vkDeltakerMaks">0</span></span></div>
+                                    <div class="text-xs text-bark-500">påmeldte hunder</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <!-- Status/info-banner -->
+                            <div id="vkFordelingStatus" class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                <div class="flex items-start gap-3">
+                                    <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                    </svg>
+                                    <div class="flex-1">
+                                        <p class="font-medium text-amber-800" id="vkFordelingStatusTittel">Endringer kan forekomme</p>
+                                        <p class="text-sm text-amber-700 mt-1" id="vkFordelingStatusTekst">
+                                            VK-partiene er ikke fordelt ennå. Fordel dem kort tid før prøvestart. Knappen kan kjøres flere ganger — hver gang lages ny tilfeldig fordeling.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Knappen "Fordel til partier" -->
+                            <div class="flex gap-3 flex-wrap">
+                                <button id="btnFordelVkPartier" onclick="bekreftVkFordeling()" class="bg-warm-600 hover:bg-warm-700 text-white px-6 py-3 rounded-xl font-medium transition flex items-center gap-2 shadow-sm">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                                    </svg>
+                                    Fordel til partier
+                                </button>
+                            </div>
+
+                            <!-- Deltakerliste -->
+                            <div>
+                                <h3 class="font-semibold text-bark-800 mb-3">Påmeldte hunder</h3>
+                                <div id="vkDeltakerTabell" class="bg-bark-50 rounded-xl border border-bark-100 overflow-hidden">
+                                    <!-- Fylles dynamisk -->
+                                </div>
+                            </div>
+
+                            <!-- Venteliste -->
+                            <div>
+                                <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                                    Venteliste
+                                    <span id="vkVentelisteAntallBadge" class="text-xs bg-bark-200 text-bark-600 px-2 py-0.5 rounded-full">0</span>
+                                </h3>
+                                <div id="vkVentelisteTabell" class="bg-bark-50 rounded-xl border border-bark-100 overflow-hidden">
+                                    <!-- Fylles dynamisk -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- Party Lists -->
                 <section id="partilister" class="hidden space-y-6">
                     <div class="flex items-center justify-between flex-wrap gap-4">
@@ -6357,6 +6420,9 @@
                     // Oppdater statistikk-kortene
                     updateStatsFromStorage();
                 }
+
+                // Render VK-deltakerliste hvis relevant
+                await renderVkDeltakerliste();
             } catch (e) {
                 console.error('Kunne ikke laste partier:', e);
                 // Fallback til localStorage ved feil
@@ -6365,6 +6431,402 @@
                     renderAllParties(savedParties);
                 }
             }
+        }
+
+        // ========================================
+        // VK TREKNING - SEMIFINALE/FINALE
+        // ========================================
+
+        // ========================================
+        // VK DELTAKERLISTE & FORDELING
+        // ========================================
+
+        // Hent VK samlet liste fra server (fallback til localStorage)
+        async function hentVkSamletListe() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return null;
+            try {
+                const resp = await fetch(`/api/storage/vkSamletListe_${proveId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        localStorage.setItem(`vkSamletListe_${proveId}`, JSON.stringify(data.value));
+                        return data.value;
+                    }
+                }
+            } catch (e) {}
+            // Fallback: localStorage
+            const stored = localStorage.getItem(`vkSamletListe_${proveId}`);
+            return stored ? JSON.parse(stored) : null;
+        }
+
+        // Lagre VK samlet liste (lokalt + server)
+        async function lagreVkSamletListe(data) {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+            localStorage.setItem(`vkSamletListe_${proveId}`, JSON.stringify(data));
+            const token = localStorage.getItem('fuglehund_token');
+            try {
+                await fetch(`/api/storage/vkSamletListe_${proveId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    },
+                    body: JSON.stringify({ value: data })
+                });
+            } catch (e) {
+                console.warn('[VK] Kunne ikke lagre samlet liste til server:', e);
+            }
+        }
+
+        // Eier-identifikator (gjenbrukbar utenfor processUpload)
+        function getOwnerKeyGlobal(dog) {
+            const phone = String(dog.telefon || dog.eierTelefon || '').replace(/\s/g, '');
+            const name = String(dog.forer || dog.eier || dog.handler || dog.owner || '').toLowerCase().trim();
+            if (phone && phone.length >= 8) return 'tlf_' + phone;
+            if (name) return 'navn_' + name;
+            return 'ukjent_' + Math.random().toString(36).slice(2);
+        }
+
+        // Random shuffle (Fisher-Yates)
+        function shuffleArray(arr) {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+
+        // Fordel VK-hunder tilfeldig på N partier, respektér samme-eier-regel
+        function fordelVkTilfeldig(hunder, antallPartier) {
+            if (antallPartier <= 0 || hunder.length === 0) return [];
+
+            // Grupper etter eier
+            const grupperMap = new Map();
+            for (const hund of hunder) {
+                const key = getOwnerKeyGlobal(hund);
+                if (!grupperMap.has(key)) grupperMap.set(key, []);
+                grupperMap.get(key).push(hund);
+            }
+
+            // Random shuffle gruppene
+            const grupper = shuffleArray([...grupperMap.values()]);
+
+            // Initialiser partier
+            const partier = Array.from({ length: antallPartier }, () => []);
+
+            // Sorter store grupper først (lettere å plassere de små etterpå for balansering)
+            grupper.sort((a, b) => b.length - a.length);
+
+            for (const gruppe of grupper) {
+                // Plassér gruppen i partiet med FÆRREST hunder (balansert fordeling)
+                let minIdx = 0;
+                for (let i = 1; i < partier.length; i++) {
+                    if (partier[i].length < partier[minIdx].length) minIdx = i;
+                }
+                partier[minIdx].push(...gruppe);
+            }
+
+            // Shuffle innad i hvert parti, men med slipp-regel (samme eier ikke i samme slipp)
+            return partier.map(p => arrangerSlippSamenNei(p));
+        }
+
+        // Arranger hunder i et parti slik at samme eier ikke er i samme slipp (posisjon 1+2, 3+4, ...)
+        function arrangerSlippSamenNei(dogs) {
+            if (dogs.length <= 2) return shuffleArray(dogs);
+
+            const grupperMap = new Map();
+            for (const hund of dogs) {
+                const key = getOwnerKeyGlobal(hund);
+                if (!grupperMap.has(key)) grupperMap.set(key, []);
+                grupperMap.get(key).push(hund);
+            }
+
+            // Shuffle hver gruppe og alle grupper
+            const grupper = shuffleArray([...grupperMap.values()].map(g => shuffleArray(g)));
+
+            const result = [];
+            while (grupper.some(g => g.length > 0)) {
+                const slippStart = result.length;
+
+                // Første hund i slippet: fra gruppen med flest gjenværende
+                grupper.sort((a, b) => b.length - a.length);
+                let first = null;
+                let firstOwnerIdx = -1;
+                for (let i = 0; i < grupper.length; i++) {
+                    if (grupper[i].length > 0) {
+                        first = grupper[i].shift();
+                        firstOwnerIdx = i;
+                        break;
+                    }
+                }
+                if (!first) break;
+                result.push(first);
+
+                // Andre hund i slippet (hvis plass): fra en ANNEN gruppe
+                if (result.length < dogs.length) {
+                    let second = null;
+                    for (let i = 0; i < grupper.length; i++) {
+                        if (i !== firstOwnerIdx && grupper[i].length > 0) {
+                            second = grupper[i].shift();
+                            break;
+                        }
+                    }
+                    // Fallback: hvis ingen annen gruppe har hunder, ta fra samme gruppe
+                    if (!second) {
+                        for (let i = 0; i < grupper.length; i++) {
+                            if (grupper[i].length > 0) {
+                                second = grupper[i].shift();
+                                break;
+                            }
+                        }
+                    }
+                    if (second) result.push(second);
+                }
+            }
+
+            return result;
+        }
+
+        // Render VK Deltakerliste-UI
+        async function renderVkDeltakerliste() {
+            const section = document.getElementById('vkDeltakerlisteSection');
+            if (!section) return;
+
+            const samletListe = await hentVkSamletListe();
+
+            // Skjul seksjonen hvis ingen VK-data
+            if (!samletListe || !samletListe.hunder || samletListe.hunder.length === 0) {
+                // Sjekk om partier allerede er fordelt (skjul hvis ja)
+                const parties = getTrialParties();
+                const vkPartier = parties.filter(p => p.type === 'vk');
+                if (vkPartier.length > 0) {
+                    section.classList.add('hidden');
+                    return;
+                }
+                section.classList.add('hidden');
+                return;
+            }
+
+            // Hvis allerede fordelt, skjul deltakerliste-seksjonen (partiene vises i partilister)
+            if (samletListe.fordelt) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            section.classList.remove('hidden');
+
+            document.getElementById('vkDeltakerAntall').textContent = samletListe.hunder.length;
+            document.getElementById('vkDeltakerMaks').textContent = samletListe.maksPlasser;
+
+            // Render hunder
+            const tabellEl = document.getElementById('vkDeltakerTabell');
+            if (samletListe.hunder.length === 0) {
+                tabellEl.innerHTML = '<div class="p-6 text-center text-bark-500">Ingen VK-påmeldte</div>';
+            } else {
+                tabellEl.innerHTML = samletListe.hunder.map((h, idx) => `
+                    <div class="flex items-center justify-between px-4 py-2 border-b border-bark-100 last:border-b-0 hover:bg-white transition">
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <span class="text-xs text-bark-400 w-6">${idx + 1}</span>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-medium text-bark-800 truncate">${escapeHtmlLocal(h.hundenavn || h.navn || '')}</div>
+                                <div class="text-xs text-bark-500 truncate">${escapeHtmlLocal(h.regnr || '')} · ${escapeHtmlLocal(h.forer || h.eier || '')}</div>
+                            </div>
+                        </div>
+                        <button onclick="flyttVkTilVenteliste(${idx})" class="text-xs text-bark-400 hover:text-amber-600 transition px-2 py-1" title="Flytt til venteliste">
+                            → Venteliste
+                        </button>
+                    </div>
+                `).join('');
+            }
+
+            // Render venteliste
+            const venteliste = getTrialVenteliste();
+            const vkVenteliste = Array.isArray(venteliste.vk) ? venteliste.vk : [];
+            const ventelisteEl = document.getElementById('vkVentelisteTabell');
+            document.getElementById('vkVentelisteAntallBadge').textContent = vkVenteliste.length;
+
+            if (vkVenteliste.length === 0) {
+                ventelisteEl.innerHTML = '<div class="p-4 text-center text-bark-400 text-sm">Ingen på venteliste</div>';
+            } else {
+                ventelisteEl.innerHTML = vkVenteliste.map((h, idx) => `
+                    <div class="flex items-center justify-between px-4 py-2 border-b border-bark-100 last:border-b-0 hover:bg-white transition">
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <span class="text-xs text-bark-400 w-6">${idx + 1}</span>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-medium text-bark-800 truncate">${escapeHtmlLocal(h.hundenavn || h.navn || '')}</div>
+                                <div class="text-xs text-bark-500 truncate">${escapeHtmlLocal(h.regnr || '')} · ${escapeHtmlLocal(h.forer || h.eier || '')}</div>
+                            </div>
+                        </div>
+                        <button onclick="flyttVkFraVenteliste(${idx})" class="text-xs text-bark-400 hover:text-green-600 transition px-2 py-1" title="Flytt til deltakerliste">
+                            ← Deltaker
+                        </button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function escapeHtmlLocal(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        // Bekreftelsesdialog før fordeling
+        async function bekreftVkFordeling() {
+            const samletListe = await hentVkSamletListe();
+            if (!samletListe || samletListe.hunder.length === 0) {
+                alert('Ingen VK-hunder å fordele.');
+                return;
+            }
+
+            const bekreft = confirm(
+                `Fordel ${samletListe.hunder.length} VK-hunder på ${samletListe.antallPartier} parti(er)?\n\n` +
+                `Er dette den siste fordelingen før prøvestart?\n\n` +
+                `• Hunder fordeles helt tilfeldig, med unntak: samme eier/fører får samme parti (og ikke samme slipp).\n` +
+                `• Du kan kjøre fordelingen flere ganger — hver gang lages ny tilfeldig fordeling.\n` +
+                `• Deltakere ser ikke partiene før du manuelt sender SMS-varsling.\n\n` +
+                `Trykk OK for å fordele (kan gjentas senere), eller Avbryt.`
+            );
+            if (!bekreft) return;
+
+            await utforVkFordeling();
+        }
+
+        // Gjennomfør fordelingen
+        async function utforVkFordeling() {
+            const samletListe = await hentVkSamletListe();
+            if (!samletListe || samletListe.hunder.length === 0) return;
+
+            const partyDogsArr = fordelVkTilfeldig(samletListe.hunder, samletListe.antallPartier);
+
+            // Hent eksisterende partier og fjern gamle VK-partier
+            const eksisterende = getTrialParties().filter(p => p.type !== 'vk');
+
+            // Bestem VK-subtype og partinavn
+            const vkType = samletListe.vkType || '1day';
+            let vkSubType = 'vk';
+            let partyNamePrefix = 'VK';
+            if (vkType === '2day') {
+                vkSubType = 'vk_kval';
+                partyNamePrefix = 'VK Kval';
+            } else if (vkType === '3day') {
+                vkSubType = 'vk_kval';
+                partyNamePrefix = 'VK Kval';
+            }
+
+            const nyeVkPartier = partyDogsArr.map((dogs, i) => ({
+                name: samletListe.antallPartier === 1 && vkType === '1day' ? 'VK Finale' : `${partyNamePrefix} ${i + 1}`,
+                partyNum: i + 1,
+                type: 'vk',
+                vkSubType: vkSubType,
+                day: 1,
+                dogs: dogs
+            }));
+
+            const nyePartier = [...eksisterende, ...nyeVkPartier];
+            setTrialParties(nyePartier);
+
+            // Marker som fordelt
+            samletListe.fordelt = true;
+            samletListe.sisteFordeling = new Date().toISOString();
+            await lagreVkSamletListe(samletListe);
+
+            // Render på nytt
+            renderAllParties(nyePartier);
+            await renderVkDeltakerliste();
+
+            alert(`✓ ${samletListe.hunder.length} VK-hunder fordelt på ${samletListe.antallPartier} parti(er).\n\nDu kan kjøre fordelingen på nytt fra VK-deltakerlisten hvis nødvendig.`);
+        }
+
+        // Sjekk om automatisk venteliste-opprykk er aktivert (fra prøve-config)
+        async function erAutoOpprykkAktiv() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return true; // Default: aktiv
+
+            try {
+                const resp = await fetch(`/api/prover/${proveId}/config`);
+                if (resp.ok) {
+                    const config = await resp.json();
+                    // 0 = deaktivert, alt annet = aktiv (default)
+                    return config.auto_venteliste_opprykk !== 0;
+                }
+            } catch (e) {}
+            return true;
+        }
+
+        // Flytt hund fra deltakerliste til venteliste (manuell)
+        // Respekterer auto-opprykk-innstillingen
+        async function flyttVkTilVenteliste(idx) {
+            const bekreft = confirm(
+                'Er du helt sikker på at du vil flytte denne hunden fra deltakerliste til venteliste?\n\n' +
+                'Dette er en manuell overstyring som normalt ikke skal gjøres — bruk kun hvis du har en spesifikk grunn.'
+            );
+            if (!bekreft) return;
+
+            const samletListe = await hentVkSamletListe();
+            if (!samletListe || !samletListe.hunder[idx]) return;
+
+            const hund = samletListe.hunder[idx];
+            samletListe.hunder.splice(idx, 1);
+
+            // Legg i venteliste
+            const venteliste = getTrialVenteliste();
+            if (!Array.isArray(venteliste.vk)) venteliste.vk = [];
+            venteliste.vk.push(hund);
+
+            // Automatisk opprykk: hvis aktivert og det finnes noen på venteliste
+            // (utenom den som nettopp ble lagt til), flytt første venteliste-hund opp
+            const autoAktiv = await erAutoOpprykkAktiv();
+            let opprykketHund = null;
+            if (autoAktiv && venteliste.vk.length > 1) {
+                // Første fra venteliste er neste i kø (ikke den vi nettopp la til)
+                opprykketHund = venteliste.vk.shift();
+                samletListe.hunder.push(opprykketHund);
+            }
+
+            setTrialVenteliste(venteliste);
+            await lagreVkSamletListe(samletListe);
+            await renderVkDeltakerliste();
+
+            if (opprykketHund) {
+                alert(`✓ ${hund.hundenavn || hund.navn} flyttet til venteliste.\n✓ ${opprykketHund.hundenavn || opprykketHund.navn} rykket automatisk opp fra venteliste.`);
+            } else if (!autoAktiv && venteliste.vk.length > 0) {
+                alert(`⚠ ${hund.hundenavn || hund.navn} flyttet til venteliste.\n\nAutomatisk opprykk er DEAKTIVERT. Du må manuelt velge en erstatter fra ventelisten.`);
+            }
+        }
+
+        // Flytt hund fra venteliste til deltakerliste (manuell eller auto-opprykk)
+        async function flyttVkFraVenteliste(idx) {
+            const samletListe = await hentVkSamletListe();
+            if (!samletListe) return;
+
+            if (samletListe.hunder.length >= samletListe.maksPlasser) {
+                alert(`Deltakerlisten er full (${samletListe.maksPlasser} plasser). Fjern en hund først.`);
+                return;
+            }
+
+            const bekreft = confirm(
+                'Er du helt sikker på at du vil flytte denne hunden fra venteliste til deltakerliste?'
+            );
+            if (!bekreft) return;
+
+            const venteliste = getTrialVenteliste();
+            const vkVenteliste = Array.isArray(venteliste.vk) ? venteliste.vk : [];
+            if (!vkVenteliste[idx]) return;
+
+            const hund = vkVenteliste[idx];
+            vkVenteliste.splice(idx, 1);
+            venteliste.vk = vkVenteliste;
+
+            samletListe.hunder.push(hund);
+            setTrialVenteliste(venteliste);
+            await lagreVkSamletListe(samletListe);
+
+            await renderVkDeltakerliste();
         }
 
         // ========================================
@@ -8448,51 +8910,43 @@
                 }
             }
 
-            // Build VK parties (auto-calculate based on number of VK dogs) - MED EIER-REGEL OG SLIPP-REGEL
-            const vkPartyCount = Math.ceil(vkDogs.length / maxPerPartyVK) || 0;
+            // ============================================
+            // VK: NY FLYT - Ikke fordel på partier ved opplasting.
+            // Alle VK-hunder legges i samlet deltakerliste til prøveledelsen
+            // manuelt trykker "Fordel til partier" nærmere prøvestart.
+            // ============================================
+            const vkTypeForMaks = document.getElementById('vkTypeSelect')?.value || '1day';
+            const vkAntallPartier = vkTypeForMaks === '2day'
+                ? (parseInt(document.getElementById('vkKvalPartier')?.value) || 2)
+                : vkTypeForMaks === '3day'
+                    ? (parseInt(document.getElementById('vk3dayKvalPartier')?.value) || 3)
+                    : 1; // 1-dags VK = 1 parti
+            const maksVkPlasser = vkAntallPartier * maxPerPartyVK;
 
-            if (vkPartyCount > 0 && vkDogs.length > 0) {
-                // Bruk eier-regel: alle hunder fra samme eier på samme VK-parti
-                const { parties: vkPartiHunder, overflow: vkOverflow } = distributeWithOwnerRule(
-                    vkDogs,
-                    vkPartyCount,
-                    maxPerPartyVK
-                );
+            if (vkDogs.length > 0) {
+                // Første N hunder (påmeldingsrekkefølge) får plass i deltakerlisten
+                const vkDeltakere = vkDogs.slice(0, maksVkPlasser);
+                const vkVenteliste = vkDogs.slice(maksVkPlasser);
 
-                // VK venteliste (egen, ikke dag-spesifikk)
-                venteliste.vk = vkOverflow;
+                // Lagre VK-hunder i samlet deltakerliste (ikke fordelt på partier ennå)
+                const vkSamletListe = {
+                    hunder: vkDeltakere,
+                    maksPlasser: maksVkPlasser,
+                    antallPartier: vkAntallPartier,
+                    vkType: vkTypeForMaks,
+                    fordelt: false // Blir true når prøveledelsen klikker "Fordel til partier"
+                };
 
-                for (let i = 0; i < vkPartyCount; i++) {
-                    const vkDay = 1; // VK usually on day 1, could be configurable
-                    const partyDate = new Date(startDate);
-                    partyDate.setDate(partyDate.getDate() + vkDay - 1);
-
-                    // Hent VK-type (1day, 2day, 3day, none)
-                    const vkType = document.getElementById('vkTypeSelect')?.value || '1day';
-                    // Bestem VK-undertype basert på valg
-                    let vkSubType = 'vk'; // Standard for 1-dags VK
-                    let partyName = `VK ${i + 1}`;
-                    if (vkType === '2day') {
-                        vkSubType = 'vk_kval'; // Dag 1 av 2-dagers er kval
-                        partyName = `VK Kval ${i + 1}`;
-                    } else if (vkType === '3day') {
-                        vkSubType = 'vk_kval'; // Dag 1 av 3-dagers er kval
-                        partyName = `VK Kval ${i + 1}`;
-                    }
-
-                    // Arranger med slipp-regel: samme eier ikke i samme slipp
-                    const partyDogs = arrangeWithSlipRule(vkPartiHunder[i] || []);
-
-                    parties.push({
-                        name: partyName,
-                        partyNum: i + 1,
-                        type: 'vk',
-                        vkSubType: vkSubType, // 'vk' = 1-dags, 'vk_kval' = kval, 'vk_semi' = semifinale, 'vk_finale' = finale
-                        day: vkDay,
-                        date: partyDate.toISOString().split('T')[0],
-                        dogs: partyDogs
-                    });
+                // Lagre samlet liste og venteliste prøve-spesifikt
+                const proveIdForVK = getCurrentTrialId();
+                if (proveIdForVK) {
+                    localStorage.setItem(`vkSamletListe_${proveIdForVK}`, JSON.stringify(vkSamletListe));
                 }
+
+                venteliste.vk = vkVenteliste;
+
+                console.log(`[VK] Samlet liste: ${vkDeltakere.length}/${maksVkPlasser} hunder, venteliste: ${vkVenteliste.length}`);
+                // Merk: Ingen parti-objekter opprettes her. Prøveledelsen fordeler senere.
             }
 
             // Store waitlist (med klasseinformasjon)
@@ -8546,6 +9000,9 @@
 
             // Render partier med de globale funksjonene (inkluderer flytt-knapper)
             renderAllParties(parties);
+
+            // Render VK-deltakerliste (ny flyt: VK-hunder ligger i samlet liste)
+            await renderVkDeltakerliste();
 
             // Oppdater statistikk-kortene øverst
             updateStatsFromStorage();

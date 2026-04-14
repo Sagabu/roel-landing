@@ -7212,13 +7212,39 @@ app.get("/api/prover/alle", (c) => {
 });
 
 // Hent KUN prøver for innlogget brukers klubber (for admin.html terminliste)
-// Superadmin ser alle prøver
+// Støtter ?klubbId=X for å filtrere på spesifikk klubb (med tilgangskontroll)
+// Superadmin ser alle prøver hvis ikke klubbId er spesifisert
 app.get("/api/prover/mine", requireAuth, (c) => {
   const bruker = c.get("bruker");
   const erSuperadmin = hasRole(bruker.rolle, "superadmin");
+  const filterKlubbId = c.req.query("klubbId") || null;
 
   try {
     let prover;
+
+    // Hvis klubbId er spesifisert, filtrer KUN på den klubben (med tilgangskontroll)
+    if (filterKlubbId) {
+      // Sjekk at brukeren har tilgang til denne klubben (admin eller superadmin)
+      const harTilgang = erSuperadmin || db.prepare(
+        "SELECT 1 FROM klubb_admins WHERE telefon = ? AND klubb_id = ?"
+      ).get(bruker.telefon, filterKlubbId);
+
+      if (!harTilgang) {
+        return c.json({ prover: [], error: "Ingen tilgang til denne klubben" }, 403);
+      }
+
+      prover = db.prepare(`
+        SELECT p.*, k.navn as klubb_navn,
+               (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        WHERE p.klubb_id = ?
+        ORDER BY p.start_dato DESC
+      `).all(filterKlubbId);
+      return c.json({ prover });
+    }
+
+    // Hvis ingen klubbId-filter: superadmin ser alle, andre ser sine klubber
     if (erSuperadmin) {
       prover = db.prepare(`
         SELECT p.*, k.navn as klubb_navn,

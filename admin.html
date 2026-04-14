@@ -15177,16 +15177,33 @@
         let alleProver = [];
         let valgtProveId = null;
 
-        // Last terminliste fra server - KUN prøver for innlogget brukers klubber
+        // Last terminliste fra server - KUN prøver for valgt klubb (eller brukerens klubber)
         async function lastTerminliste() {
             try {
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch('/api/prover/mine', {
+
+                // Hent klubbId fra URL eller localStorage - terminlisten skal KUN vise denne klubbens prøver
+                const urlParams = new URLSearchParams(window.location.search);
+                const klubbId = urlParams.get('klubbId') || localStorage.getItem('currentKlubbId');
+
+                // Bygg URL med klubbId-parameter for å tvinge filtrering
+                let url = '/api/prover/mine';
+                if (klubbId) {
+                    url += `?klubbId=${encodeURIComponent(klubbId)}`;
+                }
+
+                const resp = await fetch(url, {
                     headers: token ? { 'Authorization': `Bearer ${token}` } : {}
                 });
                 if (resp.ok) {
                     const data = await resp.json();
                     alleProver = data.prover || [];
+
+                    // EKSTRA SIKKERHET: Filtrer bort prøver som ikke tilhører valgt klubb
+                    if (klubbId) {
+                        alleProver = alleProver.filter(p => p.klubb_id === klubbId);
+                    }
+
                     visTerminliste();
                 } else if (resp.status === 401) {
                     document.getElementById('terminlisteBody').innerHTML = `

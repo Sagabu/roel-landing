@@ -1418,9 +1418,10 @@
 
                 const isVK = party.type?.startsWith('vk');
 
-                // Bredt format for mobilbilde
+                // 1080px = standard mobilbilde-bredde (Full HD)
+                const imgWidth = 1080;
                 const el = document.createElement('div');
-                el.style.cssText = 'position:absolute;left:-9999px;top:0;width:900px;font-family:Inter,system-ui,sans-serif;';
+                el.style.cssText = `position:absolute;left:-9999px;top:0;width:${imgWidth}px;font-family:Inter,system-ui,sans-serif;`;
                 document.body.appendChild(el);
 
                 // Klasse-farge
@@ -1451,78 +1452,80 @@
                         img.src = bgImg;
                     });
                     const cvs = document.createElement('canvas');
-                    cvs.width = 900; cvs.height = 900;
+                    cvs.width = imgWidth; cvs.height = imgWidth;
                     const ctx = cvs.getContext('2d');
-                    const scale = Math.max(900/img.width, 900/img.height);
+                    const scale = Math.max(imgWidth/img.width, imgWidth/img.height);
                     const w = img.width * scale, h = img.height * scale;
-                    ctx.drawImage(img, (900-w)/2, (900-h)/2, w, h);
-                    ctx.fillStyle = 'rgba(247,243,238,0.80)';
-                    ctx.fillRect(0, 0, 900, 900);
-                    bgBase64 = cvs.toDataURL('image/jpeg', 0.7);
+                    ctx.drawImage(img, (imgWidth-w)/2, (imgWidth-h)/2, w, h);
+                    ctx.fillStyle = 'rgba(247,243,238,0.78)';
+                    ctx.fillRect(0, 0, imgWidth, imgWidth);
+                    bgBase64 = cvs.toDataURL('image/jpeg', 0.8);
                 } catch(e) { console.warn('Bg-bilde feilet:', e); }
 
                 const bgCss = bgBase64
-                    ? `background-image:url('${bgBase64}');background-size:900px 900px;background-position:top center;background-repeat:no-repeat;`
+                    ? `background-image:url('${bgBase64}');background-size:${imgWidth}px ${imgWidth}px;background-position:top center;background-repeat:no-repeat;`
                     : 'background:#F7F3EE;';
 
-                // 6-kolonners tabell: Nr | Regnr | Rase | Hund | Eier/Fører | Klasse
+                // 5-kolonners tabell: Nr | Regnr | Hund (+ rase) | Eier/Fører | Klasse
                 const hundeRader = (party.dogs || []).map((dog, i) => {
                     const kl = dog.klasse || (isVK ? 'VK' : 'AK');
                     const f = klasseFarge(kl);
-                    const bg = i % 2 === 0 ? 'rgba(255,255,255,0.55)' : 'rgba(250,247,244,0.55)';
+                    const bg = i % 2 === 0 ? 'rgba(255,255,255,0.50)' : 'rgba(248,244,240,0.50)';
                     return `<tr style="background:${bg};">
-                        <td style="padding:7px 8px;text-align:center;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);width:36px;">
-                            <div style="width:24px;height:24px;border-radius:12px;background:rgba(234,216,207,0.8);text-align:center;line-height:24px;font-size:11px;font-weight:700;color:#5A2812;margin:0 auto;">${i+1}</div>
+                        <td style="padding:6px 10px;text-align:center;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.5);width:42px;">
+                            <div style="width:26px;height:26px;border-radius:13px;background:rgba(234,216,207,0.85);text-align:center;line-height:26px;font-size:13px;font-weight:700;color:#5A2812;margin:0 auto;">${i+1}</div>
                         </td>
-                        <td style="padding:7px 8px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);font-size:11px;color:#7D6A54;">
+                        <td style="padding:6px 10px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.5);font-size:12px;color:#7D6A54;width:140px;">
                             ${dog.regnr || ''}
                         </td>
-                        <td style="padding:7px 8px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);font-size:12px;color:#5A2812;">
-                            ${dog.rase || ''}
+                        <td style="padding:6px 10px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.5);">
+                            <span style="font-weight:700;font-size:15px;color:#3D1B0C;">${dog.hundenavn || dog.navn || ''}</span>
+                            <span style="font-size:11px;color:#9A8268;margin-left:6px;">${dog.rase || ''}</span>
                         </td>
-                        <td style="padding:7px 8px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);font-weight:600;font-size:13px;color:#3D1B0C;">
-                            ${dog.hundenavn || dog.navn || ''}
-                        </td>
-                        <td style="padding:7px 8px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);font-size:12px;color:#5A2812;">
+                        <td style="padding:6px 10px;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.5);font-size:13px;color:#5A2812;width:200px;">
                             ${dog.forer || dog.eier || ''}
                         </td>
-                        <td style="padding:7px 8px;text-align:center;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.6);width:44px;">
-                            <div style="display:inline-block;padding:2px 7px;background:${f.bg};color:${f.txt};border:1px solid ${f.border};border-radius:5px;font-size:10px;font-weight:700;">${kl}</div>
+                        <td style="padding:6px 10px;text-align:center;vertical-align:middle;border-bottom:1px solid rgba(234,216,207,0.5);width:50px;">
+                            <div style="display:inline-block;padding:3px 9px;background:${f.bg};color:${f.txt};border:1px solid ${f.border};border-radius:6px;font-size:12px;font-weight:700;">${kl}</div>
                         </td>
                     </tr>`;
                 }).join('');
 
+                // Kompakt header: alt på 2 linjer
                 el.innerHTML = `
-                    <div style="background:#3D1B0C;color:white;padding:16px 20px;">
-                        <div style="font-size:10px;color:#D4A989;text-transform:uppercase;letter-spacing:2px;margin-bottom:4px;">Partiliste</div>
-                        <div style="font-size:20px;font-weight:700;font-family:Georgia,serif;">${trialName}</div>
-                        <div style="font-size:12px;color:#B8977A;margin-top:3px;">${trialDetails}</div>
-                    </div>
+                    <table style="width:100%;border-collapse:collapse;background:#3D1B0C;color:white;">
+                        <tr>
+                            <td style="padding:12px 20px;">
+                                <div style="font-size:18px;font-weight:700;font-family:Georgia,serif;">${trialName}</div>
+                                <div style="font-size:11px;color:#B8977A;margin-top:2px;">${trialDetails}</div>
+                            </td>
+                            <td style="padding:12px 20px;text-align:right;vertical-align:middle;">
+                                <div style="font-size:10px;color:#D4A989;text-transform:uppercase;letter-spacing:1px;">fuglehundprove.no</div>
+                            </td>
+                        </tr>
+                    </table>
                     <table style="width:100%;border-collapse:collapse;background:#5A2812;color:white;">
                         <tr>
-                            <td style="padding:10px 20px;font-size:16px;font-weight:700;font-family:Georgia,serif;">${party.name}</td>
-                            <td style="padding:10px 20px;text-align:right;white-space:nowrap;">${badges}
+                            <td style="padding:8px 20px;font-size:16px;font-weight:700;font-family:Georgia,serif;">${party.name}</td>
+                            <td style="padding:8px 20px;text-align:right;white-space:nowrap;">${badges}
                                 <span style="display:inline-block;padding:3px 12px;background:rgba(255,255,255,0.2);border-radius:20px;font-size:12px;font-weight:600;margin-left:4px;">${party.dogs?.length || 0} hunder</span>
                             </td>
                         </tr>
                     </table>
-                    <table style="width:100%;border-collapse:collapse;background:#F7F3EE;">
-                        <tr style="background:rgba(234,216,207,0.5);">
-                            <th style="padding:6px 8px;text-align:center;font-size:9px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:36px;">Nr</th>
-                            <th style="padding:6px 8px;text-align:left;font-size:9px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Regnr</th>
-                            <th style="padding:6px 8px;text-align:left;font-size:9px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Rase</th>
-                            <th style="padding:6px 8px;text-align:left;font-size:9px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Hund</th>
-                            <th style="padding:6px 8px;text-align:left;font-size:9px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Eier/Fører</th>
-                            <th style="padding:6px 8px;text-align:center;font-size:9px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:44px;">Klasse</th>
-                        </tr>
-                    </table>
                     <div style="${bgCss}">
                         <table style="width:100%;border-collapse:collapse;">
+                            <tr style="background:rgba(234,216,207,0.6);">
+                                <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:42px;">Nr</th>
+                                <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:140px;">Regnr</th>
+                                <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;">Hund</th>
+                                <th style="padding:5px 10px;text-align:left;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:200px;">Eier/Fører</th>
+                                <th style="padding:5px 10px;text-align:center;font-size:10px;font-weight:700;color:#6E3018;text-transform:uppercase;border-bottom:2px solid #D4A989;width:50px;">Kl</th>
+                            </tr>
                             ${hundeRader}
                         </table>
                     </div>
-                    <div style="padding:10px 20px;text-align:center;font-size:10px;color:#9A8268;background:#EAD8CF;">
-                        fuglehundprove.no · ${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO',{hour:'2-digit',minute:'2-digit'})}
+                    <div style="padding:6px 20px;text-align:center;font-size:9px;color:#9A8268;background:#EAD8CF;">
+                        ${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO',{hour:'2-digit',minute:'2-digit'})}
                     </div>
                 `;
 

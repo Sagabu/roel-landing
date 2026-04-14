@@ -1164,9 +1164,35 @@
                                     </svg>
                                     Opprop
                                 </h4>
-                                <div>
-                                    <label class="block text-sm font-medium text-bark-500 mb-2">Møtested</label>
-                                    <input type="text" id="oppropSted" placeholder="F.eks. Lierne Fjellstue" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-bark-500 mb-2">Tid</label>
+                                        <input type="time" id="oppropTid" value="08:00" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-bark-500 mb-2">Møtested</label>
+                                        <input type="text" id="oppropSted" placeholder="F.eks. Lierne Fjellstue" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Premieutdeling -->
+                            <div class="space-y-4">
+                                <h4 class="font-semibold text-bark-800 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-warm-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                                    </svg>
+                                    Premieutdeling
+                                </h4>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-bark-500 mb-2">Tid</label>
+                                        <input type="time" id="premieutdelingTid" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-bark-500 mb-2">Sted</label>
+                                        <input type="text" id="premieutdelingSted" placeholder="F.eks. Lierne Fjellstue" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                    </div>
                                 </div>
                             </div>
 
@@ -4617,6 +4643,9 @@
                 toggleJegermiddagFelter();
             }
             if (info.tilleggsinformasjon && el('tilleggsinformasjon')) el('tilleggsinformasjon').value = info.tilleggsinformasjon;
+            // Premieutdeling - last fra lagrede data
+            if (info.premieutdelingTid && el('premieutdelingTid')) el('premieutdelingTid').value = info.premieutdelingTid;
+            if (info.premieutdelingSted && el('premieutdelingSted')) el('premieutdelingSted').value = info.premieutdelingSted;
 
             // Last jegermiddag-statistikk fra API hvis aktivert
             if (info.jegermiddagAktivert) {
@@ -8838,7 +8867,7 @@
             const organizerName = document.getElementById('organizerName').value || '';
             const trialLocation = document.getElementById('trialLocation').value || '';
             const trialDate = document.getElementById('trialDateFrom').value || '';
-            const trialJudges = document.getElementById('trialJudges').value || '';
+            const trialJudges = document.getElementById('trialJudges')?.value || '';
             // Hent logo fra adminLogo img-elementet (som allerede er lastet fra database)
             const adminLogoEl = document.getElementById('adminLogo');
             const clubLogo = (adminLogoEl && !adminLogoEl.classList.contains('hidden')) ? adminLogoEl.src : null;
@@ -14821,17 +14850,11 @@
                     localStorage.setItem('currentTrialId', proveId);
                 }
 
-                // Lagre prøvedetaljer (globalt trial-config - legacy)
-                const resp = await fetch('/api/trial', {
-                    method: 'PUT',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({
-                        name: trialName,
-                        start_date: trialDate,
-                        location: trialLocation,
-                        organizing_club: organizerName
-                    })
-                });
+                // VIKTIG: Vi lagrer IKKE til /api/trial (global trial_config legacy)
+                // fordi den deles mellom ALLE prøver/klubber og lekker data.
+                // All prøve-spesifikk info lagres til /api/prover/:id lenger ned.
+                // Beholder en "dummy" resp for statussjekk nederst.
+                const resp = { ok: true };
 
                 // Lagre praktisk info samtidig
                 const bedomMethod = document.querySelector('input[name="bedomMethod"]:checked')?.value || 'digital';

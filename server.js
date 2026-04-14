@@ -4742,7 +4742,18 @@ app.put("/api/klubber/:id", async (c) => {
   if (body.navn !== undefined) { updates.push("navn = ?"); params.push(body.navn); }
   if (body.region !== undefined) { updates.push("region = ?"); params.push(body.region); }
   if (body.orgnummer !== undefined) { updates.push("orgnummer = ?"); params.push(body.orgnummer); }
-  if (body.vipps_nummer !== undefined) { updates.push("vipps_nummer = ?"); params.push(body.vipps_nummer); }
+  if (body.vipps_nummer !== undefined) {
+    // STRENG validering: Vipps-bedriftsnummer må være 5-6 siffer (eller null/tom)
+    // Dette hindrer at telefonnummer fra browser-autofill blir lagret ved en feil
+    const vippsNr = body.vipps_nummer;
+    if (vippsNr !== null && vippsNr !== '' && !/^\d{5,6}$/.test(String(vippsNr).trim())) {
+      return c.json({
+        error: `Ugyldig Vipps-nummer: "${vippsNr}". Må være 5-6 siffer.`
+      }, 400);
+    }
+    updates.push("vipps_nummer = ?");
+    params.push(vippsNr || null);
+  }
   if (body.epost !== undefined) { updates.push("epost = ?"); params.push(body.epost); }
   if (body.telefon !== undefined) { updates.push("telefon = ?"); params.push(body.telefon); }
   if (body.nettside !== undefined) { updates.push("nettside = ?"); params.push(body.nettside); }

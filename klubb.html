@@ -178,9 +178,12 @@
                                     <div>
                                         <label class="block text-sm font-semibold text-orange-800 mb-1">Vipps-nummer (bedrift)</label>
                                         <p class="text-xs text-orange-600 mb-2">5-6 sifret Vipps-nummer for å motta betalinger fra deltakere</p>
-                                        <input type="text" id="settingsVipps" name="klubb_vipps_bedrift_nr" placeholder="123456" maxlength="6" pattern="[0-9]{5,6}" inputmode="numeric"
-                                            autocomplete="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-form-type="other"
+                                        <input type="text" id="settingsVipps" name="vipps-business-id-8f2a" placeholder="123456" maxlength="6" pattern="[0-9]{5,6}" inputmode="numeric"
+                                            autocomplete="one-time-code" autocorrect="off" spellcheck="false" data-lpignore="true" data-form-type="other" data-1p-ignore="true"
+                                            readonly onfocus="this.removeAttribute('readonly'); validateVippsInput(this);"
+                                            oninput="validateVippsInput(this)"
                                             class="w-full max-w-xs px-4 py-2 rounded-xl border border-orange-300 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none bg-white">
+                                        <p class="text-xs text-bark-500 mt-1" id="vippsFeilmelding" style="display:none; color: #c0392b;">Vipps-nummer må være 5-6 siffer. Ugyldig verdi ble fjernet.</p>
                                     </div>
 
                                     <!-- Vipps API-integrasjon (valgfritt) -->
@@ -456,10 +459,19 @@
             const adresseInput = document.getElementById('settingsAdresse');
             if (adresseInput) adresseInput.value = club.adresse || '';
 
-            // Populate Vipps-nummer - tøm alltid først for å hindre browser autofill
+            // Populate Vipps-nummer - eksplisitt sett verdi (server er eneste kilde)
             const vippsInput = document.getElementById('settingsVipps');
             if (vippsInput) {
-                vippsInput.value = club.vipps_nummer || '';
+                const serverVippsNr = club.vipps_nummer || '';
+                // Valider at lagret verdi er 5-6 siffer. Hvis ikke, tøm (kunne vært autofill tidligere)
+                if (serverVippsNr && !/^\d{5,6}$/.test(serverVippsNr)) {
+                    console.warn('[Klubb] Ugyldig Vipps-nummer i database, ignorerer:', serverVippsNr);
+                    vippsInput.value = '';
+                } else {
+                    vippsInput.value = serverVippsNr;
+                }
+                // Lagre "sannhet fra server" så vi kan avvise autofill
+                vippsInput.dataset.serverValue = vippsInput.value;
             }
 
             // Populate Vipps API-felter (hvis konfigurert)
@@ -477,6 +489,69 @@
             // Update title
             document.title = `${club.navn || 'Min Klubb'} - Fuglehundprøve`;
         }
+
+        // Vipps-validering: avvis browser-autofill og ugyldige verdier
+        function validateVippsInput(input) {
+            const val = (input.value || '').replace(/\D/g, ''); // Kun siffer
+            const feilmelding = document.getElementById('vippsFeilmelding');
+
+            // Hvis verdi er tom, bare tøm feltet stille
+            if (!val) {
+                input.value = '';
+                if (feilmelding) feilmelding.style.display = 'none';
+                return;
+            }
+
+            // Vipps-bedriftsnummer er STRENGT 5 eller 6 siffer
+            // Telefonnummer er 8 siffer - avvis automatisk
+            if (val.length > 6) {
+                // Sannsynligvis autofill (f.eks. telefonnummer) - tøm og varsle
+                input.value = '';
+                if (feilmelding) {
+                    feilmelding.style.display = 'block';
+                    setTimeout(() => { feilmelding.style.display = 'none'; }, 4000);
+                }
+                console.warn('[Vipps] Avviste autofill-verdi:', val);
+                return;
+            }
+
+            // Sørg for at kun siffer er lagret
+            input.value = val;
+            if (feilmelding) feilmelding.style.display = 'none';
+        }
+
+        // Defensiv sjekk etter siden er fullt lastet (fanger sen autofill)
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const vippsInput = document.getElementById('settingsVipps');
+                if (!vippsInput) return;
+
+                const serverValue = vippsInput.dataset.serverValue || '';
+                const currentValue = vippsInput.value || '';
+
+                // Hvis verdi ikke matcher det serveren sendte, kan det være autofill
+                if (currentValue !== serverValue && currentValue.length > 0) {
+                    // Sjekk om det ser ut som et telefonnummer eller ugyldig verdi
+                    if (!/^\d{5,6}$/.test(currentValue)) {
+                        console.warn('[Vipps] Fjerner post-load autofill:', currentValue, 'forventet:', serverValue);
+                        vippsInput.value = serverValue;
+                    }
+                }
+            }, 500); // Vent på at autofill kjører, så ryddes opp
+        });
+
+        // Overvåk fokus/blur for å fange autofill som skjer ved fokus-endring
+        document.addEventListener('DOMContentLoaded', () => {
+            const vippsInput = document.getElementById('settingsVipps');
+            if (!vippsInput) return;
+
+            // Når feltet mister fokus, valider
+            vippsInput.addEventListener('blur', () => {
+                if (vippsInput.value && !/^\d{5,6}$/.test(vippsInput.value)) {
+                    validateVippsInput(vippsInput);
+                }
+            });
+        });
 
         async function saveClubSettings() {
             if (!currentClubId) {

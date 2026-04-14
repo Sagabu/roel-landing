@@ -6015,7 +6015,9 @@
         }
 
         // Slett alle data
-        function clearAllData() {
+        async function clearAllData() {
+            const proveId = getCurrentTrialId();
+
             // Fjern alle relevante localStorage-nøkler (prøve-spesifikke)
             localStorage.removeItem(getTrialPartiesKey());
             localStorage.removeItem(getTrialVentelisteKey());
@@ -6031,6 +6033,49 @@
             localStorage.removeItem(getFkfRapportDraftKey());
             localStorage.removeItem(getAutomatikkInnstillingerKey());
 
+            // Fjern VK samlet liste (ny flyt) - både localStorage og server
+            if (proveId) {
+                localStorage.removeItem(`vkSamletListe_${proveId}`);
+                const token = localStorage.getItem('fuglehund_token');
+                // Slett fra server (via DELETE eller PUT med null)
+                try {
+                    await fetch(`/api/storage/vkSamletListe_${proveId}`, {
+                        method: 'DELETE',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                } catch (e) {
+                    console.warn('Kunne ikke slette VK samlet liste fra server:', e);
+                }
+
+                // Slett venteliste fra server også
+                try {
+                    await fetch(`/api/prover/${proveId}/venteliste`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({ venteliste: { dag1: { uk: [], ak: [] }, dag2: { uk: [], ak: [] }, dag3: { uk: [], ak: [] }, dag4: { uk: [], ak: [] }, vk: [] } })
+                    });
+                } catch (e) {
+                    console.warn('Kunne ikke slette venteliste fra server:', e);
+                }
+
+                // Slett partilister fra server
+                try {
+                    await fetch(`/api/prover/${proveId}/partilister`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': token ? `Bearer ${token}` : ''
+                        },
+                        body: JSON.stringify({ partier: [] })
+                    });
+                } catch (e) {
+                    console.warn('Kunne ikke slette partilister fra server:', e);
+                }
+            }
+
             // Nullstill statistikk
             document.getElementById('statTotal').textContent = '0';
             document.getElementById('statTotalSub').textContent = 'Last opp deltakerliste';
@@ -6043,6 +6088,16 @@
             document.getElementById('partyListsEmptyState').classList.remove('hidden');
             document.getElementById('partyListsContent').classList.add('hidden');
             document.getElementById('partyListsContainer').innerHTML = '';
+
+            // Skjul VK deltakerliste-seksjonen
+            const vkSection = document.getElementById('vkDeltakerlisteSection');
+            if (vkSection) vkSection.classList.add('hidden');
+
+            // Tøm VK deltakerliste-tabeller
+            const vkDeltakerTabell = document.getElementById('vkDeltakerTabell');
+            if (vkDeltakerTabell) vkDeltakerTabell.innerHTML = '';
+            const vkVentelisteTabell = document.getElementById('vkVentelisteTabell');
+            if (vkVentelisteTabell) vkVentelisteTabell.innerHTML = '';
 
             // Skjul venteliste
             document.getElementById('venteliste')?.classList.add('hidden');
@@ -6059,7 +6114,10 @@
                 Object.keys(partyDommere).forEach(key => delete partyDommere[key]);
             }
 
-            alert('✅ Alle data er slettet. Du kan nå laste opp en ny deltakerliste.');
+            // Nullstill globale arrays
+            if (typeof currentParticipants !== 'undefined') currentParticipants = [];
+
+            alert('✅ Alle data er slettet (både lokalt og på server). Du kan nå laste opp en ny deltakerliste.');
         }
 
         // Åpne dialog for å legge til hund manuelt

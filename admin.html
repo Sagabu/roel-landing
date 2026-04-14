@@ -6621,6 +6621,52 @@
             document.getElementById('vkDeltakerAntall').textContent = samletListe.hunder.length;
             document.getElementById('vkDeltakerMaks').textContent = samletListe.maksPlasser;
 
+            // Oppdater status-banner basert på tilstand
+            const statusEl = document.getElementById('vkFordelingStatus');
+            const tittelEl = document.getElementById('vkFordelingStatusTittel');
+            const tekstEl = document.getElementById('vkFordelingStatusTekst');
+            const overskytende = samletListe.hunder.length - samletListe.maksPlasser;
+
+            if (samletListe.trengerManuellValg && overskytende > 0) {
+                // Advarsel: admin må velge
+                statusEl.className = 'bg-red-50 border border-red-200 rounded-xl p-4';
+                statusEl.querySelector('svg').setAttribute('class', 'w-5 h-5 text-red-600 mt-0.5 flex-shrink-0');
+                tittelEl.className = 'font-medium text-red-800';
+                tittelEl.textContent = `⚠ ${overskytende} hund(er) for mange — velg hvem som skal på venteliste`;
+                tekstEl.className = 'text-sm text-red-700 mt-1';
+                tekstEl.textContent = 'Påmeldingslisten har ikke dato/tidsstempel for når hver hund ble påmeldt. Bruk "→ Venteliste"-knappen ved siden av hver hund for å flytte ned til antallet matcher maks plasser. Du kan også flytte tilbake fra venteliste hvis du angrer.';
+            } else if (samletListe.sortertEtterDato) {
+                // Informasjon: sortert etter dato
+                statusEl.className = 'bg-blue-50 border border-blue-200 rounded-xl p-4';
+                statusEl.querySelector('svg').setAttribute('class', 'w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0');
+                tittelEl.className = 'font-medium text-blue-800';
+                tittelEl.textContent = 'Sortert etter påmeldingsdato';
+                tekstEl.className = 'text-sm text-blue-700 mt-1';
+                tekstEl.textContent = `De ${samletListe.maksPlasser} hundene som ble meldt på tidligst fikk plass. Resterende er på venteliste. Du kan overstyre manuelt ved å flytte hunder mellom listene.`;
+            } else {
+                // Standard: kan fordeles
+                statusEl.className = 'bg-amber-50 border border-amber-200 rounded-xl p-4';
+                statusEl.querySelector('svg').setAttribute('class', 'w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0');
+                tittelEl.className = 'font-medium text-amber-800';
+                tittelEl.textContent = 'Endringer kan forekomme';
+                tekstEl.className = 'text-sm text-amber-700 mt-1';
+                tekstEl.textContent = 'VK-partiene er ikke fordelt ennå. Fordel dem kort tid før prøvestart. Knappen kan kjøres flere ganger — hver gang lages ny tilfeldig fordeling.';
+            }
+
+            // Skjul "Fordel til partier"-knappen hvis det fortsatt er for mange hunder
+            const fordelBtn = document.getElementById('btnFordelVkPartier');
+            if (fordelBtn) {
+                if (samletListe.trengerManuellValg && overskytende > 0) {
+                    fordelBtn.disabled = true;
+                    fordelBtn.className = 'bg-bark-300 text-bark-500 px-6 py-3 rounded-xl font-medium cursor-not-allowed flex items-center gap-2';
+                    fordelBtn.title = 'Flytt overskytende hunder til venteliste før du kan fordele';
+                } else {
+                    fordelBtn.disabled = false;
+                    fordelBtn.className = 'bg-warm-600 hover:bg-warm-700 text-white px-6 py-3 rounded-xl font-medium transition flex items-center gap-2 shadow-sm';
+                    fordelBtn.title = '';
+                }
+            }
+
             // Render hunder
             const tabellEl = document.getElementById('vkDeltakerTabell');
             if (samletListe.hunder.length === 0) {
@@ -8178,7 +8224,8 @@
                         eier: 3,
                         forer: 4,
                         klasse: 5,
-                        epost: 6
+                        epost: 6,
+                        pameldingsDato: -1  // -1 = ikke funnet
                     };
 
                     for (let i = 0; i < headerParts.length; i++) {
@@ -8190,6 +8237,7 @@
                         else if (h.includes('fører') || h.includes('forer') || h.includes('handler')) colIndex.forer = i;
                         else if (h.includes('klasse') || h === 'kl') colIndex.klasse = i;
                         else if (h.includes('epost') || h.includes('e-post') || h.includes('email') || h.includes('mail')) colIndex.epost = i;
+                        else if (h.includes('påmeldt') || h.includes('paameldt') || h.includes('pamelding') || h.includes('påmelding') || h.includes('registrert') || h === 'dato' || h.includes('timestamp')) colIndex.pameldingsDato = i;
                     }
 
                     debug('Kolonneindekser: ' + JSON.stringify(colIndex));
@@ -8210,6 +8258,22 @@
                         else if (klasseRaw.includes('VK') || klasseRaw.includes('VINNER')) klasse = 'VK';
                         else if (klasseRaw.includes('AK') || klasseRaw.includes('ÅPEN')) klasse = 'AK';
 
+                        // Hent påmeldingsdato hvis kolonne finnes
+                        let pameldingsDato = null;
+                        if (colIndex.pameldingsDato >= 0) {
+                            const datoRaw = row[colIndex.pameldingsDato];
+                            if (datoRaw) {
+                                // Prøv å parse - både strenger og Excel date-verdier
+                                const parsed = datoRaw instanceof Date ? datoRaw : new Date(datoRaw);
+                                if (parsed && !isNaN(parsed.getTime())) {
+                                    pameldingsDato = parsed.toISOString();
+                                } else {
+                                    // Behold som streng hvis ikke parsbar (sorteres leksikografisk)
+                                    pameldingsDato = String(datoRaw);
+                                }
+                            }
+                        }
+
                         participants.push({
                             regnr: regnr,
                             hundenavn: navn,
@@ -8219,7 +8283,8 @@
                             klasseRaw: klasseRaw,
                             klasse: klasse,
                             dag: klasseRaw.includes('1') ? 1 : (klasseRaw.includes('2') ? 2 : 1),
-                            epost: String(row[colIndex.epost] || '').trim()
+                            epost: String(row[colIndex.epost] || '').trim(),
+                            pameldingsDato: pameldingsDato
                         });
                     }
 
@@ -8924,9 +8989,30 @@
             const maksVkPlasser = vkAntallPartier * maxPerPartyVK;
 
             if (vkDogs.length > 0) {
-                // Første N hunder (påmeldingsrekkefølge) får plass i deltakerlisten
-                const vkDeltakere = vkDogs.slice(0, maksVkPlasser);
-                const vkVenteliste = vkDogs.slice(maksVkPlasser);
+                // Sjekk om alle VK-hunder har påmeldingsdato
+                const alleHarDato = vkDogs.every(h => h.pameldingsDato);
+                let vkDeltakere, vkVenteliste, trengerManuellValg = false;
+
+                if (vkDogs.length <= maksVkPlasser) {
+                    // Alle får plass - ingen venteliste
+                    vkDeltakere = [...vkDogs];
+                    vkVenteliste = [];
+                } else if (alleHarDato) {
+                    // Sorter etter påmeldingsdato (tidligst først), så tar vi de første N
+                    const sortert = [...vkDogs].sort((a, b) => {
+                        const da = new Date(a.pameldingsDato);
+                        const db = new Date(b.pameldingsDato);
+                        return da - db;
+                    });
+                    vkDeltakere = sortert.slice(0, maksVkPlasser);
+                    vkVenteliste = sortert.slice(maksVkPlasser);
+                } else {
+                    // INGEN dato-kolonne - admin må velge manuelt
+                    // Legg alle i deltakerliste, marker som "trenger manuell valg"
+                    vkDeltakere = [...vkDogs];
+                    vkVenteliste = [];
+                    trengerManuellValg = true;
+                }
 
                 // Lagre VK-hunder i samlet deltakerliste (ikke fordelt på partier ennå)
                 const vkSamletListe = {
@@ -8934,18 +9020,32 @@
                     maksPlasser: maksVkPlasser,
                     antallPartier: vkAntallPartier,
                     vkType: vkTypeForMaks,
-                    fordelt: false // Blir true når prøveledelsen klikker "Fordel til partier"
+                    fordelt: false, // Blir true når prøveledelsen klikker "Fordel til partier"
+                    trengerManuellValg: trengerManuellValg, // True hvis admin må velge hvem som går på venteliste
+                    sortertEtterDato: alleHarDato && vkDogs.length > maksVkPlasser,
+                    opplastetDato: new Date().toISOString()
                 };
-
-                // Lagre samlet liste og venteliste prøve-spesifikt
-                const proveIdForVK = getCurrentTrialId();
-                if (proveIdForVK) {
-                    localStorage.setItem(`vkSamletListe_${proveIdForVK}`, JSON.stringify(vkSamletListe));
-                }
 
                 venteliste.vk = vkVenteliste;
 
-                console.log(`[VK] Samlet liste: ${vkDeltakere.length}/${maksVkPlasser} hunder, venteliste: ${vkVenteliste.length}`);
+                // Lagre samlet liste til server (kritisk for persistens)
+                const proveIdForVK = getCurrentTrialId();
+                if (proveIdForVK) {
+                    localStorage.setItem(`vkSamletListe_${proveIdForVK}`, JSON.stringify(vkSamletListe));
+                    // Send til server - non-blocking for å ikke forsinke UI
+                    const tokenForVK = localStorage.getItem('fuglehund_token');
+                    fetch(`/api/storage/vkSamletListe_${proveIdForVK}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': tokenForVK ? `Bearer ${tokenForVK}` : ''
+                        },
+                        body: JSON.stringify({ value: vkSamletListe })
+                    }).then(() => console.log('[VK] Samlet liste lagret til server'))
+                      .catch(err => console.warn('[VK] Kunne ikke lagre samlet liste til server:', err));
+                }
+
+                console.log(`[VK] Samlet liste: ${vkDeltakere.length}/${maksVkPlasser} hunder, venteliste: ${vkVenteliste.length}, manuellValg: ${trengerManuellValg}`);
                 // Merk: Ingen parti-objekter opprettes her. Prøveledelsen fordeler senere.
             }
 

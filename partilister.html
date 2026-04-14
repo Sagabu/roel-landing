@@ -56,31 +56,31 @@
         </div>
     </header>
 
-    <!-- Page Title Section -->
-    <div class="bg-bark-800 text-white py-10">
-        <div class="max-w-6xl mx-auto px-6">
+    <!-- Page Title Section med bakgrunnsbilde -->
+    <div class="text-white py-10 relative" style="background: linear-gradient(to right, rgba(61,27,12,0.88), rgba(90,40,18,0.82)), url('images/landscape.jpg'); background-size: cover; background-position: center;">
+        <div class="max-w-6xl mx-auto px-6 relative z-10">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                 <div>
-                    <p class="text-warm-500 font-medium text-sm tracking-widest uppercase mb-2">Partilister</p>
+                    <p class="text-warm-400 font-medium text-sm tracking-widest uppercase mb-2">Partilister</p>
                     <h1 id="trialName" class="text-3xl md:text-4xl font-serif font-semibold">Fuglehundprøve</h1>
-                    <p id="trialDetails" class="text-bark-400 mt-2"></p>
-                    <p id="trialOrganizer" class="text-bark-500 text-sm mt-1"></p>
+                    <p id="trialDetails" class="text-bark-300 mt-2"></p>
+                    <p id="trialOrganizer" class="text-bark-400 text-sm mt-1"></p>
                 </div>
-                <div class="flex items-center gap-3 bg-bark-800 rounded-2xl px-5 py-4">
+                <div class="flex items-center gap-3 bg-black/30 backdrop-blur-sm rounded-2xl px-5 py-4">
                     <span class="w-3 h-3 bg-green-400 rounded-full live-dot"></span>
                     <div>
                         <p class="text-sm font-medium">Live oppdatering</p>
-                        <p class="text-xs text-bark-400">Sist oppdatert: <span id="lastUpdated">akkurat nå</span></p>
+                        <p class="text-xs text-bark-300">Sist oppdatert: <span id="lastUpdated">akkurat nå</span></p>
                     </div>
                 </div>
             </div>
 
             <!-- Quick stats -->
-            <div id="quickStats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+            <div id="quickStats" class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-8">
                 <!-- Populated dynamically -->
             </div>
         </div>
-    </header>
+    </div>
 
     <!-- Day tabs -->
     <div class="bg-white border-b border-bark-100 sticky top-0 z-40">
@@ -100,7 +100,7 @@
         </div>
     </div>
 
-    <main class="max-w-6xl mx-auto px-6 py-10">
+    <main class="max-w-6xl mx-auto px-6 py-10 relative" style="min-height: 60vh;">
         <!-- Party lists container -->
         <div id="partyListsContainer">
             <!-- Empty state -->
@@ -547,42 +547,53 @@
             }
         }
 
-        // Render class tabs (UK/AK, VK) based on current day and trial config
+        // Render class tabs — inkluderer ventelister og VK-deltakerliste som egne faner
         function renderClassTabs() {
             const container = document.getElementById('classTabs');
             container.innerHTML = '';
 
             const tabs = [];
+            const vl = window._venteliste || {};
+            const dagKey = `dag${currentDay}`;
+            const vkSamlet = window._vkSamletListe;
 
-            // UK/AK is available on all days (unless specifically configured otherwise)
+            // UK/AK partier (alltid tilgjengelig)
             tabs.push({ id: 'ukak', label: 'UK/AK', icon: '🐕' });
 
-            // Check VK availability based on trial config
-            const vkDager = proveConfig?.vkDager || 1;
+            // Venteliste UK for denne dagen
+            if ((vl[dagKey]?.uk?.length || 0) > 0) {
+                tabs.push({ id: 'venteliste-uk', label: `Venteliste UK (${vl[dagKey].uk.length})`, icon: '⏳' });
+            }
+            // Venteliste AK for denne dagen
+            if ((vl[dagKey]?.ak?.length || 0) > 0) {
+                tabs.push({ id: 'venteliste-ak', label: `Venteliste AK (${vl[dagKey].ak.length})`, icon: '⏳' });
+            }
 
-            if (vkDager === 1) {
-                // 1-dagers VK - show on last day or configured day
-                const vkDag = proveConfig?.vkFinaleDag || proveConfig?.antallDager || 2;
-                if (currentDay === vkDag) {
-                    tabs.push({ id: 'vk', label: 'VK', icon: '🏆' });
-                }
-            } else if (vkDager === 2) {
-                // 2-dagers VK - show kval on kval day, finale on finale day
-                const kvalDag = proveConfig?.vkKvalDag || (proveConfig?.antallDager - 1) || 1;
-                const finaleDag = proveConfig?.vkFinaleDag || proveConfig?.antallDager || 2;
+            // VK: Deltakerliste (hvis ikke fordelt) eller VK-partier (hvis fordelt)
+            const vkPartier = allParties.filter(p => p.type === 'vk' || p.type === 'vk-kval' || p.type === 'vk-finale');
+            const harVkPartierPaaDagen = vkPartier.some(p => (p.day || 1) === currentDay);
 
-                if (currentDay === kvalDag) {
-                    tabs.push({ id: 'vk-kval', label: 'VK Kval', icon: '🎯' });
-                }
-                if (currentDay === finaleDag) {
-                    tabs.push({ id: 'vk-finale', label: 'VK Finale', icon: '🏆' });
-                }
+            if (vkSamlet && !vkSamlet.fordelt && vkSamlet.hunder?.length > 0) {
+                tabs.push({ id: 'vk-deltakere', label: `Deltakere VK (${vkSamlet.hunder.length})`, icon: '📋' });
+            }
+
+            if (harVkPartierPaaDagen) {
+                const vkPaaDagen = vkPartier.filter(p => (p.day || 1) === currentDay);
+                vkPaaDagen.forEach(p => {
+                    const label = p.name || (p.type === 'vk-finale' ? 'VK Finale' : p.type === 'vk-kval' ? 'VK Kval' : 'VK');
+                    tabs.push({ id: `vk-parti-${p.id || p.name}`, label: label, icon: '🏆', partyRef: p });
+                });
+            }
+
+            // Venteliste VK
+            if ((vl.vk?.length || 0) > 0) {
+                tabs.push({ id: 'venteliste-vk', label: `Venteliste VK (${vl.vk.length})`, icon: '⏳' });
             }
 
             tabs.forEach(t => {
-                const isActive = t.id === currentClass || (t.id.startsWith('vk') && currentClass.startsWith('vk') && t.id === currentClass);
+                const isActive = t.id === currentClass;
                 const tab = document.createElement('button');
-                tab.className = `class-tab px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition flex items-center gap-2 ${
+                tab.className = `class-tab px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
                     isActive
                         ? 'bg-bark-800 text-white shadow-sm'
                         : 'bg-white text-bark-700 hover:bg-bark-100 border border-bark-200'
@@ -593,10 +604,9 @@
                 container.appendChild(tab);
             });
 
-            // If current class not available on this day, switch to ukak
             if (!tabs.find(t => t.id === currentClass)) {
                 currentClass = 'ukak';
-                renderClassTabs(); // Re-render with corrected selection
+                renderClassTabs();
                 return;
             }
         }
@@ -805,29 +815,40 @@
             });
 
             let html = '';
-
-            // Partier
-            if (filteredParties.length > 0) {
-                html += filteredParties.map(party => renderPartyCard(party)).join('');
-            }
-
-            // VK Deltakerliste (vises under VK-tab hvis ikke fordelt ennå)
-            const vkSamlet = window._vkSamletListe;
-            if (currentClass.startsWith('vk') && vkSamlet && !vkSamlet.fordelt) {
-                html += renderVkDeltakerlistePublic(vkSamlet);
-            }
-
-            // Venteliste for gjeldende dag og klasse
             const vl = window._venteliste || {};
             const dagKey = `dag${currentDay}`;
+            const vkSamlet = window._vkSamletListe;
+
             if (currentClass === 'ukak') {
+                // UK/AK partier for denne dagen
+                if (filteredParties.length > 0) {
+                    html += filteredParties.map(party => renderPartyCard(party)).join('');
+                } else {
+                    html += '<div class="text-center py-12"><p class="text-bark-500">Ingen UK/AK-partier på denne dagen ennå.</p></div>';
+                }
+            } else if (currentClass === 'venteliste-uk') {
                 const ukVL = vl[dagKey]?.uk || [];
+                html += renderVentelistePublic('UK', ukVL);
+            } else if (currentClass === 'venteliste-ak') {
                 const akVL = vl[dagKey]?.ak || [];
-                if (ukVL.length > 0) html += renderVentelistePublic('UK', ukVL);
-                if (akVL.length > 0) html += renderVentelistePublic('AK', akVL);
-            } else if (currentClass.startsWith('vk')) {
+                html += renderVentelistePublic('AK', akVL);
+            } else if (currentClass === 'venteliste-vk') {
                 const vkVL = vl.vk || [];
-                if (vkVL.length > 0) html += renderVentelistePublic('VK', vkVL);
+                html += renderVentelistePublic('VK', vkVL);
+            } else if (currentClass === 'vk-deltakere') {
+                if (vkSamlet) html += renderVkDeltakerlistePublic(vkSamlet);
+            } else if (currentClass.startsWith('vk-parti-')) {
+                // Spesifikt VK-parti
+                const partyId = currentClass.replace('vk-parti-', '');
+                const party = allParties.find(p => (p.id || p.name) === partyId);
+                if (party) {
+                    html += renderPartyCard(party);
+                }
+            } else {
+                // Fallback — viser filtrerte partier
+                if (filteredParties.length > 0) {
+                    html += filteredParties.map(party => renderPartyCard(party)).join('');
+                }
             }
 
             if (!html) {
@@ -836,7 +857,7 @@
                         <svg class="w-16 h-16 text-bark-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                         </svg>
-                        <h3 class="text-xl font-serif font-semibold text-bark-700 mb-2">Ingen partier ennå</h3>
+                        <h3 class="text-xl font-serif font-semibold text-bark-700 mb-2">Ingen data ennå</h3>
                         <p class="text-bark-500">Partilistene er ikke publisert ennå.</p>
                     </div>
                 `;
@@ -844,7 +865,7 @@
 
             container.innerHTML = html;
 
-            // Load signatures and live data
+            // Load signatures and live data for VK
             filteredParties.forEach(party => {
                 loadPartySignature(party.id);
                 if (party.type.startsWith('vk')) {
@@ -1160,30 +1181,51 @@
 
         // Update quick stats in header
         function updateQuickStats(parties) {
-            const totalDogs = parties.reduce((sum, p) => sum + (p.dogs?.length || 0), 0);
-            const ukakParties = parties.filter(p => p.type === 'ukak').length;
-            const vkParties = parties.filter(p => p.type === 'vk' || p.type === 'vk-kval' || p.type === 'vk-finale').length;
+            // Antall startende (i partier + VK deltakerliste)
+            let totalStartende = parties.reduce((sum, p) => sum + (p.dogs?.length || 0), 0);
+            const vkSamlet = window._vkSamletListe;
+            if (vkSamlet && !vkSamlet.fordelt && vkSamlet.hunder?.length > 0) {
+                totalStartende += vkSamlet.hunder.length;
+            }
 
-            // Use configured days or count unique days
-            const uniqueDays = proveConfig?.antallDager || new Set(parties.map(p => p.date)).size || 2;
+            // Venteliste totalt
+            const vl = window._venteliste || {};
+            let totalVenteliste = (vl.vk?.length || 0);
+            for (let d = 1; d <= 4; d++) {
+                totalVenteliste += (vl[`dag${d}`]?.uk?.length || 0);
+                totalVenteliste += (vl[`dag${d}`]?.ak?.length || 0);
+            }
+
+            const ukakParties = parties.filter(p => p.type === 'ukak').length;
+
+            // VK: bruk konfigurasjon (ikke faktisk fordelt)
+            const vkKvalPartier = proveConfig?.vkKvalPartier || (vkSamlet?.antallPartier || 0);
+            const vkHarFinale = vkKvalPartier > 0 ? 1 : 0;
+            // Hvis VK allerede er fordelt, bruk faktiske partier
+            const vkFordeltPartier = parties.filter(p => p.type === 'vk' || p.type === 'vk-kval').length;
+            const vkKvalVisning = vkFordeltPartier > 0 ? vkFordeltPartier : vkKvalPartier;
 
             const statsContainer = document.getElementById('quickStats');
             statsContainer.innerHTML = `
-                <div class="bg-bark-800 rounded-2xl p-5 text-center">
-                    <p class="text-3xl font-serif font-semibold text-white">${totalDogs}</p>
-                    <p class="text-bark-400 text-sm mt-1">Totalt påmeldt</p>
+                <div class="bg-black/30 backdrop-blur-sm rounded-2xl p-4 text-center">
+                    <p class="text-3xl font-serif font-semibold text-white">${totalStartende}</p>
+                    <p class="text-bark-300 text-xs mt-1">Totalt ant. startende</p>
                 </div>
-                <div class="bg-bark-800 rounded-2xl p-5 text-center">
+                <div class="bg-black/30 backdrop-blur-sm rounded-2xl p-4 text-center">
+                    <p class="text-3xl font-serif font-semibold text-white">${totalVenteliste}</p>
+                    <p class="text-bark-300 text-xs mt-1">Venteliste</p>
+                </div>
+                <div class="bg-black/30 backdrop-blur-sm rounded-2xl p-4 text-center">
                     <p class="text-3xl font-serif font-semibold text-white">${ukakParties}</p>
-                    <p class="text-bark-400 text-sm mt-1">UK/AK-partier</p>
+                    <p class="text-bark-300 text-xs mt-1">UK/AK-partier</p>
                 </div>
-                <div class="bg-bark-800 rounded-2xl p-5 text-center">
-                    <p class="text-3xl font-serif font-semibold text-white">${vkParties}</p>
-                    <p class="text-bark-400 text-sm mt-1">VK-parti${vkParties !== 1 ? 'er' : ''}</p>
+                <div class="bg-black/30 backdrop-blur-sm rounded-2xl p-4 text-center">
+                    <p class="text-3xl font-serif font-semibold text-white">${vkKvalVisning}</p>
+                    <p class="text-bark-300 text-xs mt-1">VK Kval-partier</p>
                 </div>
-                <div class="bg-bark-800 rounded-2xl p-5 text-center">
-                    <p class="text-3xl font-serif font-semibold text-white">${uniqueDays}</p>
-                    <p class="text-bark-400 text-sm mt-1">Prøvedager</p>
+                <div class="bg-black/30 backdrop-blur-sm rounded-2xl p-4 text-center">
+                    <p class="text-3xl font-serif font-semibold text-white">${vkHarFinale}</p>
+                    <p class="text-bark-300 text-xs mt-1">VK Finale</p>
                 </div>
             `;
         }

@@ -1422,7 +1422,7 @@
                 // Liggende format — tilpasset innholdsbredde
                 const imgWidth = 1100;
                 const el = document.createElement('div');
-                el.style.cssText = `position:absolute;left:0;top:0;width:${imgWidth}px;min-width:${imgWidth}px;font-family:Arial,Helvetica,sans-serif;padding:20px;z-index:99999;background:white;`;
+                el.style.cssText = `position:absolute;left:0;top:0;width:${imgWidth}px;min-width:${imgWidth}px;font-family:Arial,Helvetica,sans-serif;padding:20px;z-index:99999;background:transparent;`;
                 document.body.appendChild(el);
 
                 // Klasse-farge
@@ -1468,19 +1468,8 @@
                     ctx.fillRect(0, 0, imgWidth, 800);
                     bgBase64 = cvs.toDataURL('image/jpeg', 0.8);
 
-                    // Lag ytre ramme-versjon (10% overlay — bildet nesten fullt synlig)
-                    const outerCvs = document.createElement('canvas');
-                    outerCvs.width = imgWidth; outerCvs.height = 800;
-                    const outerCtx = outerCvs.getContext('2d');
-                    outerCtx.drawImage(img, (imgWidth-w)/2, (800-h)/2, w, h);
-                    outerCtx.fillStyle = 'rgba(255,255,255,0.10)';
-                    outerCtx.fillRect(0, 0, imgWidth, 800);
-                    const outerBg = outerCvs.toDataURL('image/jpeg', 0.8);
-                    el.style.backgroundImage = `url('${outerBg}')`;
-                    el.style.backgroundSize = `${imgWidth}px 800px`;
-                    el.style.backgroundPosition = 'top center';
-                    el.style.backgroundRepeat = 'no-repeat';
-                    el.style.backgroundColor = '#333';
+                    // Lagre originalbilde for ytre ramme (tegnes på canvas etterpå)
+                    window._partilisteBgImg = img;
                 } catch(e) { console.warn('Bg-bilde feilet:', e); }
 
                 const bgCss = bgBase64
@@ -1553,20 +1542,40 @@
                     </div>
                 `;
 
-                const canvas = await html2canvas(el, {
-                    backgroundColor: '#F7F3EE',
+                const rawCanvas = await html2canvas(el, {
+                    backgroundColor: null,
                     scale: 2,
                     logging: false,
                     useCORS: true
                 });
                 document.body.removeChild(el);
 
+                // Tegn ytre bakgrunnsbilde BAK innholdet
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = rawCanvas.width;
+                finalCanvas.height = rawCanvas.height;
+                const fCtx = finalCanvas.getContext('2d');
+
+                // Tegn bakgrunnsbilde med 10% overlay på hele canvas
+                if (window._partilisteBgImg) {
+                    const bImg = window._partilisteBgImg;
+                    const bScale = Math.max(finalCanvas.width / bImg.width, finalCanvas.height / bImg.height);
+                    const bW = bImg.width * bScale, bH = bImg.height * bScale;
+                    fCtx.drawImage(bImg, (finalCanvas.width - bW) / 2, (finalCanvas.height - bH) / 2, bW, bH);
+                    fCtx.fillStyle = 'rgba(255,255,255,0.10)';
+                    fCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+                } else {
+                    fCtx.fillStyle = '#F7F3EE';
+                    fCtx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+                }
+
+                // Tegn html2canvas-innholdet oppå (padding-området blir gjennomsiktig)
+                fCtx.drawImage(rawCanvas, 0, 0);
+
                 const dateStr = new Date().toISOString().split('T')[0];
                 const filename = `Partiliste_${partyId.replace(/\s+/g, '_')}_${dateStr}.png`;
 
-                // Mobil: bruk Web Share API (lagrer direkte til bilder)
-                // Desktop: last ned som fil
-                canvas.toBlob(async (blob) => {
+                finalCanvas.toBlob(async (blob) => {
                     if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
                         try {
                             const file = new File([blob], filename, { type: 'image/png' });

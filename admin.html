@@ -4107,29 +4107,34 @@
 
         function getTrialPartiesKey() {
             const trialId = getCurrentTrialId();
-            // Hvis vi har en prøve-ID, bruk prøve-spesifikk nøkkel
-            // Ellers fall tilbake til global nøkkel for bakoverkompatibilitet
-            return trialId ? `trialParties_${trialId}` : 'trialParties';
+            // KRITISK: Returner null hvis ingen trialId - aldri lese/skrive global nøkkel
+            // Tidligere fallback til 'trialParties' lekket data mellom prøver
+            return trialId ? `trialParties_${trialId}` : null;
         }
 
         function getTrialParticipantsKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `trialParticipants_${trialId}` : 'trialParticipants';
+            return trialId ? `trialParticipants_${trialId}` : null;
         }
 
         function getTrialVentelisteKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `trialVenteliste_${trialId}` : 'trialVenteliste';
+            return trialId ? `trialVenteliste_${trialId}` : null;
         }
 
         // Hjelpefunksjoner for å lese/skrive med riktig nøkkel
         function getTrialParties() {
-            return JSON.parse(localStorage.getItem(getTrialPartiesKey()) || '[]');
+            const key = getTrialPartiesKey();
+            if (!key) return []; // Ingen trialId = ingen partier
+            return JSON.parse(localStorage.getItem(key) || '[]');
         }
 
         function setTrialParties(parties) {
+            const key = getTrialPartiesKey();
+            if (!key) return; // Ingen trialId - ikke lagre noe (unngår global lekkasje)
+
             // Lagre lokalt først (for umiddelbar respons)
-            localStorage.setItem(getTrialPartiesKey(), JSON.stringify(parties));
+            localStorage.setItem(key, JSON.stringify(parties));
 
             // Synkroniser til server i bakgrunnen
             const proveId = getCurrentTrialId();
@@ -4174,8 +4179,11 @@
                 if (resp.ok) {
                     const parties = await resp.json();
                     if (Array.isArray(parties) && parties.length > 0) {
-                        // Lagre til localStorage for offline-bruk
-                        localStorage.setItem(getTrialPartiesKey(), JSON.stringify(parties));
+                        // Lagre til localStorage for offline-bruk (kun hvis vi har trialId)
+                        const cacheKey = getTrialPartiesKey();
+                        if (cacheKey) {
+                            localStorage.setItem(cacheKey, JSON.stringify(parties));
+                        }
                         console.log('✅ Partilister lastet fra server:', parties.length, 'partier');
                         return parties;
                     }
@@ -4189,20 +4197,28 @@
         }
 
         function getTrialParticipants() {
-            return JSON.parse(localStorage.getItem(getTrialParticipantsKey()) || '[]');
+            const key = getTrialParticipantsKey();
+            if (!key) return [];
+            return JSON.parse(localStorage.getItem(key) || '[]');
         }
 
         function setTrialParticipants(participants) {
-            localStorage.setItem(getTrialParticipantsKey(), JSON.stringify(participants));
+            const key = getTrialParticipantsKey();
+            if (!key) return;
+            localStorage.setItem(key, JSON.stringify(participants));
         }
 
         function getTrialVenteliste() {
-            return JSON.parse(localStorage.getItem(getTrialVentelisteKey()) || '{}');
+            const key = getTrialVentelisteKey();
+            if (!key) return {};
+            return JSON.parse(localStorage.getItem(key) || '{}');
         }
 
         function setTrialVenteliste(venteliste) {
+            const key = getTrialVentelisteKey();
+            if (!key) return;
             // Lagre lokalt først
-            localStorage.setItem(getTrialVentelisteKey(), JSON.stringify(venteliste));
+            localStorage.setItem(key, JSON.stringify(venteliste));
 
             // Synkroniser til server
             const proveId = getCurrentTrialId();
@@ -4912,6 +4928,23 @@
                 localStorage.removeItem('currentTrialId');
                 localStorage.removeItem('trialVkType');
                 localStorage.removeItem('trialStartDate');
+
+                // KRITISK: Tøm GLOBALE localStorage-nøkler som lekker mellom prøver
+                // Disse stammer fra før per-prøve-isolasjon ble implementert
+                const globaleNoklerSomMaaTommes = [
+                    'trialParties', 'trialParticipants', 'trialVenteliste',
+                    'trialDommere', 'partyDommere', 'trialVkConfig',
+                    'trialSignaturer', 'trialKritikker', 'praktiskInfo',
+                    'adminAversjonsData', 'andreInntekter', 'andreUtgifter',
+                    'vippsForesporsler', 'vippsValgteMottakere', 'adminMessages',
+                    'manuellKvalData', 'kvalifiserteHunder'
+                ];
+                globaleNoklerSomMaaTommes.forEach(key => {
+                    if (localStorage.getItem(key)) {
+                        console.log(`[Admin] Fjerner gammel global nøkkel: ${key}`);
+                        localStorage.removeItem(key);
+                    }
+                });
 
                 // Tøm alle skjemafelter
                 const fieldsToReset = [

@@ -298,11 +298,15 @@ const FuglehundAuth = (function() {
     // Hvis 401, er token utløpt - logg ut
     if (response.status === 401) {
       logout();
-      // Redirect til login
-      if (window.location.pathname !== '/dommer.html' &&
-          window.location.pathname !== '/deltaker.html' &&
-          window.location.pathname !== '/index.html') {
-        window.location.href = '/dommer.html?expired=1';
+      // Redirect til login (min-side.html = passord-login)
+      const path = window.location.pathname;
+      if (path !== '/min-side.html' &&
+          path !== '/dommer.html' &&
+          path !== '/deltaker.html' &&
+          path !== '/index.html' &&
+          path !== '/') {
+        const returnTo = encodeURIComponent(path + window.location.search);
+        window.location.href = `/min-side.html?expired=1&returnTo=${returnTo}`;
       }
     }
 
@@ -421,10 +425,10 @@ const FuglehundAuth = (function() {
     // Siden krever ikke beskyttelse
     if (requiredRole === undefined) return true;
 
-    // Sjekk om innlogget
+    // Sjekk om innlogget - redirect til passord-login (min-side.html)
     if (!isLoggedIn()) {
       const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.href = `/deltaker.html?returnTo=${returnTo}`;
+      window.location.href = `/min-side.html?returnTo=${returnTo}`;
       return false;
     }
 
@@ -438,7 +442,7 @@ const FuglehundAuth = (function() {
     return true;
   }
 
-  // Håndter sesjon-utløp: logg ut og redirect til innloggingsside
+  // Håndter sesjon-utløp: logg ut og redirect til passord-innloggingsside
   function handleSessionExpired(reason) {
     console.log('[Auth] Sesjon utløpt:', reason);
     clearSession();
@@ -448,7 +452,8 @@ const FuglehundAuth = (function() {
 
     if (requiresAuth) {
       const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.href = `/deltaker.html?expired=1&returnTo=${returnTo}`;
+      // min-side.html er passord-login (ikke SMS-kode) - bedre UX ved timeout
+      window.location.href = `/min-side.html?expired=1&returnTo=${returnTo}`;
     }
     // Hvis siden ikke krever auth (f.eks. index.html), gjør ingenting - bare rydd opp
   }

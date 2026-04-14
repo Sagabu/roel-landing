@@ -898,9 +898,39 @@
         let prefetchedProfileData = null;
 
         document.addEventListener('DOMContentLoaded', async () => {
+            // Håndter URL-parametre for sesjon-timeout
+            const urlParams = new URLSearchParams(window.location.search);
+            const expired = urlParams.get('expired');
+            const returnToParam = urlParams.get('returnTo');
+
+            // Vis melding hvis sesjonen har utløpt
+            if (expired === '1') {
+                setTimeout(() => {
+                    const errorEl = document.getElementById('loginError');
+                    if (errorEl) {
+                        errorEl.textContent = 'Sesjonen din har utløpt. Logg inn på nytt med telefonnummer og passord for å fortsette.';
+                        errorEl.classList.remove('hidden');
+                        errorEl.className = errorEl.className.replace('bg-red', 'bg-amber').replace('text-red', 'text-amber').replace('border-red', 'border-amber');
+                    } else if (typeof FuglehundToast !== 'undefined') {
+                        FuglehundToast.warning('Sesjonen din har utløpt. Logg inn på nytt med telefonnummer og passord.', 8000);
+                    }
+                }, 100);
+            }
+
+            // Lagre returnTo for bruk etter vellykket login
+            if (returnToParam) {
+                window._postLoginRedirect = decodeURIComponent(returnToParam);
+            }
+
             // Sjekk om bruker har gyldig JWT-token (ikke bare localStorage-data)
             const isLoggedIn = FuglehundAuth.isLoggedIn();
             const sessionPhone = FuglehundAuth.getSessionPhone();
+
+            // Hvis bruker er innlogget OG vi har en returnTo, gå direkte dit
+            if (isLoggedIn && sessionPhone && window._postLoginRedirect) {
+                window.location.href = window._postLoginRedirect;
+                return;
+            }
 
             // Kun vis dashboard hvis bruker har GYLDIG JWT-token OG telefonnummer
             if (isLoggedIn && sessionPhone) {
@@ -1082,6 +1112,12 @@
                 };
                 localStorage.setItem('userSession', JSON.stringify(currentUser));
 
+                // Hvis vi har en returnTo-URL (f.eks. fra sesjon-timeout), gå dit i stedet for dashboard
+                if (window._postLoginRedirect) {
+                    window.location.href = window._postLoginRedirect;
+                    return;
+                }
+
                 showDashboard();
 
             } catch (err) {
@@ -1139,6 +1175,12 @@
                     loggedInAt: new Date().toISOString()
                 };
                 localStorage.setItem('userSession', JSON.stringify(currentUser));
+
+                // Hvis vi har en returnTo-URL, gå dit i stedet for dashboard
+                if (window._postLoginRedirect) {
+                    window.location.href = window._postLoginRedirect;
+                    return;
+                }
 
                 showDashboard();
 

@@ -1441,7 +1441,6 @@
                 }
 
                 // Hent bakgrunnsbilde som base64
-                const bgImg = getPartiBgImage(partyId);
                 let bgBase64 = '';
                 try {
                     const img = new Image();
@@ -1449,33 +1448,45 @@
                     await new Promise((resolve, reject) => {
                         img.onload = resolve;
                         img.onerror = reject;
-                        img.src = bgImg;
+                        img.src = 'images/partilister-bg-download.jpg';
                     });
                     const cvs = document.createElement('canvas');
-                    // Ikke brukt for ren tabell-stil, men beholdes for fremtidig bruk
-                    bgBase64 = '';
-                    /*
-                    cvs.width = imgWidth; cvs.height = imgWidth;
+                    cvs.width = imgWidth; cvs.height = 800;
                     const ctx = cvs.getContext('2d');
-                    const scale = Math.max(imgWidth/img.width, imgWidth/img.height);
-                    const w = img.width * scale, h = img.height * scale;
-                    ctx.drawImage(img, (imgWidth-w)/2, (imgWidth-h)/2, w, h);
-                    ctx.fillStyle = 'rgba(247,243,238,0.78)';
-                    ctx.fillRect(0, 0, imgWidth, imgWidth);
+                    const sc = Math.max(imgWidth/img.width, 800/img.height);
+                    const w = img.width * sc, h = img.height * sc;
+                    ctx.drawImage(img, (imgWidth-w)/2, (800-h)/2, w, h);
+                    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+                    ctx.fillRect(0, 0, imgWidth, 800);
                     bgBase64 = cvs.toDataURL('image/jpeg', 0.8);
-                    */
                 } catch(e) { console.warn('Bg-bilde feilet:', e); }
 
                 const bgCss = bgBase64
-                    ? `background-image:url('${bgBase64}');background-size:${imgWidth}px ${imgWidth}px;background-position:top center;background-repeat:no-repeat;`
-                    : 'background:#F7F3EE;';
+                    ? `background-image:url('${bgBase64}');background-size:${imgWidth}px 800px;background-position:top center;background-repeat:no-repeat;`
+                    : 'background:white;';
 
-                const bd = '1px solid #333';
+                // Finn parti-dato (ukedag + dato)
+                let partiDato = '';
+                if (party.date) {
+                    const d = new Date(party.date);
+                    const ukedager = ['Søndag','Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag'];
+                    const mnd = ['januar','februar','mars','april','mai','juni','juli','august','september','oktober','november','desember'];
+                    partiDato = `${ukedager[d.getDay()]} ${d.getDate()}. ${mnd[d.getMonth()]} ${d.getFullYear()}`;
+                } else if (party.day && proveConfig?.startDato) {
+                    const start = new Date(proveConfig.startDato);
+                    const d = new Date(start);
+                    d.setDate(start.getDate() + (party.day - 1));
+                    const ukedager = ['Søndag','Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag'];
+                    const mnd = ['januar','februar','mars','april','mai','juni','juli','august','september','oktober','november','desember'];
+                    partiDato = `${ukedager[d.getDay()]} ${d.getDate()}. ${mnd[d.getMonth()]} ${d.getFullYear()}`;
+                }
+
+                const bd = '1px solid #999';
                 const cellStyle = 'padding:8px 14px;border:' + bd + ';font-size:15px;vertical-align:middle;';
 
                 const hundeRader = (party.dogs || []).map((dog, i) => {
                     const kl = dog.klasse || (isVK ? 'VK' : 'AK');
-                    const bg = i % 2 === 0 ? '#ffffff' : '#f5f5f5';
+                    const bg = i % 2 === 0 ? 'rgba(255,255,255,0.75)' : 'rgba(245,243,240,0.75)';
                     return `<tr style="background:${bg};">
                         <td style="${cellStyle}text-align:center;font-weight:600;">${i+1}</td>
                         <td style="${cellStyle}text-align:center;font-weight:700;">${kl}</td>
@@ -1487,11 +1498,12 @@
                 }).join('');
 
                 el.innerHTML = `
-                    <div style="text-align:center;margin-bottom:20px;">
-                        <div style="font-size:24px;font-weight:700;color:#333;margin-bottom:6px;">${party.name} — ${trialName}</div>
-                        <div style="font-size:14px;color:#666;">${trialDetails}</div>
+                    <div style="text-align:center;margin-bottom:16px;">
+                        <div style="font-size:22px;font-weight:700;color:#333;margin-bottom:4px;">${party.name} — ${trialName}</div>
+                        <div style="font-size:14px;color:#666;">${partiDato || trialDetails}</div>
                     </div>
-                    <table style="width:100%;min-width:${imgWidth - 40}px;table-layout:fixed;border-collapse:collapse;border:2px solid #333;">
+                    <div style="${bgCss}">
+                    <table style="width:100%;min-width:${imgWidth - 40}px;table-layout:fixed;border-collapse:collapse;border:2px solid #666;">
                         <colgroup>
                             <col style="width:5%">
                             <col style="width:5%">
@@ -1500,7 +1512,7 @@
                             <col style="width:15%">
                             <col style="width:30%">
                         </colgroup>
-                        <tr style="background:#e8e0d8;">
+                        <tr style="background:rgba(232,224,216,0.9);">
                             <th style="${cellStyle}text-align:center;font-weight:700;font-size:13px;">Nr</th>
                             <th style="${cellStyle}text-align:center;font-weight:700;font-size:13px;">Kl</th>
                             <th style="${cellStyle}font-weight:700;font-size:13px;">Rase</th>
@@ -1510,7 +1522,8 @@
                         </tr>
                         ${hundeRader}
                     </table>
-                    <div style="margin-top:10px;display:flex;justify-content:space-between;font-size:11px;color:#999;">
+                    </div>
+                    <div style="margin-top:8px;display:flex;justify-content:space-between;font-size:11px;color:#999;">
                         <span>fuglehundprove.no</span>
                         <span>${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO',{hour:'2-digit',minute:'2-digit'})}</span>
                     </div>

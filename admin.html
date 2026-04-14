@@ -2665,38 +2665,25 @@
                 </section>
 
                 <!-- Waitlist - vises kun når partier er opprettet -->
-                <section id="venteliste" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-natur px-6 py-4 border-b border-bark-100 flex items-center justify-between">
-                        <div>
-                            <h3 class="font-semibold text-earth-800 font-serif">Venteliste</h3>
-                            <p class="text-sm text-bark-600" id="waitlistCount">0 personer venter på plass</p>
+                <section id="venteliste" class="hidden space-y-4">
+                    <div class="bg-white rounded-2xl shadow-md border border-bark-200 overflow-hidden">
+                        <div class="section-bg-natur px-6 py-5 border-b border-bark-200 flex items-center justify-between">
+                            <div>
+                                <h2 class="text-xl font-bold font-serif text-earth-900">Venteliste</h2>
+                                <p class="text-sm text-bark-600 mt-1" id="waitlistCount">0 hunder på venteliste</p>
+                            </div>
+                        </div>
+                        <div class="px-5 py-3 bg-blue-50 border-b border-blue-200 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <p class="text-sm text-blue-800">
+                                Når en deltaker fjernes, rykker <strong>nr. 1 på ventelisten opp</strong> (hvis automatisk opprykk er aktivert i prøvedetaljer).
+                            </p>
                         </div>
                     </div>
-
-                    <!-- Info about auto-promotion -->
-                    <div class="px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-start gap-3">
-                        <svg class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <p class="text-sm text-blue-800">
-                            Når en deltaker fjernes (avbud eller ikke bekreftet), rykker <strong>nr. 1 på ventelisten automatisk opp</strong>.
-                            De får SMS og <strong>5 timer</strong> på å bekrefte plassen.
-                        </p>
-                    </div>
-
-                    <!-- Tabell-header som div for full bredde -->
-                    <div class="bg-bark-50 border-b border-bark-100 grid grid-cols-8 gap-0">
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Plass</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Fører</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Telefon</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Hund</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Reg.nr</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Klasse</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Påmeldt</div>
-                        <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Handling</div>
-                    </div>
+                    <!-- Venteliste-gruppene fylles dynamisk -->
                     <div id="waitlistTableBody">
-                        <!-- Fylles dynamisk med JavaScript -->
                     </div>
                 </section>
 
@@ -9370,18 +9357,36 @@
 
         // Funksjon for å rendere venteliste (separert per klasse)
         function renderVenteliste(venteliste) {
-            // Tell opp totalt per klasse
-            const dag1Uk = venteliste.dag1?.uk || [];
-            const dag1Ak = venteliste.dag1?.ak || [];
-            const dag2Uk = venteliste.dag2?.uk || [];
-            const dag2Ak = venteliste.dag2?.ak || [];
-            const vkVenteliste = venteliste.vk || [];
-
-            const totalVenteliste = dag1Uk.length + dag1Ak.length + dag2Uk.length + dag2Ak.length + vkVenteliste.length;
-
             const ventelisteSection = document.getElementById('venteliste');
             const waitlistTableBody = document.getElementById('waitlistTableBody');
             const waitlistCount = document.getElementById('waitlistCount');
+            const antallProvedager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
+
+            // Bygg grupper: per dag + klasse
+            const grupper = [];
+            let totalVenteliste = 0;
+
+            for (let d = 1; d <= antallProvedager; d++) {
+                const dagKey = `dag${d}`;
+                const ukHunder = venteliste[dagKey]?.uk || [];
+                const akHunder = venteliste[dagKey]?.ak || [];
+
+                if (ukHunder.length > 0) {
+                    grupper.push({ dag: d, klasse: 'UK', hunder: ukHunder });
+                    totalVenteliste += ukHunder.length;
+                }
+                if (akHunder.length > 0) {
+                    grupper.push({ dag: d, klasse: 'AK', hunder: akHunder });
+                    totalVenteliste += akHunder.length;
+                }
+            }
+
+            // VK venteliste (ikke dag-spesifikk)
+            const vkHunder = venteliste.vk || [];
+            if (vkHunder.length > 0) {
+                grupper.push({ dag: null, klasse: 'VK', hunder: vkHunder });
+                totalVenteliste += vkHunder.length;
+            }
 
             if (totalVenteliste === 0) {
                 ventelisteSection.classList.add('hidden');
@@ -9389,57 +9394,62 @@
             }
 
             ventelisteSection.classList.remove('hidden');
+            waitlistCount.textContent = totalVenteliste + ' hunder på venteliste';
 
-            // Lag oppsummering per klasse
-            const ukTotal = dag1Uk.length + dag2Uk.length;
-            const akTotal = dag1Ak.length + dag2Ak.length;
-            const vkTotal = vkVenteliste.length;
-            let countText = totalVenteliste + ' hunder på venteliste';
-            let details = [];
-            if (ukTotal > 0) details.push('UK: ' + ukTotal);
-            if (akTotal > 0) details.push('AK: ' + akTotal);
-            if (vkTotal > 0) details.push('VK: ' + vkTotal);
-            if (details.length > 0) countText += ' (' + details.join(', ') + ')';
-            waitlistCount.textContent = countText;
+            // Render hver gruppe som et eget kort
+            waitlistTableBody.innerHTML = grupper.map(function(gruppe) {
+                var dagNavn = gruppe.dag ? getDayName(gruppe.dag) : '';
+                var klasseBg, klasseText, klasseBorder, klasseHeaderBg;
 
-            // Bygg venteliste med klasseprioritering
-            // UK-hunder først (prio 1), så AK (prio 2), så VK (egen liste)
-            const allWaitlist = [];
-            let plass = 1;
+                if (gruppe.klasse === 'UK') {
+                    klasseBg = 'bg-blue-50'; klasseText = 'text-blue-900'; klasseBorder = 'border-blue-200'; klasseHeaderBg = 'bg-gradient-to-r from-blue-50 to-blue-100';
+                } else if (gruppe.klasse === 'AK') {
+                    klasseBg = 'bg-green-50'; klasseText = 'text-green-900'; klasseBorder = 'border-green-200'; klasseHeaderBg = 'bg-gradient-to-r from-green-50 to-green-100';
+                } else {
+                    klasseBg = 'bg-amber-50'; klasseText = 'text-amber-900'; klasseBorder = 'border-amber-200'; klasseHeaderBg = 'bg-gradient-to-r from-amber-50 to-amber-100';
+                }
 
-            // Dag 1 - UK først, så AK
-            dag1Uk.forEach(d => { allWaitlist.push({ ...d, dag: 1, plass: plass++, klasse: 'UK' }); });
-            dag1Ak.forEach(d => { allWaitlist.push({ ...d, dag: 1, plass: plass++, klasse: 'AK' }); });
+                var tittel = gruppe.dag ? dagNavn + ' — ' + gruppe.klasse : 'VK';
 
-            // Dag 2 - UK først, så AK
-            dag2Uk.forEach(d => { allWaitlist.push({ ...d, dag: 2, plass: plass++, klasse: 'UK' }); });
-            dag2Ak.forEach(d => { allWaitlist.push({ ...d, dag: 2, plass: plass++, klasse: 'AK' }); });
+                var rader = gruppe.hunder.map(function(dog, i) {
+                    var bgClass = (i % 2 === 0) ? 'bg-white' : 'bg-bark-50/50';
+                    return '<tr class="' + bgClass + ' hover:bg-warm-50 transition">' +
+                        '<td class="px-3 py-3 text-center"><div class="w-7 h-7 rounded-full bg-bark-100 flex items-center justify-center text-xs font-bold text-bark-600">' + (i + 1) + '</div></td>' +
+                        '<td class="px-3 py-3"><div class="font-semibold text-bark-900">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500">' + (dog.regnr || '') + '</div></td>' +
+                        '<td class="px-3 py-3 text-sm text-bark-700 hidden md:table-cell">' + (dog.rase || '–') + '</td>' +
+                        '<td class="px-3 py-3 text-sm text-bark-700">' + (dog.forer || dog.eier || '–') + '</td>' +
+                        '<td class="px-3 py-3 text-center">' +
+                            '<button onclick="openMoveDialog(\'' + (dog.regnr || '').replace(/'/g, "\\'") + '\', \'venteliste\')" ' +
+                                'class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-warm-100 text-warm-700 hover:text-warm-900 border border-warm-300 text-xs font-medium transition shadow-sm">' +
+                                '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>' +
+                                '</svg>' +
+                                'Flytt til parti' +
+                            '</button>' +
+                        '</td>' +
+                    '</tr>';
+                }).join('');
 
-            // VK separat
-            vkVenteliste.forEach((d, i) => { allWaitlist.push({ ...d, dag: '-', plass: i + 1, klasse: 'VK' }); });
-
-            // Render med fargekoding per klasse
-            waitlistTableBody.innerHTML = allWaitlist.map(dog => {
-                let klasseColor = 'bg-amber-100 text-amber-700';  // VK
-                if (dog.klasse === 'UK') klasseColor = 'bg-blue-100 text-blue-700';
-                else if (dog.klasse === 'AK') klasseColor = 'bg-green-100 text-green-700';
-
-                const dagText = dog.dag === '-' ? 'VK' : getDayName(dog.dag);
-
-                return '<tr class="border-b border-bark-100 hover:bg-bark-50">' +
-                    '<td class="py-3 px-4 text-sm font-medium text-bark-700">' + dog.plass + '</td>' +
-                    '<td class="py-3 px-4 text-sm text-bark-700">' + (dog.forer || dog.eier || '') + '</td>' +
-                    '<td class="py-3 px-4 text-sm text-bark-500">-</td>' +
-                    '<td class="py-3 px-4 text-sm font-medium text-bark-800">' + (dog.hundenavn || '') + '</td>' +
-                    '<td class="py-3 px-4 text-sm text-bark-600">' + (dog.regnr || '') + '</td>' +
-                    '<td class="py-3 px-4 text-sm">' +
-                        '<span class="px-2 py-1 rounded text-xs font-medium ' + klasseColor + '">' + dagText + ' - ' + dog.klasse + '</span>' +
-                    '</td>' +
-                    '<td class="py-3 px-4 text-sm text-bark-500">-</td>' +
-                    '<td class="py-3 px-4">' +
-                        '<button class="text-warm-800 hover:text-warm-800 text-sm font-medium">Flytt til parti</button>' +
-                    '</td>' +
-                '</tr>';
+                return '<div class="bg-white rounded-2xl shadow-md border ' + klasseBorder + ' overflow-hidden mb-4">' +
+                    '<div class="' + klasseHeaderBg + ' px-5 py-4 border-b ' + klasseBorder + ' flex items-center justify-between">' +
+                        '<h4 class="text-lg font-bold font-serif ' + klasseText + '">' + tittel + '</h4>' +
+                        '<span class="px-3 py-1 bg-white rounded-full text-sm font-semibold ' + klasseText + ' border ' + klasseBorder + ' shadow-sm">' + gruppe.hunder.length + ' hunder</span>' +
+                    '</div>' +
+                    '<div class="overflow-x-auto">' +
+                        '<table class="w-full border-collapse">' +
+                            '<thead class="bg-bark-100 border-b-2 border-bark-200">' +
+                                '<tr>' +
+                                    '<th class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-center w-14">Nr</th>' +
+                                    '<th class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Hund (regnr)</th>' +
+                                    '<th class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left hidden md:table-cell">Rase</th>' +
+                                    '<th class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Fører</th>' +
+                                    '<th class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-center w-32">Handling</th>' +
+                                '</tr>' +
+                            '</thead>' +
+                            '<tbody>' + rader + '</tbody>' +
+                        '</table>' +
+                    '</div>' +
+                '</div>';
             }).join('');
         }
 

@@ -1918,15 +1918,20 @@
                 });
             }
 
-            // Sjekk om bruker er klubbleder/klubbadmin
-            if (currentUser.clubName && currentUser.clubRole) {
-                const roleLabel = currentUser.clubRole === 'leder' ? 'Klubbleder' :
-                                  currentUser.clubRole === 'styremedlem' ? 'Styremedlem' : 'Administrator';
-                const klubbLink = currentUser.clubId ? `klubb.html?klubbId=${currentUser.clubId}` : 'klubb.html';
+            // Vis ALLE klubber brukeren er admin for (ikke bare første)
+            const alleKlubber = cachedUserData?.klubbAdmins || [];
+            for (const klubb of alleKlubber) {
+                const roleLabel = klubb.klubb_rolle === 'leder' ? 'Klubbleder' :
+                                  klubb.klubb_rolle === 'nestleder' ? 'Nestleder' :
+                                  klubb.klubb_rolle === 'styremedlem' ? 'Styremedlem' :
+                                  klubb.klubb_rolle === 'sekretar' || klubb.klubb_rolle === 'sekretær' ? 'Sekretær' :
+                                  klubb.klubb_rolle === 'proveleder' ? 'Prøveleder' :
+                                  'Administrator';
+                const klubbLink = klubb.klubb_id ? `klubb.html?klubbId=${klubb.klubb_id}` : 'klubb.html';
                 roles.push({
                     type: 'klubbleder',
                     label: roleLabel,
-                    description: currentUser.clubName,
+                    description: klubb.klubb_navn,
                     icon: 'star',
                     bgColor: 'bg-amber-500',
                     link: klubbLink

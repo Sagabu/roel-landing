@@ -1403,122 +1403,116 @@
         // LAGRE PARTILISTE SOM BILDE
         // ========================================
         async function savePartyAsImage(partyId) {
-            // Vis loading-indikator via ID
             const saveBtn = document.getElementById(`saveBtn-${partyId}`);
             const originalText = saveBtn?.innerHTML;
             if (saveBtn) {
-                saveBtn.innerHTML = `
-                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Genererer bilde...
-                `;
+                saveBtn.innerHTML = '<span class="animate-pulse">Genererer bilde...</span>';
                 saveBtn.disabled = true;
             }
 
             try {
-                // Hent prøve-info for header
                 const trialName = document.getElementById('trialName')?.textContent || 'Fuglehundprøve';
                 const trialDetails = document.getElementById('trialDetails')?.textContent || '';
-
-                // Opprett en midlertidig container for bildet
-                const tempContainer = document.createElement('div');
-                tempContainer.style.cssText = 'position: absolute; left: -9999px; top: 0; background: white; padding: 20px; width: 800px;';
-                document.body.appendChild(tempContainer);
-
-                // Opprett header med prøve-info og logo
-                const header = document.createElement('div');
-                header.style.cssText = 'margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #d4a989;';
-                header.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
-                        <img src="images/logo.png" alt="Logo" style="width: 50px; height: 50px;" onerror="this.style.display='none'">
-                        <div>
-                            <h1 style="font-size: 20px; font-weight: bold; color: #3D1B0C; margin: 0;">${trialName}</h1>
-                            <p style="font-size: 12px; color: #7D6A54; margin: 0;">${trialDetails}</p>
-                        </div>
-                    </div>
-                    <div style="font-size: 18px; font-weight: 600; color: #5A2812;">${partyId}</div>
-                `;
-                tempContainer.appendChild(header);
-
-                // Finn party data
                 const party = allParties.find(p => (p.id || p.name) === partyId);
-                if (!party) {
-                    throw new Error('Party ikke funnet');
+                if (!party) throw new Error('Parti ikke funnet');
+
+                const isVK = party.type?.startsWith('vk');
+
+                // Mobilvennlig bredde (passer mobilskjerm i portrett)
+                const el = document.createElement('div');
+                el.style.cssText = 'position:absolute;left:-9999px;top:0;width:420px;font-family:Inter,system-ui,sans-serif;';
+                document.body.appendChild(el);
+
+                // Klasse-farge
+                function klasseFarge(kl) {
+                    if (kl === 'UK') return { bg: '#dbeafe', txt: '#1e40af', border: '#93c5fd' };
+                    if (kl === 'AK') return { bg: '#dcfce7', txt: '#166534', border: '#86efac' };
+                    return { bg: '#fef3c7', txt: '#92400e', border: '#fcd34d' };
                 }
 
-                // Opprett tabell
-                const table = document.createElement('table');
-                table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 13px;';
+                // Header
+                const ukCount = party.ukCount || party.dogs?.filter(d => d.klasse === 'UK').length || 0;
+                const akCount = party.akCount || party.dogs?.filter(d => d.klasse === 'AK').length || 0;
+                let badges = '';
+                if (!isVK) {
+                    badges = `<span style="display:inline-block;padding:2px 8px;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:6px;font-size:10px;font-weight:700;margin-right:4px;">UK: ${ukCount}</span>` +
+                             `<span style="display:inline-block;padding:2px 8px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:6px;font-size:10px;font-weight:700;">AK: ${akCount}</span>`;
+                }
 
-                // Header row
-                const thead = document.createElement('thead');
-                thead.innerHTML = `
-                    <tr style="background: #F7F3EE;">
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Nr</th>
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Rase</th>
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Hund</th>
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Reg.nr</th>
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #EAD8CF; color: #6E3018; font-size: 11px; text-transform: uppercase;">Eier/Fører</th>
-                    </tr>
+                el.innerHTML = `
+                    <div style="background:#3D1B0C;color:white;padding:16px 18px;border-radius:14px 14px 0 0;">
+                        <div style="font-size:11px;color:#D4A989;text-transform:uppercase;letter-spacing:2px;margin-bottom:4px;">Partiliste</div>
+                        <div style="font-size:18px;font-weight:700;font-family:Georgia,serif;">${trialName}</div>
+                        <div style="font-size:11px;color:#B8977A;margin-top:2px;">${trialDetails}</div>
+                    </div>
+                    <div style="background:#5A2812;color:white;padding:10px 18px;display:flex;justify-content:space-between;align-items:center;">
+                        <div style="font-size:16px;font-weight:700;font-family:Georgia,serif;">${party.name}</div>
+                        <div>${badges}<span style="display:inline-block;padding:2px 10px;background:rgba(255,255,255,0.2);border-radius:20px;font-size:11px;font-weight:600;margin-left:6px;">${party.dogs?.length || 0} hunder</span></div>
+                    </div>
+                    <div style="background:white;">
+                        ${(party.dogs || []).map((dog, i) => {
+                            const kl = dog.klasse || (isVK ? 'VK' : 'AK');
+                            const f = klasseFarge(kl);
+                            const bg = i % 2 === 0 ? '#ffffff' : '#FDFAF7';
+                            return `<div style="display:flex;align-items:center;gap:8px;padding:7px 14px;background:${bg};border-bottom:1px solid #f0e6dc;">
+                                <span style="width:24px;height:24px;border-radius:50%;background:#f0e6dc;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#5A2812;flex-shrink:0;">${i+1}</span>
+                                <div style="flex:1;min-width:0;">
+                                    <div style="display:flex;align-items:center;gap:5px;">
+                                        <span style="font-weight:600;font-size:13px;color:#3D1B0C;">${dog.hundenavn || dog.navn || ''}</span>
+                                        <span style="padding:1px 5px;background:${f.bg};color:${f.txt};border:1px solid ${f.border};border-radius:4px;font-size:9px;font-weight:700;">${kl}</span>
+                                    </div>
+                                    <div style="font-size:10px;color:#9A8268;margin-top:1px;">${dog.regnr || ''} · ${dog.forer || dog.eier || ''}</div>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <div style="background:#F7F3EE;padding:10px 18px;border-radius:0 0 14px 14px;text-align:center;font-size:10px;color:#9A8268;">
+                        fuglehundprove.no · ${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO',{hour:'2-digit',minute:'2-digit'})}
+                    </div>
                 `;
-                table.appendChild(thead);
 
-                // Body rows
-                const tbody = document.createElement('tbody');
-                (party.dogs || []).forEach((dog, i) => {
-                    const row = document.createElement('tr');
-                    row.style.cssText = i % 2 === 0 ? 'background: white;' : 'background: #FDFBF9;';
-                    row.innerHTML = `
-                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #5A2812; font-weight: 500;">${i + 1}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #6E3018;">${dog.rase || '-'}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #3D1B0C; font-weight: 500;">${dog.hundenavn || dog.navn || '-'}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #7D6A54; font-size: 12px;">${dog.regnr || '-'}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #EAD8CF; color: #5A2812;">${dog.eier || '-'}${dog.forer && dog.forer !== dog.eier ? ` (F: ${dog.forer})` : ''}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-                table.appendChild(tbody);
-                tempContainer.appendChild(table);
-
-                // Footer
-                const footer = document.createElement('div');
-                footer.style.cssText = 'margin-top: 20px; padding-top: 10px; border-top: 1px solid #EAD8CF; text-align: center; color: #9A8268; font-size: 11px;';
-                footer.innerHTML = `
-                    <p>fuglehundprove.no · Generert ${new Date().toLocaleDateString('no-NO')} kl. ${new Date().toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' })}</p>
-                `;
-                tempContainer.appendChild(footer);
-
-                // Generer bilde med html2canvas
-                const canvas = await html2canvas(tempContainer, {
-                    backgroundColor: '#ffffff',
+                const canvas = await html2canvas(el, {
+                    backgroundColor: '#F7F3EE',
                     scale: 2,
                     logging: false,
                     useCORS: true
                 });
+                document.body.removeChild(el);
 
-                // Fjern midlertidig container
-                document.body.removeChild(tempContainer);
-
-                // Konverter til PNG og last ned
-                const link = document.createElement('a');
                 const dateStr = new Date().toISOString().split('T')[0];
                 const filename = `Partiliste_${partyId.replace(/\s+/g, '_')}_${dateStr}.png`;
-                link.download = filename;
-                link.href = canvas.toDataURL('image/png');
-                link.click();
+
+                // Mobil: bruk Web Share API (lagrer direkte til bilder)
+                // Desktop: last ned som fil
+                canvas.toBlob(async (blob) => {
+                    if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
+                        try {
+                            const file = new File([blob], filename, { type: 'image/png' });
+                            await navigator.share({ files: [file], title: party.name });
+                        } catch (e) {
+                            // Bruker avbrøt share — fallback til nedlasting
+                            downloadBlob(blob, filename);
+                        }
+                    } else {
+                        downloadBlob(blob, filename);
+                    }
+                }, 'image/png');
 
             } catch (error) {
                 console.error('Feil ved generering av bilde:', error);
                 alert('Kunne ikke generere bilde. Prøv igjen.');
             } finally {
-                // Gjenopprett knapp
-                if (saveBtn) {
-                    saveBtn.innerHTML = originalText;
-                    saveBtn.disabled = false;
-                }
+                if (saveBtn) { saveBtn.innerHTML = originalText; saveBtn.disabled = false; }
             }
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
         }
 
         // Initialize

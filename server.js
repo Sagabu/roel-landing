@@ -4092,14 +4092,23 @@ app.get("/api/stats/dommere", (c) => {
 // BRUKERE API
 // ============================================
 
-// Hent alle brukere
-app.get("/api/brukere", (c) => {
-  const rows = db.prepare("SELECT * FROM brukere ORDER BY etternavn, fornavn").all();
+// Hent alle brukere - KUN superadmin, og ALDRI passord_hash
+app.get("/api/brukere", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+  if (!hasAnyRole(bruker.rolle, ["superadmin"])) {
+    return c.json({ error: "Krever superadmin-tilgang" }, 403);
+  }
+  const rows = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
+           rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
+           siste_innlogging, verifisert, sms_samtykke, sms_samtykke_tidspunkt
+    FROM brukere ORDER BY etternavn, fornavn
+  `).all();
   return c.json(rows);
 });
 
-// Søk etter brukere (for autocomplete)
-app.get("/api/brukere/sok", (c) => {
+// Søk etter brukere (for autocomplete) - krever innlogging
+app.get("/api/brukere/sok", requireAuth, (c) => {
   const q = c.req.query("q") || "";
   if (q.length < 2) {
     return c.json([]);
@@ -4115,10 +4124,15 @@ app.get("/api/brukere/sok", (c) => {
   return c.json(rows);
 });
 
-// Hent én bruker på telefon
+// Hent én bruker på telefon - ALDRI eksponer passord_hash
 app.get("/api/brukere/:telefon", (c) => {
   const telefon = c.req.param("telefon");
-  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  const row = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
+           rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
+           siste_innlogging, verifisert, sms_samtykke, sms_samtykke_tidspunkt
+    FROM brukere WHERE telefon = ?
+  `).get(telefon);
   if (!row) return c.json({ error: "Bruker ikke funnet" }, 404);
 
   // Hent alle klubber brukeren er admin for
@@ -4206,7 +4220,12 @@ app.put("/api/brukere/:telefon", async (c) => {
     console.log(`[Admin] Ny bruker opprettet: ${telefon} (SMS-samtykke: Nei - må avgis av bruker)`);
   }
 
-  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  const row = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
+           rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
+           siste_innlogging, verifisert, sms_samtykke, sms_samtykke_tidspunkt
+    FROM brukere WHERE telefon = ?
+  `).get(telefon);
   return c.json(row);
 });
 

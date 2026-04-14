@@ -302,9 +302,11 @@
                     }
                 }
             } catch (e) {
-                // Fallback to localStorage
-                const stored = proveId ? localStorage.getItem(`praktiskInfo_${proveId}`) : localStorage.getItem('praktiskInfo');
-                if (stored) info = JSON.parse(stored);
+                // Fallback to localStorage - kun prøve-spesifikk nøkkel for å hindre lekkasje
+                if (proveId) {
+                    const stored = localStorage.getItem(`praktiskInfo_${proveId}`);
+                    if (stored) info = JSON.parse(stored);
+                }
             }
 
             if (!info) return;
@@ -724,13 +726,10 @@
                 }
             }
 
-            // Fallback 3: Try localStorage (only works if user visited admin page in same browser)
-            if (parties.length === 0) {
-                // Prøv først prøve-spesifikk nøkkel
-                let partiesJson = proveId ? localStorage.getItem(`trialParties_${proveId}`) : null;
-                if (!partiesJson) {
-                    partiesJson = localStorage.getItem('trialParties');
-                }
+            // Fallback 3: Try localStorage (only works if user visited admin page i samme nettleser)
+            // KUN prøve-spesifikk nøkkel - aldri fall tilbake til global 'trialParties' (lekker mellom prøver)
+            if (parties.length === 0 && proveId) {
+                const partiesJson = localStorage.getItem(`trialParties_${proveId}`);
                 if (partiesJson) {
                     parties = JSON.parse(partiesJson) || [];
                 }

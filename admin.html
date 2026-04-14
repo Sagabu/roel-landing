@@ -4091,6 +4091,40 @@
 
     <script>
         // ========================================
+        // SIKKERHET: BESKYTT MOT NULL-NØKKEL-LEKKASJE
+        // ========================================
+        // Hvis en prøve-spesifikk nøkkelfunksjon returnerer null (ingen valgt prøve),
+        // skal vi IKKE skrive til localStorage under nøkkelen "null" - det ville lekke
+        // mellom prøver. Wrapperen fanger alle slike forsøk.
+        (function() {
+            const _origSetItem = localStorage.setItem.bind(localStorage);
+            const _origGetItem = localStorage.getItem.bind(localStorage);
+            const _origRemoveItem = localStorage.removeItem.bind(localStorage);
+
+            localStorage.setItem = function(key, value) {
+                if (key == null || key === 'null' || key === 'undefined' || key === '') {
+                    console.warn('[Sikkerhet] Ignorerte setItem med ugyldig nøkkel:', key);
+                    return;
+                }
+                return _origSetItem(key, value);
+            };
+
+            localStorage.getItem = function(key) {
+                if (key == null || key === 'null' || key === 'undefined' || key === '') {
+                    return null;
+                }
+                return _origGetItem(key);
+            };
+
+            localStorage.removeItem = function(key) {
+                if (key == null || key === 'null' || key === 'undefined' || key === '') {
+                    return;
+                }
+                return _origRemoveItem(key);
+            };
+        })();
+
+        // ========================================
         // PRØVE-SPESIFIKKE STORAGE KEYS
         // ========================================
         // Hjelpefunksjoner for å håndtere prøve-spesifikke localStorage-nøkler
@@ -4278,17 +4312,17 @@
 
         function getPartyDommereKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `partyDommere_${trialId}` : 'partyDommere';
+            return trialId ? `partyDommere_${trialId}` : null;
         }
 
         function getDommerSignaturerKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `dommerSignaturer_${trialId}` : 'dommerSignaturer';
+            return trialId ? `dommerSignaturer_${trialId}` : null;
         }
 
         function getTrialVkConfigKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `trialVkConfig_${trialId}` : 'trialVkConfig';
+            return trialId ? `trialVkConfig_${trialId}` : null;
         }
 
         // Last VK-konfigurasjon fra server (ved oppstart og prøvebytte)
@@ -4327,7 +4361,7 @@
 
         function getNkkSignaturerKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `nkkSignaturer_${trialId}` : 'nkkSignaturer';
+            return trialId ? `nkkSignaturer_${trialId}` : null;
         }
 
         // Last signaturer fra server (dommer og NKK-rep signaturer)
@@ -4393,32 +4427,32 @@
 
         function getDvkKontrollerKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `dvkKontroller_${trialId}` : 'dvkKontroller';
+            return trialId ? `dvkKontroller_${trialId}` : null;
         }
 
         function getDvkSignaturKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `dvkSignatur_${trialId}` : 'dvkSignatur';
+            return trialId ? `dvkSignatur_${trialId}` : null;
         }
 
         function getPraktiskInfoKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `praktiskInfo_${trialId}` : 'praktiskInfo';
+            return trialId ? `praktiskInfo_${trialId}` : null;
         }
 
         function getNkkRapportDraftKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `nkkRapportDraft_${trialId}` : 'nkkRapportDraft';
+            return trialId ? `nkkRapportDraft_${trialId}` : null;
         }
 
         function getFkfRapportDraftKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `fkfRapportDraft_${trialId}` : 'fkfRapportDraft';
+            return trialId ? `fkfRapportDraft_${trialId}` : null;
         }
 
         function getAutomatikkInnstillingerKey() {
             const trialId = getCurrentTrialId();
-            return trialId ? `automatikkInnstillinger_${trialId}` : 'automatikkInnstillinger';
+            return trialId ? `automatikkInnstillinger_${trialId}` : null;
         }
 
         // ========================================
@@ -4937,7 +4971,13 @@
                     'trialSignaturer', 'trialKritikker', 'praktiskInfo',
                     'adminAversjonsData', 'andreInntekter', 'andreUtgifter',
                     'vippsForesporsler', 'vippsValgteMottakere', 'adminMessages',
-                    'manuellKvalData', 'kvalifiserteHunder'
+                    'manuellKvalData', 'kvalifiserteHunder',
+                    // Nye nøkler som tidligere hadde fallback til global
+                    'dommerSignaturer', 'nkkSignaturer', 'dvkKontroller',
+                    'dvkSignatur', 'nkkRapportDraft', 'fkfRapportDraft',
+                    'automatikkInnstillinger',
+                    // Rydd opp i eventuelle feilaktige skriv til 'null' eller tom nøkkel
+                    'null', 'undefined'
                 ];
                 globaleNoklerSomMaaTommes.forEach(key => {
                     if (localStorage.getItem(key)) {
@@ -14734,13 +14774,16 @@
                 const proveId = getCurrentTrialId();
                 localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
 
-                // Lagre til server med prøve-spesifikk nøkkel for at SMS-blokkering skal fungere
-                const storageKey = proveId ? `praktiskInfo_${proveId}` : 'praktiskInfo';
-                await fetch(`/api/storage/${storageKey}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ value: praktiskInfo })
-                });
+                // Lagre til server med prøve-spesifikk nøkkel - kun hvis vi har proveId
+                // (hindrer global lekkasje mellom prøver)
+                if (proveId) {
+                    const storageKey = `praktiskInfo_${proveId}`;
+                    await fetch(`/api/storage/${storageKey}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: praktiskInfo })
+                    });
+                }
 
                 // Lagre roller til prover-tabellen (for Team-visning og tilgangsstyring)
                 if (proveId) {
@@ -14988,13 +15031,16 @@
                 };
                 localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
 
-                // Lagre til server med prøve-spesifikk nøkkel for at SMS-blokkering skal fungere
-                const storageKey = trialId ? `praktiskInfo_${trialId}` : 'praktiskInfo';
-                await fetch(`/api/storage/${storageKey}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ value: praktiskInfo })
-                });
+                // Lagre til server med prøve-spesifikk nøkkel - kun hvis vi har trialId
+                // (hindrer global lekkasje mellom prøver)
+                if (trialId) {
+                    const storageKey = `praktiskInfo_${trialId}`;
+                    await fetch(`/api/storage/${storageKey}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: praktiskInfo })
+                    });
+                }
 
                 // Lagre jegermiddag-konfigurasjon til API hvis aktivert
                 if (trialId && praktiskInfo.jegermiddagAktivert) {

@@ -1016,9 +1016,10 @@
                 <div class="rounded-xl md:rounded-2xl shadow-md border border-bark-200 overflow-hidden mb-4 md:mb-6" style="background: linear-gradient(to bottom, rgba(247,243,238,0.82), rgba(255,255,255,0.88)), url('${bgImg}'); background-size: cover; background-position: center;">
                     <div class="px-3 md:px-6 py-3 md:py-5 border-b border-bark-200/60 backdrop-blur-sm">
                         <div class="flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2 md:gap-3 min-w-0">
-                                <h3 class="text-base md:text-lg font-serif font-semibold text-bark-900 truncate">${party.name}</h3>
+                            <div class="flex items-center gap-2 md:gap-3 min-w-0 flex-wrap">
+                                <h3 class="text-base md:text-lg font-serif font-semibold text-bark-900 truncate">${party.displayName || party.name}</h3>
                                 <span class="px-1.5 md:px-2 py-0.5 md:py-1 ${isVK ? 'bg-amber-100 text-amber-700' : 'bg-warm-100 text-warm-800'} rounded text-[10px] md:text-xs font-medium flex-shrink-0">${typeLabel}</span>
+                                ${party.terreng ? `<span class="text-xs text-bark-600">📍 ${party.terreng}</span>` : ''}
                             </div>
                             <div class="flex items-center gap-1.5 md:gap-2 flex-shrink-0 flex-wrap">
                                 <span class="px-2 md:px-3 py-0.5 md:py-1 bg-bark-100 text-bark-700 rounded-full text-xs md:text-sm font-medium">${party.dogs?.length || 0}</span>
@@ -1440,15 +1441,22 @@
                              `<span style="display:inline-block;padding:2px 8px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:6px;font-size:10px;font-weight:700;">AK: ${akCount}</span>`;
                 }
 
-                // Hent bakgrunnsbilde som base64
+                // Hent bakgrunnsbilde som base64 (uten crossOrigin — same-origin)
                 let bgBase64 = '';
                 try {
+                    // Last bildet via fetch som blob → base64 (unngår CORS-problem)
+                    const bgResp = await fetch('images/partilister-bg-download.jpg');
+                    const bgBlob = await bgResp.blob();
+                    const bgDataUrl = await new Promise(r => {
+                        const reader = new FileReader();
+                        reader.onload = () => r(reader.result);
+                        reader.readAsDataURL(bgBlob);
+                    });
                     const img = new Image();
-                    img.crossOrigin = 'anonymous';
                     await new Promise((resolve, reject) => {
                         img.onload = resolve;
                         img.onerror = reject;
-                        img.src = 'images/partilister-bg-download.jpg';
+                        img.src = bgDataUrl;
                     });
                     const cvs = document.createElement('canvas');
                     cvs.width = imgWidth; cvs.height = 800;
@@ -1497,9 +1505,11 @@
                     </tr>`;
                 }).join('');
 
+                const terreng = party.terreng || party.displayName?.split(' - ')[1] || '';
+
                 el.innerHTML = `
                     <div style="text-align:center;margin-bottom:16px;">
-                        <div style="font-size:22px;font-weight:700;color:#333;margin-bottom:4px;">${party.name} — ${trialName}</div>
+                        <div style="font-size:22px;font-weight:700;color:#333;margin-bottom:4px;">${party.name}${terreng ? ' — ' + terreng : ''} — ${trialName}</div>
                         <div style="font-size:14px;color:#666;">${partiDato || trialDetails}</div>
                     </div>
                     <div style="${bgCss}">

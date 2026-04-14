@@ -15401,6 +15401,11 @@
 
             // Oppdater global tilstand
             window.bedommingUtenforSystemet = manuellRadio?.checked || false;
+
+            // Auto-lagre ved endring av bedømmingsmetode (hindrer at valget mistes)
+            if (getCurrentTrialId()) {
+                savePraktiskInfo();
+            }
         }
 
         // Last bedømmingsmetode fra lagret data
@@ -15595,11 +15600,15 @@
                 // proveId er nå satt (enten eksisterende eller nettopp opprettet)
                 localStorage.setItem(`praktiskInfo_${proveId}`, JSON.stringify(praktiskInfo));
 
-                // Lagre til server med prøve-spesifikk nøkkel
+                // Lagre til server med prøve-spesifikk nøkkel (KREVER auth-token)
                 const storageKey = `praktiskInfo_${proveId}`;
+                const tokenForSave = localStorage.getItem('fuglehund_token');
                 await fetch(`/api/storage/${storageKey}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': tokenForSave ? `Bearer ${tokenForSave}` : ''
+                    },
                     body: JSON.stringify({ value: praktiskInfo })
                 });
 

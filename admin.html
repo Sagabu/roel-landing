@@ -4541,37 +4541,61 @@
         // ========================================
         // PRAKTISK INFO - SAVE AND LOAD
         // ========================================
-        async function savePraktiskInfo() {
-            // Hent bedømmingsmetode fra radio (ikke fra window.bedommingUtenforSystemet som kan være stale)
+        // ============================================
+        // EN SENTRAL FUNKSJON for å bygge praktiskInfo-objektet fra DOM.
+        // ALLE save-funksjoner bruker denne for å unngå at felter mistes ved overskriving.
+        // Må inkludere HVERT felt som lastes/settes i applyPraktiskInfo().
+        // ============================================
+        function buildPraktiskInfoFromDOM() {
             const bedomMethodChecked = document.querySelector('input[name="bedomMethod"]:checked')?.value || 'digital';
+            const val = (id) => document.getElementById(id)?.value || '';
+            const checked = (id) => document.getElementById(id)?.checked || false;
 
-            const praktiskInfo = {
-                oppropSted: document.getElementById('oppropSted')?.value || '',
-                oppropTid: document.getElementById('oppropTid')?.value || '',
-                sekretariatApner: document.getElementById('sekretariatApner')?.value || '',
-                sekretariatStenger: document.getElementById('sekretariatStenger')?.value || '',
-                provelederNavn: document.getElementById('provelederNavn')?.value || '',
-                provelederTelefon: document.getElementById('provelederTelefon')?.value || '',
-                nkkRepNavn: document.getElementById('nkkRepNavn')?.value || '',
-                nkkRepTelefon: document.getElementById('nkkRepTelefon')?.value || '',
-                nkkVaraNavn: document.getElementById('nkkVaraNavn')?.value || '',
-                nkkVaraTelefon: document.getElementById('nkkVaraTelefon')?.value || '',
-                dvkNavn: document.getElementById('dvkNavn')?.value || '',
-                dvkTelefon: document.getElementById('dvkTelefon')?.value || '',
-                kravSauebevis: document.getElementById('kravSauebevis')?.checked || false,
-                // Bedømmingsmetode - KRITISK at denne lagres slik at manuell-valget ikke går tapt
+            return {
+                // Opprop og sekretariat
+                oppropSted: val('oppropSted'),
+                oppropTid: val('oppropTid'),
+                sekretariatApner: val('sekretariatApner'),
+                sekretariatStenger: val('sekretariatStenger'),
+
+                // Roller (navn + telefon)
+                provelederNavn: val('provelederNavn'),
+                provelederTelefon: val('provelederTelefon'),
+                nkkRepNavn: val('nkkRepNavn'),
+                nkkRepTelefon: val('nkkRepTelefon'),
+                nkkVaraNavn: val('nkkVaraNavn'),
+                nkkVaraTelefon: val('nkkVaraTelefon'),
+                dvkNavn: val('dvkNavn'),
+                dvkTelefon: val('dvkTelefon'),
+
+                // Krav og bedømmingsmetode
+                kravSauebevis: checked('kravSauebevis'),
                 bedommingUtenforSystemet: bedomMethodChecked === 'manuell',
-                // Standardkrav - alltid true
                 kravVaksinasjon: true,
                 kravEierattest: true,
                 kravStamtavle: true,
-                jegermiddagTid: document.getElementById('jegermiddagTid')?.value || '',
-                jegermiddagPris: document.getElementById('jegermiddagPris')?.value || '',
-                jegermiddagSted: document.getElementById('jegermiddagSted')?.value || '',
-                jegermiddagPamelding: document.getElementById('jegermiddagPamelding')?.value || '',
-                premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
-                tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
+
+                // Jegermiddag (alle felter)
+                jegermiddagDato: val('trialJegermiddag'),
+                jegermiddagTid: val('jegermiddagTid'),
+                jegermiddagPris: parseInt(val('jegermiddagPris')) || 350,
+                jegermiddagSted: val('jegermiddagSted'),
+                jegermiddagPamelding: val('jegermiddagPamelding'),
+                jegermiddagAktivert: checked('jegermiddagAktivert'),
+                jegermiddagMaks: parseInt(val('jegermiddagMaks')) || 100,
+                jegermiddagFrist: val('jegermiddagFrist'),
+                jegermiddagInfo: val('jegermiddagInfo'),
+
+                // Premieutdeling
+                premieutdelingSted: val('premieutdelingSted'),
+
+                // Fritekst
+                tilleggsinformasjon: val('tilleggsinformasjon')
             };
+        }
+
+        async function savePraktiskInfo() {
+            const praktiskInfo = buildPraktiskInfoFromDOM();
 
             const proveId = getCurrentTrialId();
 
@@ -15586,37 +15610,9 @@
                 // Beholder en "dummy" resp for statussjekk nederst.
                 const resp = { ok: true };
 
-                // Lagre praktisk info samtidig
-                const bedomMethod = document.querySelector('input[name="bedomMethod"]:checked')?.value || 'digital';
-                const praktiskInfo = {
-                    oppropSted: document.getElementById('oppropSted')?.value || '',
-                    sekretariatApner: document.getElementById('sekretariatApner')?.value || '',
-                    sekretariatStenger: document.getElementById('sekretariatStenger')?.value || '',
-                    provelederNavn: document.getElementById('provelederNavn')?.value || '',
-                    provelederTelefon: document.getElementById('provelederTelefon')?.value || '',
-                    nkkRepNavn: document.getElementById('nkkRepNavn')?.value || '',
-                    nkkRepTelefon: document.getElementById('nkkRepTelefon')?.value || '',
-                    nkkVaraNavn: document.getElementById('nkkVaraNavn')?.value || '',
-                    nkkVaraTelefon: document.getElementById('nkkVaraTelefon')?.value || '',
-                    dvkNavn: document.getElementById('dvkNavn')?.value || '',
-                    dvkTelefon: document.getElementById('dvkTelefon')?.value || '',
-                    kravSauebevis: document.getElementById('kravSauebevis')?.checked || false,
-                    bedommingUtenforSystemet: bedomMethod === 'manuell',
-                    kravVaksinasjon: true,
-                    kravEierattest: true,
-                    kravStamtavle: true,
-                    jegermiddagDato: document.getElementById('trialJegermiddag')?.value || '',
-                    jegermiddagTid: document.getElementById('jegermiddagTid')?.value || '',
-                    jegermiddagPris: parseInt(document.getElementById('jegermiddagPris')?.value) || 350,
-                    jegermiddagSted: document.getElementById('jegermiddagSted')?.value || '',
-                    jegermiddagPamelding: document.getElementById('jegermiddagPamelding')?.value || '',
-                    jegermiddagAktivert: document.getElementById('jegermiddagAktivert')?.checked || false,
-                    jegermiddagMaks: parseInt(document.getElementById('jegermiddagMaks')?.value) || 100,
-                    jegermiddagFrist: document.getElementById('jegermiddagFrist')?.value || '',
-                    jegermiddagInfo: document.getElementById('jegermiddagInfo')?.value || '',
-                    premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
-                    tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
-                };
+                // Lagre praktisk info - bruk felles helper slik at ALLE felter inkluderes
+                // (hindrer at felter mistes ved overskriving mellom save-funksjoner)
+                const praktiskInfo = buildPraktiskInfoFromDOM();
                 // proveId er nå satt (enten eksisterende eller nettopp opprettet)
                 localStorage.setItem(`praktiskInfo_${proveId}`, JSON.stringify(praktiskInfo));
 

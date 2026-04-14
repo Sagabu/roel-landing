@@ -154,7 +154,7 @@
                             <span class="inline-flex items-center px-4 py-3 rounded-l-xl border border-r-0 border-bark-300 bg-bark-50 text-bark-600 font-medium">
                                 +47
                             </span>
-                            <input type="tel" id="leaderPhone" placeholder="12345678" maxlength="8" pattern="[0-9]{8}" inputmode="numeric"
+                            <input type="tel" id="leaderPhone" placeholder="123 45 678" maxlength="10" inputmode="numeric"
                                    class="w-full px-4 py-3 border border-bark-300 rounded-r-xl focus:ring-2 focus:ring-warm-500 focus:border-warm-500 transition">
                         </div>
                         <p class="text-xs text-bark-500 mt-1">8 siffer - brukes til innlogging og SMS-varsler</p>
@@ -432,6 +432,21 @@
                     if (adr.poststed) cityInput.value = adr.poststed;
                     if (adr.adresse) addressInput.value = adr.adresse;
                 }
+
+                // Fyll inn epost fra Brønnøysund (hvis registrert der)
+                if (data.epostadresse) {
+                    const leaderEmail = document.getElementById('leaderEmail');
+                    if (leaderEmail && !leaderEmail.value) {
+                        leaderEmail.value = data.epostadresse;
+                    }
+                }
+
+                // Lagre brreg-data for å sende med ved opprettelse
+                window._brregData = {
+                    nettside: data.hjemmeside || '',
+                    epost: data.epostadresse || '',
+                    telefon: data.telefon || data.mobil || ''
+                };
 
                 // Vis suksess
                 status.textContent = `Funnet: ${data.organisasjonsform || 'Organisasjon'}`;
@@ -795,6 +810,7 @@
                 }
 
                 // Send forespørsel for godkjenning
+                const brregData = window._brregData || {};
                 const resp = await fetch('/api/klubb-foresporsel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -809,7 +825,10 @@
                         leder_epost: clubData.epost,
                         leder_rolle: clubData.lederRolle || 'leder',
                         passord: clubData.passord,
-                        ekstra_admins: JSON.stringify(additionalAdmins)
+                        ekstra_admins: JSON.stringify(additionalAdmins),
+                        nettside: brregData.nettside || '',
+                        klubb_telefon: brregData.telefon || '',
+                        klubb_epost: brregData.epost || ''
                     })
                 });
 
@@ -822,6 +841,11 @@
                 // Vis klubbnavn i suksessmelding
                 document.getElementById('successClubName').textContent = clubData.navn;
 
+                // Lagre token og login-sesjon - brukeren er nå logget inn uten ny verifisering
+                if (data.token) {
+                    localStorage.setItem('fuglehund_token', data.token);
+                }
+
                 // Lagre brukerdata i localStorage for innlogging
                 const nameParts = clubData.lederNavn.split(' ');
                 const fornavn = nameParts[0] || '';
@@ -829,12 +853,19 @@
 
                 const userProfile = {
                     telefon: clubData.telefon,
-                    fornavn: fornavn,
-                    etternavn: etternavn,
+                    fornavn: data.bruker?.fornavn || fornavn,
+                    etternavn: data.bruker?.etternavn || etternavn,
                     epost: clubData.epost,
-                    rolle: 'deltaker' // Får klubbleder-rolle når klubb godkjennes
+                    rolle: data.bruker?.rolle || 'deltaker'
                 };
                 localStorage.setItem('userProfile', JSON.stringify(userProfile));
+
+                // Marker at brukeren er logget inn
+                localStorage.setItem('userSession', JSON.stringify({
+                    telefon: clubData.telefon,
+                    loggedIn: true,
+                    timestamp: Date.now()
+                }));
 
                 // Vis suksessmelding
                 document.getElementById('successModal').classList.remove('hidden');

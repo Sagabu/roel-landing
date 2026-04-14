@@ -1117,6 +1117,17 @@ const migrations = [
   "ALTER TABLE klubber ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN logo TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
+  // Kontaktinfo for klubber (fra Brønnøysund eller manuelt)
+  "ALTER TABLE klubber ADD COLUMN epost TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN telefon TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN nettside TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN adresse TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN postnummer TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN sted TEXT DEFAULT NULL",
+  // Kontaktinfo fra Brønnøysund på klubb_foresporsel
+  "ALTER TABLE klubb_foresporsel ADD COLUMN nettside TEXT DEFAULT ''",
+  "ALTER TABLE klubb_foresporsel ADD COLUMN klubb_telefon TEXT DEFAULT ''",
+  "ALTER TABLE klubb_foresporsel ADD COLUMN klubb_epost TEXT DEFAULT ''",
   // Vipps ePayment API-integrasjon for klubber
   "ALTER TABLE klubber ADD COLUMN vipps_client_id TEXT DEFAULT NULL",
   "ALTER TABLE klubber ADD COLUMN vipps_client_secret TEXT DEFAULT NULL",
@@ -4616,6 +4627,10 @@ app.get("/api/brreg/:orgnr", async (c) => {
       orgnr: data.organisasjonsnummer,
       navn: data.navn,
       organisasjonsform: data.organisasjonsform?.beskrivelse || null,
+      hjemmeside: data.hjemmeside || null,
+      epostadresse: data.epostadresse || null,
+      telefon: data.telefon || null,
+      mobil: data.mobil || null,
       forretningsadresse: data.forretningsadresse ? {
         adresse: data.forretningsadresse.adresse?.join(', ') || '',
         postnummer: data.forretningsadresse.postnummer || '',
@@ -4951,6 +4966,10 @@ app.post("/api/klubb-foresporsel", async (c) => {
   const lederRolle = body.leder_rolle || 'leder';
   const passord = body.passord || '';
   const ekstraAdmins = body.ekstra_admins || body.admins || '[]';
+  // Data fra Brønnøysundregisteret (valgfrie)
+  const nettside = body.nettside || '';
+  const klubbTelefon = body.klubb_telefon || '';
+  const klubbEpost = body.klubb_epost || '';
 
   if (!orgnummer || !navn || !lederNavn || !lederTelefon) {
     return c.json({ error: "Mangler påkrevde felt" }, 400);
@@ -4995,8 +5014,8 @@ app.post("/api/klubb-foresporsel", async (c) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, leder_rolle, passord_hash, ekstra_admins)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, leder_rolle, passord_hash, ekstra_admins, nettside, klubb_telefon, klubb_epost)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     orgnummer.replace(/\s/g, ''),
     navn.trim(),
@@ -5008,7 +5027,10 @@ app.post("/api/klubb-foresporsel", async (c) => {
     lederEpost,
     lederRolle,
     passordHash,
-    typeof ekstraAdmins === 'string' ? ekstraAdmins : JSON.stringify(ekstraAdmins)
+    typeof ekstraAdmins === 'string' ? ekstraAdmins : JSON.stringify(ekstraAdmins),
+    nettside,
+    klubbTelefon,
+    klubbEpost
   );
 
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -5034,7 +5056,22 @@ app.post("/api/klubb-foresporsel", async (c) => {
     console.error('Feil ved sending av SMS til superadmin:', err);
   }
 
-  return c.json({ success: true, id: result.lastInsertRowid, telefon: normalizedPhone });
+  // Generer JWT-token slik at bruker kan logge inn direkte uten ny verifisering
+  const brukerData = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(normalizedPhone);
+  const token = brukerData ? generateToken(brukerData) : null;
+
+  return c.json({
+    success: true,
+    id: result.lastInsertRowid,
+    telefon: normalizedPhone,
+    token,
+    bruker: brukerData ? {
+      telefon: brukerData.telefon,
+      fornavn: brukerData.fornavn,
+      etternavn: brukerData.etternavn,
+      rolle: brukerData.rolle
+    } : null
+  });
 });
 
 // Hent alle klubb-forespørsler (kun superadmin)
@@ -5075,10 +5112,11 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     suffix++;
   }
 
-  // Opprett klubb med passord_hash fra forespørselen
+  // Opprett klubb med passord_hash fra forespørselen og kontaktinfo fra Brønnøysund
   db.prepare(`
-    INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost,
+                        epost, telefon, nettside, adresse, postnummer, sted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     klubbId,
     foresporsel.orgnummer,
@@ -5086,7 +5124,13 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     '',
     foresporsel.passord_hash || '',
     foresporsel.leder_telefon,
-    foresporsel.leder_epost
+    foresporsel.leder_epost,
+    foresporsel.klubb_epost || foresporsel.leder_epost || null,
+    foresporsel.klubb_telefon || null,
+    foresporsel.nettside || null,
+    foresporsel.adresse || null,
+    foresporsel.postnummer || null,
+    foresporsel.sted || null
   );
 
   // Opprett bruker for leder hvis ikke finnes
@@ -7164,6 +7208,48 @@ app.get("/api/prover/alle", (c) => {
   } catch (err) {
     console.error("Feil ved henting av prøver:", err);
     return c.json({ prover: [], error: err.message });
+  }
+});
+
+// Hent KUN prøver for innlogget brukers klubber (for admin.html terminliste)
+// Superadmin ser alle prøver
+app.get("/api/prover/mine", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+  const erSuperadmin = hasRole(bruker.rolle, "superadmin");
+
+  try {
+    let prover;
+    if (erSuperadmin) {
+      prover = db.prepare(`
+        SELECT p.*, k.navn as klubb_navn,
+               (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        ORDER BY p.start_dato DESC
+      `).all();
+    } else {
+      // Hent klubber der brukeren er admin
+      const klubber = db.prepare("SELECT klubb_id FROM klubb_admins WHERE telefon = ?").all(bruker.telefon);
+      const klubbIds = klubber.map(k => k.klubb_id);
+
+      if (klubbIds.length === 0) {
+        return c.json({ prover: [] });
+      }
+
+      const placeholders = klubbIds.map(() => '?').join(',');
+      prover = db.prepare(`
+        SELECT p.*, k.navn as klubb_navn,
+               (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        WHERE p.klubb_id IN (${placeholders})
+        ORDER BY p.start_dato DESC
+      `).all(...klubbIds);
+    }
+    return c.json({ prover });
+  } catch (err) {
+    console.error("Feil ved henting av mine prøver:", err);
+    return c.json({ prover: [], error: err.message }, 500);
   }
 });
 

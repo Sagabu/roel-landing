@@ -262,22 +262,23 @@
                             </div>
                             <!-- UK dag-valg -->
                             <div id="ukOptions" class="border-t border-bark-200 bg-bark-50 p-4">
+                                <p class="text-xs text-bark-500 mb-3">Ett parti = maks 15 hunder (FKF-regel). Angi antall partier per dag.</p>
                                 <div class="space-y-3">
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-3">
                                             <input type="checkbox" id="classUK1" class="w-4 h-4 text-warm-800 rounded" checked onchange="updateTotalDogs()">
-                                            <span class="text-sm text-bark-700">UK1 <span class="text-bark-500">(dag 1)</span></span>
+                                            <span class="text-sm text-bark-700">Antall partier UK <span class="text-bark-500">dag 1</span></span>
                                         </div>
-                                        <input type="number" id="spotsUK1" value="20" min="0" max="100"
+                                        <input type="number" id="spotsUK1" value="1" min="1" max="5"
                                                class="w-20 px-3 py-2 border border-bark-300 rounded-lg text-center text-sm focus:ring-2 focus:ring-warm-500"
                                                oninput="updateTotalDogs()">
                                     </div>
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-3">
                                             <input type="checkbox" id="classUK2" class="w-4 h-4 text-warm-800 rounded" checked onchange="updateTotalDogs()">
-                                            <span class="text-sm text-bark-700">UK2 <span class="text-bark-500">(dag 2)</span></span>
+                                            <span class="text-sm text-bark-700">Antall partier UK <span class="text-bark-500">dag 2</span></span>
                                         </div>
-                                        <input type="number" id="spotsUK2" value="20" min="0" max="100"
+                                        <input type="number" id="spotsUK2" value="1" min="1" max="5"
                                                class="w-20 px-3 py-2 border border-bark-300 rounded-lg text-center text-sm focus:ring-2 focus:ring-warm-500"
                                                oninput="updateTotalDogs()">
                                     </div>
@@ -298,22 +299,23 @@
                             </div>
                             <!-- AK dag-valg -->
                             <div id="akOptions" class="border-t border-bark-200 bg-bark-50 p-4">
+                                <p class="text-xs text-bark-500 mb-3">Ett parti = maks 15 hunder (FKF-regel). Angi antall partier per dag.</p>
                                 <div class="space-y-3">
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-3">
                                             <input type="checkbox" id="classAK1" class="w-4 h-4 text-warm-800 rounded" checked onchange="updateTotalDogs()">
-                                            <span class="text-sm text-bark-700">AK1 <span class="text-bark-500">(dag 1)</span></span>
+                                            <span class="text-sm text-bark-700">Antall partier AK <span class="text-bark-500">dag 1</span></span>
                                         </div>
-                                        <input type="number" id="spotsAK1" value="20" min="0" max="100"
+                                        <input type="number" id="spotsAK1" value="1" min="1" max="5"
                                                class="w-20 px-3 py-2 border border-bark-300 rounded-lg text-center text-sm focus:ring-2 focus:ring-warm-500"
                                                oninput="updateTotalDogs()">
                                     </div>
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center gap-3">
                                             <input type="checkbox" id="classAK2" class="w-4 h-4 text-warm-800 rounded" checked onchange="updateTotalDogs()">
-                                            <span class="text-sm text-bark-700">AK2 <span class="text-bark-500">(dag 2)</span></span>
+                                            <span class="text-sm text-bark-700">Antall partier AK <span class="text-bark-500">dag 2</span></span>
                                         </div>
-                                        <input type="number" id="spotsAK2" value="20" min="0" max="100"
+                                        <input type="number" id="spotsAK2" value="1" min="1" max="5"
                                                class="w-20 px-3 py-2 border border-bark-300 rounded-lg text-center text-sm focus:ring-2 focus:ring-warm-500"
                                                oninput="updateTotalDogs()">
                                     </div>
@@ -548,6 +550,7 @@
         }
 
         function updateTotalDogs() {
+            const HUNDER_PER_PARTI = 15; // FKF-regel: maks 15 hunder per parti
             let total = 0;
             const parts = [];
             const dayTotals = { dag1: 0, dag2: 0 };
@@ -558,45 +561,55 @@
 
             if (ukChecked) {
                 let ukTotal = 0;
+                let ukPartier = 0;
                 const uk1Checked = document.getElementById('classUK1').checked;
                 const uk2Checked = document.getElementById('classUK2').checked;
 
                 if (uk1Checked) {
-                    const uk1Spots = parseInt(document.getElementById('spotsUK1').value) || 0;
+                    const uk1PartierDag = parseInt(document.getElementById('spotsUK1').value) || 0;
+                    const uk1Spots = uk1PartierDag * HUNDER_PER_PARTI;
+                    ukPartier += uk1PartierDag;
                     ukTotal += uk1Spots;
                     dayTotals.dag1 += uk1Spots;
                 }
                 if (uk2Checked) {
-                    const uk2Spots = parseInt(document.getElementById('spotsUK2').value) || 0;
+                    const uk2PartierDag = parseInt(document.getElementById('spotsUK2').value) || 0;
+                    const uk2Spots = uk2PartierDag * HUNDER_PER_PARTI;
+                    ukPartier += uk2PartierDag;
                     ukTotal += uk2Spots;
                     dayTotals.dag2 += uk2Spots;
                 }
 
                 if (ukTotal > 0) {
                     total += ukTotal;
-                    parts.push(`UK: ${ukTotal}`);
+                    parts.push(`UK: ${ukPartier} parti${ukPartier !== 1 ? 'er' : ''} (${ukTotal} plasser)`);
                 }
             }
 
             if (akChecked) {
                 let akTotal = 0;
+                let akPartier = 0;
                 const ak1Checked = document.getElementById('classAK1').checked;
                 const ak2Checked = document.getElementById('classAK2').checked;
 
                 if (ak1Checked) {
-                    const ak1Spots = parseInt(document.getElementById('spotsAK1').value) || 0;
+                    const ak1PartierDag = parseInt(document.getElementById('spotsAK1').value) || 0;
+                    const ak1Spots = ak1PartierDag * HUNDER_PER_PARTI;
+                    akPartier += ak1PartierDag;
                     akTotal += ak1Spots;
                     dayTotals.dag1 += ak1Spots;
                 }
                 if (ak2Checked) {
-                    const ak2Spots = parseInt(document.getElementById('spotsAK2').value) || 0;
+                    const ak2PartierDag = parseInt(document.getElementById('spotsAK2').value) || 0;
+                    const ak2Spots = ak2PartierDag * HUNDER_PER_PARTI;
+                    akPartier += ak2PartierDag;
                     akTotal += ak2Spots;
                     dayTotals.dag2 += ak2Spots;
                 }
 
                 if (akTotal > 0) {
                     total += akTotal;
-                    parts.push(`AK: ${akTotal}`);
+                    parts.push(`AK: ${akPartier} parti${akPartier !== 1 ? 'er' : ''} (${akTotal} plasser)`);
                 }
             }
 

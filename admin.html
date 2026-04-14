@@ -14717,6 +14717,7 @@
         async function saveTrialDetails() {
             const trialName = document.getElementById('trialName')?.value?.trim() || '';
             const trialDate = document.getElementById('trialDateFrom')?.value || '';
+            const trialDateTo = document.getElementById('trialDateTo')?.value || trialDate;
             const trialLocation = document.getElementById('trialLocation')?.value?.trim() || '';
             const organizerName = document.getElementById('organizerName')?.value?.trim() || '';
 
@@ -14730,7 +14731,47 @@
             }
 
             try {
-                // Lagre prøvedetaljer
+                // Sørg for at prøven eksisterer i prover-tabellen FØR vi lagrer praktisk info
+                // Hvis det ikke er en proveId (ny prøve), opprett den først
+                let proveId = getCurrentTrialId();
+
+                if (!proveId) {
+                    const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+                    const klubbId = localStorage.getItem('currentKlubbId') || userSession.clubId || null;
+                    const proveTypeNew = document.getElementById('proveType')?.value || 'høyfjell_host';
+
+                    const createResp = await fetch('/api/prover', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            navn: trialName,
+                            sted: trialLocation,
+                            start_dato: trialDate,
+                            slutt_dato: trialDateTo,
+                            klubb_id: klubbId,
+                            klasser: { uk: true, ak: true, vk: true },
+                            prove_type: proveTypeNew
+                        })
+                    });
+
+                    if (!createResp.ok) {
+                        const errData = await createResp.json().catch(() => ({}));
+                        alert('Kunne ikke opprette prøve: ' + (errData.error || 'Ukjent feil'));
+                        return;
+                    }
+
+                    const data = await createResp.json();
+                    proveId = data.id;
+
+                    // Oppdater URL slik at reload henter riktig prøve
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('trial', proveId);
+                    newUrl.searchParams.delete('nyProve');
+                    window.history.replaceState({}, '', newUrl);
+                    localStorage.setItem('currentTrialId', proveId);
+                }
+
+                // Lagre prøvedetaljer (globalt trial-config - legacy)
                 const resp = await fetch('/api/trial', {
                     method: 'PUT',
                     headers: getAuthHeaders(),
@@ -14774,19 +14815,16 @@
                     premieutdelingSted: document.getElementById('premieutdelingSted')?.value || '',
                     tilleggsinformasjon: document.getElementById('tilleggsinformasjon')?.value || ''
                 };
-                const proveId = getCurrentTrialId();
-                localStorage.setItem(getPraktiskInfoKey(), JSON.stringify(praktiskInfo));
+                // proveId er nå satt (enten eksisterende eller nettopp opprettet)
+                localStorage.setItem(`praktiskInfo_${proveId}`, JSON.stringify(praktiskInfo));
 
-                // Lagre til server med prøve-spesifikk nøkkel - kun hvis vi har proveId
-                // (hindrer global lekkasje mellom prøver)
-                if (proveId) {
-                    const storageKey = `praktiskInfo_${proveId}`;
-                    await fetch(`/api/storage/${storageKey}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ value: praktiskInfo })
-                    });
-                }
+                // Lagre til server med prøve-spesifikk nøkkel
+                const storageKey = `praktiskInfo_${proveId}`;
+                await fetch(`/api/storage/${storageKey}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: praktiskInfo })
+                });
 
                 // Lagre roller til prover-tabellen (for Team-visning og tilgangsstyring)
                 if (proveId) {

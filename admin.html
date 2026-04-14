@@ -6896,18 +6896,20 @@
         }
 
         // Flytt hund fra deltakerliste til venteliste (manuell)
-        // Respekterer auto-opprykk-innstillingen
+        // VIKTIG: Auto-opprykk kjøres IKKE her — dette er en bevisst manuell handling
+        // for å redusere antall hunder (f.eks. fra 46 til 40).
+        // Auto-opprykk gjelder kun ved forfall ETTER at partier er fordelt.
         async function flyttVkTilVenteliste(idx) {
-            const bekreft = confirm(
-                'Er du helt sikker på at du vil flytte denne hunden fra deltakerliste til venteliste?\n\n' +
-                'Dette er en manuell overstyring som normalt ikke skal gjøres — bruk kun hvis du har en spesifikk grunn.'
-            );
-            if (!bekreft) return;
-
             const samletListe = await hentVkSamletListe();
             if (!samletListe || !samletListe.hunder[idx]) return;
 
             const hund = samletListe.hunder[idx];
+
+            const bekreft = confirm(
+                `Flytte "${hund.hundenavn || hund.navn}" til venteliste?`
+            );
+            if (!bekreft) return;
+
             samletListe.hunder.splice(idx, 1);
 
             // Legg i venteliste
@@ -6915,25 +6917,11 @@
             if (!Array.isArray(venteliste.vk)) venteliste.vk = [];
             venteliste.vk.push(hund);
 
-            // Automatisk opprykk: hvis aktivert og det finnes noen på venteliste
-            // (utenom den som nettopp ble lagt til), flytt første venteliste-hund opp
-            const autoAktiv = await erAutoOpprykkAktiv();
-            let opprykketHund = null;
-            if (autoAktiv && venteliste.vk.length > 1) {
-                // Første fra venteliste er neste i kø (ikke den vi nettopp la til)
-                opprykketHund = venteliste.vk.shift();
-                samletListe.hunder.push(opprykketHund);
-            }
+            // INGEN auto-opprykk her — admin reduserer bevisst antallet
 
             setTrialVenteliste(venteliste);
             await lagreVkSamletListe(samletListe);
             await renderVkDeltakerliste();
-
-            if (opprykketHund) {
-                alert(`✓ ${hund.hundenavn || hund.navn} flyttet til venteliste.\n✓ ${opprykketHund.hundenavn || opprykketHund.navn} rykket automatisk opp fra venteliste.`);
-            } else if (!autoAktiv && venteliste.vk.length > 0) {
-                alert(`⚠ ${hund.hundenavn || hund.navn} flyttet til venteliste.\n\nAutomatisk opprykk er DEAKTIVERT. Du må manuelt velge en erstatter fra ventelisten.`);
-            }
         }
 
         // Flytt hund fra venteliste til deltakerliste (manuell eller auto-opprykk)

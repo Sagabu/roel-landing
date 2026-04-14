@@ -8896,6 +8896,63 @@
             let ukakTrengerManuellValg = false;
 
             // ============================================
+            // FORDELING AV USPESIFISERTE HUNDER (hunder uten dag-merking)
+            // ============================================
+            // To-pass strategi for å respektere 6+8-kvoten:
+            //   Pass 1: Fyll hver dag opp til kvote (6×partier UK + 8×partier AK)
+            //   Pass 2: Hvis ledige plasser etter kvote, fyll opp med overskuddsklassen
+            //   Pass 3: Resterende uspesifiserte → venteliste (ingen plass globalt)
+
+            // Sorter uspesifiserte etter dato (eldst først)
+            const ukUspesifisertSortert = sorterEtterDato(ukUspesifisert);
+            const akUspesifisertSortert = sorterEtterDato(akUspesifisert);
+            // Tøm originale arrays og fyll dem sortert (referanser brukes videre)
+            ukUspesifisert.length = 0;
+            akUspesifisert.length = 0;
+            ukUspesifisert.push(...ukUspesifisertSortert);
+            akUspesifisert.push(...akUspesifisertSortert);
+
+            // Pass 1: Fyll UK/AK-kvoter per dag
+            for (let d = 1; d <= antallProvedager; d++) {
+                const pDag = dagPartier[d - 1];
+                if (pDag === 0) continue;
+                const ukKvoteD = pDag * 6;
+                const akKvoteD = pDag * 8;
+
+                while (ukPerDag[d - 1].length < ukKvoteD && ukUspesifisert.length > 0) {
+                    ukPerDag[d - 1].push(ukUspesifisert.shift());
+                }
+                while (akPerDag[d - 1].length < akKvoteD && akUspesifisert.length > 0) {
+                    akPerDag[d - 1].push(akUspesifisert.shift());
+                }
+            }
+
+            // Pass 2: Fyll ledige plasser med overskuddsklassen
+            // Først forsøk AK (fordi typisk flere AK enn UK), så UK
+            for (let d = 1; d <= antallProvedager; d++) {
+                const pDag = dagPartier[d - 1];
+                if (pDag === 0) continue;
+                const kapD = pDag * 14;
+
+                // AK fyller underskudd av UK
+                while (ukPerDag[d - 1].length + akPerDag[d - 1].length < kapD && akUspesifisert.length > 0) {
+                    akPerDag[d - 1].push(akUspesifisert.shift());
+                }
+                // UK fyller underskudd av AK
+                while (ukPerDag[d - 1].length + akPerDag[d - 1].length < kapD && ukUspesifisert.length > 0) {
+                    ukPerDag[d - 1].push(ukUspesifisert.shift());
+                }
+            }
+
+            // Pass 3: Uspesifiserte som ikke fikk plass → venteliste
+            // (Fordel på første dag, admin kan flytte senere)
+            if (ukUspesifisert.length > 0 || akUspesifisert.length > 0) {
+                if (!venteliste.dag1) venteliste.dag1 = { uk: [], ak: [] };
+                venteliste.dag1.uk.push(...ukUspesifisert);
+                venteliste.dag1.ak.push(...akUspesifisert);
+            }
+
+            // ============================================
             // Fordel UK/AK for hver prøvedag (1 til antallProvedager)
             // Samme regler per dag: 6+8 mål, datosortering, eier-regel, slipp-regel
             // ============================================
@@ -8906,16 +8963,6 @@
 
                 let ukPool = [...ukPerDag[dagNr - 1]];
                 let akPool = [...akPerDag[dagNr - 1]];
-
-                // Uspesifiserte hunder: fyll tidligere dager først med UK, så AK
-                const ukPlass = Math.min(kapasitetDag, ukPool.length + ukUspesifisert.length);
-                while (ukPool.length < ukPlass && ukUspesifisert.length > 0) {
-                    ukPool.push(ukUspesifisert.shift());
-                }
-                const akPlass = kapasitetDag - ukPool.length;
-                while (akPool.length < akPlass && akUspesifisert.length > 0) {
-                    akPool.push(akUspesifisert.shift());
-                }
 
                 // Sorter hver pool etter dato (eldst påmeldt først)
                 ukPool = sorterEtterDato(ukPool);

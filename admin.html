@@ -2286,11 +2286,22 @@
 
                     <!-- Populated state - vises etter opplasting (hidden by default) -->
                     <div id="partyListsContent" class="hidden space-y-6">
-                        <!-- Filtrering -->
-                        <div class="flex gap-2 flex-wrap">
-                            <button class="bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium" id="filterUKAK">UK/AK</button>
-                            <button class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterVK">VK</button>
+                        <!-- Filtrering + tilbakestill-knapp -->
+                        <div class="flex gap-2 flex-wrap items-center justify-between">
+                            <div class="flex gap-2 flex-wrap">
+                                <button class="bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium" id="filterUKAK">UK/AK</button>
+                                <button class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterVK">VK</button>
+                            </div>
+                            <button onclick="tilbakestillTilDeltakerlister()" class="text-bark-500 hover:text-amber-700 px-3 py-1.5 rounded-xl text-xs font-medium border border-bark-200 hover:border-amber-300 hover:bg-amber-50 transition flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                Tilbakestill UK/AK til deltakerlister
+                            </button>
                         </div>
+
+                        <!-- Deltakerlister (skjult som standard, vises ved tilbakestilling) -->
+                        <div id="deltakerlisteSeksjon" class="hidden space-y-4"></div>
 
                         <!-- Offentlig deling -->
                         <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-4">
@@ -6052,6 +6063,17 @@
                     console.warn('Kunne ikke slette VK samlet liste fra server:', e);
                 }
 
+                // Slett UK/AK-deltakerlister
+                localStorage.removeItem(`ukakDeltakerlister_${proveId}`);
+                try {
+                    await fetch(`/api/storage/ukakDeltakerlister_${proveId}`, {
+                        method: 'DELETE',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                } catch(e) {}
+                const dlSeksjon = document.getElementById('deltakerlisteSeksjon');
+                if (dlSeksjon) { dlSeksjon.innerHTML = ''; dlSeksjon.classList.add('hidden'); }
+
                 // Slett venteliste fra server også
                 try {
                     await fetch(`/api/prover/${proveId}/venteliste`, {
@@ -6502,6 +6524,9 @@
 
                 // Render VK-deltakerliste hvis relevant
                 await renderVkDeltakerliste();
+
+                // Last UK/AK-deltakerlister (hvis tilbakestilt)
+                await lastUkakDeltakerlister();
             } catch (e) {
                 console.error('Kunne ikke laste partier:', e);
                 // Fallback til localStorage ved feil
@@ -7867,6 +7892,219 @@
         // ========================================
         // FLYTT HUND MELLOM PARTIER
         // ========================================
+
+        // ========================================
+        // TILBAKESTILL TIL DELTAKERLISTER
+        // ========================================
+
+        async function tilbakestillTilDeltakerlister() {
+            const parties = getTrialParties();
+            const ukakPartier = parties.filter(p => p.type === 'ukak');
+
+            if (ukakPartier.length === 0) {
+                alert('Ingen UK/AK-partier å tilbakestille.');
+                return;
+            }
+
+            let totalHunder = 0;
+            ukakPartier.forEach(p => totalHunder += (p.dogs?.length || 0));
+
+            const bekreft = confirm(
+                `Tilbakestill ${totalHunder} hunder fra ${ukakPartier.length} UK/AK-partier til deltakerlister?\n\n` +
+                `• Hundene flyttes til deltakerlister (sortert alfabetisk per dag og klasse)\n` +
+                `• Partiene tømmes (strukturen beholdes)\n` +
+                `• Ventelisten berøres IKKE\n` +
+                `• Du kan deretter flytte hunder manuelt tilbake til partier\n\n` +
+                `Denne handlingen kan ikke angres automatisk.`
+            );
+            if (!bekreft) return;
+
+            // Samle alle hunder fra UK/AK-partier, gruppert per dag + klasse
+            const deltakerlister = {}; // { 'dag1_UK': [...], 'dag1_AK': [...], ... }
+            const antallProvedager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
+
+            ukakPartier.forEach(party => {
+                (party.dogs || []).forEach(dog => {
+                    const dag = party.day || 1;
+                    const kl = dog.klasse || 'AK';
+                    const key = `dag${dag}_${kl}`;
+                    if (!deltakerlister[key]) deltakerlister[key] = [];
+                    deltakerlister[key].push({ ...dog, fraParti: party.name });
+                });
+            });
+
+            // Sorter hver liste alfabetisk på hundenavn
+            Object.values(deltakerlister).forEach(liste => {
+                liste.sort((a, b) => (a.hundenavn || a.navn || '').localeCompare(b.hundenavn || b.navn || '', 'no'));
+            });
+
+            // Tøm UK/AK-partiene (behold strukturen)
+            const oppdatertePartier = parties.map(p => {
+                if (p.type === 'ukak') {
+                    return { ...p, dogs: [], ukCount: 0, akCount: 0 };
+                }
+                return p;
+            });
+            setTrialParties(oppdatertePartier);
+
+            // Lagre deltakerlister til localStorage og server
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                localStorage.setItem(`ukakDeltakerlister_${proveId}`, JSON.stringify(deltakerlister));
+                const token = localStorage.getItem('fuglehund_token');
+                try {
+                    await fetch(`/api/storage/ukakDeltakerlister_${proveId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                        body: JSON.stringify({ value: deltakerlister })
+                    });
+                } catch(e) {}
+            }
+
+            // Render
+            renderAllParties(oppdatertePartier);
+            renderUkakDeltakerlister(deltakerlister);
+
+            alert(`✓ ${totalHunder} hunder flyttet til deltakerlister.\n\nBruk "Flytt til parti"-knappen for å plassere hundene manuelt.`);
+        }
+
+        // Render deltakerlister (intern bruk — vises ikke offentlig)
+        function renderUkakDeltakerlister(deltakerlister) {
+            const seksjon = document.getElementById('deltakerlisteSeksjon');
+            if (!seksjon) return;
+
+            const keys = Object.keys(deltakerlister).sort();
+            if (keys.length === 0) {
+                seksjon.classList.add('hidden');
+                return;
+            }
+
+            seksjon.classList.remove('hidden');
+
+            const antallProvedager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
+
+            seksjon.innerHTML = `
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                    <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <div>
+                        <p class="font-medium text-amber-800">Deltakerlister — intern bruk</p>
+                        <p class="text-sm text-amber-700 mt-1">Flytt hunder til partier manuelt. Disse listene vises IKKE på den offentlige partilisten.</p>
+                    </div>
+                </div>
+            ` + keys.map(key => {
+                const [dagKey, klasse] = key.split('_');
+                const dagNr = parseInt(dagKey.replace('dag', ''));
+                const dagNavn = getDayName(dagNr);
+                const hunder = deltakerlister[key];
+
+                const klasseFarger = klasse === 'UK'
+                    ? { bg: 'from-blue-50 to-blue-100', border: 'border-blue-200', text: 'text-blue-900', badge: 'text-blue-800 border-blue-300' }
+                    : { bg: 'from-green-50 to-green-100', border: 'border-green-200', text: 'text-green-900', badge: 'text-green-800 border-green-300' };
+
+                // Hent tilgjengelige partier for denne dagen
+                const partier = getTrialParties().filter(p => p.type === 'ukak' && p.day === dagNr);
+
+                const rader = hunder.map((dog, i) => {
+                    const partiOptions = partier.map(p =>
+                        `<option value="${p.name}">${p.name} (${p.dogs?.length || 0})</option>`
+                    ).join('');
+
+                    const bgClass = i % 2 === 0 ? 'bg-white' : 'bg-bark-50';
+                    return `<div class="grid grid-cols-5 md:grid-cols-6 gap-0 ${bgClass} hover:bg-warm-50 transition border-b border-bark-100 items-center">
+                        <div class="px-3 py-2 text-center"><span class="inline-flex w-6 h-6 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-600">${i+1}</span></div>
+                        <div class="px-3 py-2 col-span-2"><div class="font-semibold text-bark-900 text-sm truncate">${dog.hundenavn || dog.navn || ''}</div><div class="text-xs text-bark-500 truncate">${dog.regnr || ''}</div></div>
+                        <div class="px-3 py-2 text-sm text-bark-700 truncate">${dog.forer || dog.eier || ''}</div>
+                        <div class="px-3 py-2 text-sm text-bark-700 hidden md:block truncate">${dog.rase || ''}</div>
+                        <div class="px-3 py-2">
+                            <select onchange="flyttFraDeltakerlisteTilParti('${key}', ${i}, this.value)" class="w-full px-2 py-1 text-xs border border-warm-300 rounded-lg bg-white focus:border-warm-500 focus:outline-none">
+                                <option value="">Flytt til...</option>
+                                ${partiOptions}
+                            </select>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                return `
+                    <div class="bg-white rounded-xl shadow-sm border ${klasseFarger.border} overflow-hidden">
+                        <div class="bg-gradient-to-r ${klasseFarger.bg} px-4 py-3 border-b ${klasseFarger.border} flex items-center justify-between">
+                            <h4 class="text-base font-bold font-serif ${klasseFarger.text}">Deltakerliste ${klasse} — ${dagNavn}</h4>
+                            <span class="px-3 py-1 bg-white rounded-full text-sm font-semibold ${klasseFarger.badge} border">${hunder.length}</span>
+                        </div>
+                        <div class="bg-bark-100 grid grid-cols-5 md:grid-cols-6 gap-0 border-b border-bark-200">
+                            <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>
+                            <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase col-span-2">Hund</div>
+                            <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase">Fører</div>
+                            <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase hidden md:block">Rase</div>
+                            <div class="px-3 py-2 text-xs font-bold text-bark-700 uppercase text-center">Parti</div>
+                        </div>
+                        <div>${rader}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Flytt én hund fra deltakerliste til et parti
+        async function flyttFraDeltakerlisteTilParti(listeKey, hundIdx, partiNavn) {
+            if (!partiNavn) return;
+
+            const proveId = getCurrentTrialId();
+            const dlKey = `ukakDeltakerlister_${proveId}`;
+            const deltakerlister = JSON.parse(localStorage.getItem(dlKey) || '{}');
+
+            if (!deltakerlister[listeKey] || !deltakerlister[listeKey][hundIdx]) return;
+
+            // Fjern hund fra deltakerliste
+            const hund = deltakerlister[listeKey].splice(hundIdx, 1)[0];
+            if (deltakerlister[listeKey].length === 0) {
+                delete deltakerlister[listeKey];
+            }
+
+            // Legg til i parti
+            const parties = getTrialParties();
+            const parti = parties.find(p => p.name === partiNavn);
+            if (!parti) { alert('Parti ikke funnet'); return; }
+
+            parti.dogs.push(hund);
+            parti.ukCount = parti.dogs.filter(d => d.klasse === 'UK').length;
+            parti.akCount = parti.dogs.filter(d => d.klasse === 'AK').length;
+
+            // Lagre begge
+            setTrialParties(parties);
+            localStorage.setItem(dlKey, JSON.stringify(deltakerlister));
+
+            const token = localStorage.getItem('fuglehund_token');
+            if (proveId) {
+                try {
+                    await fetch(`/api/storage/ukakDeltakerlister_${proveId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                        body: JSON.stringify({ value: deltakerlister })
+                    });
+                } catch(e) {}
+            }
+
+            // Re-render
+            renderAllParties(parties);
+            renderUkakDeltakerlister(deltakerlister);
+        }
+
+        // Last deltakerlister ved oppstart (hvis de finnes)
+        async function lastUkakDeltakerlister() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+            try {
+                const resp = await fetch(`/api/storage/ukakDeltakerlister_${proveId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value && Object.keys(data.value).length > 0) {
+                        localStorage.setItem(`ukakDeltakerlister_${proveId}`, JSON.stringify(data.value));
+                        renderUkakDeltakerlister(data.value);
+                    }
+                }
+            } catch(e) {}
+        }
 
         let moveDialogDog = null;
         let moveDialogFromParty = null;

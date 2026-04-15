@@ -8713,7 +8713,8 @@
                     debug('Første ark: ' + firstSheetName);
 
                     const worksheet = workbook.Sheets[firstSheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    // raw:true = hent rå verdier uten formatering (unngår HTML-entiteter og rik tekst-artefakter)
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
                     debug('Antall rader i Excel: ' + jsonData.length);
 
                     if (jsonData.length < 2) {
@@ -8750,17 +8751,36 @@
 
                     debug('Kolonneindekser: ' + JSON.stringify(colIndex));
 
+                    // Grundig rensefunksjon for Excel-celler
+                    // Håndterer: rik tekst med **bold**, HTML-entiteter (&#32;), HTML-tags, ekstra mellomrom
+                    function cleanExcelCell(val) {
+                        if (val == null) return '';
+                        let s = String(val);
+                        // Fjern HTML-tags (<b>, <i>, <span>, etc.)
+                        s = s.replace(/<[^>]*>/g, '');
+                        // Dekod HTML-entiteter (&#32; &#39; &amp; &lt; etc.)
+                        s = s.replace(/&#(\d+);/g, (m, code) => String.fromCharCode(parseInt(code)));
+                        s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                        // Fjern markdown bold/italic (**)
+                        s = s.replace(/\*{1,3}/g, '');
+                        // Fjern usynlige tegn (zero-width space, soft hyphen, etc.)
+                        s = s.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
+                        // Normaliser mellomrom (non-breaking space, tabs, multiple spaces → single space)
+                        s = s.replace(/[\u00A0\t]/g, ' ').replace(/\s{2,}/g, ' ');
+                        return s.trim();
+                    }
+
                     // Parse data rows
                     for (let i = 1; i < jsonData.length; i++) {
                         const row = jsonData[i];
                         if (!row || row.length === 0) continue;
 
-                        const regnr = String(row[colIndex.regnr] || '').trim();
-                        const navn = String(row[colIndex.navn] || '').trim();
+                        const regnr = cleanExcelCell(row[colIndex.regnr]);
+                        const navn = cleanExcelCell(row[colIndex.navn]);
 
                         if (!regnr && !navn) continue;
 
-                        const klasseRaw = String(row[colIndex.klasse] || '').trim().toUpperCase();
+                        const klasseRaw = cleanExcelCell(row[colIndex.klasse]).toUpperCase();
                         let klasse = 'AK';
                         if (klasseRaw.includes('UK') || klasseRaw.includes('UNGHUND')) klasse = 'UK';
                         else if (klasseRaw.includes('VK') || klasseRaw.includes('VINNER')) klasse = 'VK';
@@ -8785,13 +8805,13 @@
                         participants.push({
                             regnr: regnr,
                             hundenavn: navn,
-                            rase: String(row[colIndex.rase] || '').trim(),
-                            eier: String(row[colIndex.eier] || '').trim(),
-                            forer: String(row[colIndex.forer] || '').trim() || String(row[colIndex.eier] || '').trim(),
+                            rase: cleanExcelCell(row[colIndex.rase]),
+                            eier: cleanExcelCell(row[colIndex.eier]),
+                            forer: cleanExcelCell(row[colIndex.forer]) || cleanExcelCell(row[colIndex.eier]),
                             klasseRaw: klasseRaw,
                             klasse: klasse,
                             dag: klasseRaw.includes('1') ? 1 : (klasseRaw.includes('2') ? 2 : 1),
-                            epost: String(row[colIndex.epost] || '').trim(),
+                            epost: cleanExcelCell(row[colIndex.epost]),
                             pameldingsDato: pameldingsDato
                         });
                     }
@@ -8906,8 +8926,19 @@
                     // Skip header row, process data rows
                     const dataRows = allRows.slice(1);
 
-                    // Strip markdown bold (**text**) and other formatting
-                    const cleanField = (val) => (val || '').replace(/\*\*/g, '').replace(/"/g, '').trim();
+                    // Grundig rensing av CSV-felter (samme som Excel)
+                    const cleanField = (val) => {
+                        if (val == null) return '';
+                        let s = String(val);
+                        s = s.replace(/<[^>]*>/g, '');
+                        s = s.replace(/&#(\d+);/g, (m, code) => String.fromCharCode(parseInt(code)));
+                        s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                        s = s.replace(/\*{1,3}/g, '');
+                        s = s.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
+                        s = s.replace(/[\u00A0\t]/g, ' ').replace(/\s{2,}/g, ' ');
+                        s = s.replace(/"/g, '');
+                        return s.trim();
+                    };
 
                     let skippedRows = 0;
                     for (let rowNum = 0; rowNum < dataRows.length; rowNum++) {

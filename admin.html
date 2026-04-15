@@ -16068,9 +16068,25 @@
             try {
                 const token = localStorage.getItem('fuglehund_token');
 
-                // Hent klubbId fra URL eller localStorage - terminlisten skal KUN vise denne klubbens prøver
+                // Hent klubbId fra URL eller localStorage
                 const urlParams = new URLSearchParams(window.location.search);
-                const klubbId = urlParams.get('klubbId') || localStorage.getItem('currentKlubbId');
+                let klubbId = urlParams.get('klubbId') || localStorage.getItem('currentKlubbId');
+
+                // Hvis vi har en trial-parameter men IKKE klubbId, hent klubb_id fra prøven
+                // (hindrer at superadmin/multi-klubb-admin ser alle prøver)
+                const trialParam = urlParams.get('trial');
+                if (trialParam && !urlParams.get('klubbId')) {
+                    try {
+                        const proveResp = await fetch(`/api/prover/${trialParam}`);
+                        if (proveResp.ok) {
+                            const proveData = await proveResp.json();
+                            if (proveData.klubb_id) {
+                                klubbId = proveData.klubb_id;
+                                localStorage.setItem('currentKlubbId', klubbId);
+                            }
+                        }
+                    } catch (e) {}
+                }
 
                 // Bygg URL med klubbId-parameter for å tvinge filtrering
                 let url = '/api/prover/mine';

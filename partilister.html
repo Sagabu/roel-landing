@@ -665,49 +665,19 @@
         async function loadParties() {
             let parties = [];
 
-            // If we have a proveId, load from API
+            // If we have a proveId, load from relational tables via partilister API
             if (proveId) {
                 try {
-                    const response = await fetch(`/api/prover/${proveId}/partier`);
+                    const response = await fetch(`/api/prover/${proveId}/partilister`);
                     if (response.ok) {
                         const data = await response.json();
-                        const partierObj = data.partier || {};
-                        const proveInfo = await fetch(`/api/prover/${proveId}`).then(r => r.json()).catch(() => ({}));
-
-                        for (const [partiNavn, hunder] of Object.entries(partierObj)) {
-                            const isVK = partiNavn.toLowerCase().includes('vk');
-                            const isKval = partiNavn.toLowerCase().includes('kval');
-                            const isFinale = partiNavn.toLowerCase().includes('finale');
-                            const ukCount = hunder.filter(h => h.klasse === 'UK').length;
-                            const akCount = hunder.filter(h => h.klasse === 'AK').length;
-
-                            let type = 'ukak';
-                            if (isVK) {
-                                if (isKval) type = 'vk-kval';
-                                else if (isFinale) type = 'vk-finale';
-                                else type = 'vk';
-                            }
-
-                            parties.push({
-                                id: partiNavn,
-                                name: partiNavn,
-                                type,
-                                date: proveInfo.start_dato || new Date().toISOString().split('T')[0],
-                                day: hunder[0]?.dag || 1,
-                                ukCount,
-                                akCount,
-                                dogs: hunder.map((h, i) => ({
-                                    id: h.id,
-                                    hundenavn: h.hund_navn || h.navn,
-                                    regnr: h.regnr,
-                                    rase: h.rase,
-                                    eier: h.eier_navn,
-                                    forer: h.forer_navn,
-                                    klasse: h.klasse,
-                                    premie: h.premie || '',
-                                    cacit: h.cacit || ''
-                                }))
-                            });
+                        if (Array.isArray(data) && data.length > 0) {
+                            parties = data.map(p => ({
+                                ...p,
+                                ukCount: p.dogs.filter(d => d.klasse === 'UK').length,
+                                akCount: p.dogs.filter(d => d.klasse === 'AK').length
+                            }));
+                            console.log('Loaded', parties.length, 'parties from partilister API');
                         }
                     }
                 } catch (e) {

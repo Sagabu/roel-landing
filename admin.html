@@ -9472,7 +9472,8 @@
             }
 
             // Get trial dates
-            const trialStartDate = localStorage.getItem('trialStartDate') || '2026-03-06';
+            // Bruk prøvens FAKTISKE startdato (fra skjemaet, ikke localStorage med gammel fallback)
+            const trialStartDate = document.getElementById('trialDateFrom')?.value || localStorage.getItem('trialStartDate') || new Date().toISOString().split('T')[0];
             const startDate = new Date(trialStartDate);
 
             const parties = [];
@@ -9783,6 +9784,20 @@
 
             // Oppdater statistikk-kortene øverst
             updateStatsFromStorage();
+
+            // VERIFIKASJON: sjekk at alle UK/AK-hunder ble plassert
+            const ukakInParties = parties.filter(p => p.type === 'ukak').reduce((s, p) => s + p.dogs.length, 0);
+            const ukakInVenteliste = Object.values(venteliste).reduce((s, dag) => {
+                if (Array.isArray(dag)) return s;
+                return s + (dag.uk?.length || 0) + (dag.ak?.length || 0);
+            }, 0);
+            const totalUkAk = ukDogs.length + akDogs.length;
+            const ukakPlassert = ukakInParties + ukakInVenteliste;
+            if (ukakPlassert < totalUkAk) {
+                const mangler = totalUkAk - ukakPlassert;
+                console.warn(`[VERIFIKASJON] ${mangler} UK/AK-hunder ble ikke plassert i noe parti eller venteliste!`);
+                debug(`⚠️ ${mangler} UK/AK-hunder MANGLER etter fordeling (${totalUkAk} importert, ${ukakPlassert} plassert)`);
+            }
 
             // Build message with UK distribution info
             let message = `Fil behandlet! ${currentParticipants.length} hunder fordelt:\n\n`;

@@ -672,11 +672,20 @@
                     if (response.ok) {
                         const data = await response.json();
                         if (Array.isArray(data) && data.length > 0) {
-                            parties = data.map(p => ({
-                                ...p,
-                                ukCount: p.dogs.filter(d => d.klasse === 'UK').length,
-                                akCount: p.dogs.filter(d => d.klasse === 'AK').length
-                            }));
+                            const startDato = proveConfig?.startDato;
+                            parties = data.map(p => {
+                                let day = 1;
+                                if (p.date && startDato) {
+                                    const diff = Math.round((new Date(p.date) - new Date(startDato)) / (1000*60*60*24));
+                                    day = diff + 1;
+                                }
+                                return {
+                                    ...p,
+                                    day: day,
+                                    ukCount: p.dogs.filter(d => d.klasse === 'UK').length,
+                                    akCount: p.dogs.filter(d => d.klasse === 'AK').length
+                                };
+                            });
                             console.log('Loaded', parties.length, 'parties from partilister API');
                         }
                     }
@@ -967,6 +976,15 @@
             const partyId = party.id || party.name;
             const bgImg = getPartiBgImage(partyId);
 
+            // Dagnavn fra dato
+            let dagNavn = '';
+            if (party.date) {
+                const d = new Date(party.date + 'T12:00:00');
+                const dager = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
+                dagNavn = dager[d.getDay()] || '';
+            }
+            const partyTitle = (party.displayName || party.name) + (dagNavn ? ' ' + dagNavn : '');
+
             // UK/AK class badges
             let classBadges = '';
             if (!isVK && (party.ukCount || party.akCount)) {
@@ -987,7 +1005,7 @@
                     <div class="px-3 md:px-6 py-3 md:py-5 border-b border-bark-200/60 backdrop-blur-sm">
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex items-center gap-2 md:gap-3 min-w-0 flex-wrap">
-                                <h3 class="text-base md:text-lg font-serif font-semibold text-bark-900 truncate">${party.displayName || party.name}</h3>
+                                <h3 class="text-base md:text-lg font-serif font-semibold text-bark-900 truncate">${partyTitle}</h3>
                                 <span class="px-1.5 md:px-2 py-0.5 md:py-1 ${isVK ? 'bg-amber-100 text-amber-700' : 'bg-warm-100 text-warm-800'} rounded text-[10px] md:text-xs font-medium flex-shrink-0">${typeLabel}</span>
                                 ${party.terreng ? `<span class="text-xs text-bark-600">📍 ${party.terreng}</span>` : ''}
                             </div>

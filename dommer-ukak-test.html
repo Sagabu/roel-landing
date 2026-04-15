@@ -37,6 +37,17 @@
         .compact-input { height: 28px; font-size: 12px; }
         .section-title { font-size: 9px; }
 
+        /* Mobile touch-targets: minimum 44x44px for accessibility */
+        @media (max-width: 768px) {
+            input[type="number"], input[type="text"], select, button {
+                min-height: 44px;
+            }
+            .score-input, .compact-input {
+                min-height: 44px;
+                font-size: 16px; /* Prevents iOS zoom on focus */
+            }
+        }
+
         /* Zoom mode */
         .zoom-mode .dog-card { display: none; }
         .zoom-mode .dog-card.zoomed {
@@ -568,6 +579,17 @@
             zoomedDog: null  // null = split view, 1 eller 2 = zoomed på den hunden
         };
 
+        // Dommer-info fra session
+        let dommerTelefon = null;
+        let proveId = null;
+        try {
+            const session = JSON.parse(localStorage.getItem('judgeSession') || '{}');
+            dommerTelefon = session.phone || null;
+            proveId = session.assignedProve || null;
+        } catch (e) {
+            console.warn('Kunne ikke lese judgeSession:', e);
+        }
+
         // Zoom inn/ut på et kort
         function toggleZoom(dogPosition) {
             const mainContainer = document.getElementById('mainContainer');
@@ -967,6 +989,61 @@
                 headers: headers,
                 body: JSON.stringify({ value: dataToSave })
             }).catch(err => console.warn('Kunne ikke lagre til server:', err));
+
+            // ALLTID lagre dommerens egne notater til dommer_notater-tabellen
+            // Dette sikrer at alle dommere har sine notater tilgjengelige på tvers av enheter
+            if (dommerTelefon && proveId) {
+                saveDommerNotaterUkak(partyId);
+            }
+        }
+
+        // Lagre dommerens individuelle notater for UK/AK
+        async function saveDommerNotaterUkak(partyId) {
+            const token = localStorage.getItem('fuglehund_token');
+            if (!token) return;
+
+            for (const [hundNr, dogData] of Object.entries(state.dogData)) {
+                if (!dogData) continue;
+
+                // Finn hund-ID fra partilisten
+                const hund = partyList.find(p => p.nr === parseInt(hundNr));
+                const hundId = hund?.hundId || hundNr;
+
+                // Lagre for hvert slipp
+                const slipps = dogData.slipps || {};
+                for (const [slippNr, slippData] of Object.entries(slipps)) {
+                    try {
+                        await fetch(`/api/dommer-notater/${proveId}/${partyId}/${hundId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + token
+                            },
+                            body: JSON.stringify({
+                                slipp_nr: parseInt(slippNr),
+                                slipptid: slippData.slipptid || 0,
+                                stand_m: slippData.stand_m || 0,
+                                stand_u: slippData.stand_u || 0,
+                                tomstand: slippData.tomstand || 0,
+                                makker_stand: slippData.makker_stand || 0,
+                                sjanse: slippData.sjanse || 0,
+                                jaktlyst: slippData.jaktlyst || null,
+                                fart: slippData.fart || null,
+                                selvstendighet: slippData.selvstendighet || null,
+                                soksbredde: slippData.soksbredde || null,
+                                reviering: slippData.reviering || null,
+                                samarbeid: slippData.samarbeid || null,
+                                presisjon: slippData.presisjon || null,
+                                reising: slippData.reising || null,
+                                apport: slippData.apport ? 1 : 0,
+                                notater: slippData.kommentar || ''
+                            })
+                        });
+                    } catch (err) {
+                        // Stille feil - ikke avbryt
+                    }
+                }
+            }
         }
 
         function resetAll() {

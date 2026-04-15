@@ -8187,20 +8187,34 @@
             window._dlHundDagNr = dagNr;
             window._dlHundKlasse = klasse;
 
-            // Venteliste-opsjoner
+            // Venteliste-opsjoner med tydelig markering av riktig/feil dag
+            const dagNavnHund = getDayName(dagNr);
             const ventelisteOptions = `<option disabled style="font-weight:bold;color:#666;">── Ventelister ──</option>` +
                 Array.from({length: antallProvedagerDL}, (_, i) => i + 1).map(d => {
                     const dagNavn = getDayName(d);
-                    return `<option value="__venteliste_dag${d}_${klasse}">Venteliste ${klasse} — ${dagNavn}</option>`;
+                    const isMatch = d === dagNr;
+                    const prefix = isMatch ? '✅ ' : '⚠️ ';
+                    const suffix = isMatch ? ' (riktig dag)' : ' (ANNEN DAG!)';
+                    return `<option value="__venteliste_dag${d}_${klasse}" data-ventedag="${d}"${isMatch ? ' style="font-weight:bold;"' : ' style="color:#b45309;"'}>${prefix}Venteliste ${klasse} — ${dagNavn}${suffix}</option>`;
                 }).join('');
 
             const dialogHtml = '<div id="moveDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
                 '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">' +
                     '<h3 class="text-lg font-bold text-bark-900 mb-4">Flytt hund</h3>' +
-                    '<p class="text-sm text-bark-600 mb-4">Flytt <strong>' + (dog.hundenavn || '') + '</strong> (' + (klasse) + ', dag ' + dagNr + ') fra deltakerliste</p>' +
+                    '<div class="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200">' +
+                        '<p class="text-sm text-bark-800"><strong>' + (dog.hundenavn || '') + '</strong></p>' +
+                        '<p class="text-xs text-bark-600 mt-1">Eier: ' + (dog.eier || '—') + '</p>' +
+                        '<div class="mt-2 flex gap-2">' +
+                            '<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-forest-100 text-forest-800">' + klasse + '</span>' +
+                            '<span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800">📅 Påmeldt: ' + dagNavnHund + ' (dag ' + dagNr + ')</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div id="dlDagWarning" class="hidden mb-3 p-3 rounded-lg bg-red-50 border border-red-300">' +
+                        '<p class="text-sm font-bold text-red-700">⚠️ OBS: Du er i ferd med å flytte hunden til en annen dag enn den er påmeldt!</p>' +
+                    '</div>' +
                     '<div class="mb-4">' +
                         '<label class="block text-sm font-medium text-bark-700 mb-1">Flytt til:</label>' +
-                        '<select id="dlMoveDestination" class="w-full px-4 py-2 rounded-xl border border-bark-200">' +
+                        '<select id="dlMoveDestination" class="w-full px-4 py-2 rounded-xl border border-bark-200" onchange="oppdaterDagVarselDL()">' +
                             '<option disabled style="font-weight:bold;color:#666;">── Partier ──</option>' +
                             partyOptions +
                             ventelisteOptions +
@@ -8216,11 +8230,34 @@
             document.body.insertAdjacentHTML('beforeend', dialogHtml);
         }
 
+        // Live dag-varsel i dropdown når man velger feil dag
+        function oppdaterDagVarselDL() {
+            const select = document.getElementById('dlMoveDestination');
+            const warning = document.getElementById('dlDagWarning');
+            if (!select || !warning) return;
+
+            const opt = select.options[select.selectedIndex];
+            const hundDag = window._dlHundDagNr;
+            let mismatch = false;
+
+            if (opt?.dataset?.dag) {
+                mismatch = parseInt(opt.dataset.dag) !== hundDag;
+            }
+            if (opt?.dataset?.ventedag) {
+                mismatch = parseInt(opt.dataset.ventedag) !== hundDag;
+            }
+
+            warning.classList.toggle('hidden', !mismatch);
+        }
+
         // Bekreft flytt fra deltakerliste til parti eller venteliste — med dag-mismatch-varsel
         async function bekreftDeltakerlisteFlytt() {
             const select = document.getElementById('dlMoveDestination');
             const destination = select?.value;
             if (!destination) return;
+
+            const hundDag = window._dlHundDagNr;
+            const hundDagNavn = getDayName(hundDag);
 
             // Venteliste-flytt: __venteliste_dagX_KLASSE
             if (destination.startsWith('__venteliste_')) {
@@ -8228,6 +8265,17 @@
                 if (!match) return;
                 const dagNr = parseInt(match[1]);
                 const klasse = match[2].toLowerCase();
+
+                if (dagNr !== hundDag) {
+                    const venteDagNavn = getDayName(dagNr);
+                    const bekreft = confirm(
+                        `⚠️ FEIL DAG!\n\n` +
+                        `Hunden er påmeldt ${hundDagNavn} (dag ${hundDag}),\n` +
+                        `men du prøver å flytte til venteliste for ${venteDagNavn} (dag ${dagNr}).\n\n` +
+                        `Er du HELT SIKKER på at dette er riktig?`
+                    );
+                    if (!bekreft) return;
+                }
 
                 closeMoveDialog();
                 await flyttFraDeltakerlisteTilVenteliste(window._deltakerliste_listeKey, window._deltakerliste_hundIdx, dagNr, klasse);
@@ -8237,13 +8285,14 @@
             // Parti-flytt: sjekk dag-mismatch
             const valgtOption = select.options[select.selectedIndex];
             const partiDag = parseInt(valgtOption?.dataset?.dag);
-            const hundDag = window._dlHundDagNr;
 
             if (partiDag && hundDag && partiDag !== hundDag) {
+                const partiDagNavn = getDayName(partiDag);
                 const bekreft = confirm(
-                    `⚠️ Dag-mismatch!\n\n` +
-                    `Hunden er påmeldt dag ${hundDag}, men partiet er på dag ${partiDag}.\n\n` +
-                    `Er du sikker på at du vil flytte hunden til et parti på en annen dag?`
+                    `⚠️ FEIL DAG!\n\n` +
+                    `Hunden er påmeldt ${hundDagNavn} (dag ${hundDag}),\n` +
+                    `men partiet er på ${partiDagNavn} (dag ${partiDag}).\n\n` +
+                    `Er du HELT SIKKER på at dette er riktig?`
                 );
                 if (!bekreft) return;
             }

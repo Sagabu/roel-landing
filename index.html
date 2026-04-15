@@ -697,11 +697,47 @@
             if (innhold.dataset.loaded === '1') return;
 
             try {
-                const resp = await fetch(`/api/storage/praktiskInfo_${proveId}`);
-                if (resp.ok) {
-                    const data = await resp.json();
+                // Hent praktisk info og sjekk om partilister finnes parallelt
+                const [infoResp, partierResp] = await Promise.all([
+                    fetch(`/api/storage/praktiskInfo_${proveId}`),
+                    fetch(`/api/prover/${proveId}/partier`)
+                ]);
+
+                const parts = [];
+
+                // Sjekk om partilister finnes
+                let harPartilister = false;
+                if (partierResp.ok) {
+                    const partierData = await partierResp.json();
+                    const partier = partierData.partier || {};
+                    harPartilister = Object.keys(partier).length > 0;
+                }
+                // Sjekk også VK samlet liste
+                if (!harPartilister) {
+                    try {
+                        const vkResp = await fetch(`/api/storage/vkSamletListe_${proveId}`);
+                        if (vkResp.ok) {
+                            const vkData = await vkResp.json();
+                            if (vkData.value && vkData.value.hunder?.length > 0) harPartilister = true;
+                        }
+                    } catch(e) {}
+                }
+
+                // Vis partilister-lenke hvis de finnes
+                if (harPartilister) {
+                    parts.push(`<div class="mb-4">
+                        <a href="partilister.html?prove=${proveId}" class="inline-flex items-center gap-2 bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                            </svg>
+                            Se partilister
+                        </a>
+                    </div>`);
+                }
+
+                if (infoResp.ok) {
+                    const data = await infoResp.json();
                     const info = data.value || {};
-                    const parts = [];
 
                     if (info.oppropTid || info.oppropSted) {
                         parts.push(`<div class="mb-3"><strong class="text-bark-800">Opprop:</strong> ${[info.oppropTid, info.oppropSted].filter(Boolean).join(', ')}</div>`);
@@ -724,14 +760,12 @@
                     if (info.premieutdelingSted) {
                         parts.push(`<div class="mt-3"><strong class="text-bark-800">Premieutdeling:</strong> ${escapeHtml(info.premieutdelingSted)}</div>`);
                     }
+                }
 
-                    if (parts.length === 0) {
-                        innhold.innerHTML = '<span class="text-bark-400 italic">Ingen ytterligere informasjon tilgjengelig ennå.</span>';
-                    } else {
-                        innhold.innerHTML = parts.join('');
-                    }
-                } else {
+                if (parts.length === 0) {
                     innhold.innerHTML = '<span class="text-bark-400 italic">Ingen ytterligere informasjon tilgjengelig ennå.</span>';
+                } else {
+                    innhold.innerHTML = parts.join('');
                 }
                 innhold.dataset.loaded = '1';
             } catch (err) {

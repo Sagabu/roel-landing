@@ -8135,14 +8135,19 @@
             const parties = getTrialParties();
             const compatibleParties = parties.filter(p => dogIsVK ? (p.type === 'vk' || p.type === 'vk_kval') : p.type === 'ukak');
 
-            // Beregn dag-nummer for hvert parti fra dato
+            // Beregn dag-nummer for hvert parti — bruk ALLTID prøvedato som kilde
             const startDato = document.getElementById('trialDateFrom')?.value;
+            const antallProvedagerDL = parseInt(document.getElementById('antallProvedager')?.value) || 2;
             function getPartiDagNr(p) {
-                if (p.day) return parseInt(p.day);
+                // Beregn fra dato først (mest pålitelig)
                 if (p.date && startDato) {
                     const diff = Math.round((new Date(p.date) - new Date(startDato)) / (1000*60*60*24));
-                    return diff + 1;
+                    const dagNrBeregnet = diff + 1;
+                    // Hvis beregnet dag er innenfor gyldig rekkevidde, bruk den
+                    if (dagNrBeregnet >= 1 && dagNrBeregnet <= antallProvedagerDL) return dagNrBeregnet;
                 }
+                // Fallback til p.day hvis dato-beregning gir ugyldig resultat
+                if (p.day) return parseInt(p.day);
                 return null;
             }
 

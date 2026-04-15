@@ -8053,7 +8053,11 @@
             const dlKey = `ukakDeltakerlister_${proveId}`;
             const deltakerlister = JSON.parse(localStorage.getItem(dlKey) || '{}');
 
-            if (!deltakerlister[listeKey] || !deltakerlister[listeKey][hundIdx]) return;
+            if (!deltakerlister[listeKey] || !deltakerlister[listeKey][hundIdx]) {
+                alert('Hunden er allerede flyttet. Listen oppdateres.');
+                renderUkakDeltakerlister(deltakerlister);
+                return;
+            }
 
             // Fjern hund fra deltakerliste
             const hund = deltakerlister[listeKey].splice(hundIdx, 1)[0];
@@ -8070,24 +8074,23 @@
             parti.ukCount = parti.dogs.filter(d => d.klasse === 'UK').length;
             parti.akCount = parti.dogs.filter(d => d.klasse === 'AK').length;
 
-            // Lagre begge
+            // Lagre lokalt FØRST
             setTrialParties(parties);
             localStorage.setItem(dlKey, JSON.stringify(deltakerlister));
 
-            const token = localStorage.getItem('fuglehund_token');
-            if (proveId) {
-                try {
-                    await fetch(`/api/storage/ukakDeltakerlister_${proveId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
-                        body: JSON.stringify({ value: deltakerlister })
-                    });
-                } catch(e) {}
-            }
-
-            // Re-render
+            // Re-render UMIDDELBART (før server-kall) slik at indekser er korrekte
             renderAllParties(parties);
             renderUkakDeltakerlister(deltakerlister);
+
+            // Server-lagring i bakgrunnen (non-blocking)
+            const token = localStorage.getItem('fuglehund_token');
+            if (proveId) {
+                fetch(`/api/storage/ukakDeltakerlister_${proveId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                    body: JSON.stringify({ value: deltakerlister })
+                }).catch(e => console.warn('Server-lagring av deltakerlister feilet:', e));
+            }
         }
 
         // Last deltakerlister ved oppstart (hvis de finnes)

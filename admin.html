@@ -6785,9 +6785,10 @@
                                 <div class="text-xs text-bark-500 truncate">${escapeHtmlLocal(h.regnr || '')} · ${escapeHtmlLocal(h.forer || h.eier || '')}</div>
                             </div>
                         </div>
-                        <button onclick="flyttVkTilVenteliste(${idx})" class="text-xs text-bark-400 hover:text-amber-600 transition px-2 py-1" title="Flytt til venteliste">
-                            → Venteliste
-                        </button>
+                        <div class="flex gap-1 flex-shrink-0">
+                            <button onclick="flyttVkTilPartiDialog(${idx})" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt til parti</button>
+                            <button onclick="flyttVkTilVenteliste(${idx})" class="text-xs text-bark-400 hover:text-amber-600 transition px-2 py-1" title="Flytt til venteliste">→ Venteliste</button>
+                        </div>
                     </div>
                 `).join('');
             }
@@ -6906,6 +6907,66 @@
                 }
             } catch (e) {}
             return true;
+        }
+
+        // Flytt VK-hund fra samlet liste til et spesifikt parti
+        async function flyttVkTilPartiDialog(idx) {
+            const samletListe = await hentVkSamletListe();
+            if (!samletListe || !samletListe.hunder[idx]) return;
+            const hund = samletListe.hunder[idx];
+
+            const parties = getTrialParties();
+            const vkPartier = parties.filter(p => p.type === 'vk' || p.type === 'vk_kval');
+
+            if (vkPartier.length === 0) {
+                alert('Ingen VK-partier opprettet ennå. Bruk "Fordel til partier" først, eller opprett partiene manuelt.');
+                return;
+            }
+
+            const partyOptions = vkPartier.map(p =>
+                '<option value="' + p.name + '">' + (p.displayName || p.name) + ' (' + (p.dogs?.length || 0) + ' hunder)</option>'
+            ).join('');
+
+            const dialogHtml = '<div id="moveDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
+                '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">' +
+                    '<h3 class="text-lg font-bold text-bark-900 mb-4">Flytt VK-hund til parti</h3>' +
+                    '<p class="text-sm text-bark-600 mb-4">Flytt <strong>' + escapeHtmlLocal(hund.hundenavn || hund.navn || '') + '</strong> fra VK deltakerliste</p>' +
+                    '<div class="mb-4">' +
+                        '<label class="block text-sm font-medium text-bark-700 mb-1">Flytt til:</label>' +
+                        '<select id="vkMoveDestination" class="w-full px-4 py-2 rounded-xl border border-bark-200">' +
+                            partyOptions +
+                        '</select>' +
+                    '</div>' +
+                    '<div class="flex gap-3 justify-end">' +
+                        '<button onclick="closeMoveDialog()" class="px-4 py-2 rounded-xl text-bark-600 hover:bg-bark-100 transition">Avbryt</button>' +
+                        '<button onclick="bekreftVkTilPartiFlytt(' + idx + ')" class="px-4 py-2 rounded-xl bg-warm-500 hover:bg-warm-600 text-white font-medium transition">Flytt</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        async function bekreftVkTilPartiFlytt(idx) {
+            const partiNavn = document.getElementById('vkMoveDestination')?.value;
+            if (!partiNavn) return;
+            closeMoveDialog();
+
+            const samletListe = await hentVkSamletListe();
+            if (!samletListe || !samletListe.hunder[idx]) return;
+
+            const hund = samletListe.hunder.splice(idx, 1)[0];
+
+            const parties = getTrialParties();
+            const parti = parties.find(p => p.name === partiNavn);
+            if (!parti) { alert('Parti ikke funnet'); return; }
+
+            parti.dogs.push(hund);
+
+            setTrialParties(parties);
+            await lagreVkSamletListe(samletListe);
+
+            renderAllParties(parties);
+            await renderVkDeltakerliste();
         }
 
         // Flytt hund fra deltakerliste til venteliste (manuell)
@@ -8007,21 +8068,15 @@
                 const partier = getTrialParties().filter(p => p.type === 'ukak' && p.day === dagNr);
 
                 const rader = hunder.map((dog, i) => {
-                    const partiOptions = partier.map(p =>
-                        `<option value="${p.name}">${p.name} (${p.dogs?.length || 0})</option>`
-                    ).join('');
-
+                    const regnrEsc = (dog.regnr || '').replace(/'/g, "\\'");
                     const bgClass = i % 2 === 0 ? 'bg-white' : 'bg-bark-50';
                     return `<div class="grid grid-cols-5 md:grid-cols-6 gap-0 ${bgClass} hover:bg-warm-50 transition border-b border-bark-100 items-center">
                         <div class="px-3 py-2 text-center"><span class="inline-flex w-6 h-6 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-600">${i+1}</span></div>
                         <div class="px-3 py-2 col-span-2"><div class="font-semibold text-bark-900 text-sm truncate">${dog.hundenavn || dog.navn || ''}</div><div class="text-xs text-bark-500 truncate">${dog.regnr || ''}</div></div>
                         <div class="px-3 py-2 text-sm text-bark-700 truncate">${dog.forer || dog.eier || ''}</div>
                         <div class="px-3 py-2 text-sm text-bark-700 hidden md:block truncate">${dog.rase || ''}</div>
-                        <div class="px-3 py-2">
-                            <select onchange="flyttFraDeltakerlisteTilParti('${key}', ${i}, this.value)" class="w-full px-2 py-1 text-xs border border-warm-300 rounded-lg bg-white focus:border-warm-500 focus:outline-none">
-                                <option value="">Flytt til...</option>
-                                ${partiOptions}
-                            </select>
+                        <div class="px-3 py-2 text-center">
+                            <button onclick="flyttFraDeltakerlisteDialog('${key}', ${i})" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt til parti</button>
                         </div>
                     </div>`;
                 }).join('');
@@ -8043,6 +8098,62 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        // Åpne flytt-dialog for hund fra deltakerliste
+        function flyttFraDeltakerlisteDialog(listeKey, hundIdx) {
+            const proveId = getCurrentTrialId();
+            const dlKey = `ukakDeltakerlister_${proveId}`;
+            const deltakerlister = JSON.parse(localStorage.getItem(dlKey) || '{}');
+            const dog = deltakerlister[listeKey]?.[hundIdx];
+            if (!dog) { alert('Hunden er allerede flyttet.'); return; }
+
+            // Bruk openMoveDialog-systemet: legg hunden midlertidig i minnet
+            // og sett kilde til 'deltakerliste' slik at confirmMove kan håndtere det
+            moveDialogDog = dog;
+            moveDialogFromParty = '__deltakerliste__';
+            moveDialogFromPartyObj = null;
+            window._deltakerliste_listeKey = listeKey;
+            window._deltakerliste_hundIdx = hundIdx;
+
+            const [dagKey, klasse] = listeKey.split('_');
+            const dagNr = parseInt(dagKey.replace('dag', ''));
+            const dogIsVK = klasse === 'VK';
+
+            const parties = getTrialParties();
+            const compatibleParties = parties.filter(p => dogIsVK ? p.type === 'vk' : (p.type === 'ukak' && p.day === dagNr));
+
+            const partyOptions = compatibleParties.map(p => {
+                const isFull = p.dogs.length >= 14 && p.type !== 'vk';
+                return '<option value="' + p.name + '">' + (p.displayName || p.name) + ' (' + p.dogs.length + ' hunder)' + (isFull ? ' FULLT' : '') + '</option>';
+            }).join('');
+
+            const dialogHtml = '<div id="moveDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
+                '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">' +
+                    '<h3 class="text-lg font-bold text-bark-900 mb-4">Flytt hund til parti</h3>' +
+                    '<p class="text-sm text-bark-600 mb-4">Flytt <strong>' + (dog.hundenavn || '') + '</strong> (' + (klasse) + ') fra deltakerliste</p>' +
+                    '<div class="mb-4">' +
+                        '<label class="block text-sm font-medium text-bark-700 mb-1">Flytt til:</label>' +
+                        '<select id="dlMoveDestination" class="w-full px-4 py-2 rounded-xl border border-bark-200">' +
+                            partyOptions +
+                        '</select>' +
+                    '</div>' +
+                    '<div class="flex gap-3 justify-end">' +
+                        '<button onclick="closeMoveDialog()" class="px-4 py-2 rounded-xl text-bark-600 hover:bg-bark-100 transition">Avbryt</button>' +
+                        '<button onclick="bekreftDeltakerlisteFlytt()" class="px-4 py-2 rounded-xl bg-warm-500 hover:bg-warm-600 text-white font-medium transition">Flytt</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        // Bekreft flytt fra deltakerliste til parti
+        async function bekreftDeltakerlisteFlytt() {
+            const partiNavn = document.getElementById('dlMoveDestination')?.value;
+            if (!partiNavn) return;
+            closeMoveDialog();
+            await flyttFraDeltakerlisteTilParti(window._deltakerliste_listeKey, window._deltakerliste_hundIdx, partiNavn);
         }
 
         // Flytt én hund fra deltakerliste til et parti

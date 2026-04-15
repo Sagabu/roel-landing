@@ -6085,6 +6085,14 @@
                     console.warn('Kunne ikke slette VK samlet liste fra server:', e);
                 }
 
+                // Slett trialParticipants fra server
+                try {
+                    await fetch(`/api/storage/trialParticipants_${proveId}`, {
+                        method: 'DELETE',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                } catch(e) {}
+
                 // Slett UK/AK-deltakerlister
                 localStorage.removeItem(`ukakDeltakerlister_${proveId}`);
                 try {
@@ -8933,13 +8941,19 @@
                         // Normaliser mellomrom
                         s = s.replace(/[\u00A0\t]/g, ' ');
 
-                        // PDF-artefakt: scattered letters (enkeltbokstav mellomrom gjentatt 3+)
-                        // "K l o k k e r h a u g" → "Klokkerhaug", "L ø v e n s k a r e t s" → "Løvenskarets"
+                        // PDF-artefakt: scattered letters (enkeltbokstav mellomrom gjentatt 2+)
+                        // "K l o k k e r h a u g" → "Klokkerhaug", "Ha g en" → "Hagen", "W å gbø" → "Wågbø"
                         s = s.replace(/\b([A-Za-zÆØÅæøå])(?: ([A-Za-zÆØÅæøå])){2,}\b/g, m => m.replace(/ /g, ''));
+                        // Fang også kortere artefakter: "Ha g en" (kort prefiks + enkeltbokstav + suffix)
+                        s = s.replace(/\b([A-Za-zÆØÅæøå]{1,2}) ([a-zæøå]) ([a-zæøå])/g, '$1$2$3');
+                        // Fang "Husomber g ets" (lang prefiks + enkeltbokstav + suffix, kun lowercase)
+                        s = s.replace(/([a-zæøå]{2,}) ([a-zæøå]) ([a-zæøå]{2,})/g, '$1$2$3');
 
                         // PDF-artefakt: mellomrom rundt bindestrek ("I- Atlas" → "I-Atlas", "E - Nori" → "E-Nori")
                         s = s.replace(/(\w)\s*-\s+(\w)/g, '$1-$2');
 
+                        // PDF-artefakt: mellomrom FØR komma ("Sandsaunet , Torstein" → "Sandsaunet, Torstein")
+                        s = s.replace(/ +,/g, ',');
                         // PDF-artefakt: mellomrom etter komma i navn ("Stav,        Asbjørn" → "Stav, Asbjørn")
                         s = s.replace(/,\s{2,}/g, ', ');
 

@@ -4246,12 +4246,34 @@
 
         function setTrialParties(parties) {
             const key = getTrialPartiesKey();
-            if (!key) return; // Ingen trialId - ikke lagre noe (unngår global lekkasje)
+            if (!key) return;
 
-            // Lagre lokalt først (for umiddelbar respons)
+            // Sikre at parti-datoer er korrekte (renser gamle feil-datoer fra localStorage)
+            const startDatoEl = document.getElementById('trialDateFrom');
+            if (startDatoEl?.value && Array.isArray(parties)) {
+                const start = new Date(startDatoEl.value);
+                parties.forEach(p => {
+                    if (p.date) {
+                        const pDate = new Date(p.date);
+                        const diff = Math.round((pDate - start) / (1000*60*60*24));
+                        if (diff < 0 || diff > 10) {
+                            // Dato er utenfor prøveperioden — fiks basert på day-property
+                            const dagNr = p.day || 1;
+                            const riktigDato = new Date(start);
+                            riktigDato.setDate(start.getDate() + (dagNr - 1));
+                            p.date = riktigDato.toISOString().split('T')[0];
+                        }
+                        // Sett day fra dato hvis mangler
+                        if (!p.day) {
+                            const d = Math.round((new Date(p.date) - start) / (1000*60*60*24));
+                            if (d >= 0) p.day = d + 1;
+                        }
+                    }
+                });
+            }
+
             localStorage.setItem(key, JSON.stringify(parties));
 
-            // Synkroniser til server i bakgrunnen
             const proveId = getCurrentTrialId();
             if (proveId) {
                 syncPartiesToServer(parties, proveId);

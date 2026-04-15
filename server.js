@@ -4494,6 +4494,28 @@ app.get("/api/hunder/:id", (c) => {
 // HUND-SØK PÅ REGNR (for bruker-registrering)
 // ============================================
 
+// Batch-oppslag av hunder basert på regnr-liste (for import-overstyring)
+app.post("/api/hunder/lookup", async (c) => {
+  try {
+    const body = await c.req.json();
+    const regnrList = body.regnrList || [];
+    if (!Array.isArray(regnrList) || regnrList.length === 0) {
+      return c.json({});
+    }
+    const result = {};
+    const stmt = db.prepare("SELECT regnr, navn, rase FROM hunder WHERE regnr = ?");
+    for (const regnr of regnrList.slice(0, 500)) {
+      const hund = stmt.get(regnr);
+      if (hund) {
+        result[regnr] = { navn: hund.navn, rase: hund.rase };
+      }
+    }
+    return c.json(result);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // Søk etter hund basert på registreringsnummer
 // Normaliserer regnr for å håndtere variasjoner (mellomrom, case)
 app.get("/api/hunder/sok/regnr", (c) => {

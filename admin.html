@@ -8764,21 +8764,34 @@
                     debug('Kolonneindekser: ' + JSON.stringify(colIndex));
 
                     // Grundig rensefunksjon for Excel-celler
-                    // Håndterer: rik tekst med **bold**, HTML-entiteter (&#32;), HTML-tags, ekstra mellomrom
+                    // Håndterer: rik tekst, HTML, PDF-konverterings-artefakter
                     function cleanExcelCell(val) {
                         if (val == null) return '';
                         let s = String(val);
-                        // Fjern HTML-tags (<b>, <i>, <span>, etc.)
+                        // Fjern HTML-tags
                         s = s.replace(/<[^>]*>/g, '');
-                        // Dekod HTML-entiteter (&#32; &#39; &amp; &lt; etc.)
+                        // Dekod HTML-entiteter
                         s = s.replace(/&#(\d+);/g, (m, code) => String.fromCharCode(parseInt(code)));
                         s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-                        // Fjern markdown bold/italic (**)
+                        // Fjern markdown bold/italic
                         s = s.replace(/\*{1,3}/g, '');
-                        // Fjern usynlige tegn (zero-width space, soft hyphen, etc.)
+                        // Fjern usynlige tegn
                         s = s.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
-                        // Normaliser mellomrom (non-breaking space, tabs, multiple spaces → single space)
-                        s = s.replace(/[\u00A0\t]/g, ' ').replace(/\s{2,}/g, ' ');
+                        // Normaliser mellomrom
+                        s = s.replace(/[\u00A0\t]/g, ' ');
+
+                        // PDF-artefakt: scattered letters (enkeltbokstav mellomrom gjentatt 3+)
+                        // "K l o k k e r h a u g" → "Klokkerhaug", "L ø v e n s k a r e t s" → "Løvenskarets"
+                        s = s.replace(/\b([A-Za-zÆØÅæøå])(?: ([A-Za-zÆØÅæøå])){2,}\b/g, m => m.replace(/ /g, ''));
+
+                        // PDF-artefakt: mellomrom rundt bindestrek ("I- Atlas" → "I-Atlas", "E - Nori" → "E-Nori")
+                        s = s.replace(/(\w)\s*-\s+(\w)/g, '$1-$2');
+
+                        // PDF-artefakt: mellomrom etter komma i navn ("Stav,        Asbjørn" → "Stav, Asbjørn")
+                        s = s.replace(/,\s{2,}/g, ', ');
+
+                        // Kollaps alle gjenværende multiple mellomrom
+                        s = s.replace(/\s{2,}/g, ' ');
                         return s.trim();
                     }
 
@@ -8938,7 +8951,7 @@
                     // Skip header row, process data rows
                     const dataRows = allRows.slice(1);
 
-                    // Grundig rensing av CSV-felter (samme som Excel)
+                    // Grundig rensing av CSV-felter (samme PDF-artefakt-håndtering som Excel)
                     const cleanField = (val) => {
                         if (val == null) return '';
                         let s = String(val);
@@ -8947,7 +8960,12 @@
                         s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
                         s = s.replace(/\*{1,3}/g, '');
                         s = s.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '');
-                        s = s.replace(/[\u00A0\t]/g, ' ').replace(/\s{2,}/g, ' ');
+                        s = s.replace(/[\u00A0\t]/g, ' ');
+                        // PDF-artefakter
+                        s = s.replace(/\b([A-Za-zÆØÅæøå])(?: ([A-Za-zÆØÅæøå])){2,}\b/g, m => m.replace(/ /g, ''));
+                        s = s.replace(/(\w)\s*-\s+(\w)/g, '$1-$2');
+                        s = s.replace(/,\s{2,}/g, ', ');
+                        s = s.replace(/\s{2,}/g, ' ');
                         s = s.replace(/"/g, '');
                         return s.trim();
                     };
@@ -9014,6 +9032,43 @@
                 });
 
                 debug('Etter deduplisering: ' + participants.length + ' deltakere');
+
+                // Overstyring: hvis hunden allerede finnes i systemet (hunder-tabell),
+                // bruk det EKSISTERENDE navnet fra databasen i stedet for importert navn.
+                // Dette fikser PDF-konverterings-feil automatisk for kjente hunder.
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const regnrList = [...new Set(participants.map(p => p.regnr))];
+                    let overstyrt = 0;
+
+                    // Slå opp i batches (maks 20 om gangen for å unngå for lang URL)
+                    for (let i = 0; i < regnrList.length; i += 20) {
+                        const batch = regnrList.slice(i, i + 20);
+                        const lookupResp = await fetch('/api/hunder/lookup', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                            body: JSON.stringify({ regnrList: batch })
+                        });
+                        if (lookupResp.ok) {
+                            const eksisterende = await lookupResp.json();
+                            // eksisterende = { "NO12345/24": { navn: "Riktig Navn", rase: "Setter" }, ... }
+                            for (const p of participants) {
+                                const match = eksisterende[p.regnr];
+                                if (match && match.navn && match.navn !== p.hundenavn) {
+                                    debug(`Overstyrer: [${p.hundenavn}] → [${match.navn}] (fra database)`);
+                                    p.hundenavn = match.navn;
+                                    if (match.rase) p.rase = match.rase;
+                                    overstyrt++;
+                                }
+                            }
+                        }
+                    }
+                    if (overstyrt > 0) {
+                        debug(`${overstyrt} hundenavn overstyrt fra eksisterende database`);
+                    }
+                } catch (e) {
+                    debug('Kunne ikke slå opp eksisterende hunder: ' + e.message);
+                }
 
                 if (participants.length === 0) {
                     alert('Ingen deltakere funnet i filen. Sjekk at filen har riktig format:\nRegnr, Navn, Rase, Eier, Fører, Klasse, Epost');

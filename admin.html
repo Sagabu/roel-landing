@@ -9894,7 +9894,7 @@
                 // Merk: Ingen parti-objekter opprettes her. Prøveledelsen fordeler senere.
             }
 
-            // Store waitlist (med klasseinformasjon)
+            // Store waitlist (med klasseinformasjon) — lagre lokalt først
             setTrialVenteliste(venteliste);
 
             // Lagre VK-konfigurasjon for hele prøven (brukes av dommer-siden)
@@ -9917,30 +9917,41 @@
             };
             localStorage.setItem('trialVkType', vkTypeGlobal);
             localStorage.setItem(getTrialVkConfigKey(), JSON.stringify(vkConfig));
-            // Synkroniser til server med prøve-spesifikke nøkler
+
+            // Synkroniser ALT til server med await (garanterer at data lagres)
             const proveId = getCurrentTrialId();
             const token = localStorage.getItem('fuglehund_token');
             if (proveId) {
+                // Venteliste — await for å sikre at den lagres
+                try {
+                    await syncVentelisteToServer(venteliste, proveId);
+                } catch (e) {
+                    console.error('Venteliste sync feilet:', e);
+                    alert('⚠️ Venteliste ble ikke lagret til server. Prøv å laste siden på nytt.');
+                }
+
+                // Partier — await for å sikre at de lagres
+                try {
+                    await syncPartiesToServer(parties, proveId);
+                } catch (e) {
+                    console.error('Partilister sync feilet:', e);
+                    alert('⚠️ Partilister ble ikke lagret til server. Prøv å laste siden på nytt.');
+                }
+
+                // VK-konfig (mindre kritisk, fire-and-forget ok)
                 fetch(`/api/storage/trialVkType_${proveId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': token ? `Bearer ${token}` : ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
                     body: JSON.stringify({ value: vkTypeGlobal })
                 }).catch(err => console.warn('Kunne ikke lagre vkType til server:', err));
                 fetch(`/api/storage/trialVkConfig_${proveId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': token ? `Bearer ${token}` : ''
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
                     body: JSON.stringify({ value: vkConfig })
-                }).then(() => console.log('✅ VK-konfigurasjon synkronisert til server'))
-                  .catch(err => console.warn('Kunne ikke lagre vkConfig til server:', err));
+                }).catch(err => console.warn('Kunne ikke lagre vkConfig til server:', err));
             }
 
-            // Save parties to localStorage
+            // Save parties to localStorage (backup — server er allerede oppdatert)
             setTrialParties(parties);
 
             // Render partier med de globale funksjonene (inkluderer flytt-knapper)

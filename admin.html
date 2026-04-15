@@ -7984,9 +7984,21 @@
             const deltakerlister = {}; // { 'dag1_UK': [...], 'dag1_AK': [...], ... }
             const antallProvedager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
 
+            // Beregn dag-nummer fra dato (party.day kan mangle fra server)
+            const startDatoVal = document.getElementById('trialDateFrom')?.value;
+            function getDagNrFraParti(party) {
+                if (party.day) return parseInt(party.day);
+                if (party.date && startDatoVal) {
+                    return Math.round((new Date(party.date) - new Date(startDatoVal)) / (1000*60*60*24)) + 1;
+                }
+                return 1;
+            }
+
             ukakPartier.forEach(party => {
+                const partiDag = getDagNrFraParti(party);
                 (party.dogs || []).forEach(dog => {
-                    const dag = party.day || 1;
+                    // Bruk hundens EGEN dag-info først, deretter partiets dag
+                    const dag = dog.dag || partiDag;
                     const kl = dog.klasse || 'AK';
                     const key = `dag${dag}_${kl}`;
                     if (!deltakerlister[key]) deltakerlister[key] = [];

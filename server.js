@@ -11733,8 +11733,8 @@ app.get("/dommertestukak", (c) => {
 });
 
 // Test-filer som blokkeres i produksjon (unntatt demo-sider for salg/visning)
-const TEST_PAGES = ['dommer-ukak-test.html', 'dommertest.html'];
-// dommer-vk-test.html er tillatt for demo-formål
+const TEST_PAGES = ['dommertest.html'];
+// dommer-ukak-test.html og dommer-vk-test.html er tillatt for demo/testing
 
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");

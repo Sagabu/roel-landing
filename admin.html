@@ -8116,9 +8116,11 @@
         function openMoveDialog(regnr, fromPartyName) {
             const parties = getTrialParties();
 
-            // Finn hunden og kildepartiet
+            // Finn hunden — søk i partier ELLER venteliste
             let dog = null;
             let fromParty = null;
+
+            // Søk i partier
             for (const party of parties) {
                 const found = party.dogs.find(d => d.regnr === regnr);
                 if (found) {
@@ -8126,6 +8128,20 @@
                     fromParty = party;
                     break;
                 }
+            }
+
+            // Hvis ikke funnet i partier, søk i venteliste
+            if (!dog) {
+                const venteliste = getTrialVenteliste();
+                const allVenteliste = [
+                    ...(venteliste.dag1?.uk || []), ...(venteliste.dag1?.ak || []),
+                    ...(venteliste.dag2?.uk || []), ...(venteliste.dag2?.ak || []),
+                    ...(venteliste.dag3?.uk || []), ...(venteliste.dag3?.ak || []),
+                    ...(venteliste.dag4?.uk || []), ...(venteliste.dag4?.ak || []),
+                    ...(venteliste.vk || [])
+                ];
+                dog = allVenteliste.find(d => d.regnr === regnr);
+                if (dog) fromParty = null; // Kommer fra venteliste, ikke parti
             }
 
             if (!dog) {
@@ -8291,10 +8307,42 @@
             }
 
             // Flytt til annet parti
+            const toParty = parties.find(p => p.name === destination);
             if (!toParty) {
                 alert('Kunne ikke finne destinasjonspartiet');
                 closeMoveDialog();
                 return;
+            }
+
+            // Hjelpefunksjon: fjern hund fra kilde (parti eller venteliste)
+            function fjernFraKilde() {
+                if (fromParty) {
+                    // Fjern fra parti
+                    const idx = fromParty.dogs.findIndex(d => d.regnr === moveDialogDog.regnr);
+                    if (idx >= 0) {
+                        fromParty.dogs.splice(idx, 1);
+                        if (moveDialogDog.klasse === 'UK') fromParty.ukCount = (fromParty.ukCount || 1) - 1;
+                        else if (moveDialogDog.klasse === 'AK') fromParty.akCount = (fromParty.akCount || 1) - 1;
+                    }
+                } else {
+                    // Fjern fra venteliste
+                    const kl = moveDialogDog.klasse || 'AK';
+                    if (kl === 'VK') {
+                        const vkIdx = (venteliste.vk || []).findIndex(d => d.regnr === moveDialogDog.regnr);
+                        if (vkIdx >= 0) venteliste.vk.splice(vkIdx, 1);
+                    } else {
+                        for (let d = 1; d <= 4; d++) {
+                            const dagKey = `dag${d}`;
+                            const klKey = kl.toLowerCase();
+                            const arr = venteliste[dagKey]?.[klKey];
+                            if (arr) {
+                                const idx = arr.findIndex(dog => dog.regnr === moveDialogDog.regnr);
+                                if (idx >= 0) { arr.splice(idx, 1); break; }
+                            }
+                        }
+                    }
+                    setTrialVenteliste(venteliste);
+                }
             }
 
             const isFull = toParty.dogs.length >= 14 && toParty.type !== 'vk';
@@ -8315,13 +8363,8 @@
 
                 const swapDog = toParty.dogs[swapDogIdx];
 
-                // Fjern hund fra kildeparti
-                const fromIdx = fromParty.dogs.findIndex(d => d.regnr === moveDialogDog.regnr);
-                if (fromIdx >= 0) {
-                    fromParty.dogs.splice(fromIdx, 1);
-                    if (moveDialogDog.klasse === 'UK') fromParty.ukCount = (fromParty.ukCount || 1) - 1;
-                    else if (moveDialogDog.klasse === 'AK') fromParty.akCount = (fromParty.akCount || 1) - 1;
-                }
+                // Fjern hund fra kilde (parti eller venteliste)
+                fjernFraKilde();
 
                 // Fjern bytte-hund fra destinasjonsparti
                 toParty.dogs.splice(swapDogIdx, 1);
@@ -8333,19 +8376,15 @@
                 if (moveDialogDog.klasse === 'UK') toParty.ukCount = (toParty.ukCount || 0) + 1;
                 else if (moveDialogDog.klasse === 'AK') toParty.akCount = (toParty.akCount || 0) + 1;
 
-                fromParty.dogs.push(swapDog);
-                if (swapDog.klasse === 'UK') fromParty.ukCount = (fromParty.ukCount || 0) + 1;
-                else if (swapDog.klasse === 'AK') fromParty.akCount = (fromParty.akCount || 0) + 1;
+                if (fromParty) {
+                    fromParty.dogs.push(swapDog);
+                    if (swapDog.klasse === 'UK') fromParty.ukCount = (fromParty.ukCount || 0) + 1;
+                    else if (swapDog.klasse === 'AK') fromParty.akCount = (fromParty.akCount || 0) + 1;
+                }
 
             } else {
                 // Vanlig flytting (parti har plass)
-                // Fjern fra kildeparti
-                const fromIdx = fromParty.dogs.findIndex(d => d.regnr === moveDialogDog.regnr);
-                if (fromIdx >= 0) {
-                    fromParty.dogs.splice(fromIdx, 1);
-                    if (moveDialogDog.klasse === 'UK') fromParty.ukCount = (fromParty.ukCount || 1) - 1;
-                    else if (moveDialogDog.klasse === 'AK') fromParty.akCount = (fromParty.akCount || 1) - 1;
-                }
+                fjernFraKilde();
 
                 // Legg til i destinasjonsparti
                 toParty.dogs.push(moveDialogDog);

@@ -12073,7 +12073,8 @@ app.get("/api/meldinger/mine-pameldinger", requireAuth, (c) => {
 // Hent meldinger for deltaker
 app.get("/api/meldinger/mine", requireAuth, (c) => {
   try {
-    const telefon = c.get("user").telefon;
+    const telefon = c.get("bruker")?.telefon;
+    if (!telefon) return c.json({ error: "Ikke autentisert" }, 401);
 
     // Hent alle meldinger der brukeren er avsender ELLER mottaker av svar
     const meldinger = db.prepare(`

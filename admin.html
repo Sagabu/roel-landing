@@ -17134,7 +17134,7 @@
             const innstillinger = { krevBekreftelse, paminnelse, utkast, venteliste };
             localStorage.setItem(getAutomatikkInnstillingerKey(), JSON.stringify(innstillinger));
 
-            // Synkroniser til server
+            // Synkroniser til server — brannsikker med http-status-sjekk
             const proveId = getCurrentTrialId();
             if (proveId) {
                 const token = localStorage.getItem('fuglehund_token');
@@ -17145,6 +17145,10 @@
                         'Authorization': token ? `Bearer ${token}` : ''
                     },
                     body: JSON.stringify({ value: innstillinger })
+                }).then(resp => {
+                    if (!resp.ok) {
+                        console.error('Automatikk-innstillinger: server returnerte', resp.status);
+                    }
                 }).catch(err => console.warn('Kunne ikke synkronisere automatikk-innstillinger:', err));
             }
         }

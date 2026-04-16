@@ -606,11 +606,14 @@ db.exec(`
     twilio_sid TEXT,
     status TEXT DEFAULT 'sent',
     klubb_id TEXT,
+    prove_id TEXT,
+    mottaker_navn TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_sms_log_created ON sms_log(created_at);
   CREATE INDEX IF NOT EXISTS idx_sms_log_type ON sms_log(type);
   CREATE INDEX IF NOT EXISTS idx_sms_log_klubb ON sms_log(klubb_id);
+  -- idx_sms_log_prove opprettes som migrasjon fordi prove_id-kolonnen legges til i migrations
 
   -- DVK-kontroller (dyrevelferdskontroll)
   CREATE TABLE IF NOT EXISTS dvk_kontroller (
@@ -1042,6 +1045,10 @@ db.exec(`
 
 // --- Migrations for existing databases ---
 const migrations = [
+  // SMS-logg knyttet til prøve (for prøvedokumenter-eksport)
+  "ALTER TABLE sms_log ADD COLUMN prove_id TEXT DEFAULT NULL",
+  "ALTER TABLE sms_log ADD COLUMN mottaker_navn TEXT DEFAULT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_sms_log_prove ON sms_log(prove_id)",
   "ALTER TABLE brukere ADD COLUMN samtykke_gitt TEXT DEFAULT NULL",
   "ALTER TABLE kritikker ADD COLUMN status TEXT DEFAULT 'draft'",
   "ALTER TABLE kritikker ADD COLUMN submitted_at TEXT DEFAULT NULL",
@@ -1819,20 +1826,20 @@ function checkOTPRate(telefon) {
   return true;
 }
 
-// Logg SMS til database for statistikk
-function logSMS(retning, fra, til, type, melding, twilio_sid = null, status = 'sent', klubb_id = null) {
+// Logg SMS til database for statistikk og prøvedokumenter
+function logSMS(retning, fra, til, type, melding, twilio_sid = null, status = 'sent', klubb_id = null, prove_id = null, mottaker_navn = null) {
   try {
     db.prepare(`
-      INSERT INTO sms_log (retning, fra, til, type, melding, twilio_sid, status, klubb_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(retning, fra, til, type, melding || null, twilio_sid, status, klubb_id);
+      INSERT INTO sms_log (retning, fra, til, type, melding, twilio_sid, status, klubb_id, prove_id, mottaker_navn, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(retning, fra, til, type, melding || null, twilio_sid, status, klubb_id, prove_id, mottaker_navn);
   } catch (e) {
     console.error('SMS logging error:', e.message);
   }
 }
 
 async function sendSMS(telefon, message, options = {}) {
-  const { type = 'verifisering', klubb_id = null } = options;
+  const { type = 'verifisering', klubb_id = null, prove_id = null, mottaker_navn = null } = options;
 
   // Formater telefonnummer til internasjonalt format
   let phoneFormatted = telefon.replace(/\s/g, '');
@@ -1847,7 +1854,7 @@ async function sendSMS(telefon, message, options = {}) {
   // Dev mode - ingen SMS-leverandør konfigurert
   if (smsProvider === "dev") {
     console.log(`📱 [DEV MODE] SMS til ${phoneFormatted}: ${message}`);
-    logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'dev', klubb_id);
+    logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'dev', klubb_id, prove_id, mottaker_navn);
     return { success: true, devMode: true };
   }
 
@@ -1875,16 +1882,16 @@ async function sendSMS(telefon, message, options = {}) {
       if (resp.ok && data.sid) {
         const mode = TWILIO_MESSAGING_SERVICE_SID ? 'Alpha Sender' : 'Phone';
         console.log(`📱 [Twilio/${mode}] SMS sendt til ${phoneFormatted} (SID: ${data.sid})`);
-        logSMS('ut', fromNumber, phoneFormatted, type, message, data.sid, 'sent', klubb_id);
+        logSMS('ut', fromNumber, phoneFormatted, type, message, data.sid, 'sent', klubb_id, prove_id, mottaker_navn);
         return { success: true, provider: 'twilio', sid: data.sid };
       } else {
         console.error("Twilio SMS error:", data);
-        logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'failed', klubb_id);
+        logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'failed', klubb_id, prove_id, mottaker_navn);
         return { success: false, error: data.message || 'Twilio error', provider: 'twilio' };
       }
     } catch (err) {
       console.error("Twilio SMS fetch error:", err.message);
-      logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'error', klubb_id);
+      logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'error', klubb_id, prove_id, mottaker_navn);
       return { success: false, error: err.message, provider: 'twilio' };
     }
   }
@@ -1915,17 +1922,17 @@ async function sendSMS(telefon, message, options = {}) {
       if (sveveData.msgOkCount && sveveData.msgOkCount > 0) {
         const msgId = sveveData.ids ? sveveData.ids[0] : null;
         console.log(`📱 [Sveve] SMS sendt til ${svevePhone} (ID: ${msgId})`);
-        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, msgId, 'sent', klubb_id);
+        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, msgId, 'sent', klubb_id, prove_id, mottaker_navn);
         return { success: true, provider: 'sveve', id: msgId };
       } else {
         const errorMsg = sveveData.errors ? sveveData.errors.join(', ') : JSON.stringify(data);
         console.error("Sveve SMS error:", errorMsg);
-        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'failed', klubb_id);
+        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'failed', klubb_id, prove_id, mottaker_navn);
         return { success: false, error: errorMsg, provider: 'sveve' };
       }
     } catch (err) {
       console.error("Sveve SMS fetch error:", err.message);
-      logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'error', klubb_id);
+      logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'error', klubb_id, prove_id, mottaker_navn);
       return { success: false, error: err.message, provider: 'sveve' };
     }
   }
@@ -7863,7 +7870,11 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
         phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
       }
 
-      const result = await sendSMS(phone, melding, { type: 'masse_sms', prove_id: proveId });
+      const result = await sendSMS(phone, melding, {
+        type: 'masse_sms',
+        prove_id: proveId,
+        mottaker_navn: navn || null
+      });
       if (result.success) {
         sendt++;
       } else {
@@ -7904,6 +7915,18 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
     feilet,
     totalt: unikeTelefoner.size
   });
+});
+
+// Hent SMS-historikk for en prøve (for prøvedokumenter)
+app.get("/api/prover/:id/sms-historikk", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const rows = db.prepare(`
+    SELECT id, retning, fra, til, type, melding, status, mottaker_navn, created_at
+    FROM sms_log
+    WHERE prove_id = ?
+    ORDER BY created_at DESC
+  `).all(proveId);
+  return c.json(rows);
 });
 
 // Meld på til prøve

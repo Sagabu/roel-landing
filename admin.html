@@ -879,9 +879,11 @@
                                         <option value="Jegermiddag">Jegermiddag</option>
                                         <option value="Startavgift">Startavgift</option>
                                         <option value="Loddsalg">Loddsalg</option>
-                                        <option value="VK-finale">VK-finale</option>
+                                        <option value="Semifinale">VK-semifinale</option>
+                                        <option value="Finale">VK-finale</option>
                                         <option value="Annet">Annet</option>
                                     </select>
+                                    <p class="text-xs text-bark-500 mt-1">Type påvirker hvordan innbetalingen kategoriseres i Budsjett/Økonomi.</p>
                                 </div>
                                 <div>
                                     <label class="text-xs text-bark-500 mb-1 block">Detaljer (valgfritt)</label>
@@ -931,7 +933,7 @@
                                 <div class="border-t border-bark-100 pt-3">
                                     <label class="text-xs text-bark-500 mb-1 block">Eller legg til manuelt</label>
                                     <div class="flex gap-2">
-                                        <input type="tel" id="vippsManuellTlf" placeholder="Telefon" maxlength="8" class="w-24 px-2 py-1.5 rounded-lg border border-bark-200 text-sm">
+                                        <input type="tel" id="vippsManuellTlf" placeholder="Telefon" maxlength="8" oninput="vippsLookupNavn(this.value)" class="w-24 px-2 py-1.5 rounded-lg border border-bark-200 text-sm">
                                         <input type="text" id="vippsManuellNavn" placeholder="Navn" class="flex-1 px-2 py-1.5 rounded-lg border border-bark-200 text-sm">
                                         <button type="button" onclick="vippsLeggTilManuell()" class="bg-bark-200 hover:bg-bark-300 px-3 py-1.5 rounded-lg text-sm">+</button>
                                     </div>
@@ -7380,27 +7382,64 @@
 
         let manuellKvalData = {}; // Holder styr på avkryssede hunder
 
-        function initManuellKvalifisering() {
+        async function initManuellKvalifisering() {
             const partiSelect = document.getElementById('manuellKvalPartiValg');
             if (!partiSelect) return;
 
-            // Hent VK-partier fra localStorage
-            const parties = getTrialParties();
-            const vkParties = parties.filter(p => p.class === 'vk' || p.class === 'vk-kval' || p.class === 'vk-semi');
+            // Hent VK-partier fra server (samme kilde som admin bruker)
+            const proveId = getCurrentTrialId();
+            let vkParties = [];
 
-            // Populer dropdown
+            if (proveId) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/prover/${proveId}/partilister/admin`, {
+                        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                    });
+                    if (resp.ok) {
+                        const partier = await resp.json();
+                        vkParties = (Array.isArray(partier) ? partier : []).filter(p =>
+                            p.type === 'vk' || p.type === 'vk-kval' || p.type === 'vk-semi' || p.type === 'vk-finale'
+                        );
+                    }
+                } catch (e) {
+                    console.warn('Kunne ikke laste VK-partier:', e);
+                }
+            }
+
+            // Fallback: bruk localStorage (korrekt feltnavn: type)
+            if (vkParties.length === 0) {
+                const parties = getTrialParties();
+                vkParties = parties.filter(p => p.type === 'vk' || p.type === 'vk-kval' || p.type === 'vk-semi' || p.type === 'vk-finale');
+            }
+
+            // Sorter kronologisk
+            vkParties.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
             partiSelect.innerHTML = '<option value="">-- Velg parti --</option>';
+            if (vkParties.length === 0) {
+                partiSelect.innerHTML = '<option value="">Ingen VK-partier satt opp</option>';
+                return;
+            }
+
             vkParties.forEach(party => {
                 const option = document.createElement('option');
                 option.value = party.name || party.id;
-                let label = party.name || party.id;
-                if (party.class === 'vk-kval') label += ' (Kval)';
-                if (party.class === 'vk-semi') label += ' (Semi)';
+                let label = party.displayName || party.name || party.id;
+                if (party.type === 'vk-kval') label += ' (Kval)';
+                else if (party.type === 'vk-semi') label += ' (Semi)';
+                else if (party.type === 'vk-finale') label += ' (Finale)';
+                // Dagnavn
+                if (party.date) {
+                    const d = new Date(party.date + 'T12:00:00');
+                    const dager = ['søndag','mandag','tirsdag','onsdag','torsdag','fredag','lørdag'];
+                    const dagNavn = dager[d.getDay()];
+                    if (dagNavn) label += ' — ' + dagNavn;
+                }
                 option.textContent = label;
                 partiSelect.appendChild(option);
             });
 
-            // Last lagrede kvalifiseringer
             loadManuellKvalLagret();
         }
 
@@ -7423,7 +7462,7 @@
             }
         }
 
-        function loadManuellKvalParti() {
+        async function loadManuellKvalParti() {
             const partiSelect = document.getElementById('manuellKvalPartiValg');
             const liste = document.getElementById('manuellKvalHundeListe');
             const actions = document.getElementById('manuellKvalActions');
@@ -7437,9 +7476,25 @@
                 return;
             }
 
-            // Finn partiet
-            const parties = getTrialParties();
-            const party = parties.find(p => (p.name || p.id) === partiNavn);
+            // Hent partiet fra serveren (ferske data)
+            const proveId = getCurrentTrialId();
+            let party = null;
+            if (proveId) {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const resp = await fetch(`/api/prover/${proveId}/partilister/admin`, {
+                        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                    });
+                    if (resp.ok) {
+                        const partier = await resp.json();
+                        party = (Array.isArray(partier) ? partier : []).find(p => (p.name || p.id) === partiNavn);
+                    }
+                } catch (e) { /* fallback under */ }
+            }
+            if (!party) {
+                const parties = getTrialParties();
+                party = parties.find(p => (p.name || p.id) === partiNavn);
+            }
 
             if (!party || !party.dogs || party.dogs.length === 0) {
                 liste.innerHTML = '<p class="text-center text-bark-400 py-6">Ingen hunder i dette partiet</p>';
@@ -7447,26 +7502,27 @@
                 return;
             }
 
-            // Hent lagrede avkrysninger for dette partiet
             const lagredeKval = manuellKvalData[partiNavn] || {};
 
-            // Bygg liste med avkryssningsbokser
             liste.innerHTML = `
                 <div class="space-y-2">
-                    ${party.dogs.map(dog => {
-                        const isChecked = lagredeKval[dog.nr] === true;
+                    ${party.dogs.map(function(dog, i) {
+                        var dogId = dog.regnr || dog.nr || ('idx_' + i);
+                        var isChecked = lagredeKval[dogId] === true;
+                        var navnVisning = (dog.hundenavn || dog.name || 'Ukjent');
+                        var detaljer = [dog.rase || '', dog.regnr ? ('regnr ' + dog.regnr) : '', dog.klasse || ''].filter(Boolean).join(' • ');
                         return `
-                            <label class="flex items-center gap-3 p-3 rounded-lg border ${isChecked ? 'border-emerald-300 bg-emerald-50' : 'border-bark-200 bg-white'} cursor-pointer hover:bg-bark-50 transition" data-dog-nr="${dog.nr}">
+                            <label class="flex items-center gap-3 p-3 rounded-lg border ${isChecked ? 'border-emerald-300 bg-emerald-50' : 'border-bark-200 bg-white'} cursor-pointer hover:bg-bark-50 transition" data-dog-id="${dogId}">
                                 <input type="checkbox"
                                     class="manuell-kval-check w-5 h-5 text-emerald-600 border-bark-300 rounded focus:ring-emerald-500"
-                                    data-nr="${dog.nr}"
+                                    data-dog-id="${dogId}"
                                     ${isChecked ? 'checked' : ''}
                                     onchange="oppdaterManuellKvalUI(this)">
                                 <div class="flex-1">
-                                    <div class="font-medium text-bark-800">${dog.hundenavn || dog.name || 'Ukjent'}</div>
-                                    <div class="text-sm text-bark-500">${dog.rase || ''} • Nr ${dog.nr} • ${dog.klasse || ''}</div>
+                                    <div class="font-medium text-bark-800">${navnVisning}</div>
+                                    <div class="text-sm text-bark-500">${detaljer}</div>
                                 </div>
-                                <span class="text-xs ${isChecked ? 'text-emerald-600 font-medium' : 'text-bark-400'}">${isChecked ? 'Kvalifisert' : ''}</span>
+                                <span class="text-xs ${isChecked ? 'text-emerald-600 font-medium' : 'text-bark-400'}">${isChecked ? 'Kvalifisert til finale' : ''}</span>
                             </label>
                         `;
                     }).join('')}
@@ -7486,7 +7542,7 @@
                 label.classList.add('border-emerald-300', 'bg-emerald-50');
                 const statusSpan = label.querySelector('span:last-child');
                 if (statusSpan) {
-                    statusSpan.textContent = 'Kvalifisert';
+                    statusSpan.textContent = 'Kvalifisert til finale';
                     statusSpan.classList.remove('text-bark-400');
                     statusSpan.classList.add('text-emerald-600', 'font-medium');
                 }
@@ -7520,10 +7576,11 @@
             const partiNavn = partiSelect.value;
             const checkboxes = document.querySelectorAll('.manuell-kval-check');
 
-            // Samle opp avkrysninger
+            // Samle opp avkrysninger (bruker regnr som nøkkel — data-dog-id)
             const kvalifiserte = {};
             checkboxes.forEach(cb => {
-                kvalifiserte[cb.dataset.nr] = cb.checked;
+                const id = cb.dataset.dogId || cb.dataset.nr;
+                if (id) kvalifiserte[id] = cb.checked;
             });
 
             // Oppdater manuellKvalData
@@ -15185,46 +15242,110 @@
             });
         }
 
-        // Bygg parti-knapper
+        // Cache av partier for Vipps — oppdateres hver gang seksjonen vises
+        let vippsPartierCache = {};
+
+        // Last parti-data fra serveren (samme kilde som admin og SMS)
+        async function loadVippsPartier() {
+            const proveId = getCurrentTrialId();
+            const container = document.getElementById('vippsPartiButtons');
+            if (!proveId || !container) return;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/partilister/admin`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
+                if (!resp.ok) {
+                    container.innerHTML = '<p class="text-sm text-bark-400 italic">Kunne ikke laste partier</p>';
+                    return;
+                }
+
+                const partier = await resp.json();
+                vippsPartierCache = {};
+
+                if (!Array.isArray(partier) || partier.length === 0) {
+                    container.innerHTML = '<p class="text-sm text-bark-400 italic">Ingen partier satt opp ennå. Fordel hunder til partier først.</p>';
+                    return;
+                }
+
+                // Sorter kronologisk
+                partier.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+                // Bygg cache: parti-id → { navn, mottakere (eiere, deduplisert) }
+                for (const parti of partier) {
+                    const partiKey = `parti_${parti.id}`;
+
+                    // Vipps sender KUN til eier (per avklaring)
+                    const mottakerMap = new Map();
+                    (parti.dogs || []).forEach(dog => {
+                        const tel = dog.eierTelefon || '';
+                        const navn = dog.eier || '';
+                        if (tel) mottakerMap.set(tel, navn || 'Ukjent');
+                    });
+
+                    // Utled dagnavn
+                    let dagNavn = '';
+                    if (parti.date) {
+                        const d = new Date(parti.date + 'T12:00:00');
+                        const dager = ['søndag','mandag','tirsdag','onsdag','torsdag','fredag','lørdag'];
+                        dagNavn = dager[d.getDay()] || '';
+                    }
+                    const label = (parti.displayName || parti.name) + (dagNavn ? ' ' + dagNavn : '');
+
+                    vippsPartierCache[partiKey] = {
+                        navn: label,
+                        mottakere: Array.from(mottakerMap.entries()).map(([telefon, navn]) => ({ telefon, navn }))
+                    };
+                }
+
+                // Bygg knapper
+                vippsBuildPartiButtons();
+
+            } catch (e) {
+                console.error('Feil ved lasting av Vipps-partier:', e);
+                container.innerHTML = '<p class="text-sm text-red-500 italic">Feil ved lasting. Prøv igjen.</p>';
+            }
+        }
+
+        // Bygg parti-knapper (bruker vippsPartierCache)
         function vippsBuildPartiButtons() {
             const container = document.getElementById('vippsPartiButtons');
             if (!container) return;
 
-            const participants = typeof uploadedParticipants !== 'undefined' ? uploadedParticipants : [];
-
-            if (participants.length === 0) {
-                container.innerHTML = '<p class="text-sm text-bark-400 italic">Last opp deltakere først</p>';
-                return;
-            }
-
-            // Finn unike partier
-            const partier = [...new Set(participants.map(p => p.party || p.parti).filter(Boolean))].sort();
-
-            if (partier.length === 0) {
-                container.innerHTML = '<p class="text-sm text-bark-400 italic">Ingen partier funnet</p>';
+            const partiKeys = Object.keys(vippsPartierCache);
+            if (partiKeys.length === 0) {
+                container.innerHTML = '<p class="text-sm text-bark-400 italic">Ingen partier satt opp ennå</p>';
                 return;
             }
 
             let html = '';
-            partier.forEach(parti => {
-                const antall = participants.filter(p => (p.party || p.parti) === parti).length;
+            let totalMottakere = 0;
+            partiKeys.forEach(key => {
+                const p = vippsPartierCache[key];
+                totalMottakere += p.mottakere.length;
                 html += `
-                    <button type="button" onclick="vippsVelgParti('${parti}')"
+                    <button type="button" onclick="vippsVelgParti('${key}')"
                         class="vipps-parti-btn flex items-center gap-1 px-3 py-1.5 bg-bark-100 hover:bg-orange-100 text-bark-700 hover:text-orange-800 rounded-lg text-sm transition"
-                        data-parti="${parti}">
-                        Parti ${parti}
-                        <span class="text-xs bg-bark-200 px-1.5 py-0.5 rounded">${antall}</span>
+                        data-parti="${key}">
+                        ${p.navn.replace(/"/g, '&quot;')}
+                        <span class="text-xs bg-bark-200 px-1.5 py-0.5 rounded">${p.mottakere.length}</span>
                     </button>
                 `;
             });
 
-            // Legg til "alle" knapp
+            // Unike eiere på tvers av alle partier
+            const uniqueTlf = new Set();
+            partiKeys.forEach(key => {
+                vippsPartierCache[key].mottakere.forEach(m => uniqueTlf.add(m.telefon));
+            });
+
             html += `
                 <button type="button" onclick="vippsVelgAlle()"
-                    class="vipps-parti-btn flex items-center gap-1 px-3 py-1.5 bg-bark-100 hover:bg-orange-100 text-bark-700 hover:text-orange-800 rounded-lg text-sm transition"
+                    class="vipps-parti-btn flex items-center gap-1 px-3 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-800 rounded-lg text-sm font-medium transition"
                     data-parti="alle">
-                    Alle
-                    <span class="text-xs bg-bark-200 px-1.5 py-0.5 rounded">${participants.length}</span>
+                    Alle partier
+                    <span class="text-xs bg-orange-200 px-1.5 py-0.5 rounded">${uniqueTlf.size}</span>
                 </button>
             `;
 
@@ -15232,16 +15353,13 @@
         }
 
         // Velg et parti
-        function vippsVelgParti(parti) {
-            const participants = typeof uploadedParticipants !== 'undefined' ? uploadedParticipants : [];
-            const partiDeltakere = participants.filter(p => (p.party || p.parti) === parti);
+        function vippsVelgParti(partiKey) {
+            const parti = vippsPartierCache[partiKey];
+            if (!parti) return;
 
-            // Legg til deltakere som ikke allerede er valgt
-            partiDeltakere.forEach(p => {
-                const telefon = p.phone || p.telefon || '';
-                const navn = p.name || `${p.fornavn || ''} ${p.etternavn || ''}`.trim() || 'Ukjent';
-                if (telefon && !vippsValgteMottakere.find(m => m.telefon === telefon)) {
-                    vippsValgteMottakere.push({ telefon, navn, parti });
+            parti.mottakere.forEach(m => {
+                if (m.telefon && !vippsValgteMottakere.find(x => x.telefon === m.telefon)) {
+                    vippsValgteMottakere.push({ telefon: m.telefon, navn: m.navn, parti: parti.navn });
                 }
             });
 
@@ -15257,29 +15375,55 @@
 
         // Velg alle deltakere
         function vippsVelgAlle() {
-            const participants = typeof uploadedParticipants !== 'undefined' ? uploadedParticipants : [];
-
+            // Bruk cache — legg til alle unike eiere på tvers av alle partier
             vippsValgteMottakere = [];
-            participants.forEach(p => {
-                const telefon = p.phone || p.telefon || '';
-                const navn = p.name || `${p.fornavn || ''} ${p.etternavn || ''}`.trim() || 'Ukjent';
-                const parti = p.party || p.parti || '';
-                if (telefon) {
-                    vippsValgteMottakere.push({ telefon, navn, parti });
-                }
+            const seenTlf = new Set();
+            Object.values(vippsPartierCache).forEach(parti => {
+                parti.mottakere.forEach(m => {
+                    if (m.telefon && !seenTlf.has(m.telefon)) {
+                        seenTlf.add(m.telefon);
+                        vippsValgteMottakere.push({ telefon: m.telefon, navn: m.navn, parti: parti.navn });
+                    }
+                });
             });
 
-            // Marker knappen som aktiv
             document.querySelectorAll('.vipps-parti-btn').forEach(btn => {
-                btn.classList.remove('bg-orange-200', 'text-orange-800');
+                btn.classList.remove('bg-orange-300', 'text-orange-900');
             });
             const aktivBtn = document.querySelector('.vipps-parti-btn[data-parti="alle"]');
-            if (aktivBtn) aktivBtn.classList.add('bg-orange-200', 'text-orange-800');
+            if (aktivBtn) aktivBtn.classList.add('bg-orange-300', 'text-orange-900');
 
             vippsOppdaterValgteMottakere();
         }
 
         // Legg til manuell mottaker
+        // Slå opp navn fra telefonnummer (fylles automatisk hvis bruker finnes på fuglehundprove.no)
+        let _vippsLookupTimer = null;
+        async function vippsLookupNavn(raw) {
+            const telefon = (raw || '').trim().replace(/\s/g, '');
+            if (telefon.length !== 8) return;
+
+            // Debounce — bare én fetch per 400ms
+            if (_vippsLookupTimer) clearTimeout(_vippsLookupTimer);
+            _vippsLookupTimer = setTimeout(async () => {
+                try {
+                    const navnInput = document.getElementById('vippsManuellNavn');
+                    // Ikke overskriv hvis bruker allerede har skrevet noe
+                    if (!navnInput || navnInput.value.trim()) return;
+
+                    const resp = await fetch(`/api/brukere/${telefon}`);
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    const fulltNavn = [data.fornavn, data.etternavn].filter(Boolean).join(' ').trim();
+                    if (fulltNavn) {
+                        navnInput.value = fulltNavn;
+                        navnInput.classList.add('bg-green-50', 'border-green-300');
+                        setTimeout(() => navnInput.classList.remove('bg-green-50', 'border-green-300'), 1500);
+                    }
+                } catch (e) { /* stille ignorering — manuell inntasting er fortsatt mulig */ }
+            }, 400);
+        }
+
         function vippsLeggTilManuell() {
             const tlfInput = document.getElementById('vippsManuellTlf');
             const navnInput = document.getElementById('vippsManuellNavn');
@@ -16824,6 +16968,16 @@
                 }
             }
 
+            // Oppdater parti-mottakere når brukeren går til Meldinger (frisk cache hver gang)
+            if (sectionId === 'meldinger' && typeof loadSmsPartier === 'function') {
+                loadSmsPartier();
+            }
+
+            // Oppdater parti-mottakere når brukeren går til Vipps-betaling
+            if (sectionId === 'vipps' && typeof loadVippsPartier === 'function') {
+                loadVippsPartier();
+            }
+
             // Oppdater sidebar-styling
             document.querySelectorAll('aside nav a').forEach(link => {
                 const href = link.getAttribute('href');
@@ -17618,63 +17772,66 @@
             }
         };
 
-        // Last inn partier for SMS-mottakerlisten
+        // Last inn partier for SMS-mottakerlisten (henter fra samme kilde som admin bruker)
         async function loadSmsPartier() {
             const proveId = getCurrentTrialId();
             if (!proveId) return;
 
             try {
-                const resp = await fetch(`/api/prover/${proveId}/partier`);
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/partilister/admin`, {
+                    headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                });
                 if (!resp.ok) return;
 
-                const data = await resp.json();
-                const partier = data.partier || data || [];
+                const partier = await resp.json();
 
-                // Lagre i cache - denne oppdateres KUN ved ny lasting av siden
+                // Frisk cache hver gang — reflekterer alltid siste partilister
                 smsPartiCache = {};
 
                 const optgroup = document.getElementById('smsPartiOptgroup');
                 if (!optgroup) return;
-
-                // Tøm eksisterende options
                 optgroup.innerHTML = '';
 
-                // Grupper partier per klasse
-                const partierPerKlasse = {};
+                if (!Array.isArray(partier) || partier.length === 0) return;
+
+                // Sorter partier kronologisk etter dato
+                partier.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
                 for (const parti of partier) {
-                    const klasse = parti.klasse || 'Ukjent';
-                    if (!partierPerKlasse[klasse]) {
-                        partierPerKlasse[klasse] = [];
-                    }
-                    partierPerKlasse[klasse].push(parti);
-
-                    // Lagre deltakere i cache med parti-ID som nøkkel
-                    // Dette sikrer at listen er "frosset" til når den ble lastet
                     const partiKey = `parti_${parti.id}`;
-                    smsPartiCache[partiKey] = {
-                        navn: `${klasse} Parti ${parti.parti_nummer || parti.nummer || '?'}`,
-                        deltakere: (parti.deltakere || []).map(d => ({
-                            telefon: d.forer_telefon || d.telefon,
-                            navn: d.forer_navn || d.navn || 'Ukjent'
-                        })).filter(d => d.telefon)
-                    };
-                }
 
-                // Legg til options gruppert per klasse
-                for (const klasse of ['UK', 'AK', 'VK']) {
-                    if (!partierPerKlasse[klasse]) continue;
+                    // Bygg unik mottakerliste: eier + fører, dedupliser på telefon
+                    const mottakerMap = new Map();
+                    (parti.dogs || []).forEach(dog => {
+                        const eTel = dog.eierTelefon || '';
+                        const fTel = dog.forerTelefon || '';
+                        const eNavn = dog.eier || '';
+                        const fNavn = dog.forer || '';
+                        if (eTel) mottakerMap.set(eTel, eNavn || 'Ukjent');
+                        // Legg til fører kun hvis ulikt telefonnummer (unngå dobbel SMS)
+                        if (fTel && fTel !== eTel) mottakerMap.set(fTel, fNavn || 'Ukjent');
+                    });
 
-                    for (const parti of partierPerKlasse[klasse]) {
-                        const partiKey = `parti_${parti.id}`;
-                        const antall = smsPartiCache[partiKey]?.deltakere?.length || 0;
-                        const opt = document.createElement('option');
-                        opt.value = partiKey;
-                        opt.textContent = `${klasse} Parti ${parti.parti_nummer || parti.nummer || '?'} (${antall} pers)`;
-                        optgroup.appendChild(opt);
+                    const deltakere = Array.from(mottakerMap.entries()).map(([telefon, navn]) => ({ telefon, navn }));
+
+                    // Utled dagnavn fra dato
+                    let dagNavn = '';
+                    if (parti.date) {
+                        const d = new Date(parti.date + 'T12:00:00');
+                        const dager = ['søndag','mandag','tirsdag','onsdag','torsdag','fredag','lørdag'];
+                        dagNavn = dager[d.getDay()] || '';
                     }
+                    const label = (parti.displayName || parti.name) + (dagNavn ? ' ' + dagNavn : '');
+
+                    smsPartiCache[partiKey] = { navn: label, deltakere };
+
+                    const opt = document.createElement('option');
+                    opt.value = partiKey;
+                    opt.textContent = `${label} (${deltakere.length} pers)`;
+                    optgroup.appendChild(opt);
                 }
 
-                // Oppdater mottakerinfo
                 oppdaterSmsMottakerInfo();
 
             } catch (e) {

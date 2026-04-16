@@ -6619,8 +6619,28 @@
                 }
             });
 
-            // Re-render med nåværende data
+            // Re-render alle deler av Parti- og ventelister med nytt filter
             renderAllParties(getTrialParties());
+
+            // Ventelister
+            const venteliste = getTrialVenteliste();
+            renderVenteliste(venteliste);
+
+            // UK/AK-deltakerlister (hvis lastet)
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                try {
+                    const dlData = JSON.parse(localStorage.getItem(`ukakDeltakerlister_${proveId}`) || '{}');
+                    if (typeof renderUkakDeltakerlister === 'function') {
+                        renderUkakDeltakerlister(dlData);
+                    }
+                } catch (e) {}
+            }
+
+            // VK-deltakerliste
+            if (typeof renderVkDeltakerliste === 'function') {
+                renderVkDeltakerliste().catch(() => {});
+            }
         }
 
         function renderAllParties(parties) {
@@ -6898,6 +6918,13 @@
 
             // Hvis allerede fordelt, skjul deltakerliste-seksjonen (partiene vises i partilister)
             if (samletListe.fordelt) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            // Skjul VK-deltakerliste når filter = UK/AK
+            const filter = (typeof currentPartyFilter !== 'undefined') ? currentPartyFilter : 'all';
+            if (filter === 'ukak') {
                 section.classList.add('hidden');
                 return;
             }
@@ -8854,6 +8881,13 @@
 
             const keys = Object.keys(deltakerlister).sort();
             if (keys.length === 0) {
+                seksjon.classList.add('hidden');
+                return;
+            }
+
+            // Skjul UK/AK-deltakerlister når filter = VK
+            const filter = (typeof currentPartyFilter !== 'undefined') ? currentPartyFilter : 'all';
+            if (filter === 'vk') {
                 seksjon.classList.add('hidden');
                 return;
             }
@@ -10831,10 +10865,20 @@
                 totalVenteliste += vkHunder.length;
             }
 
-            // Oppdater tellere uansett (slik at data er klar når bruker navigerer til partilister)
-            waitlistCount.textContent = totalVenteliste + ' hunder på venteliste';
+            // Filtrer etter klasse-filter (satt av UK/AK/VK/Alle-knappene)
+            const filter = (typeof currentPartyFilter !== 'undefined') ? currentPartyFilter : 'all';
+            let filtrerteGrupper = grupper;
+            if (filter === 'ukak') {
+                filtrerteGrupper = grupper.filter(g => g.klasse === 'UK' || g.klasse === 'AK');
+            } else if (filter === 'vk') {
+                filtrerteGrupper = grupper.filter(g => g.klasse === 'VK');
+            }
+            const filtrertTotal = filtrerteGrupper.reduce((s, g) => s + g.hunder.length, 0);
 
-            if (totalVenteliste === 0) {
+            // Oppdater tellere uansett (slik at data er klar når bruker navigerer til partilister)
+            waitlistCount.textContent = filtrertTotal + ' hunder på venteliste';
+
+            if (filtrertTotal === 0) {
                 ventelisteSection.classList.add('hidden');
                 return;
             }
@@ -10849,8 +10893,8 @@
                 ventelisteSection.classList.add('hidden');
             }
 
-            // Render hver gruppe som et eget kort
-            waitlistTableBody.innerHTML = grupper.map(function(gruppe) {
+            // Render hver gruppe som et eget kort (etter filter)
+            waitlistTableBody.innerHTML = filtrerteGrupper.map(function(gruppe) {
                 var dagNavn = gruppe.dag ? getDayName(gruppe.dag) : '';
                 var klasseBg, klasseText, klasseBorder, klasseHeaderBg;
 

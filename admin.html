@@ -8045,24 +8045,30 @@
             }
         }
 
+        // Kapasitet i destinasjonsrunde (FKF/NKK-regler)
+        const VK_SEMI_KAPASITET = 40;   // 2 semi-partier × 20 hunder
+        const VK_FINALE_KAPASITET = 20; // 1 finale-parti × 20 hunder
+
         // Hent maks antall hunder per kilde-parti som kan gå videre
-        // Kontekst-sensitiv: for 'semi' (kval→semi) bruker vi maksTilSemi,
-        // for 'finale' (semi→finale) og 'finale_fra_kval' bruker vi maksTilFinale
+        // Beregnes dynamisk ut fra trekning-type OG antall kilde-partier,
+        // slik at LIKT antall kan tas fra hvert parti uten å overskride kapasitet.
         function getMaksPerKvalParti() {
             try {
                 const cfg = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
                 const type = (typeof currentTrekningType !== 'undefined') ? currentTrekningType : null;
-                let m;
+                const kvalPartier = parseInt(cfg.kvalPartier) || 2;
+
                 if (type === 'semi') {
-                    // Kval → Semi: bruk maksTilSemi (default 13)
-                    m = parseInt(cfg.maksTilSemi);
-                    if (!(m > 0)) m = 13;
-                } else {
-                    // Semi → Finale eller Kval → Finale: bruk maksTilFinale (default 10)
-                    m = parseInt(cfg.maksTilFinale);
-                    if (!(m > 0)) m = 10;
+                    // Kval → Semi: alltid maks 10 per kval-parti (uavhengig av antall kval-partier)
+                    return 10;
                 }
-                return m;
+                if (type === 'finale') {
+                    // Semi → Finale: alltid maks 10 per semi-parti (2 semi-partier × 10 = 20)
+                    return 10;
+                }
+                // type === 'finale_fra_kval' (2-dagers VK, direkte kval → finale)
+                // floor(20 / antall_kval_partier) sikrer likhet og at total ≤ 20
+                return Math.floor(VK_FINALE_KAPASITET / kvalPartier);
             } catch { return 10; }
         }
 

@@ -578,12 +578,18 @@
             // Fordelte VK-partier vises på riktig dag
             const vkPaaDagen = vkPartier.filter(p => (p.day || 1) === currentDay);
             vkPaaDagen.forEach(p => {
+                const name = (p.name || '').toLowerCase();
                 const label = p.name || (p.type === 'vk-finale' ? 'VK Finale' : p.type === 'vk-kval' ? 'VK Kval' : 'VK');
                 tabs.push({ id: `vk-parti-${p.id || p.name}`, label: label, icon: '🏆', partyRef: p });
             });
 
-            // VK Finale-fane vises på finale-dagen (tom til prøveledelsen fyller inn)
-            if (currentDay === vkFinaleDag && !vkPaaDagen.some(p => p.type === 'vk-finale')) {
+            // VK Finale-fane (tom plassholder) vises KUN på finale-dagen
+            // hvis det faktisk IKKE finnes noe VK Finale-parti ennå (uansett hvilken dag partiet ligger på).
+            const harFinaleParti = vkPartier.some(p => {
+                const n = (p.name || '').toLowerCase();
+                return p.type === 'vk-finale' || n === 'vk finale' || n.includes('finale');
+            });
+            if (currentDay === vkFinaleDag && !harFinaleParti) {
                 tabs.push({ id: 'vk-finale-tom', label: 'VK Finale', icon: '🏆' });
             }
 
@@ -843,11 +849,13 @@
                     </div>
                 `;
             } else if (currentClass.startsWith('vk-parti-')) {
-                // Spesifikt VK-parti
+                // Spesifikt VK-parti — string-coerce både id og navn for å matche tab-id
                 const partyId = currentClass.replace('vk-parti-', '');
-                const party = allParties.find(p => (p.id || p.name) === partyId);
+                const party = allParties.find(p => String(p.id || '') === partyId || String(p.name || '') === partyId);
                 if (party) {
                     html += renderPartyCard(party);
+                } else {
+                    html += '<div class="text-center py-12"><p class="text-bark-500">Kunne ikke finne partiet</p></div>';
                 }
             } else {
                 // Fallback — viser filtrerte partier

@@ -2342,8 +2342,9 @@
                         <!-- Filtrering + tilbakestill-knapp -->
                         <div class="flex gap-2 flex-wrap items-center justify-between">
                             <div class="flex gap-2 flex-wrap">
-                                <button class="bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium" id="filterUKAK">UK/AK</button>
-                                <button class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterVK">VK</button>
+                                <button onclick="setPartyFilter('all')" class="bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium border border-warm-300" id="filterAllClasses">Alle klasser</button>
+                                <button onclick="setPartyFilter('ukak')" class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterUKAK">UK/AK</button>
+                                <button onclick="setPartyFilter('vk')" class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterVK">VK</button>
                             </div>
                             <button onclick="tilbakestillTilDeltakerlister()" class="text-bark-500 hover:text-amber-700 px-3 py-1.5 rounded-xl text-xs font-medium border border-bark-200 hover:border-amber-300 hover:bg-amber-50 transition flex items-center gap-1.5">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6597,6 +6598,31 @@
         }
 
         // Render alle partier fra data
+        // Gjeldende klasse-filter for partilister ('all' | 'ukak' | 'vk')
+        let currentPartyFilter = 'all';
+
+        function setPartyFilter(filter) {
+            currentPartyFilter = filter;
+
+            // Oppdater knappestyling
+            const btns = {
+                all: document.getElementById('filterAllClasses'),
+                ukak: document.getElementById('filterUKAK'),
+                vk: document.getElementById('filterVK')
+            };
+            Object.entries(btns).forEach(([key, btn]) => {
+                if (!btn) return;
+                if (key === filter) {
+                    btn.className = 'bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium border border-warm-300';
+                } else {
+                    btn.className = 'bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100 hover:border-warm-200 transition';
+                }
+            });
+
+            // Re-render med nåværende data
+            renderAllParties(getTrialParties());
+        }
+
         function renderAllParties(parties) {
             if (!parties || parties.length === 0) return;
 
@@ -6604,9 +6630,17 @@
             document.getElementById('partyListsEmptyState').classList.add('hidden');
             document.getElementById('partyListsContent').classList.remove('hidden');
 
+            // Filtrer etter klasse
+            let filtered = parties;
+            if (currentPartyFilter === 'ukak') {
+                filtered = parties.filter(p => p.type === 'ukak');
+            } else if (currentPartyFilter === 'vk') {
+                filtered = parties.filter(p => p.type === 'vk' || p.type === 'vk_kval' || p.type === 'vk_semi' || p.type === 'vk_finale');
+            }
+
             // Grupper partier etter dato
             const partiesByDay = {};
-            parties.forEach(party => {
+            filtered.forEach(party => {
                 const key = party.date;
                 if (!partiesByDay[key]) partiesByDay[key] = [];
                 partiesByDay[key].push(party);
@@ -6615,9 +6649,15 @@
             // Render
             const container = document.getElementById('partyListsContainer');
             const sortedDates = Object.keys(partiesByDay).sort();
-            container.innerHTML = sortedDates.map(function(dateStr, dayIndex) {
-                return renderDayGlobal(dateStr, dayIndex, partiesByDay[dateStr]);
-            }).join('');
+
+            if (sortedDates.length === 0) {
+                const filterNavn = currentPartyFilter === 'ukak' ? 'UK/AK' : 'VK';
+                container.innerHTML = '<div class="p-8 text-center text-bark-400 bg-white rounded-xl border border-bark-100"><p>Ingen ' + filterNavn + '-partier satt opp ennå</p></div>';
+            } else {
+                container.innerHTML = sortedDates.map(function(dateStr, dayIndex) {
+                    return renderDayGlobal(dateStr, dayIndex, partiesByDay[dateStr]);
+                }).join('');
+            }
 
             // Render dommere
             setTimeout(renderAllPartyDommere, 100);
@@ -8313,15 +8353,36 @@
             }
 
             // Bestem dato: semi = dag 2 (midt), finale = siste dag
-            const dateFrom = document.getElementById('trialDateFrom')?.value || '';
-            const dateTo = document.getElementById('trialDateTo')?.value || dateFrom;
-            let maalDato = erSemi ? dateTo : dateTo; // Begge bruker dateTo som default
-            // Beregn mer presist dato for semi = dag 2, finale = dag 3 (hvis 3-dagers prøve)
+            // Hent fra DOM-inputs først, fallback til server-data hvis tomt
+            let dateFrom = document.getElementById('trialDateFrom')?.value || '';
+            let dateTo = document.getElementById('trialDateTo')?.value || '';
+            if (!dateFrom || !dateTo) {
+                try {
+                    const proveIdLocal = getCurrentTrialId();
+                    if (proveIdLocal) {
+                        const resp = await fetch(`/api/prover/${proveIdLocal}`);
+                        if (resp.ok) {
+                            const prove = await resp.json();
+                            if (!dateFrom) dateFrom = prove.start_dato || '';
+                            if (!dateTo) dateTo = prove.slutt_dato || dateFrom;
+                        }
+                    }
+                } catch(e) { /* fallback under */ }
+            }
+            if (!dateTo) dateTo = dateFrom;
+
+            let maalDato = dateTo; // Både semi og finale = siste dag som default
             if (erSemi && dateFrom) {
+                // Semi = dag 2 (midt)
                 const start = new Date(dateFrom);
                 const semiDate = new Date(start);
                 semiDate.setDate(start.getDate() + 1);
                 maalDato = semiDate.toISOString().split('T')[0];
+            }
+            // Sikkerhetsnett: hvis vi fortsatt ikke har dato, bruk dagens dato
+            if (!maalDato) {
+                maalDato = new Date().toISOString().split('T')[0];
+                console.warn('[VK] Kunne ikke bestemme parti-dato, bruker dagens dato som fallback');
             }
 
             // Fjern tidligere parti(er) av samme type

@@ -6375,7 +6375,9 @@
 
         // Helper to format date in Norwegian
         function formatDateNorwegian(dateStr) {
+            if (!dateStr) return 'dato ikke satt';
             const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return 'ugyldig dato';
             const days = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
             const months = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
             return days[date.getDay()] + ' ' + date.getDate() + '. ' + months[date.getMonth()] + ' ' + date.getFullYear();
@@ -6412,9 +6414,9 @@
             var headerText = isVK ? 'text-earth-900' : 'text-forest-900';
             var headerBadge = isVK ? 'bg-earth-600 text-white' : 'bg-forest-600 text-white';
 
-            // Utled partinummer fra navn (f.eks. "UK/AK Parti 5" -> 5)
-            var numMatch = party.name.match(/Parti\s+(\d+)/i);
-            var partyNum = party.partyNum || (numMatch ? numMatch[1] : '?');
+            // Utled partinummer fra navn (f.eks. "UK/AK Parti 5" -> 5, "VK Kval 2" -> 2)
+            var numMatch = (party.name || '').match(/(\d+)(?!.*\d)/);
+            var partyNum = party.partyNum || (numMatch ? numMatch[1] : (party.type === 'vk' && (party.name || '').toLowerCase().includes('finale') ? 'F' : '?'));
 
             // Utled dagnavn fra dato
             var dagNavn = '';
@@ -6959,12 +6961,22 @@
                 partyNamePrefix = 'VK Kval';
             }
 
+            // Hent prøvens startdato slik at VK-partier får riktig dato (dag 1)
+            let vkDato = document.getElementById('trialDateFrom')?.value || '';
+            if (!vkDato) {
+                // Fallback: bruk eksisterende prøvepartiers dato hvis tilgjengelig
+                const anyParty = eksisterende.find(p => p.date);
+                if (anyParty) vkDato = anyParty.date;
+            }
+
             const nyeVkPartier = partyDogsArr.map((dogs, i) => ({
                 name: samletListe.antallPartier === 1 && vkType === '1day' ? 'VK Finale' : `${partyNamePrefix} ${i + 1}`,
+                displayName: null,
                 partyNum: i + 1,
                 type: 'vk',
                 vkSubType: vkSubType,
                 day: 1,
+                date: vkDato,  // Hindrer "Dag 3 - undefined NaN" ved rendering
                 dogs: dogs
             }));
 

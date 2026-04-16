@@ -2652,11 +2652,8 @@
 
                                 <!-- Manuell-modus (left/right split) -->
                                 <div id="trekningModusManuellBox" class="hidden">
-                                    <div class="bg-white border border-amber-200 rounded-lg p-3 mb-3 text-xs text-bark-700 space-y-1">
-                                        <p><strong>Regler for finale-trekning:</strong></p>
-                                        <p>• Maks <strong>10 hunder fra hvert kval-parti</strong> kan gå videre til finale (totalt opp til 20 ved 2 kval-partier).</p>
-                                        <p>• Klikk på en kvalifisert hund til venstre for å legge den inn i finalen. Rekkefølgen setter slipp-paringer: 1 mot 2, 3 mot 4, osv.</p>
-                                        <p>• Klikk på en hund i finalen (høyre side) for å angre. Når et parti er fullt blir resten grået ut.</p>
+                                    <div id="manuellTrekningInfo" class="bg-white border border-amber-200 rounded-lg p-3 mb-3 text-xs text-bark-700 space-y-1">
+                                        <!-- Fylles dynamisk basert på trekning-type -->
                                     </div>
 
                                     <div class="grid md:grid-cols-2 gap-4">
@@ -2671,10 +2668,10 @@
                                             </div>
                                         </div>
 
-                                        <!-- Høyre: finale-liste i par -->
+                                        <!-- Høyre: destinasjonsliste i par (1 eller 2 partier avhengig av type) -->
                                         <div class="bg-white rounded-xl border-2 border-forest-300 overflow-hidden">
                                             <div class="px-3 py-2 bg-forest-50 border-b border-forest-200 flex items-center justify-between">
-                                                <span class="font-semibold text-forest-800 text-sm">VK Finale (manuell trekning)</span>
+                                                <span id="manuellFinaleHeaderTekst" class="font-semibold text-forest-800 text-sm">VK Finale (manuell trekning)</span>
                                                 <span id="manuellFinaleCount" class="text-xs bg-forest-200 text-forest-800 px-2 py-0.5 rounded-full">0 hunder</span>
                                             </div>
                                             <div id="manuellFinaleListe" class="divide-y divide-forest-50 max-h-96 overflow-y-auto min-h-[100px]">
@@ -8004,6 +8001,39 @@
                 btnT.classList.add('border-bark-200', 'bg-white', 'text-bark-600');
                 boxT.classList.add('hidden');
                 boxM.classList.remove('hidden');
+
+                // Bygg kontekst-sensitiv infotekst
+                const infoEl = document.getElementById('manuellTrekningInfo');
+                if (infoEl) {
+                    const maksPerParti = getMaksPerKvalParti();
+                    const antallKilde = getAntallKildePartier();
+                    const antallMaal = getAntallMaalPartier();
+                    const maksTotal = maksPerParti * antallKilde;
+
+                    let kildeNavn, maalNavn;
+                    if (currentTrekningType === 'semi') {
+                        kildeNavn = 'kval-parti';
+                        maalNavn = 'semifinale-partier';
+                    } else if (currentTrekningType === 'finale') {
+                        kildeNavn = 'semifinale-parti';
+                        maalNavn = 'finaleparti';
+                    } else {
+                        kildeNavn = 'kval-parti';
+                        maalNavn = 'finaleparti';
+                    }
+
+                    let html = '<p><strong>Regler for manuell trekning:</strong></p>' +
+                        `<p>• Maks <strong>${maksPerParti} hunder fra hvert ${kildeNavn}</strong> kan gå videre (totalt opp til ${maksTotal} ved ${antallKilde} ${kildeNavn}${antallKilde === 1 ? '' : 'er'}).</p>`;
+
+                    if (antallMaal === 2) {
+                        html += '<p>• Klikk på en kvalifisert hund til venstre for å legge den inn. Hundene fordeles <strong>alternerende mellom Semi 1 og Semi 2</strong> (klikk 1 → Semi 1 #1, klikk 2 → Semi 2 #1, klikk 3 → Semi 1 #2, osv.).</p>';
+                    } else {
+                        html += `<p>• Klikk på en kvalifisert hund til venstre for å legge den inn i ${maalNavn}. Rekkefølgen setter slipp-paringer: 1 mot 2, 3 mot 4, osv.</p>`;
+                    }
+                    html += '<p>• Klikk på en hund på høyre side for å angre. Når et parti er fullt blir resten grået ut.</p>';
+                    infoEl.innerHTML = html;
+                }
+
                 renderManuellFinaleUI();
             } else {
                 btnT.classList.add('border-amber-500', 'bg-amber-100', 'text-amber-800');
@@ -8015,13 +8045,47 @@
             }
         }
 
-        // Hent maks antall hunder per kval-parti som kan gå videre (fra VK-config, default 10)
+        // Hent maks antall hunder per kilde-parti som kan gå videre
+        // Kontekst-sensitiv: for 'semi' (kval→semi) bruker vi maksTilSemi,
+        // for 'finale' (semi→finale) og 'finale_fra_kval' bruker vi maksTilFinale
         function getMaksPerKvalParti() {
             try {
                 const cfg = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
-                const m = parseInt(cfg.maksTilFinale);
-                return (m > 0) ? m : 10;
+                const type = (typeof currentTrekningType !== 'undefined') ? currentTrekningType : null;
+                let m;
+                if (type === 'semi') {
+                    // Kval → Semi: bruk maksTilSemi (default 13)
+                    m = parseInt(cfg.maksTilSemi);
+                    if (!(m > 0)) m = 13;
+                } else {
+                    // Semi → Finale eller Kval → Finale: bruk maksTilFinale (default 10)
+                    m = parseInt(cfg.maksTilFinale);
+                    if (!(m > 0)) m = 10;
+                }
+                return m;
             } catch { return 10; }
+        }
+
+        // Antall mål-partier som trekning skal fordele til
+        function getAntallMaalPartier() {
+            const type = (typeof currentTrekningType !== 'undefined') ? currentTrekningType : null;
+            if (type === 'semi') return 2;      // Kval → 2 semi-partier
+            return 1;                            // Finale: 1 parti
+        }
+
+        // Antall kilde-partier (kval eller semi) — leses fra vkConfig
+        function getAntallKildePartier() {
+            try {
+                const cfg = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
+                const type = (typeof currentTrekningType !== 'undefined') ? currentTrekningType : null;
+                if (type === 'finale') {
+                    // Semi → Finale: 2 semi-partier
+                    return 2;
+                }
+                // Kval-basert: antall kval-partier
+                const kp = parseInt(cfg.kvalPartier);
+                return (kp > 0) ? kp : 2;
+            } catch { return 2; }
         }
 
         function renderManuellFinaleUI() {
@@ -8116,9 +8180,50 @@
             tilgjengeligSpan.textContent = hunder.length + ' totalt';
 
             // Høyre: valgte i rekkefølge, paret som 1v2, 3v4 osv.
+            // For semi-trekning deles hundene alternerende mellom 2 semi-partier.
+            const antallMaal = getAntallMaalPartier();
+
             if (manuellFinaleValgte.length === 0) {
-                finaleListe.innerHTML = '<p class="p-4 text-sm text-forest-400 text-center">Klikk på en hund til venstre for å legge den inn</p>';
+                finaleListe.innerHTML = '<p class="p-4 text-sm text-forest-400 text-center">Klikk på en hund til venstre for å legge den inn' +
+                    (antallMaal === 2 ? '. Hundene fordeles alternerende på de 2 semi-partiene (klikk 1 → Semi 1, klikk 2 → Semi 2, osv.)' : '') +
+                    '</p>';
+            } else if (antallMaal === 2) {
+                // SEMI-trekning: del alternerende mellom Semi 1 og Semi 2
+                const semi1 = manuellFinaleValgte.filter((_, i) => i % 2 === 0);
+                const semi2 = manuellFinaleValgte.filter((_, i) => i % 2 === 1);
+
+                const renderSemi = (regnrs, semiNavn, borderCls, headerCls) =>
+                    '<div class="p-3 ' + headerCls + ' border-b border-forest-200">' +
+                        '<div class="font-bold text-sm">' + semiNavn + ' — ' + regnrs.length + ' hunder</div>' +
+                    '</div>' +
+                    (regnrs.length === 0
+                        ? '<div class="p-3 text-xs text-forest-400 text-center">(ingen hunder ennå)</div>'
+                        : regnrs.map(function(rn, localIdx) {
+                            const globIdx = manuellFinaleValgte.indexOf(rn);
+                            const slippNr = Math.floor(localIdx / 2) + 1;
+                            const hund = finnHundByRegnr(rn);
+                            const parternerIdx = localIdx % 2 === 0 ? localIdx + 1 : localIdx - 1;
+                            const partnerRn = regnrs[parternerIdx];
+                            let h = '';
+                            if (localIdx % 2 === 0) {
+                                h += '<div class="text-xs font-bold text-forest-700 px-3 pt-2 uppercase">Slipp ' + slippNr + '</div>';
+                            }
+                            h += '<div class="px-3 pb-1">' + manuellFinaleRadHtml(hund, localIdx + 1) + '</div>';
+                            if (localIdx % 2 === 0 && !partnerRn) {
+                                h += '<div class="mx-3 mb-2 p-2 border border-dashed border-forest-300 rounded text-center text-xs text-forest-500">(venter på makker)</div>';
+                            } else if (localIdx % 2 === 0) {
+                                h += '<div class="text-center text-xs text-forest-400 py-1">vs</div>';
+                            }
+                            return h;
+                        }).join(''));
+
+                finaleListe.innerHTML =
+                    '<div class="grid grid-cols-1 divide-y divide-forest-200">' +
+                        '<div>' + renderSemi(semi1, 'VK Semi 1', 'border-amber-200', 'bg-amber-50 text-amber-900') + '</div>' +
+                        '<div>' + renderSemi(semi2, 'VK Semi 2', 'border-forest-200', 'bg-forest-50 text-forest-900') + '</div>' +
+                    '</div>';
             } else {
+                // FINALE-trekning: alle i én liste med slipp-paringer
                 let html = '';
                 for (let i = 0; i < manuellFinaleValgte.length; i += 2) {
                     const slippNr = (i / 2) + 1;
@@ -8138,17 +8243,20 @@
                 finaleListe.innerHTML = html;
             }
 
-            // Vis finale-total med maks (antall kval-partier × maks per parti)
-            // Baseres på VK-konfig, ikke antall unike fraParti i data (som kan være 0 ved første lasting)
-            let antallKvalPartier = 2; // default 2-dagers VK
-            try {
-                const cfg = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
-                const kp = parseInt(cfg.kvalPartier);
-                if (kp > 0) antallKvalPartier = kp;
-                else if (partinavn.length > 0) antallKvalPartier = partinavn.length;
-            } catch {}
-            const maksTotal = maksPerParti * antallKvalPartier;
+            // Vis total med maks (antall kilde-partier × maks per parti)
+            const antallKildePartier = getAntallKildePartier();
+            const maksTotal = maksPerParti * antallKildePartier;
             finaleCountSpan.textContent = manuellFinaleValgte.length + ' av maks ' + maksTotal;
+
+            // Oppdater header-tekst basert på trekning-type
+            const headerEl = document.getElementById('manuellFinaleHeaderTekst');
+            if (headerEl) {
+                if (currentTrekningType === 'semi') {
+                    headerEl.textContent = 'VK Semifinale (manuell trekning)';
+                } else {
+                    headerEl.textContent = 'VK Finale (manuell trekning)';
+                }
+            }
         }
 
         function manuellFinaleRadHtml(hund, startnummer) {
@@ -8200,15 +8308,18 @@
 
         async function lagreManuellFinale() {
             if (manuellFinaleValgte.length === 0) {
-                alert('Ingen hunder valgt til finalen');
+                alert('Ingen hunder valgt');
                 return;
             }
             if (manuellFinaleValgte.length % 2 !== 0) {
                 if (!confirm('Du har oddetall hunder (' + manuellFinaleValgte.length + '). Siste hund vil ikke ha makker. Fortsette?')) return;
             }
 
-            // Bygg finale-partiet
-            const finaleDogs = manuellFinaleValgte.map(function(regnr, i) {
+            const antallMaal = getAntallMaalPartier();
+            const erSemi = (currentTrekningType === 'semi');
+
+            // Bygg hund-oppføringer
+            function dogObj(regnr, startnummer) {
                 const h = finnHundByRegnr(regnr);
                 if (!h) return null;
                 return {
@@ -8218,25 +8329,69 @@
                     klasse: 'VK',
                     eier: h.eier || '',
                     forer: h.forer || h.eier || '',
-                    startnummer: i + 1
+                    startnummer: startnummer
                 };
-            }).filter(Boolean);
+            }
 
-            // Bestem finale-dato: for 2-dagers VK = dag 2 (siste prøvedag)
-            let finaleDato = document.getElementById('trialDateTo')?.value || document.getElementById('trialDateFrom')?.value || '';
+            // Bestem dato: semi = dag 2 (midt), finale = siste dag
+            const dateFrom = document.getElementById('trialDateFrom')?.value || '';
+            const dateTo = document.getElementById('trialDateTo')?.value || dateFrom;
+            let maalDato = erSemi ? dateTo : dateTo; // Begge bruker dateTo som default
+            // Beregn mer presist dato for semi = dag 2, finale = dag 3 (hvis 3-dagers prøve)
+            if (erSemi && dateFrom) {
+                const start = new Date(dateFrom);
+                const semiDate = new Date(start);
+                semiDate.setDate(start.getDate() + 1);
+                maalDato = semiDate.toISOString().split('T')[0];
+            }
 
-            // Legg inn som nytt parti i trialParties
-            const parties = getTrialParties().filter(p => p.name !== 'VK Finale');
-            parties.push({
-                name: 'VK Finale',
-                displayName: null,
-                partyNum: 1,
-                type: 'vk',
-                vkSubType: 'vk_finale',
-                day: 2,
-                date: finaleDato,
-                dogs: finaleDogs
-            });
+            // Fjern tidligere parti(er) av samme type
+            let parties = getTrialParties();
+            if (erSemi) {
+                parties = parties.filter(p => p.name !== 'VK Semi 1' && p.name !== 'VK Semi 2');
+            } else {
+                parties = parties.filter(p => p.name !== 'VK Finale');
+            }
+
+            if (erSemi) {
+                // Del alternerende mellom Semi 1 og Semi 2
+                const semi1Regnrs = manuellFinaleValgte.filter((_, i) => i % 2 === 0);
+                const semi2Regnrs = manuellFinaleValgte.filter((_, i) => i % 2 === 1);
+
+                parties.push({
+                    name: 'VK Semi 1',
+                    displayName: null,
+                    partyNum: 1,
+                    type: 'vk',
+                    vkSubType: 'vk_semi',
+                    day: 2,
+                    date: maalDato,
+                    dogs: semi1Regnrs.map((rn, i) => dogObj(rn, i + 1)).filter(Boolean)
+                });
+                parties.push({
+                    name: 'VK Semi 2',
+                    displayName: null,
+                    partyNum: 2,
+                    type: 'vk',
+                    vkSubType: 'vk_semi',
+                    day: 2,
+                    date: maalDato,
+                    dogs: semi2Regnrs.map((rn, i) => dogObj(rn, i + 1)).filter(Boolean)
+                });
+            } else {
+                // Ett finale-parti
+                const finaleDogs = manuellFinaleValgte.map((rn, i) => dogObj(rn, i + 1)).filter(Boolean);
+                parties.push({
+                    name: 'VK Finale',
+                    displayName: null,
+                    partyNum: 1,
+                    type: 'vk',
+                    vkSubType: 'vk_finale',
+                    day: erSemi ? 2 : 3,
+                    date: maalDato,
+                    dogs: finaleDogs
+                });
+            }
 
             setTrialParties(parties);
 
@@ -8252,15 +8407,17 @@
                     });
                 } catch (e) { console.warn('Kunne ikke synkronisere partilister:', e); }
 
-                // Lagre også manuell finale-rekkefølge separat (historikk)
+                // Lagre manuell trekning-rekkefølge separat (for historikk og reproduksjon)
                 try {
-                    await fetch(`/api/storage/manuellFinaleTrekning_${proveId}`, {
+                    const trekningKey = erSemi ? 'manuellSemiTrekning' : 'manuellFinaleTrekning';
+                    await fetch(`/api/storage/${trekningKey}_${proveId}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
                         body: JSON.stringify({ value: {
                             rekkefolge: manuellFinaleValgte,
                             tidspunkt: new Date().toISOString(),
-                            antall: finaleDogs.length
+                            antall: manuellFinaleValgte.length,
+                            type: currentTrekningType
                         } })
                     });
                 } catch(e) {}
@@ -8271,7 +8428,8 @@
             if (typeof loadSmsPartier === 'function') loadSmsPartier();
             if (typeof loadVippsPartier === 'function') loadVippsPartier();
 
-            alert('✓ VK Finale lagret med ' + finaleDogs.length + ' hunder.\nPartiet vises nå under Parti- og ventelister og på offentlig side.');
+            const partiNavn = erSemi ? 'VK Semi 1 og VK Semi 2' : 'VK Finale';
+            alert('✓ ' + partiNavn + ' lagret med ' + manuellFinaleValgte.length + ' hunder.\nPartiet vises nå under Parti- og ventelister og på offentlig side.');
         }
 
         // Utfør tilfeldig trekning med synlig frø

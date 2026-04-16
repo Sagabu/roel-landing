@@ -7719,10 +7719,23 @@
                         body: JSON.stringify({ value: vkResultat })
                     });
 
-                    alert('Kvalifiserte hunder lagret!');
+                    // Tell opp valgte
+                    const antallValgt = Object.values(kvalifiserte).filter(v => v === true).length;
 
                     // Oppdater tellere
                     loadKvalifiserteCount();
+
+                    // Hopp automatisk videre til finale-trekning-view
+                    alert(`✓ ${antallValgt} kvalifiserte hund${antallValgt === 1 ? '' : 'er'} lagret for ${partiNavn}.\n\nNeste steg: velg «Kval → Finale» under for å sette opp finalepartiet.`);
+
+                    // Scroll til trekning-valg-seksjonen så brukeren ser neste steg tydelig
+                    const trekningValg = document.getElementById('vkTrekningValg');
+                    if (trekningValg) {
+                        trekningValg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Blink for oppmerksomhet
+                        trekningValg.classList.add('ring-4', 'ring-amber-400');
+                        setTimeout(() => trekningValg.classList.remove('ring-4', 'ring-amber-400'), 2500);
+                    }
                 } catch (err) {
                     console.error('Feil ved lagring:', err);
                     alert('Kunne ikke lagre: ' + err.message);
@@ -7843,27 +7856,54 @@
                     if (!sourceVkTypes.includes(resultater.vkType)) continue;
 
                     if (resultater.kvalifisertTilFinale) {
-                        const kvalIds = Object.entries(resultater.kvalifisertTilFinale)
+                        // Hent alle nøkler der verdi = true (ny format = regnr, gammel = nr)
+                        const kvalKeys = Object.entries(resultater.kvalifisertTilFinale)
                             .filter(([_, kval]) => kval === true)
-                            .map(([nr, _]) => parseInt(nr));
+                            .map(([key, _]) => String(key));
+                        const kvalKeySet = new Set(kvalKeys);
+                        const kvalIdsInt = kvalKeys.map(k => parseInt(k)).filter(n => !isNaN(n));
 
-                        // Prøv å finne hundene i trialParties basert på partyName
-                        const party = parties.find(p => p.name === resultater.partyName);
+                        // Hent party fra server for ferskest data
+                        let party = parties.find(p => p.name === resultater.partyName);
+                        if (!party) {
+                            // Fallback: hent fra admin-endpoint
+                            try {
+                                const proveIdLocal = getCurrentTrialId();
+                                if (proveIdLocal) {
+                                    const token = localStorage.getItem('fuglehund_token');
+                                    const rp = await fetch(`/api/prover/${proveIdLocal}/partilister/admin`, {
+                                        headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+                                    });
+                                    if (rp.ok) {
+                                        const pts = await rp.json();
+                                        party = (Array.isArray(pts) ? pts : []).find(p => p.name === resultater.partyName);
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+
                         if (party && party.dogs) {
-                            for (const dog of party.dogs) {
-                                if (kvalIds.includes(dog.nr)) {
+                            party.dogs.forEach((dog, i) => {
+                                const dogRegnr = String(dog.regnr || '');
+                                const dogNr = dog.nr;
+                                const dogIdxKey = 'idx_' + i;
+                                const matches = kvalKeySet.has(dogRegnr) ||
+                                                kvalKeySet.has(dogIdxKey) ||
+                                                (typeof dogNr === 'number' && kvalIdsInt.includes(dogNr));
+                                if (matches) {
                                     kvalifiserteHunder.push({
                                         ...dog,
                                         fraParti: resultater.partyName
                                     });
                                 }
-                            }
+                            });
                         } else {
-                            // Fallback: Lag dummy-hunder med bare nr (hvis partiliste ikke finnes)
-                            for (const nr of kvalIds) {
+                            // Fallback: Lag dummy-hunder
+                            for (const key of kvalKeys) {
                                 kvalifiserteHunder.push({
-                                    nr: nr,
-                                    name: `Hund #${nr}`,
+                                    nr: parseInt(key) || null,
+                                    regnr: key,
+                                    name: `Hund ${key}`,
                                     race: '?',
                                     fraParti: resultater.partyName || 'Ukjent parti'
                                 });

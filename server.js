@@ -370,7 +370,7 @@ db.exec(`
     bekreftet INTEGER DEFAULT 0,
     status TEXT DEFAULT 'aktiv',
     created_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(prove_id, hund_regnr)
+    UNIQUE(parti_id, hund_regnr)
   );
 
   -- Venteliste (hunder som ikke fikk plass)
@@ -386,7 +386,7 @@ db.exec(`
     forer_navn TEXT,
     prioritet INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(prove_id, hund_regnr)
+    UNIQUE(prove_id, hund_regnr, dag)
   );
 
   -- Klubb-administratorer

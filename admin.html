@@ -7596,11 +7596,24 @@
 
             actions?.classList.remove('hidden');
             oppdaterManuellKvalCount();
+            oppdaterMaksKvalLaasing();
         }
 
         function oppdaterManuellKvalUI(checkbox) {
             const label = checkbox.closest('label');
             if (!label) return;
+
+            // Håndhev maks (standard 10) per kval-parti
+            const maks = (typeof getMaksPerKvalParti === 'function') ? getMaksPerKvalParti() : 10;
+            if (checkbox.checked) {
+                const valgteNaa = document.querySelectorAll('.manuell-kval-check:checked').length;
+                if (valgteNaa > maks) {
+                    // Rull tilbake endringen — grense overskredet
+                    checkbox.checked = false;
+                    alert(`Maks ${maks} hunder kan gå videre til finale fra dette partiet.\n\nDu må fjerne avkrysning fra en annen hund først hvis du vil velge denne.`);
+                    return;
+                }
+            }
 
             if (checkbox.checked) {
                 label.classList.remove('border-bark-200', 'bg-white');
@@ -7623,14 +7636,44 @@
             }
 
             oppdaterManuellKvalCount();
+            oppdaterMaksKvalLaasing();
+        }
+
+        // Deaktiver (grå ut) resterende avkryssingsbokser når maks er nådd
+        function oppdaterMaksKvalLaasing() {
+            const maks = (typeof getMaksPerKvalParti === 'function') ? getMaksPerKvalParti() : 10;
+            const checkboxes = document.querySelectorAll('.manuell-kval-check');
+            const checkedCount = document.querySelectorAll('.manuell-kval-check:checked').length;
+            const erFullt = checkedCount >= maks;
+
+            checkboxes.forEach(cb => {
+                const label = cb.closest('label');
+                if (cb.checked) {
+                    // Valgte holder seg aktive (så man kan fjerne avkrysning)
+                    cb.disabled = false;
+                    label?.classList.remove('opacity-40', 'cursor-not-allowed');
+                    label?.classList.add('cursor-pointer');
+                } else if (erFullt) {
+                    // Ikke-valgte grå ut når maks er nådd
+                    cb.disabled = true;
+                    label?.classList.add('opacity-40', 'cursor-not-allowed');
+                    label?.classList.remove('cursor-pointer');
+                } else {
+                    cb.disabled = false;
+                    label?.classList.remove('opacity-40', 'cursor-not-allowed');
+                    label?.classList.add('cursor-pointer');
+                }
+            });
         }
 
         function oppdaterManuellKvalCount() {
             const checkboxes = document.querySelectorAll('.manuell-kval-check');
             const checked = document.querySelectorAll('.manuell-kval-check:checked');
             const countEl = document.getElementById('manuellKvalCount');
+            const maks = (typeof getMaksPerKvalParti === 'function') ? getMaksPerKvalParti() : 10;
             if (countEl) {
-                countEl.textContent = `${checked.length} av ${checkboxes.length} valgt`;
+                const fyll = checked.length >= maks ? ' — partiet er fullt' : '';
+                countEl.textContent = `${checked.length} av maks ${maks} valgt (av ${checkboxes.length} i partiet)${fyll}`;
             }
         }
 

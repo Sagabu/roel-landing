@@ -7900,6 +7900,15 @@
             }
         }
 
+        // Hent maks antall hunder per kval-parti som kan gå videre (fra VK-config, default 10)
+        function getMaksPerKvalParti() {
+            try {
+                const cfg = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
+                const m = parseInt(cfg.maksTilFinale);
+                return (m > 0) ? m : 10;
+            } catch { return 10; }
+        }
+
         function renderManuellFinaleUI() {
             const kvalListe = document.getElementById('manuellKvalHunderListe');
             const finaleListe = document.getElementById('manuellFinaleListe');
@@ -7911,26 +7920,78 @@
             // Bruk kvalifiserteHunder (som lastes av showTrekningForType)
             const hunder = Array.isArray(kvalifiserteHunder) ? kvalifiserteHunder : [];
             const valgtSet = new Set(manuellFinaleValgte);
+            const maksPerParti = getMaksPerKvalParti();
 
-            // Venstre: alle kvalifiserte (valgte vises lysere)
+            // Tell hvor mange som er valgt fra hvert kval-parti
+            const valgtePerParti = {};
+            manuellFinaleValgte.forEach(regnr => {
+                const h = finnHundByRegnr(regnr);
+                if (!h) return;
+                const parti = h.fraParti || 'ukjent';
+                valgtePerParti[parti] = (valgtePerParti[parti] || 0) + 1;
+            });
+
+            // Grupper hundene per kval-parti for oversiktlig visning
+            const gruppert = {};
+            hunder.forEach(h => {
+                const p = h.fraParti || 'ukjent';
+                if (!gruppert[p]) gruppert[p] = [];
+                gruppert[p].push(h);
+            });
+
+            const partinavn = Object.keys(gruppert).sort();
+
+            // Venstre: alle kvalifiserte, gruppert per kval-parti
             if (hunder.length === 0) {
                 kvalListe.innerHTML = '<p class="p-4 text-sm text-emerald-400 text-center">Ingen kvalifiserte hunder ennå. Marker noen i listen over først.</p>';
             } else {
-                kvalListe.innerHTML = hunder.map(function(h) {
-                    const regnr = h.regnr || h.nr || h.hundenavn;
-                    const erValgt = valgtSet.has(regnr);
-                    const klasseBadge = (h.klasse || 'VK');
-                    const bgCls = erValgt ? 'bg-emerald-50 opacity-50' : 'bg-white hover:bg-emerald-50 cursor-pointer';
-                    const regnrEsc = String(regnr).replace(/'/g, "\\'");
-                    return '<div onclick="' + (erValgt ? '' : "toggleManuellFinale('" + regnrEsc + "')") + '" class="p-3 ' + bgCls + ' transition flex items-center justify-between">' +
-                        '<div>' +
-                            '<div class="font-medium text-bark-800 text-sm">' + escapeHtmlLocal(h.hundenavn || h.navn || 'Ukjent') + '</div>' +
-                            '<div class="text-xs text-bark-500">' + escapeHtmlLocal(h.forer || h.eier || '—') + ' • ' + klasseBadge + '</div>' +
-                        '</div>' +
-                        (erValgt
-                            ? '<span class="text-xs text-emerald-700 font-medium">✓ I finalen</span>'
-                            : '<span class="text-xs text-emerald-600">Klikk for å velge</span>') +
+                kvalListe.innerHTML = partinavn.map(function(pNavn) {
+                    const partiHunder = gruppert[pNavn];
+                    const antallValgtFraParti = valgtePerParti[pNavn] || 0;
+                    const partiFullt = antallValgtFraParti >= maksPerParti;
+
+                    let html = '<div class="sticky top-0 bg-emerald-100/90 backdrop-blur-sm px-3 py-1.5 border-b border-emerald-200 flex items-center justify-between z-10">' +
+                        '<span class="text-xs font-bold text-emerald-800 uppercase">' + escapeHtmlLocal(pNavn) + '</span>' +
+                        '<span class="text-xs ' + (partiFullt ? 'bg-red-200 text-red-800' : 'bg-emerald-200 text-emerald-800') + ' px-2 py-0.5 rounded-full font-semibold">' +
+                            antallValgtFraParti + ' / ' + maksPerParti +
+                            (partiFullt ? ' (fullt)' : '') +
+                        '</span>' +
                     '</div>';
+
+                    html += partiHunder.map(function(h) {
+                        const regnr = h.regnr || h.nr || h.hundenavn;
+                        const erValgt = valgtSet.has(regnr);
+                        const klasseBadge = (h.klasse || 'VK');
+                        const regnrEsc = String(regnr).replace(/'/g, "\\'");
+
+                        // Grå ut hvis partiet er fullt (og denne hunden ikke allerede er valgt)
+                        const disabled = partiFullt && !erValgt;
+
+                        let bgCls, clickAction, statusTekst;
+                        if (erValgt) {
+                            bgCls = 'bg-emerald-50 opacity-50';
+                            clickAction = '';
+                            statusTekst = '<span class="text-xs text-emerald-700 font-medium">✓ I finalen</span>';
+                        } else if (disabled) {
+                            bgCls = 'bg-bark-50 opacity-40 cursor-not-allowed';
+                            clickAction = '';
+                            statusTekst = '<span class="text-xs text-bark-400">Partiet er fullt</span>';
+                        } else {
+                            bgCls = 'bg-white hover:bg-emerald-50 cursor-pointer';
+                            clickAction = "toggleManuellFinale('" + regnrEsc + "')";
+                            statusTekst = '<span class="text-xs text-emerald-600">Klikk for å velge</span>';
+                        }
+
+                        return '<div onclick="' + clickAction + '" class="p-3 ' + bgCls + ' transition flex items-center justify-between">' +
+                            '<div>' +
+                                '<div class="font-medium text-bark-800 text-sm">' + escapeHtmlLocal(h.hundenavn || h.navn || 'Ukjent') + '</div>' +
+                                '<div class="text-xs text-bark-500">' + escapeHtmlLocal(h.forer || h.eier || '—') + ' • ' + klasseBadge + '</div>' +
+                            '</div>' +
+                            statusTekst +
+                        '</div>';
+                    }).join('');
+
+                    return html;
                 }).join('');
             }
 
@@ -7985,6 +8046,18 @@
             if (idx >= 0) {
                 manuellFinaleValgte.splice(idx, 1);
             } else {
+                // Sjekk at kval-partiet ikke allerede har max antall valgte
+                const maks = getMaksPerKvalParti();
+                const hund = finnHundByRegnr(regnr);
+                const fraParti = hund?.fraParti || 'ukjent';
+                const antallFraPartiet = manuellFinaleValgte.filter(r => {
+                    const h = finnHundByRegnr(r);
+                    return (h?.fraParti || 'ukjent') === fraParti;
+                }).length;
+                if (antallFraPartiet >= maks) {
+                    alert(`Maks ${maks} hunder kan gå videre fra ${fraParti}. Fjern en hund først hvis du vil bytte.`);
+                    return;
+                }
                 manuellFinaleValgte.push(regnr);
             }
             renderManuellFinaleUI();

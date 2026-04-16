@@ -7505,7 +7505,8 @@
                 partiSelect.appendChild(option);
             });
 
-            loadManuellKvalLagret();
+            // Vent på at lagret data hentes FØR brukeren begynner å velge
+            await loadManuellKvalLagret();
         }
 
         async function loadManuellKvalLagret() {
@@ -7694,30 +7695,40 @@
             // Oppdater manuellKvalData
             manuellKvalData[partiNavn] = kvalifiserte;
 
-            // Lagre til server
+            // Lagre til server (MED auth-header — PUT krever innlogging)
             const proveId = getCurrentTrialId();
             if (proveId) {
                 try {
-                    await fetch(`/api/storage/manuellKvalifisering_${proveId}`, {
+                    const token = localStorage.getItem('fuglehund_token');
+                    const authHeaders = {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    };
+
+                    const resp1 = await fetch(`/api/storage/manuellKvalifisering_${proveId}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: authHeaders,
                         body: JSON.stringify({ value: manuellKvalData })
                     });
+                    if (!resp1.ok) throw new Error('Kunne ikke lagre manuell kvalifisering (status ' + resp1.status + ')');
                     localStorage.setItem(`manuellKvalifisering_${proveId}`, JSON.stringify(manuellKvalData));
 
                     // Også lagre i vkResultater-format for kompatibilitet med trekning
                     const vkResultat = {
                         partyName: partiNavn,
-                        vkType: 'kval', // Anta kval, kan forbedres
+                        vkType: 'kval',
                         kvalifisertTilFinale: kvalifiserte,
                         manueltKryssetAv: true,
                         timestamp: new Date().toISOString()
                     };
-                    await fetch(`/api/storage/vkResultater_${partiNavn}`, {
+                    const vkResultatKey = `vkResultater_${partiNavn.replace(/\s+/g, '_')}`;
+                    const resp2 = await fetch(`/api/storage/${vkResultatKey}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: authHeaders,
                         body: JSON.stringify({ value: vkResultat })
                     });
+                    if (!resp2.ok) throw new Error('Kunne ikke lagre VK-resultater (status ' + resp2.status + ')');
+                    localStorage.setItem(vkResultatKey, JSON.stringify(vkResultat));
 
                     // Tell opp valgte
                     const antallValgt = Object.values(kvalifiserte).filter(v => v === true).length;
@@ -8112,8 +8123,15 @@
             }
 
             // Vis finale-total med maks (antall kval-partier × maks per parti)
-            const antallPartier = partinavn.length || 1;
-            const maksTotal = maksPerParti * antallPartier;
+            // Baseres på VK-konfig, ikke antall unike fraParti i data (som kan være 0 ved første lasting)
+            let antallKvalPartier = 2; // default 2-dagers VK
+            try {
+                const cfg = JSON.parse(localStorage.getItem(getTrialVkConfigKey()) || '{}');
+                const kp = parseInt(cfg.kvalPartier);
+                if (kp > 0) antallKvalPartier = kp;
+                else if (partinavn.length > 0) antallKvalPartier = partinavn.length;
+            } catch {}
+            const maksTotal = maksPerParti * antallKvalPartier;
             finaleCountSpan.textContent = manuellFinaleValgte.length + ' av maks ' + maksTotal;
         }
 

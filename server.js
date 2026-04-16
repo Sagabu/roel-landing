@@ -9409,43 +9409,46 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
   }
 
   try {
-    // Slett eksisterende venteliste
-    db.prepare("DELETE FROM venteliste WHERE prove_id = ?").run(proveId);
-
     const insert = db.prepare(`
       INSERT INTO venteliste (prove_id, hund_regnr, hund_navn, rase, klasse, dag, eier_navn, forer_navn, prioritet)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    let total = 0;
+    const saveAll = db.transaction(() => {
+      db.prepare("DELETE FROM venteliste WHERE prove_id = ?").run(proveId);
 
-    // UK og AK per dag (støtter 1-4 dager dynamisk)
-    for (let d = 1; d <= 4; d++) {
-      const dagKey = `dag${d}`;
-      if (Array.isArray(venteliste[dagKey]?.uk)) {
+      let total = 0;
+
+      for (let d = 1; d <= 4; d++) {
+        const dagKey = `dag${d}`;
+        if (Array.isArray(venteliste[dagKey]?.uk)) {
+          let prio = 0;
+          for (const v of venteliste[dagKey].uk) {
+            insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'UK', d, v.eier || '', v.forer || '', prio++);
+            total++;
+          }
+        }
+        if (Array.isArray(venteliste[dagKey]?.ak)) {
+          let prio = 0;
+          for (const v of venteliste[dagKey].ak) {
+            insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'AK', d, v.eier || '', v.forer || '', prio++);
+            total++;
+          }
+        }
+      }
+
+      if (Array.isArray(venteliste.vk)) {
         let prio = 0;
-        for (const v of venteliste[dagKey].uk) {
-          insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'UK', d, v.eier, v.forer, prio++);
+        for (const v of venteliste.vk) {
+          insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'VK', null, v.eier || '', v.forer || '', prio++);
           total++;
         }
       }
-      if (Array.isArray(venteliste[dagKey]?.ak)) {
-        let prio = 0;
-        for (const v of venteliste[dagKey].ak) {
-          insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'AK', d, v.eier, v.forer, prio++);
-          total++;
-        }
-      }
-    }
 
-    // VK (ikke dag-spesifikk)
-    if (Array.isArray(venteliste.vk)) {
-      let prio = 0;
-      for (const v of venteliste.vk) {
-        insert.run(proveId, v.regnr, v.hundenavn, v.rase, 'VK', null, v.eier, v.forer, prio++);
-        total++;
-      }
-    }
+      return total;
+    });
+
+    const total = saveAll();
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "venteliste_lagret",

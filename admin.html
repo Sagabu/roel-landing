@@ -2615,8 +2615,18 @@
                             <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
                                 <h5 class="font-medium text-amber-800 mb-3">Fordeling på partier</h5>
 
-                                <div class="space-y-4">
-                                    <!-- Tilfeldig trekning -->
+                                <!-- Toggle: Tilfeldig | Manuell -->
+                                <div class="flex gap-2 mb-4">
+                                    <button onclick="setTrekningModus('tilfeldig')" id="trekningModusTilfeldig" class="flex-1 px-4 py-2 rounded-lg border-2 border-amber-500 bg-amber-100 text-amber-800 text-sm font-medium transition">
+                                        🎲 Tilfeldig trekning
+                                    </button>
+                                    <button onclick="setTrekningModus('manuell')" id="trekningModusManuell" class="flex-1 px-4 py-2 rounded-lg border-2 border-bark-200 bg-white text-bark-600 hover:border-bark-300 text-sm font-medium transition">
+                                        ✋ Manuell trekning
+                                    </button>
+                                </div>
+
+                                <!-- Tilfeldig-modus -->
+                                <div id="trekningModusTilfeldigBox" class="space-y-4">
                                     <div class="flex items-center gap-3">
                                         <button onclick="utforTilfeldigTrekning()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2637,6 +2647,44 @@
                                             <button onclick="copyFroToClipboard()" class="text-xs text-amber-600 hover:text-amber-800 underline">Kopier</button>
                                         </div>
                                         <p class="text-xs text-amber-600 mt-2">Dette frøet kan brukes til å verifisere at trekningen var tilfeldig. Samme frø gir alltid samme resultat.</p>
+                                    </div>
+                                </div>
+
+                                <!-- Manuell-modus (left/right split) -->
+                                <div id="trekningModusManuellBox" class="hidden">
+                                    <p class="text-xs text-amber-700 mb-3">Klikk på en kvalifisert hund til venstre for å flytte den inn på finalepartiet til høyre. Rekkefølgen setter slipp-paringer (1 mot 2, 3 mot 4, osv.). Klikk på en hund i finalen for å angre.</p>
+
+                                    <div class="grid md:grid-cols-2 gap-4">
+                                        <!-- Venstre: kvalifiserte hunder -->
+                                        <div class="bg-white rounded-xl border-2 border-emerald-300 overflow-hidden">
+                                            <div class="px-3 py-2 bg-emerald-50 border-b border-emerald-200 flex items-center justify-between">
+                                                <span class="font-semibold text-emerald-800 text-sm">Kvalifiserte hunder</span>
+                                                <span id="manuellKvalTilgjengelig" class="text-xs bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full">0</span>
+                                            </div>
+                                            <div id="manuellKvalHunderListe" class="divide-y divide-emerald-50 max-h-96 overflow-y-auto">
+                                                <p class="p-4 text-sm text-emerald-400 text-center">Ingen kvalifiserte hunder ennå. Marker noen i listen over først.</p>
+                                            </div>
+                                        </div>
+
+                                        <!-- Høyre: finale-liste i par -->
+                                        <div class="bg-white rounded-xl border-2 border-forest-300 overflow-hidden">
+                                            <div class="px-3 py-2 bg-forest-50 border-b border-forest-200 flex items-center justify-between">
+                                                <span class="font-semibold text-forest-800 text-sm">VK Finale (manuell trekning)</span>
+                                                <span id="manuellFinaleCount" class="text-xs bg-forest-200 text-forest-800 px-2 py-0.5 rounded-full">0 hunder</span>
+                                            </div>
+                                            <div id="manuellFinaleListe" class="divide-y divide-forest-50 max-h-96 overflow-y-auto min-h-[100px]">
+                                                <p class="p-4 text-sm text-forest-400 text-center">Klikk på en hund til venstre for å legge den inn</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex gap-3 pt-4">
+                                        <button onclick="lagreManuellFinale()" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white px-4 py-3 rounded-xl font-medium transition">
+                                            Lagre finalepartiet
+                                        </button>
+                                        <button onclick="nullstillManuellFinale()" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-3 rounded-xl font-medium transition">
+                                            Nullstill
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -7821,6 +7869,208 @@
                 document.getElementById('finaleKvalifiserteCount').textContent = `${kvalifiserteHunder.length} kvalifiserte hunder`;
                 document.getElementById('finaleKvalifiserteCount').classList.remove('hidden');
             }
+        }
+
+        // ====================================================================
+        // MANUELL FINALE-TREKNING (left/right split)
+        // ====================================================================
+        let manuellFinaleValgte = []; // ordered array of regnr
+
+        function setTrekningModus(modus) {
+            const btnT = document.getElementById('trekningModusTilfeldig');
+            const btnM = document.getElementById('trekningModusManuell');
+            const boxT = document.getElementById('trekningModusTilfeldigBox');
+            const boxM = document.getElementById('trekningModusManuellBox');
+
+            if (modus === 'manuell') {
+                btnM.classList.add('border-amber-500', 'bg-amber-100', 'text-amber-800');
+                btnM.classList.remove('border-bark-200', 'bg-white', 'text-bark-600');
+                btnT.classList.remove('border-amber-500', 'bg-amber-100', 'text-amber-800');
+                btnT.classList.add('border-bark-200', 'bg-white', 'text-bark-600');
+                boxT.classList.add('hidden');
+                boxM.classList.remove('hidden');
+                renderManuellFinaleUI();
+            } else {
+                btnT.classList.add('border-amber-500', 'bg-amber-100', 'text-amber-800');
+                btnT.classList.remove('border-bark-200', 'bg-white', 'text-bark-600');
+                btnM.classList.remove('border-amber-500', 'bg-amber-100', 'text-amber-800');
+                btnM.classList.add('border-bark-200', 'bg-white', 'text-bark-600');
+                boxM.classList.add('hidden');
+                boxT.classList.remove('hidden');
+            }
+        }
+
+        function renderManuellFinaleUI() {
+            const kvalListe = document.getElementById('manuellKvalHunderListe');
+            const finaleListe = document.getElementById('manuellFinaleListe');
+            const tilgjengeligSpan = document.getElementById('manuellKvalTilgjengelig');
+            const finaleCountSpan = document.getElementById('manuellFinaleCount');
+
+            if (!kvalListe || !finaleListe) return;
+
+            // Bruk kvalifiserteHunder (som lastes av showTrekningForType)
+            const hunder = Array.isArray(kvalifiserteHunder) ? kvalifiserteHunder : [];
+            const valgtSet = new Set(manuellFinaleValgte);
+
+            // Venstre: alle kvalifiserte (valgte vises lysere)
+            if (hunder.length === 0) {
+                kvalListe.innerHTML = '<p class="p-4 text-sm text-emerald-400 text-center">Ingen kvalifiserte hunder ennå. Marker noen i listen over først.</p>';
+            } else {
+                kvalListe.innerHTML = hunder.map(function(h) {
+                    const regnr = h.regnr || h.nr || h.hundenavn;
+                    const erValgt = valgtSet.has(regnr);
+                    const klasseBadge = (h.klasse || 'VK');
+                    const bgCls = erValgt ? 'bg-emerald-50 opacity-50' : 'bg-white hover:bg-emerald-50 cursor-pointer';
+                    const regnrEsc = String(regnr).replace(/'/g, "\\'");
+                    return '<div onclick="' + (erValgt ? '' : "toggleManuellFinale('" + regnrEsc + "')") + '" class="p-3 ' + bgCls + ' transition flex items-center justify-between">' +
+                        '<div>' +
+                            '<div class="font-medium text-bark-800 text-sm">' + escapeHtmlLocal(h.hundenavn || h.navn || 'Ukjent') + '</div>' +
+                            '<div class="text-xs text-bark-500">' + escapeHtmlLocal(h.forer || h.eier || '—') + ' • ' + klasseBadge + '</div>' +
+                        '</div>' +
+                        (erValgt
+                            ? '<span class="text-xs text-emerald-700 font-medium">✓ I finalen</span>'
+                            : '<span class="text-xs text-emerald-600">Klikk for å velge</span>') +
+                    '</div>';
+                }).join('');
+            }
+
+            tilgjengeligSpan.textContent = hunder.length + ' totalt';
+
+            // Høyre: valgte i rekkefølge, paret som 1v2, 3v4 osv.
+            if (manuellFinaleValgte.length === 0) {
+                finaleListe.innerHTML = '<p class="p-4 text-sm text-forest-400 text-center">Klikk på en hund til venstre for å legge den inn</p>';
+            } else {
+                let html = '';
+                for (let i = 0; i < manuellFinaleValgte.length; i += 2) {
+                    const slippNr = (i / 2) + 1;
+                    const hundA = finnHundByRegnr(manuellFinaleValgte[i]);
+                    const hundB = manuellFinaleValgte[i + 1] ? finnHundByRegnr(manuellFinaleValgte[i + 1]) : null;
+
+                    html += '<div class="p-3 bg-forest-50/30">' +
+                        '<div class="text-xs font-bold text-forest-700 mb-1.5 uppercase tracking-wide">Slipp ' + slippNr + '</div>' +
+                        manuellFinaleRadHtml(hundA, i + 1);
+                    if (hundB) {
+                        html += '<div class="text-center text-xs text-forest-400 my-1">vs</div>' + manuellFinaleRadHtml(hundB, i + 2);
+                    } else {
+                        html += '<div class="mt-2 p-2 border border-dashed border-forest-300 rounded text-center text-xs text-forest-500">(venter på makker)</div>';
+                    }
+                    html += '</div>';
+                }
+                finaleListe.innerHTML = html;
+            }
+
+            finaleCountSpan.textContent = manuellFinaleValgte.length + ' hunder';
+        }
+
+        function manuellFinaleRadHtml(hund, startnummer) {
+            if (!hund) return '';
+            const regnr = hund.regnr || hund.nr || hund.hundenavn;
+            const regnrEsc = String(regnr).replace(/'/g, "\\'");
+            return '<div onclick="toggleManuellFinale(\'' + regnrEsc + '\')" class="p-2 bg-white border border-forest-200 rounded flex items-center gap-3 cursor-pointer hover:bg-red-50 transition" title="Klikk for å fjerne">' +
+                '<span class="w-7 h-7 bg-forest-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">' + startnummer + '</span>' +
+                '<div class="flex-1 min-w-0">' +
+                    '<div class="font-medium text-bark-800 text-sm truncate">' + escapeHtmlLocal(hund.hundenavn || hund.navn || 'Ukjent') + '</div>' +
+                    '<div class="text-xs text-bark-500 truncate">' + escapeHtmlLocal(hund.forer || hund.eier || '—') + '</div>' +
+                '</div>' +
+                '<span class="text-xs text-red-400">✕</span>' +
+            '</div>';
+        }
+
+        function finnHundByRegnr(regnr) {
+            return (kvalifiserteHunder || []).find(h => (h.regnr || h.nr || h.hundenavn) === regnr);
+        }
+
+        function toggleManuellFinale(regnr) {
+            const idx = manuellFinaleValgte.indexOf(regnr);
+            if (idx >= 0) {
+                manuellFinaleValgte.splice(idx, 1);
+            } else {
+                manuellFinaleValgte.push(regnr);
+            }
+            renderManuellFinaleUI();
+        }
+
+        function nullstillManuellFinale() {
+            if (manuellFinaleValgte.length === 0) return;
+            if (!confirm('Nullstill valgt rekkefølge for finalen?')) return;
+            manuellFinaleValgte = [];
+            renderManuellFinaleUI();
+        }
+
+        async function lagreManuellFinale() {
+            if (manuellFinaleValgte.length === 0) {
+                alert('Ingen hunder valgt til finalen');
+                return;
+            }
+            if (manuellFinaleValgte.length % 2 !== 0) {
+                if (!confirm('Du har oddetall hunder (' + manuellFinaleValgte.length + '). Siste hund vil ikke ha makker. Fortsette?')) return;
+            }
+
+            // Bygg finale-partiet
+            const finaleDogs = manuellFinaleValgte.map(function(regnr, i) {
+                const h = finnHundByRegnr(regnr);
+                if (!h) return null;
+                return {
+                    regnr: h.regnr || '',
+                    hundenavn: h.hundenavn || h.navn || '',
+                    rase: h.rase || '',
+                    klasse: 'VK',
+                    eier: h.eier || '',
+                    forer: h.forer || h.eier || '',
+                    startnummer: i + 1
+                };
+            }).filter(Boolean);
+
+            // Bestem finale-dato: for 2-dagers VK = dag 2 (siste prøvedag)
+            let finaleDato = document.getElementById('trialDateTo')?.value || document.getElementById('trialDateFrom')?.value || '';
+
+            // Legg inn som nytt parti i trialParties
+            const parties = getTrialParties().filter(p => p.name !== 'VK Finale');
+            parties.push({
+                name: 'VK Finale',
+                displayName: null,
+                partyNum: 1,
+                type: 'vk',
+                vkSubType: 'vk_finale',
+                day: 2,
+                date: finaleDato,
+                dogs: finaleDogs
+            });
+
+            setTrialParties(parties);
+
+            // Synkroniser til server (samme endepunkt som admin bruker)
+            const proveId = getCurrentTrialId();
+            const token = localStorage.getItem('fuglehund_token');
+            if (proveId) {
+                try {
+                    await fetch(`/api/prover/${proveId}/partilister`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                        body: JSON.stringify({ partier: parties })
+                    });
+                } catch (e) { console.warn('Kunne ikke synkronisere partilister:', e); }
+
+                // Lagre også manuell finale-rekkefølge separat (historikk)
+                try {
+                    await fetch(`/api/storage/manuellFinaleTrekning_${proveId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': token ? `Bearer ${token}` : '' },
+                        body: JSON.stringify({ value: {
+                            rekkefolge: manuellFinaleValgte,
+                            tidspunkt: new Date().toISOString(),
+                            antall: finaleDogs.length
+                        } })
+                    });
+                } catch(e) {}
+            }
+
+            // Re-render overalt som viser partier
+            renderAllParties(parties);
+            if (typeof loadSmsPartier === 'function') loadSmsPartier();
+            if (typeof loadVippsPartier === 'function') loadVippsPartier();
+
+            alert('✓ VK Finale lagret med ' + finaleDogs.length + ' hunder.\nPartiet vises nå under Parti- og ventelister og på offentlig side.');
         }
 
         // Utfør tilfeldig trekning med synlig frø
@@ -16385,7 +16635,17 @@
 
         // Sjekk om bedømming er utenfor systemet
         function erBedommingUtenforSystemet() {
-            return window.bedommingUtenforSystemet === true;
+            if (window.bedommingUtenforSystemet === true) return true;
+            if (window.bedommingUtenforSystemet === false) return false;
+            // Fallback: les fra localStorage hvis window-variabelen ikke er satt ennå
+            try {
+                const proveId = getCurrentTrialId();
+                if (!proveId) return false;
+                const stored = localStorage.getItem(`praktiskInfo_${proveId}`);
+                if (!stored) return false;
+                const data = JSON.parse(stored);
+                return data.bedommingUtenforSystemet === true;
+            } catch (e) { return false; }
         }
 
         // Oppdater automatikk-status i sidemenyen

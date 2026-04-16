@@ -7692,11 +7692,27 @@
                 if (id) kvalifiserte[id] = cb.checked;
             });
 
-            // Oppdater manuellKvalData
+            // VIKTIG: Hent siste server-tilstand og MERGE før lagring.
+            // Hindrer at lokal state overskriver data fra andre kval-partier
+            // som allerede er lagret (f.eks. hvis prøveleder har refreshet siden).
+            const proveId = getCurrentTrialId();
+            if (proveId) {
+                try {
+                    const resp = await fetch(`/api/storage/manuellKvalifisering_${proveId}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value && typeof data.value === 'object') {
+                            // Behold andre partiers data, overskriv kun dette partiet
+                            manuellKvalData = { ...data.value, ...manuellKvalData };
+                        }
+                    }
+                } catch (e) { /* fallback — fortsett med lokal state */ }
+            }
+
+            // Sett gjeldende partis avkrysninger
             manuellKvalData[partiNavn] = kvalifiserte;
 
             // Lagre til server (MED auth-header — PUT krever innlogging)
-            const proveId = getCurrentTrialId();
             if (proveId) {
                 try {
                     const token = localStorage.getItem('fuglehund_token');

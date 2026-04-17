@@ -6226,6 +6226,69 @@
                 } catch (e) {
                     console.warn('Kunne ikke slette partilister fra server:', e);
                 }
+
+                // Slett manuell VK-kvalifisering (avkrysninger fra "Marker kvalifiserte")
+                localStorage.removeItem(`manuellKvalifisering_${proveId}`);
+                try {
+                    await fetch(`/api/storage/manuellKvalifisering_${proveId}`, {
+                        method: 'DELETE',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                } catch(e) {}
+
+                // Slett manuell finale-/semi-trekning (historikk)
+                localStorage.removeItem(`manuellFinaleTrekning_${proveId}`);
+                localStorage.removeItem(`manuellSemiTrekning_${proveId}`);
+                try {
+                    await fetch(`/api/storage/manuellFinaleTrekning_${proveId}`, { method: 'DELETE', headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+                } catch(e) {}
+                try {
+                    await fetch(`/api/storage/manuellSemiTrekning_${proveId}`, { method: 'DELETE', headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+                } catch(e) {}
+
+                // Slett vkResultater_*-nøkler (fra VK-bedømming, markert kvalifisert osv)
+                // Disse har ikke prove_id i nøkkelnavnet — vi må hente alle og filtrere
+                try {
+                    const storageResp = await fetch('/api/storage', {
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                    if (storageResp.ok) {
+                        const storageData = await storageResp.json();
+                        const vkKeys = (storageData.keys || [])
+                            .map(k => k.key)
+                            .filter(k => k && k.startsWith('vkResultater_'));
+                        for (const key of vkKeys) {
+                            localStorage.removeItem(key);
+                            try {
+                                await fetch(`/api/storage/${encodeURIComponent(key)}`, {
+                                    method: 'DELETE',
+                                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                                });
+                            } catch(e) {}
+                        }
+                        if (vkKeys.length > 0) {
+                            console.log(`[clearAllData] Slettet ${vkKeys.length} vkResultater-nøkler`);
+                        }
+                    }
+                } catch(e) {
+                    console.warn('Kunne ikke rydde vkResultater-nøkler:', e);
+                }
+
+                // Slett dommer-signaturer og DVK-journaler knyttet til prøven
+                try {
+                    await fetch(`/api/prover/${proveId}/signaturer/alle`, {
+                        method: 'DELETE',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                    });
+                } catch(e) {}
+
+                // Nullstill manuell VK-valg-state i memory
+                if (typeof manuellKvalData !== 'undefined') {
+                    Object.keys(manuellKvalData).forEach(k => delete manuellKvalData[k]);
+                }
+                if (typeof manuellFinaleValgte !== 'undefined') {
+                    manuellFinaleValgte.length = 0;
+                }
             }
 
             // Nullstill statistikk

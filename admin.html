@@ -6335,14 +6335,43 @@
             alert('✅ Alle data er slettet (både lokalt og på server). Du kan nå laste opp en ny deltakerliste.');
         }
 
+        // Format "2026-04-25" → "lør 25. apr"
+        function formatDagDato(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleDateString('no-NO', { weekday: 'short', day: 'numeric', month: 'short' });
+        }
+
         // Åpne dialog for å legge til hund manuelt
         function openAddDogDialog() {
             const parties = getTrialParties();
 
-            // Bygg parti-valg
-            const partyOptions = parties.map(p =>
-                '<option value="' + p.name + '">' + (p.displayName || p.name) + ' (' + p.dogs.length + ' hunder)</option>'
-            ).join('');
+            // Samle unike dager fra UK/AK-partier (for venteliste-alternativer)
+            const ukakDager = [...new Set(
+                parties.filter(p => p.type !== 'vk').map(p => p.day || 1)
+            )].sort((a, b) => a - b);
+
+            const harVk = parties.some(p => p.type === 'vk');
+
+            // Parti-alternativer med dag + dato
+            const partyOptions = parties.map(p => {
+                const dato = formatDagDato(p.date);
+                const dagTxt = dato ? ' — ' + dato : (p.day ? ' — dag ' + p.day : '');
+                return '<option value="parti|' + p.name + '">' +
+                    (p.displayName || p.name) + dagTxt + ' (' + p.dogs.length + ' hunder)</option>';
+            }).join('');
+
+            // Venteliste per dag + felles VK
+            const ventelisteDagOptions = ukakDager.map(d => {
+                const dagParti = parties.find(p => p.type !== 'vk' && (p.day || 1) === d);
+                const dato = dagParti ? formatDagDato(dagParti.date) : '';
+                return '<option value="venteliste|' + d + '">Venteliste dag ' + d +
+                    (dato ? ' — ' + dato : '') + '</option>';
+            }).join('');
+            const ventelisteVkOption = harVk
+                ? '<option value="venteliste|vk">Venteliste VK</option>'
+                : '';
 
             const dialogHtml = '<div id="addDogDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
                 '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">' +
@@ -6374,10 +6403,13 @@
                             '</select>' +
                         '</div>' +
                         '<div>' +
-                            '<label class="block text-sm font-medium text-bark-700 mb-1">Plasser i parti *</label>' +
+                            '<label class="block text-sm font-medium text-bark-700 mb-1">Plasser i *</label>' +
                             '<select id="addDogParty" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">' +
-                                partyOptions +
-                                '<option value="__venteliste__">Venteliste</option>' +
+                                (partyOptions ? '<optgroup label="Partier">' + partyOptions + '</optgroup>' : '') +
+                                '<optgroup label="Venteliste">' +
+                                    ventelisteDagOptions +
+                                    ventelisteVkOption +
+                                '</optgroup>' +
                             '</select>' +
                         '</div>' +
                     '</div>' +
@@ -6403,7 +6435,8 @@
             const rase = document.getElementById('addDogRase').value.trim();
             const forer = document.getElementById('addDogForer').value.trim();
             const klasse = document.getElementById('addDogKlasse').value;
-            const partyName = document.getElementById('addDogParty').value;
+            const destRaw = document.getElementById('addDogParty').value;
+            const [destType, destId] = destRaw.split('|');  // "parti|Parti 1" eller "venteliste|2" / "venteliste|vk"
 
             // Valider påkrevde felt
             if (!regnr || !hundenavn || !forer) {
@@ -6411,12 +6444,67 @@
                 return;
             }
 
-            // Sjekk at hunden ikke allerede finnes
             const parties = getTrialParties();
-            for (const party of parties) {
-                if (party.dogs.find(d => d.regnr === regnr)) {
-                    alert('En hund med dette registreringsnummeret finnes allerede!');
+            const venteliste = getTrialVenteliste();
+
+            // Finn hvilken dag hunden skal på (VK = felles, ikke dag-basert)
+            let targetDag = null;  // 1, 2, 3, 4, eller null for VK
+            let isVK = false;
+            if (destType === 'parti') {
+                const party = parties.find(p => p.name === destId);
+                if (!party) { alert('Fant ikke det valgte partiet.'); return; }
+                if (party.type === 'vk') {
+                    isVK = true;
+                } else {
+                    targetDag = party.day || 1;
+                }
+            } else if (destType === 'venteliste') {
+                if (destId === 'vk') {
+                    isVK = true;
+                } else {
+                    targetDag = parseInt(destId, 10);
+                }
+            }
+
+            // Klassekompatibilitet mot valgt destinasjon
+            if (isVK && klasse !== 'VK') {
+                alert('VK-destinasjon krever at klasse er VK.');
+                return;
+            }
+            if (!isVK && klasse === 'VK') {
+                alert('VK-hunder må legges på VK-parti eller VK-venteliste.');
+                return;
+            }
+
+            // Dag-basert duplikatsjekk
+            // VK: samme hund kan ikke være på to VK-partier eller VK-venteliste (hele serien er én konkurranse)
+            // UK/AK: samme hund kan ikke være påmeldt samme DAG, men kan være på flere dager
+            if (isVK) {
+                for (const party of parties) {
+                    if (party.type === 'vk' && party.dogs.find(d => d.regnr === regnr)) {
+                        alert('Hunden er allerede på et VK-parti ("' + (party.displayName || party.name) + '"). En hund kan kun være påmeldt VK én gang (kval/semi/finale er én serie).');
+                        return;
+                    }
+                }
+                if ((venteliste.vk || []).find(d => d.regnr === regnr)) {
+                    alert('Hunden står allerede på VK-ventelisten.');
                     return;
+                }
+            } else {
+                for (const party of parties) {
+                    if (party.type === 'vk') continue;
+                    if ((party.day || 1) === targetDag && party.dogs.find(d => d.regnr === regnr)) {
+                        alert('Hunden er allerede påmeldt "' + (party.displayName || party.name) + '" samme dag (dag ' + targetDag + ').');
+                        return;
+                    }
+                }
+                const dagKey = 'dag' + targetDag;
+                const dagVL = venteliste[dagKey] || {};
+                for (const kl of ['uk', 'ak']) {
+                    if ((dagVL[kl] || []).find(d => d.regnr === regnr)) {
+                        alert('Hunden står allerede på venteliste dag ' + targetDag + '.');
+                        return;
+                    }
                 }
             }
 
@@ -6426,48 +6514,37 @@
                 rase: rase,
                 forer: forer,
                 klasse: klasse,
-                klasseRaw: klasse
+                klasseRaw: klasse + (targetDag ? targetDag : ''),  // bevar dag-info (f.eks. "AK2")
+                dag: isVK ? null : targetDag
             };
 
-            if (partyName === '__venteliste__') {
-                // Legg til venteliste
-                const venteliste = getTrialVenteliste();
-                if (klasse === 'VK') {
+            if (destType === 'venteliste') {
+                if (isVK) {
                     venteliste.vk = venteliste.vk || [];
                     venteliste.vk.push(newDog);
                 } else {
                     const kl = klasse.toLowerCase();
-                    venteliste.dag1[kl] = venteliste.dag1[kl] || [];
-                    venteliste.dag1[kl].push(newDog);
+                    const dagKey = 'dag' + targetDag;
+                    if (!venteliste[dagKey]) venteliste[dagKey] = { uk: [], ak: [] };
+                    venteliste[dagKey][kl] = venteliste[dagKey][kl] || [];
+                    venteliste[dagKey][kl].push(newDog);
                 }
                 setTrialVenteliste(venteliste);
                 renderVenteliste(venteliste);
             } else {
                 // Legg til parti
-                const party = parties.find(p => p.name === partyName);
-                if (party) {
-                    // Sjekk klassekompatibilitet
-                    if (party.type === 'vk' && klasse !== 'VK') {
-                        alert('Kun VK-hunder kan legges til VK-partier');
-                        return;
-                    }
-                    if (party.type === 'ukak' && klasse === 'VK') {
-                        alert('VK-hunder kan ikke legges til UK/AK-partier');
-                        return;
-                    }
-                    // Sjekk kapasitet
-                    if (party.type !== 'vk' && party.dogs.length >= 14) {
-                        alert('Partiet er fullt (maks 14 hunder). Fjern en hund først eller velg et annet parti.');
-                        return;
-                    }
-
-                    party.dogs.push(newDog);
-                    if (klasse === 'UK') party.ukCount = (party.ukCount || 0) + 1;
-                    else if (klasse === 'AK') party.akCount = (party.akCount || 0) + 1;
-
-                    setTrialParties(parties);
-                    renderAllParties(parties);
+                const party = parties.find(p => p.name === destId);
+                if (party.type !== 'vk' && party.dogs.length >= 14) {
+                    alert('Partiet er fullt (maks 14 hunder). Fjern en hund først eller velg et annet parti.');
+                    return;
                 }
+
+                party.dogs.push(newDog);
+                if (klasse === 'UK') party.ukCount = (party.ukCount || 0) + 1;
+                else if (klasse === 'AK') party.akCount = (party.akCount || 0) + 1;
+
+                setTrialParties(parties);
+                renderAllParties(parties);
             }
 
             closeAddDogDialog();
@@ -10155,34 +10232,86 @@
                 return;
             }
 
-            // Finn alle eksisterende regnr
-            const existingRegnr = new Set();
+            // Bygg nøkkelsett (regnr, dag) for alle eksisterende påmeldinger
+            // — både i partier og i ventelister. VK behandles som én «dag» (kval/semi/finale er én konkurranse).
+            const existingVenteliste = getTrialVenteliste();
+            const existingKeys = new Set();
+            const existingRegnrAll = new Set();  // for "eksisterende hund, ny dag"-kategorisering
+            const keyFor = (regnr, klasse, dag) => (klasse === 'VK') ? regnr + '|VK' : regnr + '|' + (dag || 1);
+
             existingParties.forEach(party => {
                 party.dogs.forEach(dog => {
-                    if (dog.regnr) existingRegnr.add(dog.regnr);
+                    if (!dog.regnr) return;
+                    existingRegnrAll.add(dog.regnr);
+                    if (party.type === 'vk') {
+                        existingKeys.add(dog.regnr + '|VK');
+                    } else {
+                        existingKeys.add(dog.regnr + '|' + (party.day || 1));
+                    }
                 });
             });
+            [1, 2, 3, 4].forEach(d => {
+                const dagVL = existingVenteliste['dag' + d] || {};
+                ['uk', 'ak'].forEach(kl => {
+                    (dagVL[kl] || []).forEach(dog => {
+                        if (!dog.regnr) return;
+                        existingRegnrAll.add(dog.regnr);
+                        existingKeys.add(dog.regnr + '|' + d);
+                    });
+                });
+            });
+            (existingVenteliste.vk || []).forEach(dog => {
+                if (!dog.regnr) return;
+                existingRegnrAll.add(dog.regnr);
+                existingKeys.add(dog.regnr + '|VK');
+            });
 
-            // Filtrer ut hunder som allerede finnes
-            const newDogs = currentParticipants.filter(p => !existingRegnr.has(p.regnr));
+            // Filtrer: samme hund kan være med flere dager, men ikke to ganger samme dag.
+            const newDogs = currentParticipants.filter(p => !existingKeys.has(keyFor(p.regnr, p.klasse, p.dag)));
             const duplicates = currentParticipants.length - newDogs.length;
 
             if (newDogs.length === 0) {
-                alert('Alle ' + currentParticipants.length + ' hunder i filen finnes allerede i systemet.');
+                alert('Alle ' + currentParticipants.length + ' rader i filen er allerede registrert i systemet.');
                 return;
             }
 
-            // Bekreft med bruker
-            const confirmMsg = 'Fant ' + newDogs.length + ' nye hunder i filen.\n' +
-                (duplicates > 0 ? duplicates + ' hunder finnes allerede og vil bli ignorert.\n\n' : '\n') +
-                'Nye hunder:\n' +
-                newDogs.slice(0, 10).map(d => '• ' + d.hundenavn + ' (' + d.klasse + ')').join('\n') +
-                (newDogs.length > 10 ? '\n... og ' + (newDogs.length - 10) + ' til' : '') +
-                '\n\nVil du legge til disse på ventelisten?';
+            // Del nye hunder i to grupper: helt nye vs. eksisterende hund på ny dag
+            const helNye = [];
+            const nyDag = [];
+            newDogs.forEach(p => {
+                if (existingRegnrAll.has(p.regnr)) nyDag.push(p);
+                else helNye.push(p);
+            });
 
-            if (!confirm(confirmMsg)) return;
+            const formatDog = d => {
+                const dagSuffix = d.klasse === 'VK' ? '' : (d.dag ? ' dag ' + d.dag : '');
+                return '• ' + d.hundenavn + ' (' + d.klasse + dagSuffix + ')';
+            };
 
-            // Legg nye hunder på venteliste
+            // Oppsummering som skiller tydelig
+            const lines = [];
+            lines.push('Fant ' + newDogs.length + ' nye påmeldinger i filen:');
+            lines.push('• ' + helNye.length + ' helt nye hunder');
+            lines.push('• ' + nyDag.length + ' eksisterende hunder på ny dag');
+            if (duplicates > 0) lines.push('• ' + duplicates + ' rader finnes allerede (ignoreres)');
+            if (helNye.length > 0) {
+                lines.push('');
+                lines.push('Helt nye hunder:');
+                helNye.slice(0, 8).forEach(d => lines.push(formatDog(d)));
+                if (helNye.length > 8) lines.push('... og ' + (helNye.length - 8) + ' til');
+            }
+            if (nyDag.length > 0) {
+                lines.push('');
+                lines.push('Eksisterende hunder på ny dag:');
+                nyDag.slice(0, 8).forEach(d => lines.push(formatDog(d)));
+                if (nyDag.length > 8) lines.push('... og ' + (nyDag.length - 8) + ' til');
+            }
+            lines.push('');
+            lines.push('Alle legges på venteliste for den dagen de gjelder.');
+
+            if (!confirm(lines.join('\n'))) return;
+
+            // Legg nye hunder på venteliste — respekter dog.dag fra klasseRaw (UK1/UK2/AK1/AK2)
             const venteliste = getTrialVenteliste();
 
             newDogs.forEach(dog => {
@@ -10191,8 +10320,11 @@
                     venteliste.vk.push(dog);
                 } else {
                     const kl = dog.klasse?.toLowerCase() || 'ak';
-                    venteliste.dag1[kl] = venteliste.dag1[kl] || [];
-                    venteliste.dag1[kl].push(dog);
+                    const dagNr = dog.dag || 1;
+                    const dagKey = 'dag' + dagNr;
+                    if (!venteliste[dagKey]) venteliste[dagKey] = { uk: [], ak: [] };
+                    venteliste[dagKey][kl] = venteliste[dagKey][kl] || [];
+                    venteliste[dagKey][kl].push(dog);
                 }
             });
 
@@ -10208,7 +10340,10 @@
             updateStatsFromStorage();
             checkExistingData();
 
-            alert('✅ ' + newDogs.length + ' nye hunder er lagt til på ventelisten!\n\nDu kan nå flytte dem til partier manuelt.');
+            alert('✅ ' + newDogs.length + ' nye påmeldinger lagt til på ventelisten:\n' +
+                '   • ' + helNye.length + ' helt nye hunder\n' +
+                '   • ' + nyDag.length + ' eksisterende hunder på ny dag\n\n' +
+                'Du kan nå flytte dem til partier manuelt.');
 
             // Nullstill opplasting
             document.getElementById('dropZone').classList.remove('hidden');

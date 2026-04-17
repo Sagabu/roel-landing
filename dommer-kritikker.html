@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skriv kritikker - Fuglehundprøve</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' },
+                        forest: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-cream min-h-screen font-sans">
+
+    <!-- Header -->
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm sticky top-0 z-50 shadow-lg">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="dommer-hjem.html" class="p-2 hover:bg-white/20 rounded-lg transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                        </svg>
+                    </a>
+                    <div>
+                        <h1 class="text-xl font-serif font-bold">Skriv kritikker</h1>
+                        <p class="text-bark-400 text-sm" id="partyName">UK/AK Parti</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-bark-400">Ferdig bedømt</p>
+                    <p class="font-bold" id="progressText">0/0</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-6">
+        <!-- Info boks -->
+        <div class="bg-forest-50 border-2 border-forest-200 rounded-xl p-4 mb-6">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 bg-forest-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-forest-800">Skriv endelige kritikker</h3>
+                    <p class="text-sm text-forest-600 mt-1">
+                        Skriv en kritikk for hver hund basert på notatene fra slippene.
+                        Når alle kritikker er skrevet, send dem til NKK-representant for godkjenning.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hundeliste -->
+        <div id="dogList" class="space-y-4">
+            <!-- Fylles dynamisk -->
+            <div class="text-center py-12 text-bark-400">
+                <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+                <p>Laster hunder...</p>
+            </div>
+        </div>
+
+        <!-- Send alle knapp -->
+        <div id="sendAllSection" class="hidden mt-8 p-4 bg-white rounded-xl border-2 border-forest-200 shadow-sm">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-semibold text-bark-800">Klar til innsending?</h3>
+                    <p class="text-sm text-bark-500" id="readyCount">0 kritikker klare</p>
+                </div>
+                <button onclick="sendAllToNKK()" class="bg-forest-600 hover:bg-forest-700 text-white font-semibold py-3 px-6 rounded-xl transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    Send til NKK-rep
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Rediger kritikk -->
+    <div id="critiqueModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="bg-bark-700 text-white p-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-lg" id="modalDogName">Hundenavn</h3>
+                        <p class="text-sm text-white/70" id="modalDogInfo">Rase • Klasse • Fører</p>
+                    </div>
+                    <button onclick="closeCritiqueModal()" class="p-2 hover:bg-white/20 rounded-lg transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Statistikk-oppsummering -->
+                <div class="bg-bark-50 rounded-lg p-3">
+                    <h4 class="text-xs font-bold text-bark-600 uppercase mb-2">Statistikk (totalt)</h4>
+                    <div class="grid grid-cols-6 gap-2 text-center text-sm">
+                        <div>
+                            <p class="text-bark-400 text-xs">Slipptid</p>
+                            <p class="font-bold text-bark-800" id="modalSlipptid">0</p>
+                        </div>
+                        <div>
+                            <p class="text-bark-400 text-xs">Stand m/</p>
+                            <p class="font-bold text-bark-800" id="modalStandM">0</p>
+                        </div>
+                        <div>
+                            <p class="text-bark-400 text-xs">Stand u/</p>
+                            <p class="font-bold text-bark-800" id="modalStandU">0</p>
+                        </div>
+                        <div>
+                            <p class="text-bark-400 text-xs">Tomstand</p>
+                            <p class="font-bold text-bark-800" id="modalTomstand">0</p>
+                        </div>
+                        <div>
+                            <p class="text-bark-400 text-xs">Makker st.</p>
+                            <p class="font-bold text-bark-800" id="modalMakkerStand">0</p>
+                        </div>
+                        <div>
+                            <p class="text-bark-400 text-xs">Sjanse</p>
+                            <p class="font-bold text-bark-800" id="modalSjanse">0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Premie -->
+                <div>
+                    <label class="block text-sm font-semibold text-bark-700 mb-1">Premie</label>
+                    <select id="modalPremie" class="w-full h-10 px-3 rounded-lg border border-bark-300 bg-white text-sm">
+                        <option value="">Velg premie</option>
+                        <option value="0">0 - Ingen premie</option>
+                        <option value="1">1. premie</option>
+                        <option value="2">2. premie</option>
+                        <option value="3">3. premie</option>
+                    </select>
+                </div>
+
+                <!-- Notater fra slipp -->
+                <div>
+                    <label class="block text-sm font-semibold text-bark-700 mb-1">Notater fra slipp</label>
+                    <div id="modalSlippNotes" class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-bark-600 italic max-h-32 overflow-y-auto">
+                        Ingen notater
+                    </div>
+                </div>
+
+                <!-- Kritikk -->
+                <div>
+                    <label class="block text-sm font-semibold text-bark-700 mb-1">Endelig kritikk</label>
+                    <div class="flex gap-2 items-start">
+                        <textarea id="modalCritique" rows="6"
+                            class="flex-1 px-3 py-2 rounded-lg border border-bark-300 focus:border-forest-500 outline-none text-sm resize-none"
+                            placeholder="Skriv kritikken her..."></textarea>
+                        <button type="button" onclick="startDictation()" class="dictation-btn w-10 h-10 bg-warm-500 hover:bg-warm-600 text-white rounded-full flex items-center justify-center shadow transition flex-shrink-0" title="Trykk for å diktere">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-bark-200 flex gap-2">
+                <button onclick="closeCritiqueModal()" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition">
+                    Avbryt
+                </button>
+                <button onclick="saveCritique()" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white font-semibold py-3 rounded-xl transition">
+                    Lagre kritikk
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let partyId = '';
+        let proveId = '';
+        let partyData = null;
+        let dogList = [];
+        let currentDogNr = null;
+
+        async function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            partyId = urlParams.get('party') || 'ukak1';
+            proveId = urlParams.get('prove') || '';
+
+            // Last dommerkort-data
+            await loadDommerData();
+
+            renderDogList();
+            updateProgress();
+        }
+
+        async function loadDommerData() {
+            const storageKey = 'dommerkort_ukak_' + partyId;
+
+            // Prøv server først
+            try {
+                const resp = await fetch('/api/storage/' + storageKey);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.value) {
+                        partyData = data.value;
+                        localStorage.setItem(storageKey, JSON.stringify(partyData));
+                    }
+                }
+            } catch (e) {}
+
+            // Fallback til localStorage
+            if (!partyData) {
+                const saved = localStorage.getItem(storageKey);
+                if (saved) {
+                    partyData = JSON.parse(saved);
+                }
+            }
+
+            // Hent partiliste for hundeinfo
+            try {
+                const resp = await fetch('/api/partiliste/' + partyId);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.hunder) {
+                        dogList = data.hunder.map((h, i) => ({
+                            nr: i + 1,
+                            navn: h.navn,
+                            rase: h.rase,
+                            klasse: h.klasse,
+                            forer: h.forer_navn || h.eier_navn || '-',
+                            regnr: h.regnr || '-'
+                        }));
+                        document.getElementById('partyName').textContent = data.parti_navn || partyId.toUpperCase();
+                    }
+                }
+            } catch (e) {
+                console.error('Kunne ikke laste partiliste:', e);
+            }
+        }
+
+        function getDogData(dogNr) {
+            if (!partyData?.dogData) return null;
+            return partyData.dogData[dogNr] || null;
+        }
+
+        function getDogTotals(dogNr) {
+            const data = getDogData(dogNr);
+            if (!data?.slipps) return { slipptid: 0, stand_m: 0, stand_u: 0, tomstand: 0, makker_stand: 0, sjanse: 0 };
+
+            const totals = { slipptid: 0, stand_m: 0, stand_u: 0, tomstand: 0, makker_stand: 0, sjanse: 0 };
+            Object.values(data.slipps).forEach(slipp => {
+                ['slipptid', 'stand_m', 'stand_u', 'tomstand', 'makker_stand', 'sjanse'].forEach(field => {
+                    if (slipp[field]) totals[field] += slipp[field];
+                });
+            });
+            return totals;
+        }
+
+        function getSlippComments(dogNr) {
+            const data = getDogData(dogNr);
+            if (!data?.slipps) return [];
+
+            const comments = [];
+            Object.keys(data.slipps)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .forEach(slippNr => {
+                    if (data.slipps[slippNr]?.kommentar) {
+                        comments.push({ slipp: slippNr, text: data.slipps[slippNr].kommentar });
+                    }
+                });
+            return comments;
+        }
+
+        function renderDogList() {
+            const container = document.getElementById('dogList');
+
+            if (!dogList.length) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-bark-400">
+                        <p>Ingen hunder funnet i partiet</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Filtrer kun ferdige hunder
+            const ferdigeDogs = dogList.filter(dog => partyData?.ferdigeDogs?.[dog.nr]);
+
+            if (!ferdigeDogs.length) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-bark-400">
+                        <p>Ingen hunder er ferdig bedømt ennå</p>
+                        <a href="dommer-ukak.html?party=${partyId}" class="text-forest-600 underline mt-2 inline-block">Gå til bedømming</a>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = ferdigeDogs.map(dog => {
+                const data = getDogData(dog.nr);
+                const totals = getDogTotals(dog.nr);
+                const hasCritique = data?.kritikk && data.kritikk.length > 10;
+                const isSubmitted = data?.kritikkStatus === 'submitted' || data?.kritikkStatus === 'approved';
+
+                let statusBadge = '';
+                let statusClasses = '';
+                if (isSubmitted) {
+                    statusBadge = data.kritikkStatus === 'approved' ? 'Godkjent' : 'Sendt';
+                    statusClasses = data.kritikkStatus === 'approved' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700';
+                } else if (hasCritique) {
+                    statusBadge = 'Klar';
+                    statusClasses = 'bg-amber-100 text-amber-700';
+                } else {
+                    statusBadge = 'Mangler kritikk';
+                    statusClasses = 'bg-red-100 text-red-700';
+                }
+
+                return `
+                    <div class="bg-white rounded-xl border border-bark-200 shadow-sm overflow-hidden">
+                        <div class="p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <div>
+                                    <h3 class="font-bold text-bark-800">${dog.nr}. ${dog.navn}</h3>
+                                    <p class="text-sm text-bark-500">${dog.rase} • ${dog.klasse} • ${dog.forer}</p>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded-full ${statusClasses}">${statusBadge}</span>
+                            </div>
+                            <div class="flex items-center justify-between text-sm text-bark-500 mb-3">
+                                <span>${totals.slipptid} min • ${totals.stand_m + totals.stand_u} stand</span>
+                                <span class="font-medium ${data?.premie ? 'text-forest-600' : 'text-bark-400'}">
+                                    ${data?.premie ? data.premie + '. premie' : 'Ikke satt'}
+                                </span>
+                            </div>
+                            ${hasCritique ? `
+                                <p class="text-sm text-bark-600 line-clamp-2 mb-3 italic">"${data.kritikk.substring(0, 100)}..."</p>
+                            ` : ''}
+                            <button onclick="openCritiqueModal(${dog.nr})"
+                                class="w-full ${isSubmitted ? 'bg-bark-100 text-bark-600' : 'bg-forest-600 hover:bg-forest-700 text-white'} font-medium py-2 rounded-lg transition text-sm"
+                                ${isSubmitted ? 'disabled' : ''}>
+                                ${isSubmitted ? 'Se kritikk' : (hasCritique ? 'Rediger kritikk' : 'Skriv kritikk')}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Vis "Send alle" knapp hvis noen kritikker er klare
+            const readyCount = ferdigeDogs.filter(dog => {
+                const data = getDogData(dog.nr);
+                return data?.kritikk && data.kritikk.length > 10 && data.kritikkStatus !== 'submitted' && data.kritikkStatus !== 'approved';
+            }).length;
+
+            const sendSection = document.getElementById('sendAllSection');
+            if (readyCount > 0) {
+                document.getElementById('readyCount').textContent = `${readyCount} kritikk${readyCount > 1 ? 'er' : ''} klar${readyCount > 1 ? 'e' : ''}`;
+                sendSection.classList.remove('hidden');
+            } else {
+                sendSection.classList.add('hidden');
+            }
+        }
+
+        function updateProgress() {
+            const ferdigeDogs = dogList.filter(dog => partyData?.ferdigeDogs?.[dog.nr]);
+            const withCritique = ferdigeDogs.filter(dog => {
+                const data = getDogData(dog.nr);
+                return data?.kritikk && data.kritikk.length > 10;
+            });
+            document.getElementById('progressText').textContent = `${withCritique.length}/${ferdigeDogs.length} kritikker`;
+        }
+
+        function openCritiqueModal(dogNr) {
+            currentDogNr = dogNr;
+            const dog = dogList.find(d => d.nr === dogNr);
+            const data = getDogData(dogNr);
+            const totals = getDogTotals(dogNr);
+            const comments = getSlippComments(dogNr);
+
+            // Fyll inn modal
+            document.getElementById('modalDogName').textContent = `${dog.nr}. ${dog.navn}`;
+            document.getElementById('modalDogInfo').textContent = `${dog.rase} • ${dog.klasse} • ${dog.forer}`;
+
+            // Statistikk
+            document.getElementById('modalSlipptid').textContent = totals.slipptid;
+            document.getElementById('modalStandM').textContent = totals.stand_m;
+            document.getElementById('modalStandU').textContent = totals.stand_u;
+            document.getElementById('modalTomstand').textContent = totals.tomstand;
+            document.getElementById('modalMakkerStand').textContent = totals.makker_stand;
+            document.getElementById('modalSjanse').textContent = totals.sjanse;
+
+            // Premie
+            document.getElementById('modalPremie').value = data?.premie || '';
+
+            // Notater fra slipp
+            const notesContainer = document.getElementById('modalSlippNotes');
+            if (comments.length > 0) {
+                notesContainer.innerHTML = comments.map(c =>
+                    `<p class="mb-1"><strong>Slipp ${c.slipp}:</strong> ${c.text}</p>`
+                ).join('');
+            } else {
+                notesContainer.innerHTML = '<p class="text-bark-400">Ingen notater fra slippene</p>';
+            }
+
+            // Eksisterende kritikk
+            document.getElementById('modalCritique').value = data?.kritikk || data?.samletKommentar || '';
+
+            document.getElementById('critiqueModal').classList.remove('hidden');
+        }
+
+        function closeCritiqueModal() {
+            document.getElementById('critiqueModal').classList.add('hidden');
+            currentDogNr = null;
+        }
+
+        function saveCritique() {
+            if (!currentDogNr || !partyData) return;
+
+            const kritikk = document.getElementById('modalCritique').value.trim();
+            const premie = document.getElementById('modalPremie').value;
+
+            if (!kritikk) {
+                alert('Skriv en kritikk før du lagrer');
+                return;
+            }
+
+            // Oppdater data
+            if (!partyData.dogData[currentDogNr]) {
+                partyData.dogData[currentDogNr] = {};
+            }
+            partyData.dogData[currentDogNr].kritikk = kritikk;
+            partyData.dogData[currentDogNr].premie = premie;
+            partyData.dogData[currentDogNr].kritikkOppdatert = new Date().toISOString();
+
+            // Lagre
+            saveData();
+            closeCritiqueModal();
+            renderDogList();
+            updateProgress();
+        }
+
+        async function saveData() {
+            const storageKey = 'dommerkort_ukak_' + partyId;
+            partyData.lastSaved = new Date().toISOString();
+
+            localStorage.setItem(storageKey, JSON.stringify(partyData));
+
+            try {
+                await fetch('/api/storage/' + storageKey, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: partyData })
+                });
+            } catch (e) {
+                console.warn('Kunne ikke lagre til server:', e);
+            }
+        }
+
+        async function sendAllToNKK() {
+            const ferdigeDogs = dogList.filter(dog => partyData?.ferdigeDogs?.[dog.nr]);
+            const readyDogs = ferdigeDogs.filter(dog => {
+                const data = getDogData(dog.nr);
+                return data?.kritikk && data.kritikk.length > 10 && data.kritikkStatus !== 'submitted' && data.kritikkStatus !== 'approved';
+            });
+
+            if (readyDogs.length === 0) {
+                alert('Ingen kritikker klare for innsending');
+                return;
+            }
+
+            if (!confirm(`Send ${readyDogs.length} kritikk${readyDogs.length > 1 ? 'er' : ''} til NKK-representant for godkjenning?`)) {
+                return;
+            }
+
+            // Marker som sendt
+            readyDogs.forEach(dog => {
+                partyData.dogData[dog.nr].kritikkStatus = 'submitted';
+                partyData.dogData[dog.nr].kritikkSendtAt = new Date().toISOString();
+            });
+
+            await saveData();
+            renderDogList();
+
+            alert(`${readyDogs.length} kritikk${readyDogs.length > 1 ? 'er' : ''} sendt til NKK-representant!`);
+        }
+
+        // Diktering
+        let recognition = null;
+        function startDictation() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert('Diktering støttes ikke i denne nettleseren');
+                return;
+            }
+
+            const textarea = document.getElementById('modalCritique');
+            const btn = document.querySelector('.dictation-btn');
+
+            if (recognition) {
+                recognition.stop();
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.lang = 'nb-NO';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            let finalTranscript = textarea.value;
+
+            recognition.onstart = () => {
+                btn.classList.remove('bg-warm-500');
+                btn.classList.add('bg-red-500', 'animate-pulse');
+            };
+
+            recognition.onend = () => {
+                btn.classList.remove('bg-red-500', 'animate-pulse');
+                btn.classList.add('bg-warm-500');
+                recognition = null;
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                textarea.value = finalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
+            };
+
+            recognition.start();
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

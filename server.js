@@ -1,13 +1,15 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { bodyLimit } from "hono/body-limit";
 import Database from "better-sqlite3";
 import { readFileSync, existsSync, writeFileSync, copyFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
 import { config } from "dotenv";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, createCipheriv, createDecipheriv, scryptSync } from "crypto";
+import bcrypt from "bcrypt";
 
 // Load environment variables
 config();
@@ -20,30 +22,96 @@ const jwt = require("jsonwebtoken");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH ? join(__dirname, process.env.DB_PATH) : join(__dirname, "fuglehund.db");
 const PORT = Number(process.env.PORT || 8889);
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-not-for-production";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+// JWT_SECRET MÅ settes i produksjon - ingen default verdi tillatt
+const JWT_SECRET = process.env.JWT_SECRET;
+// Sesjon: 12 timer absolutt maks (krever re-login selv ved aktiv bruk)
+// Inaktivitets-timeout håndteres i frontend (60 min)
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
+
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error("❌ KRITISK FEIL: JWT_SECRET må settes i produksjon!");
+    console.error("   Legg til JWT_SECRET i .env eller som miljøvariabel.");
+    console.error("   Eksempel: JWT_SECRET=$(openssl rand -hex 32)");
+    process.exit(1);
+  } else {
+    console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt - bruker USIKKER dev-verdi!");
+    console.warn("   Dette er IKKE trygt for produksjon!");
+  }
+}
+const JWT_SECRET_FINAL = JWT_SECRET || "DEV-ONLY-INSECURE-SECRET-DO-NOT-USE-IN-PRODUCTION";
 const SITE_PIN = process.env.SITE_PIN || "";  // Tom = deaktivert
 const ADMIN_PIN = process.env.ADMIN_PIN || "";  // Tom = deaktivert
 
-// --- SMS config (Twilio eller Sveve) ---
+// --- Kryptering for sensitive data (Vipps API-nøkler etc.) ---
+// Bruker AES-256-GCM med nøkkel derivert fra JWT_SECRET
+const ENCRYPTION_KEY = scryptSync(JWT_SECRET_FINAL, 'fuglehund-salt-v1', 32);
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+
+function encryptSensitive(plaintext) {
+  if (!plaintext) return null;
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
+  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  // Format: iv:authTag:encrypted
+  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+}
+
+function decryptSensitive(ciphertext) {
+  if (!ciphertext) return null;
+  // Sjekk om det er gammel ukryptert verdi (migration support)
+  if (!ciphertext.includes(':')) {
+    return ciphertext; // Returnerer ukryptert for bakoverkompatibilitet
+  }
+  try {
+    const [ivHex, authTagHex, encrypted] = ciphertext.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    console.error('[Decrypt] Feil ved dekryptering:', err.message);
+    return ciphertext; // Returner original ved feil (kan være ukryptert)
+  }
+}
+
+// --- SMS config (Sveve prioritert, Twilio som backup) ---
+const SVEVE_USER = process.env.SVEVE_USER || "";
+const SVEVE_PASS = process.env.SVEVE_PASS || "";
+const SVEVE_FROM = process.env.SVEVE_FROM || "Fuglehund"; // Avsendernavn (maks 11 tegn)
+const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
+
+// --- AI config (Claude for dokumentavlesning) ---
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const aiConfigured = !!ANTHROPIC_API_KEY;
+
+// Twilio (backup/legacy)
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER || "";
 const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || "";
 const twilioConfigured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_PHONE_NUMBER || TWILIO_MESSAGING_SERVICE_SID));
 
-// Fallback: Sveve (legacy)
-const SVEVE_USER = process.env.SVEVE_USER || "";
-const SVEVE_PASS = process.env.SVEVE_PASS || "";
-const sveveConfigured = !!(SVEVE_USER && SVEVE_PASS);
+// SMS provider prioritet: Sveve > Twilio > Dev mode
 
-// SMS provider prioritet: Twilio > Sveve > Dev mode
-const smsProvider = twilioConfigured ? "twilio" : (sveveConfigured ? "sveve" : "dev");
+// Rate limiting for masse-SMS (per prøve: maks 2 utsendelser per time)
+const masseSmsRateLimit = new Map(); // proveId -> { lastSent: timestamp, count: number }
+const MASSE_SMS_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutter mellom utsendelser
+const MASSE_SMS_MAX_PER_HOUR = 3; // Maks 3 utsendelser per time per prøve
+const smsProvider = sveveConfigured ? "sveve" : (twilioConfigured ? "twilio" : "dev");
+
+// SMS-køsystem konfigurasjon
+const SMS_QUEUE_BATCH_SIZE = 10; // Antall SMS å sende per batch
+const SMS_QUEUE_BATCH_DELAY_MS = 1000; // Delay mellom hver SMS i batch
+const SMS_QUEUE_INTERVAL_MS = 5000; // Hvor ofte køen sjekkes
+let smsQueueProcessing = false;
 
 // Warn if using default secret
-if (!process.env.JWT_SECRET) {
-  console.warn("⚠️  ADVARSEL: JWT_SECRET ikke satt i .env - bruker usikker dev-secret!");
-}
 if (SITE_PIN) {
   console.log("🔒 Site-lock aktivert med PIN");
 }
@@ -156,6 +224,19 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Rapport-logg (for å spore sendte rapporter)
+  CREATE TABLE IF NOT EXISTS rapport_logg (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    rapport_type TEXT NOT NULL,  -- 'NKK', 'FKF', 'raseklubb', 'NJFF'
+    mottaker TEXT DEFAULT '',     -- epost eller organisasjon
+    generert_av TEXT DEFAULT '',  -- bruker som genererte
+    filnavn TEXT DEFAULT '',
+    antall_kritikker INTEGER DEFAULT 0,
+    detaljer TEXT DEFAULT '',     -- JSON med mer info
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Spørreundersøkelser
   CREATE TABLE IF NOT EXISTS undersokelser (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,6 +319,9 @@ db.exec(`
     klubb_id TEXT REFERENCES klubber(id),
     proveleder_telefon TEXT REFERENCES brukere(telefon),
     nkkrep_telefon TEXT REFERENCES brukere(telefon),
+    nkkvara_telefon TEXT REFERENCES brukere(telefon),
+    dvk_telefon TEXT REFERENCES brukere(telefon),
+    dvk_navn TEXT DEFAULT '',
     status TEXT DEFAULT 'planlagt',
     klasser TEXT DEFAULT '{"uk":true,"ak":true,"vk":true}',
     partier TEXT DEFAULT '{}',
@@ -251,7 +335,58 @@ db.exec(`
     dommer_telefon TEXT REFERENCES brukere(telefon),
     parti TEXT NOT NULL,
     dommer_rolle INTEGER DEFAULT NULL,
-    UNIQUE(prove_id, dommer_telefon)
+    UNIQUE(prove_id, parti, dommer_telefon)
+  );
+
+  -- Partier (gruppering av hunder i en prøve)
+  CREATE TABLE IF NOT EXISTS partier (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id) ON DELETE CASCADE,
+    navn TEXT NOT NULL,
+    display_navn TEXT,
+    type TEXT DEFAULT 'ukak',
+    dato TEXT,
+    klasse TEXT,
+    sortering INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, navn)
+  );
+
+  -- Parti-deltakere (hunder fordelt på partier)
+  CREATE TABLE IF NOT EXISTS parti_deltakere (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parti_id INTEGER NOT NULL REFERENCES partier(id) ON DELETE CASCADE,
+    prove_id TEXT NOT NULL REFERENCES prover(id) ON DELETE CASCADE,
+    hund_regnr TEXT NOT NULL,
+    hund_navn TEXT,
+    rase TEXT,
+    kjonn TEXT,
+    klasse TEXT,
+    eier_navn TEXT,
+    eier_telefon TEXT,
+    forer_navn TEXT,
+    forer_telefon TEXT,
+    startnummer INTEGER,
+    bekreftet INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'aktiv',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(parti_id, hund_regnr)
+  );
+
+  -- Venteliste (hunder som ikke fikk plass)
+  CREATE TABLE IF NOT EXISTS venteliste (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id) ON DELETE CASCADE,
+    hund_regnr TEXT NOT NULL,
+    hund_navn TEXT,
+    rase TEXT,
+    klasse TEXT,
+    dag INTEGER,
+    eier_navn TEXT,
+    forer_navn TEXT,
+    prioritet INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, hund_regnr, dag)
   );
 
   -- Klubb-administratorer
@@ -471,15 +606,449 @@ db.exec(`
     twilio_sid TEXT,
     status TEXT DEFAULT 'sent',
     klubb_id TEXT,
+    prove_id TEXT,
+    mottaker_navn TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_sms_log_created ON sms_log(created_at);
   CREATE INDEX IF NOT EXISTS idx_sms_log_type ON sms_log(type);
   CREATE INDEX IF NOT EXISTS idx_sms_log_klubb ON sms_log(klubb_id);
+  -- idx_sms_log_prove opprettes som migrasjon fordi prove_id-kolonnen legges til i migrations
+
+  -- DVK-kontroller (dyrevelferdskontroll)
+  CREATE TABLE IF NOT EXISTS dvk_kontroller (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    tidspunkt TEXT NOT NULL,
+    parti TEXT,
+    type TEXT NOT NULL CHECK(type IN ('rutine', 'varslet', 'spontan', 'oppfolging')),
+    hund TEXT,
+    forer TEXT,
+    beskrivelse TEXT,
+    obs_hundehold INTEGER DEFAULT 0,
+    obs_behandling INTEGER DEFAULT 0,
+    obs_vannmat INTEGER DEFAULT 0,
+    obs_hvile INTEGER DEFAULT 0,
+    obs_veiledning INTEGER DEFAULT 0,
+    obs_bekymring INTEGER DEFAULT 0,
+    tiltak_ingen INTEGER DEFAULT 0,
+    tiltak_veiledning INTEGER DEFAULT 0,
+    tiltak_advarsel INTEGER DEFAULT 0,
+    tiltak_dommer INTEGER DEFAULT 0,
+    tiltak_proveleder INTEGER DEFAULT 0,
+    tiltak_diskvalifikasjon INTEGER DEFAULT 0,
+    registrert_av TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_dvk_kontroller_prove ON dvk_kontroller(prove_id);
+
+  -- DVK-signatur
+  CREATE TABLE IF NOT EXISTS dvk_signaturer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL UNIQUE,
+    dvk_navn TEXT NOT NULL,
+    dvk_telefon TEXT,
+    initialer TEXT,
+    signert_dato TEXT NOT NULL,
+    signert_tid TEXT NOT NULL,
+    full_signatur TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- DVK-journaler (komplett journal med alle data)
+  CREATE TABLE IF NOT EXISTS dvk_journaler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL UNIQUE,
+    prove_navn TEXT,
+    arrangor_sted TEXT,
+    prove_dato TEXT,
+    dvk_navn TEXT NOT NULL,
+    dvk_telefon TEXT,
+    dvk_assistent TEXT,
+    kontroller_json TEXT,
+    avvik_json TEXT,
+    vet_henvisninger_json TEXT,
+    signatur_json TEXT,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'signed', 'submitted')),
+    signed_at TEXT,
+    submitted_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_dvk_journaler_prove ON dvk_journaler(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dvk_journaler_status ON dvk_journaler(status);
+
+  -- Rapport-versjoner (audit-trail for rapporter)
+  CREATE TABLE IF NOT EXISTS rapport_versjoner (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    rapport_type TEXT NOT NULL CHECK(rapport_type IN ('nkk', 'fkf', 'raseklubb', 'kritikker')),
+    versjon INTEGER DEFAULT 1,
+    data_json TEXT,
+    endret_av TEXT,
+    endret_av_navn TEXT,
+    endring_beskrivelse TEXT,
+    signatur_status TEXT DEFAULT 'usignert' CHECK(signatur_status IN ('usignert', 'delvis_signert', 'fullstendig_signert')),
+    proveleder_signert_at TEXT,
+    nkkrep_signert_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_rapport_versjoner_prove ON rapport_versjoner(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_rapport_versjoner_type ON rapport_versjoner(rapport_type);
+
+  -- VK-bedømming (Vinnerklasse dommerkort)
+  CREATE TABLE IF NOT EXISTS vk_bedomming (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    parti TEXT NOT NULL,
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    vk_type TEXT DEFAULT '1dag' CHECK(vk_type IN ('1dag', 'kval', 'finale')),
+    current_slipp INTEGER DEFAULT 1,
+    current_round INTEGER DEFAULT 1,
+    plasseringer TEXT DEFAULT '{}',
+    tid_til_gode TEXT DEFAULT '{}',
+    dog_data TEXT DEFAULT '{}',
+    slipp_comments TEXT DEFAULT '{}',
+    slipp_dogs TEXT DEFAULT '{}',
+    round_pairings TEXT DEFAULT '{}',
+    opponents TEXT DEFAULT '{}',
+    judged_this_round TEXT DEFAULT '{}',
+    round_snapshots TEXT DEFAULT '{}',
+    premietildelinger TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'aktiv' CHECK(status IN ('aktiv', 'fullfort', 'innsendt', 'godkjent')),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, parti)
+  );
+  CREATE INDEX IF NOT EXISTS idx_vk_bedomming_prove ON vk_bedomming(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_vk_bedomming_dommer ON vk_bedomming(dommer_telefon);
+
+  -- Dommer-notater (individuelle notater per dommer, per hund, per slipp)
+  -- Tillater at hver dommer i et parti har sine egne notater
+  CREATE TABLE IF NOT EXISTS dommer_notater (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    parti TEXT NOT NULL,
+    hund_id INTEGER REFERENCES hunder(id),
+    dommer_telefon TEXT REFERENCES brukere(telefon),
+    slipp_nr INTEGER DEFAULT 1,
+    -- Statistikk for dette slippet
+    slipptid INTEGER DEFAULT 0,
+    stand_m INTEGER DEFAULT 0,
+    stand_u INTEGER DEFAULT 0,
+    tomstand INTEGER DEFAULT 0,
+    makker_stand INTEGER DEFAULT 0,
+    sjanse INTEGER DEFAULT 0,
+    -- Egenskaper (1-6 skala)
+    jaktlyst INTEGER DEFAULT NULL,
+    fart INTEGER DEFAULT NULL,
+    selvstendighet INTEGER DEFAULT NULL,
+    soksbredde INTEGER DEFAULT NULL,
+    reviering INTEGER DEFAULT NULL,
+    samarbeid INTEGER DEFAULT NULL,
+    -- Fuglebehandling
+    presisjon INTEGER DEFAULT NULL,
+    reising INTEGER DEFAULT NULL,
+    apport INTEGER DEFAULT NULL,
+    -- Notater
+    notater TEXT DEFAULT '',
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, parti, hund_id, dommer_telefon, slipp_nr)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dommer_notater_prove ON dommer_notater(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dommer_notater_parti ON dommer_notater(prove_id, parti);
+  CREATE INDEX IF NOT EXISTS idx_dommer_notater_dommer ON dommer_notater(dommer_telefon);
+
+  -- Dokumentarkiv (alle dokumenter knyttet til en prøve)
+  CREATE TABLE IF NOT EXISTS prove_dokumenter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    klubb_id TEXT,
+    dokument_type TEXT NOT NULL,
+    tittel TEXT NOT NULL,
+    filnavn TEXT,
+    innhold_json TEXT,
+    opprettet_av TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_prove ON prove_dokumenter(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_type ON prove_dokumenter(dokument_type);
+
+  -- Klubb-dokumentarkiv (generelle dokumenter ikke knyttet til prøver)
+  CREATE TABLE IF NOT EXISTS klubb_dokumenter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    klubb_id TEXT NOT NULL,
+    dokument_type TEXT NOT NULL,
+    tittel TEXT NOT NULL,
+    beskrivelse TEXT,
+    filnavn TEXT,
+    innhold_json TEXT,
+    opprettet_av TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_klubb_dokumenter_klubb ON klubb_dokumenter(klubb_id);
+  CREATE INDEX IF NOT EXISTS idx_klubb_dokumenter_type ON klubb_dokumenter(dokument_type);
+
+  -- Dommerforespørsler (invitasjon til dommere fra prøveleder)
+  CREATE TABLE IF NOT EXISTS dommer_foresporsler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    dommer_telefon TEXT NOT NULL,
+    dommer_navn TEXT NOT NULL,
+    dommer_epost TEXT DEFAULT '',
+    parti TEXT DEFAULT '',
+    melding TEXT DEFAULT '',
+    reise_bil INTEGER DEFAULT 0,
+    reise_fly INTEGER DEFAULT 0,
+    reise_leiebil INTEGER DEFAULT 0,
+    reise_annet TEXT DEFAULT '',
+    status TEXT DEFAULT 'sendt' CHECK(status IN ('sendt', 'sett', 'akseptert', 'avslatt', 'kansellert')),
+    svar_melding TEXT DEFAULT '',
+    sendt_av TEXT NOT NULL REFERENCES brukere(telefon),
+    sendt_dato TEXT DEFAULT (datetime('now')),
+    sett_dato TEXT DEFAULT NULL,
+    svar_dato TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, dommer_telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dommer_foresporsler_prove ON dommer_foresporsler(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dommer_foresporsler_dommer ON dommer_foresporsler(dommer_telefon);
+  CREATE INDEX IF NOT EXISTS idx_dommer_foresporsler_status ON dommer_foresporsler(status);
+
+  -- Dommeroppgjør (økonomi etter gjennomført prøve)
+  CREATE TABLE IF NOT EXISTS dommer_oppgjor (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    dommer_telefon TEXT NOT NULL,
+    dommer_navn TEXT NOT NULL,
+
+    -- Reisekostnader
+    reise_km INTEGER DEFAULT 0,
+    reise_km_sats REAL DEFAULT 3.50,
+    reise_km_belop REAL DEFAULT 0,
+    reise_bom INTEGER DEFAULT 0,
+    reise_ferge INTEGER DEFAULT 0,
+    reise_fly INTEGER DEFAULT 0,
+    reise_leiebil INTEGER DEFAULT 0,
+    reise_annet INTEGER DEFAULT 0,
+    reise_annet_beskrivelse TEXT DEFAULT '',
+
+    -- Diett og overnatting
+    diett_dager INTEGER DEFAULT 0,
+    diett_sats REAL DEFAULT 350,
+    diett_belop REAL DEFAULT 0,
+    overnatting_netter INTEGER DEFAULT 0,
+    overnatting_belop REAL DEFAULT 0,
+
+    -- Honorar
+    honorar_dager INTEGER DEFAULT 0,
+    honorar_sats REAL DEFAULT 0,
+    honorar_belop REAL DEFAULT 0,
+
+    -- FKF Dommerutdanningsfond (trekkes)
+    fkf_fond_belop REAL DEFAULT 0,
+
+    -- Totalt
+    total_belop REAL DEFAULT 0,
+
+    -- Betalingsinformasjon
+    kontonummer TEXT DEFAULT '',
+    betalt INTEGER DEFAULT 0,
+    betalt_dato TEXT DEFAULT NULL,
+    betalt_av TEXT DEFAULT NULL,
+
+    -- Status
+    status TEXT DEFAULT 'utkast' CHECK(status IN ('utkast', 'innsendt', 'godkjent', 'utbetalt', 'avvist')),
+    kommentar TEXT DEFAULT '',
+
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, dommer_telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_dommer_oppgjor_prove ON dommer_oppgjor(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_dommer_oppgjor_status ON dommer_oppgjor(status);
+
+  -- Meldinger mellom deltakere og prøveledelse
+  CREATE TABLE IF NOT EXISTS meldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+
+    -- Avsender/mottaker
+    fra_telefon TEXT NOT NULL,
+    fra_navn TEXT NOT NULL,
+    til_type TEXT NOT NULL CHECK(til_type IN ('proveledelse', 'deltaker')),
+
+    -- Hvilken hund meldingen gjelder (valgfritt)
+    hund_id INTEGER REFERENCES hunder(id),
+    hund_regnr TEXT,
+    hund_navn TEXT,
+
+    -- Meldingsinnhold
+    emne TEXT NOT NULL,
+    melding TEXT NOT NULL,
+
+    -- Tråding (for svar)
+    parent_id INTEGER REFERENCES meldinger(id),
+
+    -- Status
+    lest INTEGER DEFAULT 0,
+    lest_av TEXT DEFAULT NULL,
+    lest_dato TEXT DEFAULT NULL,
+
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_meldinger_prove ON meldinger(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_meldinger_fra ON meldinger(fra_telefon);
+  CREATE INDEX IF NOT EXISTS idx_meldinger_parent ON meldinger(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_meldinger_lest ON meldinger(lest);
+
+  -- Partifordelingsregler (systemkonfigurasjon for hvordan hunder fordeles på partier)
+  CREATE TABLE IF NOT EXISTS partifordeling_regler (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    -- Eier/fører-regel: Alle hunder fra samme eier/fører på samme parti
+    eier_samme_parti INTEGER DEFAULT 1,
+    -- Slipp-regel: Hunder fra samme eier ikke i samme slipp (pos 1+2, 3+4, osv)
+    eier_ikke_samme_slipp INTEGER DEFAULT 1,
+    -- Identifisering av eier: 'telefon' = bruk telefonnr, 'navn' = bruk navn, 'begge' = telefon først, så navn
+    eier_identifikator TEXT DEFAULT 'begge',
+    -- Maks hunder per parti (UK/AK)
+    maks_per_parti_ukak INTEGER DEFAULT 14,
+    -- Maks hunder per parti (VK)
+    maks_per_parti_vk INTEGER DEFAULT 20,
+    -- Beskrivelse for admin (vises i UI)
+    beskrivelse TEXT DEFAULT 'Hunder fra samme eier/fører plasseres på samme parti, men ikke i samme slipp.',
+    -- Metadata
+    oppdatert_av TEXT DEFAULT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  INSERT OR IGNORE INTO partifordeling_regler (id) VALUES (1);
+
+  -- Jegermiddag-påmeldinger (sosial middag under prøvehelgen)
+  CREATE TABLE IF NOT EXISTS jegermiddag_pameldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    bruker_telefon TEXT NOT NULL REFERENCES brukere(telefon),
+    -- Antall personer (inkl. hovedperson)
+    antall_personer INTEGER NOT NULL DEFAULT 1,
+    -- Spesielle hensyn
+    allergier TEXT DEFAULT '',
+    vegetar INTEGER DEFAULT 0,
+    annen_info TEXT DEFAULT '',
+    -- Status og betaling
+    status TEXT DEFAULT 'pameldt' CHECK(status IN ('pameldt', 'bekreftet', 'avmeldt', 'betalt')),
+    betalt INTEGER DEFAULT 0,
+    betalt_dato TEXT DEFAULT NULL,
+    belop INTEGER DEFAULT 0,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, bruker_telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_jegermiddag_prove ON jegermiddag_pameldinger(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_jegermiddag_bruker ON jegermiddag_pameldinger(bruker_telefon);
+
+  -- Avmeldinger (frafall fra prøve med årsak)
+  CREATE TABLE IF NOT EXISTS avmeldinger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pamelding_id INTEGER NOT NULL REFERENCES pameldinger(id),
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    hund_id INTEGER NOT NULL REFERENCES hunder(id),
+    forer_telefon TEXT NOT NULL,
+    -- Årsak til avmelding
+    arsak TEXT NOT NULL CHECK(arsak IN ('sykdom_hund', 'sykdom_forer', 'lopetid', 'annet')),
+    arsak_beskrivelse TEXT DEFAULT '',
+    -- Dokumentasjon (filsti til opplastet dokument)
+    dokumentasjon TEXT DEFAULT NULL,
+    dokumentasjon_type TEXT DEFAULT NULL,
+    -- Status og behandling
+    status TEXT DEFAULT 'mottatt' CHECK(status IN ('mottatt', 'behandlet', 'godkjent', 'avvist')),
+    behandlet_av TEXT DEFAULT NULL,
+    behandlet_dato TEXT DEFAULT NULL,
+    behandlet_kommentar TEXT DEFAULT '',
+    -- Refusjon
+    refusjon_belop INTEGER DEFAULT 0,
+    refusjon_prosent INTEGER DEFAULT 0,
+    refusjon_utbetalt INTEGER DEFAULT 0,
+    -- Venteliste-opprykk som følge av avmeldingen
+    opprykk_pamelding_id INTEGER DEFAULT NULL,
+    opprykk_varslet INTEGER DEFAULT 0,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_avmeldinger_prove ON avmeldinger(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_avmeldinger_status ON avmeldinger(status);
+
+  -- Fratatte aversjonsbevis (rapport til NJFF)
+  CREATE TABLE IF NOT EXISTS fratatte_aversjonsbevis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    hund_id INTEGER NOT NULL REFERENCES hunder(id),
+    eier_navn TEXT NOT NULL,
+    eier_telefon TEXT DEFAULT NULL,
+    eier_adresse TEXT DEFAULT '',
+    -- Hundens info på tidspunkt for fratakelse
+    hund_navn TEXT NOT NULL,
+    hund_regnr TEXT NOT NULL,
+    hund_rase TEXT DEFAULT '',
+    hund_chip_id TEXT DEFAULT '',
+    -- Årsak til fratakelse
+    arsak TEXT NOT NULL,
+    hendelsesdato TEXT NOT NULL,
+    registrert_av TEXT NOT NULL,
+    -- Ekstra info
+    kommentar TEXT DEFAULT '',
+    meldt_njff INTEGER DEFAULT 0,
+    meldt_njff_dato TEXT DEFAULT NULL,
+    -- Metadata
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_fratatte_prove ON fratatte_aversjonsbevis(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_fratatte_hund ON fratatte_aversjonsbevis(hund_id);
+
+  -- SMS sendt for prøveroller (for å unngå duplikater)
+  CREATE TABLE IF NOT EXISTS rolle_sms_sendt (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    rolle TEXT NOT NULL CHECK(rolle IN ('proveleder', 'nkkrep', 'nkkvara', 'dvk')),
+    telefon TEXT NOT NULL,
+    sendt_av TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, rolle, telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_rolle_sms_prove ON rolle_sms_sendt(prove_id);
+
+  -- Team-medlemmer for prøver (admin-tilgang)
+  CREATE TABLE IF NOT EXISTS prove_team (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL REFERENCES prover(id),
+    telefon TEXT NOT NULL,
+    navn TEXT NOT NULL,
+    epost TEXT DEFAULT NULL,
+    rolle TEXT NOT NULL CHECK(rolle IN ('admin', 'sekretariat', 'hjelper')),
+    beskrivelse TEXT DEFAULT NULL,
+    invitert_av TEXT DEFAULT NULL,
+    invitasjon_sendt INTEGER DEFAULT 0,
+    akseptert INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(prove_id, telefon)
+  );
+  CREATE INDEX IF NOT EXISTS idx_prove_team_prove ON prove_team(prove_id);
+  CREATE INDEX IF NOT EXISTS idx_prove_team_telefon ON prove_team(telefon);
 `);
 
 // --- Migrations for existing databases ---
 const migrations = [
+  // SMS-logg knyttet til prøve (for prøvedokumenter-eksport)
+  "ALTER TABLE sms_log ADD COLUMN prove_id TEXT DEFAULT NULL",
+  "ALTER TABLE sms_log ADD COLUMN mottaker_navn TEXT DEFAULT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_sms_log_prove ON sms_log(prove_id)",
   "ALTER TABLE brukere ADD COLUMN samtykke_gitt TEXT DEFAULT NULL",
   "ALTER TABLE kritikker ADD COLUMN status TEXT DEFAULT 'draft'",
   "ALTER TABLE kritikker ADD COLUMN submitted_at TEXT DEFAULT NULL",
@@ -491,6 +1060,16 @@ const migrations = [
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_dato TEXT DEFAULT NULL",
   "ALTER TABLE hunder ADD COLUMN aversjonsbevis_godkjent INTEGER DEFAULT 0",
+  // Utvidede aversjonsbevis-felter med AI-avlest data
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_dyretype TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_chip_id TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_avlest_navn TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_avlest_regnr TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_avlest_rase TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_gyldig INTEGER DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_bekreftet INTEGER DEFAULT 0",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_bekreftet_av TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN aversjonsbevis_bekreftet_dato TEXT DEFAULT NULL",
   // Vipps-integrasjon for klubber
   "ALTER TABLE klubber ADD COLUMN vipps_nummer TEXT DEFAULT NULL",
   // Bilde-kolonne for hunder
@@ -511,9 +1090,174 @@ const migrations = [
   // SMS-samtykke med tidspunkt
   "ALTER TABLE brukere ADD COLUMN sms_samtykke INTEGER DEFAULT 0",
   "ALTER TABLE brukere ADD COLUMN sms_samtykke_tidspunkt TEXT DEFAULT NULL",
+  // Klubb-id for prove_dokumenter (for dokumentarkiv)
+  "ALTER TABLE prove_dokumenter ADD COLUMN klubb_id TEXT DEFAULT NULL",
+  // Nye felter for dommeroppgjør (utvidet skjema)
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reise_fra TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reise_til TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reisedekning TEXT DEFAULT 'tur_retur'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN reise_passasjerer INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN bompenger TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN parkeringer TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN kollektivreiser TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN diett3_6_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN diett6_12_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN diett_over12_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN bor_utenfor_hk_antall INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN dommer_dager INTEGER DEFAULT 0",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN fradrag TEXT DEFAULT '[]'",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN signatur_dato TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN signatur_sted TEXT DEFAULT ''",
+  "ALTER TABLE dommer_oppgjor ADD COLUMN signatur TEXT DEFAULT ''",
+  // Eierbevis og vaksinasjon for hunder
+  "ALTER TABLE hunder ADD COLUMN eierbevis TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN eierbevis_dato TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN vaksinasjon TEXT DEFAULT NULL",
+  "ALTER TABLE hunder ADD COLUMN vaksinasjon_dato TEXT DEFAULT NULL",
+  // Kilde og NKK-id for hunder
+  "ALTER TABLE hunder ADD COLUMN kilde TEXT DEFAULT 'manuell'",
+  "ALTER TABLE hunder ADD COLUMN nkk_id TEXT DEFAULT NULL",
+  // VK godkjenningsflyt
+  "ALTER TABLE vk_bedomming ADD COLUMN submitted_at TEXT DEFAULT NULL",
+  "ALTER TABLE vk_bedomming ADD COLUMN approved_at TEXT DEFAULT NULL",
+  "ALTER TABLE vk_bedomming ADD COLUMN approved_by TEXT DEFAULT NULL",
+  // Logo for klubber og prøver (lagres som base64 i database for persistens)
+  "ALTER TABLE klubber ADD COLUMN logo TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN logo TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN logo_oppdatert TEXT DEFAULT NULL",
+  // Kontaktinfo for klubber (fra Brønnøysund eller manuelt)
+  "ALTER TABLE klubber ADD COLUMN epost TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN telefon TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN nettside TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN adresse TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN postnummer TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN sted TEXT DEFAULT NULL",
+  // Kontaktinfo fra Brønnøysund på klubb_foresporsel
+  "ALTER TABLE klubb_foresporsel ADD COLUMN nettside TEXT DEFAULT ''",
+  "ALTER TABLE klubb_foresporsel ADD COLUMN klubb_telefon TEXT DEFAULT ''",
+  "ALTER TABLE klubb_foresporsel ADD COLUMN klubb_epost TEXT DEFAULT ''",
+  // Vipps ePayment API-integrasjon for klubber
+  "ALTER TABLE klubber ADD COLUMN vipps_client_id TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_client_secret TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_subscription_key TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_merchant_serial TEXT DEFAULT NULL",
+  "ALTER TABLE klubber ADD COLUMN vipps_api_modus TEXT DEFAULT 'enkel'",  // 'enkel' eller 'api'
+  // Vipps payment reference for mottakere (for å kunne sjekke status via API)
+  "ALTER TABLE vipps_mottakere ADD COLUMN vipps_reference TEXT DEFAULT NULL",
+  // Flerdommersstøtte: hvem eier live-rangeringen i VK
+  "ALTER TABLE vk_bedomming ADD COLUMN live_rangering_eier TEXT DEFAULT NULL",
+  // Innstilling for om slipp-kommentarer skal inkluderes i live-rangering
+  "ALTER TABLE vk_bedomming ADD COLUMN inkluder_slipp_kommentarer INTEGER DEFAULT 0",
+  // Kritikk-bekreftelse fra meddommer
+  "ALTER TABLE kritikker ADD COLUMN meddommer_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE kritikker ADD COLUMN meddommer_bekreftet_at TEXT DEFAULT NULL",
+  // NKK-vara og DVK-roller for prøver
+  "ALTER TABLE prover ADD COLUMN nkkvara_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN dvk_telefon TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN dvk_navn TEXT DEFAULT ''",
+  // Navnefelter for roller (for inviterte personer som ikke er registrert ennå)
+  "ALTER TABLE prover ADD COLUMN proveleder_navn TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN nkkrep_navn TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN nkkvara_navn TEXT DEFAULT NULL",
+  // Prøvetype (høyfjell_host, høyfjell_vinter, lavland_host, skogsfugl_host, skogsfugl_vinter, fullkombinert, apport)
+  "ALTER TABLE prover ADD COLUMN prove_type TEXT DEFAULT 'høyfjell_host'",
+  // Arrangør-navn (per-prøve override, fall tilbake til klubb_navn hvis ikke satt)
+  "ALTER TABLE prover ADD COLUMN arrangor_navn TEXT DEFAULT NULL",
+  // Automatisk venteliste-opprykk konfigurasjon
+  "ALTER TABLE prove_config ADD COLUMN auto_venteliste_opprykk INTEGER DEFAULT 1",
+  // Løpetid-egenerklæring (JSON med skjemadata)
+  "ALTER TABLE avmeldinger ADD COLUMN lopetid_egenerklaring TEXT DEFAULT NULL",
+  // Jegermiddag-konfigurasjon for prøver
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_aktivert INTEGER DEFAULT 0",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_dato TEXT DEFAULT NULL",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_tid TEXT DEFAULT '19:00'",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_sted TEXT DEFAULT ''",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_pris INTEGER DEFAULT 350",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_maks_personer INTEGER DEFAULT 100",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_info TEXT DEFAULT ''",
+  "ALTER TABLE prove_config ADD COLUMN jegermiddag_frist TEXT DEFAULT NULL",
+  // VK-konfigurasjon for fler-dagers VK
+  "ALTER TABLE prove_config ADD COLUMN vk_type TEXT DEFAULT '1dag' CHECK(vk_type IN ('1dag', '2dag', '3dag'))",
+  "ALTER TABLE prove_config ADD COLUMN vk_kval_dag INTEGER DEFAULT NULL",
+  "ALTER TABLE prove_config ADD COLUMN vk_semi_dag INTEGER DEFAULT NULL",
+  "ALTER TABLE prove_config ADD COLUMN vk_finale_dag INTEGER DEFAULT NULL",
+  // Forbedret fullmakt-matching med epost
+  "ALTER TABLE ventende_fullmakter ADD COLUMN eier_epost TEXT DEFAULT NULL",
+  "ALTER TABLE ventende_fullmakter ADD COLUMN forer_epost TEXT DEFAULT NULL",
+  // SMS-køsystem
+  `CREATE TABLE IF NOT EXISTS sms_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telefon TEXT NOT NULL,
+    melding TEXT NOT NULL,
+    type TEXT DEFAULT 'general',
+    klubb_id INTEGER,
+    prove_id TEXT,
+    priority INTEGER DEFAULT 5,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')),
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    error_message TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    processed_at TEXT,
+    scheduled_for TEXT DEFAULT (datetime('now'))
+  )`,
+  "CREATE INDEX IF NOT EXISTS idx_sms_queue_status ON sms_queue(status, scheduled_for)",
+  // Uønsket adferd i kritikker (for NJFF-rapportering)
+  "ALTER TABLE kritikker ADD COLUMN uonsket_adferd INTEGER DEFAULT 0",
+  "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
+}
+
+// Create indexes that depend on migrated columns
+try {
+  db.exec("CREATE INDEX IF NOT EXISTS idx_prove_dokumenter_klubb ON prove_dokumenter(klubb_id)");
+} catch (e) { /* index already exists or column missing */ }
+
+// --- Performance indexes for frequently queried tables ---
+const performanceIndexes = [
+  // OTP - søkes ved innlogging
+  "CREATE INDEX IF NOT EXISTS idx_otp_telefon_used ON otp_codes(telefon, used)",
+  "CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_codes(expires_at)",
+
+  // Hunder - søkes ved navn, eier, rase
+  "CREATE INDEX IF NOT EXISTS idx_hunder_eier ON hunder(eier_telefon)",
+  "CREATE INDEX IF NOT EXISTS idx_hunder_navn ON hunder(navn)",
+  "CREATE INDEX IF NOT EXISTS idx_hunder_rase ON hunder(rase)",
+
+  // Kritikker - søkes ved hund, prøve, dommer
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_hund ON kritikker(hund_id)",
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_prove ON kritikker(prove_id)",
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_dommer ON kritikker(dommer_telefon)",
+  "CREATE INDEX IF NOT EXISTS idx_kritikker_status ON kritikker(status)",
+
+  // Påmeldinger - søkes ved prøve, hund, eier
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_prove ON pameldinger(prove_id)",
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_hund ON pameldinger(hund_id)",
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_eier ON pameldinger(eier_telefon)",
+  "CREATE INDEX IF NOT EXISTS idx_pameldinger_status ON pameldinger(status)",
+
+  // Dommer-tildelinger - søkes ved prøve og dommer
+  "CREATE INDEX IF NOT EXISTS idx_dommer_tildelinger_prove ON dommer_tildelinger(prove_id)",
+  "CREATE INDEX IF NOT EXISTS idx_dommer_tildelinger_dommer ON dommer_tildelinger(dommer_telefon)",
+
+  // Prøver - søkes ved klubb og status
+  "CREATE INDEX IF NOT EXISTS idx_prover_klubb ON prover(klubb_id)",
+  "CREATE INDEX IF NOT EXISTS idx_prover_status ON prover(status)",
+  "CREATE INDEX IF NOT EXISTS idx_prover_dato ON prover(start_dato)",
+
+  // Resultater - søkes ved hund
+  "CREATE INDEX IF NOT EXISTS idx_resultater_hund ON resultater(hund_id)",
+
+  // Klubb-medlemmer - søkes ved klubb og telefon
+  "CREATE INDEX IF NOT EXISTS idx_klubb_medlemmer_klubb ON klubb_medlemmer(klubb_id)",
+  "CREATE INDEX IF NOT EXISTS idx_klubb_medlemmer_telefon ON klubb_medlemmer(telefon_normalized)",
+];
+
+for (const sql of performanceIndexes) {
+  try { db.exec(sql); } catch (e) { /* index already exists */ }
 }
 
 // Fix regnr NOT NULL constraint on existing databases (allow dogs without registration number)
@@ -583,6 +1327,48 @@ try {
   }
 }
 
+// Fix dommer_tildelinger UNIQUE constraint (allow same dommer on multiple parties)
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(dommer_tildelinger)").all();
+  if (tableInfo.length > 0) {
+    // Check if the UNIQUE constraint needs to be fixed by looking at index info
+    const indexList = db.prepare("PRAGMA index_list(dommer_tildelinger)").all();
+    const hasOldConstraint = indexList.some(idx => {
+      const indexInfo = db.prepare(`PRAGMA index_info(${idx.name})`).all();
+      // Old constraint: (prove_id, dommer_telefon) without parti
+      return indexInfo.length === 2 && !indexInfo.find(i => i.name === 'parti');
+    });
+
+    if (hasOldConstraint) {
+      console.log("🔧 Migrating dommer_tildelinger UNIQUE constraint...");
+      db.pragma("foreign_keys = OFF");
+      db.exec("BEGIN TRANSACTION");
+      db.exec("ALTER TABLE dommer_tildelinger RENAME TO dommer_tildelinger_old");
+      db.exec(`
+        CREATE TABLE dommer_tildelinger (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          prove_id TEXT REFERENCES prover(id),
+          dommer_telefon TEXT REFERENCES brukere(telefon),
+          parti TEXT NOT NULL,
+          dommer_rolle INTEGER DEFAULT NULL,
+          UNIQUE(prove_id, parti, dommer_telefon)
+        )
+      `);
+      db.exec("INSERT INTO dommer_tildelinger (id, prove_id, dommer_telefon, parti, dommer_rolle) SELECT id, prove_id, dommer_telefon, parti, dommer_rolle FROM dommer_tildelinger_old");
+      db.exec("DROP TABLE dommer_tildelinger_old");
+      db.exec("COMMIT");
+      db.pragma("foreign_keys = ON");
+      console.log("✅ Migrated dommer_tildelinger: UNIQUE constraint now includes parti");
+    }
+  }
+} catch (e) {
+  try { db.exec("ROLLBACK"); } catch {}
+  db.pragma("foreign_keys = ON");
+  if (!e.message.includes('already exists') && !e.message.includes('no such table')) {
+    console.error("dommer_tildelinger migration warning:", e.message);
+  }
+}
+
 // --- Seed initial data if tables are empty ---
 function seedData() {
   const brukerCount = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
@@ -612,7 +1398,7 @@ function seedData() {
     { telefon: '99999995', fornavn: 'Marstein', etternavn: 'Manstein', epost: 'marstein.manstein@example.com', adresse: 'Fjellgata 44', postnummer: '7340', sted: 'Oppdal', rolle: 'deltaker,nkkrep', medlem_siden: '2021' },
     { telefon: '99999994', fornavn: 'Roar', etternavn: 'Storseth', epost: 'roar.storseth@example.com', adresse: 'Hundegata 8', postnummer: '7500', sted: 'Stjørdal', rolle: 'deltaker,dommer', medlem_siden: '2017' }
   ];
-  const insertBruker = db.prepare("INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, medlem_siden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  const insertBruker = db.prepare("INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, medlem_siden, sms_samtykke, sms_samtykke_tidspunkt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))");
   for (const b of brukere) {
     insertBruker.run(b.telefon, b.fornavn, b.etternavn, b.epost, b.adresse, b.postnummer, b.sted, b.rolle, b.medlem_siden);
   }
@@ -818,6 +1604,16 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app = new Hono();
 
+// --- Body size limit for large files (PDF documents, images) ---
+// Default Hono limit is 256KB, we need 10MB for documents
+app.use('/api/*', bodyLimit({
+  maxSize: 10 * 1024 * 1024, // 10 MB
+  onError: (c) => {
+    console.error('Body too large');
+    return c.json({ error: 'Filen er for stor (maks 10MB)' }, 413);
+  }
+}));
+
 // --- Global error handler ---
 app.onError((err, c) => {
   console.error("Server error:", err);
@@ -835,13 +1631,13 @@ function generateToken(bruker) {
     rolle: bruker.rolle,
     navn: `${bruker.fornavn} ${bruker.etternavn}`
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, JWT_SECRET_FINAL, { expiresIn: JWT_EXPIRES_IN });
 }
 
 // Verifiser JWT token
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET_FINAL);
   } catch (err) {
     return null;
   }
@@ -936,20 +1732,61 @@ const requireDommer = async (c, next) => {
 };
 
 // ============================================
-// PASSWORD HELPERS
+// PASSWORD HELPERS (bcrypt med SHA256-fallback)
 // ============================================
 
-function hashPassword(password) {
-  const salt = randomBytes(16).toString('hex');
-  const hash = createHash('sha256').update(password + salt).digest('hex');
-  return `${salt}:${hash}`;
+// Bcrypt cost factor (10-12 er anbefalt for produksjon)
+const BCRYPT_ROUNDS = 10;
+
+// Hash passord med bcrypt (async)
+async function hashPasswordAsync(password) {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
+// Synkron versjon for bakoverkompatibilitet (bruker bcrypt sync)
+function hashPassword(password) {
+  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
+}
+
+// Verifiser passord - støtter både bcrypt og legacy SHA256
+async function verifyPasswordAsync(password, storedHash) {
+  if (!storedHash) return false;
+
+  // Bcrypt-hasher starter med $2a$ eller $2b$
+  if (storedHash.startsWith('$2')) {
+    return bcrypt.compare(password, storedHash);
+  }
+
+  // Legacy SHA256 format: salt:hash
+  return verifyPasswordLegacy(password, storedHash);
+}
+
+// Synkron versjon for enklere bruk
 function verifyPassword(password, storedHash) {
   if (!storedHash) return false;
+
+  // Bcrypt-hasher starter med $2a$ eller $2b$
+  if (storedHash.startsWith('$2')) {
+    return bcrypt.compareSync(password, storedHash);
+  }
+
+  // Legacy SHA256 format: salt:hash
+  return verifyPasswordLegacy(password, storedHash);
+}
+
+// Legacy SHA256 verifisering (for gamle passord)
+function verifyPasswordLegacy(password, storedHash) {
   const [salt, hash] = storedHash.split(':');
+  if (!salt || !hash) return false;
   const checkHash = createHash('sha256').update(password + salt).digest('hex');
   return hash === checkHash;
+}
+
+// Sjekk om passord-hash bør oppgraderes til bcrypt
+function needsHashUpgrade(storedHash) {
+  if (!storedHash) return false;
+  // SHA256 hasher har formatet salt:hash, bcrypt starter med $2
+  return !storedHash.startsWith('$2');
 }
 
 // Sjekk om bruker trenger re-verifisering (>60 dager siden siste innlogging)
@@ -969,31 +1806,40 @@ function generateOTP() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-const otpAttempts = new Map();
+// Hash OTP-kode for sikker lagring i database
+function hashOTP(code, telefon) {
+  // Bruker telefon som salt for å forhindre rainbow table angrep
+  return createHash('sha256').update(code + telefon).digest('hex');
+}
+
+// Rate limiting lagret i database (overlever restart)
 function checkOTPRate(telefon) {
   const now = Date.now();
-  const attempts = otpAttempts.get(telefon) || [];
-  const recent = attempts.filter(t => now - t < 10 * 60 * 1000);
-  if (recent.length >= 5) return false;
-  recent.push(now);
-  otpAttempts.set(telefon, recent);
+  const tenMinutesAgo = new Date(now - 10 * 60 * 1000).toISOString();
+
+  // Tell forsøk siste 10 minutter fra database
+  const countResult = db.prepare(
+    "SELECT COUNT(*) as count FROM otp_codes WHERE telefon = ? AND created_at > ?"
+  ).get(telefon, tenMinutesAgo);
+
+  if (countResult.count >= 5) return false;
   return true;
 }
 
-// Logg SMS til database for statistikk
-function logSMS(retning, fra, til, type, melding, twilio_sid = null, status = 'sent', klubb_id = null) {
+// Logg SMS til database for statistikk og prøvedokumenter
+function logSMS(retning, fra, til, type, melding, twilio_sid = null, status = 'sent', klubb_id = null, prove_id = null, mottaker_navn = null) {
   try {
     db.prepare(`
-      INSERT INTO sms_log (retning, fra, til, type, melding, twilio_sid, status, klubb_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(retning, fra, til, type, melding || null, twilio_sid, status, klubb_id);
+      INSERT INTO sms_log (retning, fra, til, type, melding, twilio_sid, status, klubb_id, prove_id, mottaker_navn, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(retning, fra, til, type, melding || null, twilio_sid, status, klubb_id, prove_id, mottaker_navn);
   } catch (e) {
     console.error('SMS logging error:', e.message);
   }
 }
 
 async function sendSMS(telefon, message, options = {}) {
-  const { type = 'verifisering', klubb_id = null } = options;
+  const { type = 'verifisering', klubb_id = null, prove_id = null, mottaker_navn = null } = options;
 
   // Formater telefonnummer til internasjonalt format
   let phoneFormatted = telefon.replace(/\s/g, '');
@@ -1008,7 +1854,7 @@ async function sendSMS(telefon, message, options = {}) {
   // Dev mode - ingen SMS-leverandør konfigurert
   if (smsProvider === "dev") {
     console.log(`📱 [DEV MODE] SMS til ${phoneFormatted}: ${message}`);
-    logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'dev', klubb_id);
+    logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'dev', klubb_id, prove_id, mottaker_navn);
     return { success: true, devMode: true };
   }
 
@@ -1036,49 +1882,194 @@ async function sendSMS(telefon, message, options = {}) {
       if (resp.ok && data.sid) {
         const mode = TWILIO_MESSAGING_SERVICE_SID ? 'Alpha Sender' : 'Phone';
         console.log(`📱 [Twilio/${mode}] SMS sendt til ${phoneFormatted} (SID: ${data.sid})`);
-        logSMS('ut', fromNumber, phoneFormatted, type, message, data.sid, 'sent', klubb_id);
+        logSMS('ut', fromNumber, phoneFormatted, type, message, data.sid, 'sent', klubb_id, prove_id, mottaker_navn);
         return { success: true, provider: 'twilio', sid: data.sid };
       } else {
         console.error("Twilio SMS error:", data);
-        logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'failed', klubb_id);
+        logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'failed', klubb_id, prove_id, mottaker_navn);
         return { success: false, error: data.message || 'Twilio error', provider: 'twilio' };
       }
     } catch (err) {
       console.error("Twilio SMS fetch error:", err.message);
-      logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'error', klubb_id);
+      logSMS('ut', fromNumber, phoneFormatted, type, message, null, 'error', klubb_id, prove_id, mottaker_navn);
       return { success: false, error: err.message, provider: 'twilio' };
     }
   }
 
-  // Sveve (legacy fallback)
+  // Sveve (primær SMS-leverandør)
   if (smsProvider === "sveve") {
-    const url = new URL("https://sveve.no/SMS/SendSMS");
+    // Bruk norsk format uten +47 for Sveve
+    let svevePhone = telefon.replace(/\s/g, '').replace(/^\+47/, '');
+    if (svevePhone.length !== 8) {
+      svevePhone = phoneFormatted.replace(/^\+47/, '');
+    }
+
+    const url = new URL("https://sveve.no/SMS/SendMessage");
     url.searchParams.set("user", SVEVE_USER);
     url.searchParams.set("passwd", SVEVE_PASS);
-    url.searchParams.set("to", telefon);
+    url.searchParams.set("to", svevePhone);
     url.searchParams.set("msg", message);
-    url.searchParams.set("from", "Fuglehund");
+    url.searchParams.set("from", SVEVE_FROM);
+    url.searchParams.set("f", "json"); // JSON-respons
 
     try {
       const resp = await fetch(url.toString());
-      const text = await resp.text();
-      if (text.includes("<response>") && !text.includes("feil") && !text.includes("error")) {
-        console.log(`📱 [Sveve] SMS sendt til ${telefon}`);
-        logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'sent', klubb_id);
-        return { success: true, provider: 'sveve' };
+      const data = await resp.json();
+
+      // Sveve kan returnere data direkte eller pakket i "response"-objekt
+      const sveveData = data.response || data;
+
+      if (sveveData.msgOkCount && sveveData.msgOkCount > 0) {
+        const msgId = sveveData.ids ? sveveData.ids[0] : null;
+        console.log(`📱 [Sveve] SMS sendt til ${svevePhone} (ID: ${msgId})`);
+        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, msgId, 'sent', klubb_id, prove_id, mottaker_navn);
+        return { success: true, provider: 'sveve', id: msgId };
       } else {
-        console.error("Sveve SMS error:", text);
-        logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'failed', klubb_id);
-        return { success: false, error: text, provider: 'sveve' };
+        const errorMsg = sveveData.errors ? sveveData.errors.join(', ') : JSON.stringify(data);
+        console.error("Sveve SMS error:", errorMsg);
+        logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'failed', klubb_id, prove_id, mottaker_navn);
+        return { success: false, error: errorMsg, provider: 'sveve' };
       }
     } catch (err) {
       console.error("Sveve SMS fetch error:", err.message);
-      logSMS('ut', 'Fuglehund', phoneFormatted, type, message, null, 'error', klubb_id);
+      logSMS('ut', SVEVE_FROM, phoneFormatted, type, message, null, 'error', klubb_id, prove_id, mottaker_navn);
       return { success: false, error: err.message, provider: 'sveve' };
     }
   }
 
   return { success: false, error: 'No SMS provider configured' };
+}
+
+// ============================================
+// SMS-KØSYSTEM
+// ============================================
+
+// Legg til SMS i køen (returnerer umiddelbart)
+function queueSMS(telefon, melding, options = {}) {
+  const {
+    type = 'general',
+    klubb_id = null,
+    prove_id = null,
+    priority = 5, // 1 = høyest, 10 = lavest
+    scheduledFor = null
+  } = options;
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO sms_queue (telefon, melding, type, klubb_id, prove_id, priority, scheduled_for)
+      VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+    `).run(telefon, melding, type, klubb_id, prove_id, priority, scheduledFor);
+
+    return { success: true, queueId: result.lastInsertRowid };
+  } catch (err) {
+    console.error('[SMS Queue] Feil ved kølegging:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Legg til flere SMS i køen (for masse-utsending)
+function queueBulkSMS(mottakere, melding, options = {}) {
+  const { type = 'masse_sms', klubb_id = null, prove_id = null, priority = 7 } = options;
+
+  const insert = db.prepare(`
+    INSERT INTO sms_queue (telefon, melding, type, klubb_id, prove_id, priority)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let queued = 0;
+  let failed = 0;
+
+  const transaction = db.transaction(() => {
+    for (const mottaker of mottakere) {
+      try {
+        const telefon = typeof mottaker === 'string' ? mottaker : mottaker.telefon;
+        insert.run(telefon, melding, type, klubb_id, prove_id, priority);
+        queued++;
+      } catch (e) {
+        failed++;
+      }
+    }
+  });
+
+  transaction();
+
+  console.log(`[SMS Queue] ${queued} SMS lagt i kø, ${failed} feilet`);
+  return { queued, failed };
+}
+
+// Prosesser SMS-køen (kjøres periodisk)
+async function processSmsQueue() {
+  if (smsQueueProcessing) return; // Unngå overlapp
+  smsQueueProcessing = true;
+
+  try {
+    // Hent ventende SMS som er klare for sending
+    const pending = db.prepare(`
+      SELECT * FROM sms_queue
+      WHERE status = 'pending'
+        AND scheduled_for <= datetime('now')
+        AND attempts < max_attempts
+      ORDER BY priority ASC, created_at ASC
+      LIMIT ?
+    `).all(SMS_QUEUE_BATCH_SIZE);
+
+    if (pending.length === 0) {
+      smsQueueProcessing = false;
+      return;
+    }
+
+    console.log(`[SMS Queue] Prosesserer ${pending.length} SMS...`);
+
+    for (const sms of pending) {
+      // Marker som processing
+      db.prepare("UPDATE sms_queue SET status = 'processing', attempts = attempts + 1 WHERE id = ?").run(sms.id);
+
+      try {
+        const result = await sendSMS(sms.telefon, sms.melding, {
+          type: sms.type,
+          klubb_id: sms.klubb_id
+        });
+
+        if (result.success) {
+          db.prepare(`
+            UPDATE sms_queue SET status = 'sent', processed_at = datetime('now') WHERE id = ?
+          `).run(sms.id);
+        } else {
+          const newStatus = sms.attempts + 1 >= sms.max_attempts ? 'failed' : 'pending';
+          db.prepare(`
+            UPDATE sms_queue SET status = ?, error_message = ? WHERE id = ?
+          `).run(newStatus, result.error || 'Ukjent feil', sms.id);
+        }
+      } catch (err) {
+        const newStatus = sms.attempts + 1 >= sms.max_attempts ? 'failed' : 'pending';
+        db.prepare(`
+          UPDATE sms_queue SET status = ?, error_message = ? WHERE id = ?
+        `).run(newStatus, err.message, sms.id);
+      }
+
+      // Kort delay mellom hver SMS for å unngå rate limiting hos leverandør
+      await new Promise(resolve => setTimeout(resolve, SMS_QUEUE_BATCH_DELAY_MS));
+    }
+  } catch (err) {
+    console.error('[SMS Queue] Feil ved prosessering:', err.message);
+  } finally {
+    smsQueueProcessing = false;
+  }
+}
+
+// Start SMS-køprosessering
+setInterval(processSmsQueue, SMS_QUEUE_INTERVAL_MS);
+
+// Hent køstatus (for admin)
+function getSmsQueueStats() {
+  return db.prepare(`
+    SELECT
+      status,
+      COUNT(*) as count,
+      MIN(created_at) as oldest
+    FROM sms_queue
+    GROUP BY status
+  `).all();
 }
 
 function cleanExpired() {
@@ -1161,6 +2152,325 @@ app.post("/api/sms/proveleder-invitasjon", async (c) => {
 });
 
 // ============================================
+// ROLLE SMS-VARSLING (med duplikatbeskyttelse)
+// ============================================
+
+// Sjekk om SMS allerede er sendt for en rolle
+app.get("/api/prover/:id/rolle-sms/:rolle", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const rolle = c.req.param("rolle");
+
+  const validRoller = ['proveleder', 'nkkrep', 'nkkvara', 'dvk'];
+  if (!validRoller.includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  // Hent alle SMS sendt for denne rollen på denne prøven
+  const sendte = db.prepare(`
+    SELECT telefon, created_at FROM rolle_sms_sendt
+    WHERE prove_id = ? AND rolle = ?
+  `).all(proveId, rolle);
+
+  return c.json({
+    success: true,
+    sendte: sendte.map(s => ({ telefon: s.telefon, sendt: s.created_at }))
+  });
+});
+
+// Hent alle sendte rolle-SMS for en prøve
+app.get("/api/prover/:id/rolle-sms", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const sendte = db.prepare(`
+    SELECT rolle, telefon, created_at FROM rolle_sms_sendt
+    WHERE prove_id = ?
+  `).all(proveId);
+
+  // Grupper etter rolle
+  const grouped = {};
+  for (const s of sendte) {
+    if (!grouped[s.rolle]) grouped[s.rolle] = [];
+    grouped[s.rolle].push(s.telefon);
+  }
+
+  return c.json({ success: true, sendte: grouped });
+});
+
+// Send SMS-varsling for en rolle
+app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const { rolle, telefon, navn } = body;
+
+  const validRoller = ['proveleder', 'nkkrep', 'nkkvara', 'dvk'];
+  if (!validRoller.includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  const cleanTelefon = (telefon || "").replace(/\s/g, "");
+  if (!cleanTelefon || cleanTelefon.length < 8) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  // Hent prøveinfo med klubbnavn
+  const prove = db.prepare(`
+    SELECT p.navn, k.navn as klubb_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk om SMS allerede er sendt til dette nummeret for denne rollen
+  const eksisterende = db.prepare(`
+    SELECT id FROM rolle_sms_sendt
+    WHERE prove_id = ? AND rolle = ? AND telefon = ?
+  `).get(proveId, rolle, cleanTelefon);
+
+  if (eksisterende) {
+    return c.json({
+      success: false,
+      alleredeSendt: true,
+      message: "SMS er allerede sendt til dette nummeret for denne rollen"
+    });
+  }
+
+  // Lag SMS-melding basert på rolle
+  const rolleNavn = {
+    'proveleder': 'prøveleder',
+    'nkkrep': 'NKK-representant',
+    'nkkvara': 'NKK-vara',
+    'dvk': 'Dyrevelferdskontrollør (DVK)'
+  }[rolle];
+
+  const fornavn = (navn || "").split(" ")[0] || "Hei";
+  const klubbHilsen = prove.klubb_navn ? `\n\nVennlig hilsen ${prove.klubb_navn}` : '';
+  const smsMessage = `Hei ${fornavn}! Du har fått tildelt rollen som ${rolleNavn} for ${prove.navn}. Opprett bruker eller logg inn på fuglehundprove.no for å se din rolle.${klubbHilsen}`;
+
+  try {
+    const smsResult = await sendSMS(cleanTelefon, smsMessage, { type: `rolle_${rolle}` });
+
+    if (!smsResult.success) {
+      console.error(`[Rolle-SMS] SMS feilet til ${cleanTelefon}:`, smsResult.error);
+      return c.json({ error: smsResult.error || "Kunne ikke sende SMS" }, 500);
+    }
+
+    // Registrer at SMS er sendt
+    db.prepare(`
+      INSERT INTO rolle_sms_sendt (prove_id, rolle, telefon, sendt_av)
+      VALUES (?, ?, ?, ?)
+    `).run(proveId, rolle, cleanTelefon, user?.telefon || null);
+
+    console.log(`[Rolle-SMS] SMS sendt til ${cleanTelefon} for rolle ${rolle} på prøve ${proveId}`);
+
+    return c.json({
+      success: true,
+      message: "SMS sendt",
+      rolle: rolleNavn
+    });
+
+  } catch (err) {
+    console.error(`[Rolle-SMS] Feil:`, err);
+    return c.json({ error: "Feil ved sending av SMS" }, 500);
+  }
+});
+
+// ============================================
+// TEAM MEDLEMMER API
+// ============================================
+
+// Hent team-medlemmer for en prøve
+app.get("/api/prover/:id/team", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent team-medlemmer fra prove_team tabellen
+  const team = db.prepare(`
+    SELECT * FROM prove_team
+    WHERE prove_id = ?
+    ORDER BY rolle, navn
+  `).all(proveId);
+
+  // Hent roller fra prøvedetaljer (prøveleder, NKK-rep, NKK-vara, DVK)
+  const prove = db.prepare(`
+    SELECT proveleder_telefon, proveleder_navn,
+           nkkrep_telefon, nkkrep_navn,
+           nkkvara_telefon, nkkvara_navn,
+           dvk_telefon, dvk_navn
+    FROM prover WHERE id = ?
+  `).get(proveId);
+
+  const roller = [];
+  if (prove) {
+    // Hjelpefunksjon for å slå opp bruker basert på telefon
+    const hentBrukerNavn = (telefon, fallbackNavn) => {
+      if (!telefon) return null;
+      const bruker = db.prepare(`SELECT fornavn, etternavn FROM brukere WHERE telefon = ?`).get(telefon);
+      if (bruker) {
+        return `${bruker.fornavn} ${bruker.etternavn}`;
+      }
+      return fallbackNavn || `(${telefon})`;
+    };
+
+    if (prove.proveleder_telefon) {
+      roller.push({
+        id: 'rolle_proveleder',
+        telefon: prove.proveleder_telefon,
+        navn: hentBrukerNavn(prove.proveleder_telefon, prove.proveleder_navn),
+        rolle: 'proveleder',
+        fra_provedetaljer: true
+      });
+    }
+    if (prove.nkkrep_telefon) {
+      roller.push({
+        id: 'rolle_nkkrep',
+        telefon: prove.nkkrep_telefon,
+        navn: hentBrukerNavn(prove.nkkrep_telefon, prove.nkkrep_navn),
+        rolle: 'nkkrep',
+        fra_provedetaljer: true
+      });
+    }
+    if (prove.nkkvara_telefon) {
+      roller.push({
+        id: 'rolle_nkkvara',
+        telefon: prove.nkkvara_telefon,
+        navn: hentBrukerNavn(prove.nkkvara_telefon, prove.nkkvara_navn),
+        rolle: 'nkkvara',
+        fra_provedetaljer: true
+      });
+    }
+    if (prove.dvk_telefon) {
+      roller.push({
+        id: 'rolle_dvk',
+        telefon: prove.dvk_telefon,
+        navn: hentBrukerNavn(prove.dvk_telefon, prove.dvk_navn),
+        rolle: 'dvk',
+        fra_provedetaljer: true
+      });
+    }
+  }
+
+  return c.json({ success: true, team, roller });
+});
+
+// Legg til team-medlem
+app.post("/api/prover/:id/team", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const { telefon, navn, epost, rolle, beskrivelse, sendSms } = body;
+
+  const cleanTelefon = (telefon || "").replace(/\s/g, "");
+  if (!cleanTelefon || cleanTelefon.length < 8) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+  if (!navn) {
+    return c.json({ error: "Navn er påkrevd" }, 400);
+  }
+  if (!rolle || !['admin', 'sekretariat', 'hjelper'].includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  // Hent prøveinfo
+  const prove = db.prepare(`
+    SELECT p.navn, k.navn as klubb_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk om medlem allerede finnes
+  const eksisterende = db.prepare(`
+    SELECT id FROM prove_team WHERE prove_id = ? AND telefon = ?
+  `).get(proveId, cleanTelefon);
+
+  if (eksisterende) {
+    return c.json({ error: "Denne personen er allerede lagt til i teamet" }, 409);
+  }
+
+  try {
+    // Legg til team-medlem
+    const result = db.prepare(`
+      INSERT INTO prove_team (prove_id, telefon, navn, epost, rolle, beskrivelse, invitert_av, invitasjon_sendt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(proveId, cleanTelefon, navn, epost || null, rolle, beskrivelse || null, user?.telefon || null, sendSms ? 1 : 0);
+
+    // Send SMS hvis ønsket
+    if (sendSms) {
+      const rolleNavn = {
+        'admin': 'administrator',
+        'sekretariat': 'sekretariat',
+        'hjelper': 'hjelper'
+      }[rolle];
+
+      const fornavn = (navn || "").split(" ")[0] || "Hei";
+      const klubbHilsen = prove.klubb_navn ? `\n\nVennlig hilsen ${prove.klubb_navn}` : '';
+      const smsMessage = `Hei ${fornavn}! Du er lagt til som ${rolleNavn} for ${prove.navn}. ${rolle === 'admin' ? 'Du har nå admin-tilgang til prøven. ' : ''}Logg inn på fuglehundprove.no for å se din rolle.${klubbHilsen}`;
+
+      await sendSMS(cleanTelefon, smsMessage, { type: `team_${rolle}` });
+    }
+
+    console.log(`[Team] Lagt til ${navn} (${cleanTelefon}) som ${rolle} for prøve ${proveId}`);
+
+    return c.json({
+      success: true,
+      message: "Team-medlem lagt til",
+      id: result.lastInsertRowid
+    });
+
+  } catch (err) {
+    console.error(`[Team] Feil:`, err);
+    return c.json({ error: "Kunne ikke legge til team-medlem" }, 500);
+  }
+});
+
+// Fjern team-medlem
+app.delete("/api/prover/:id/team/:teamId", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const teamId = c.req.param("teamId");
+
+  const result = db.prepare(`
+    DELETE FROM prove_team WHERE id = ? AND prove_id = ?
+  `).run(teamId, proveId);
+
+  if (result.changes === 0) {
+    return c.json({ error: "Team-medlem ikke funnet" }, 404);
+  }
+
+  return c.json({ success: true, message: "Team-medlem fjernet" });
+});
+
+// Oppdater team-medlem rolle
+app.patch("/api/prover/:id/team/:teamId", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const teamId = c.req.param("teamId");
+  const body = await c.req.json();
+
+  const { rolle, beskrivelse } = body;
+
+  if (rolle && !['admin', 'sekretariat', 'hjelper'].includes(rolle)) {
+    return c.json({ error: "Ugyldig rolle" }, 400);
+  }
+
+  db.prepare(`
+    UPDATE prove_team SET
+      rolle = COALESCE(?, rolle),
+      beskrivelse = COALESCE(?, beskrivelse),
+      updated_at = datetime('now')
+    WHERE id = ? AND prove_id = ?
+  `).run(rolle || null, beskrivelse || null, teamId, proveId);
+
+  return c.json({ success: true, message: "Team-medlem oppdatert" });
+});
+
+// ============================================
 // AUTH API ENDPOINTS
 // ============================================
 
@@ -1191,18 +2501,29 @@ app.post("/api/auth/login", async (c) => {
     return c.json({ error: "Verifiseringskode påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234
-  const isTestBypass = telefon === "90852833" && kode === "1234";
+  // Admin-bypass: telefon 90852833 med kode 1234 (Aleksander Roel)
+  const isTestBypass = (telefon === "90852833" && kode === "1234");
 
-  if (isDevMode || isTestBypass) {
-    // I dev-mode eller test-bypass: godta "1234" som gyldig kode
+  if (isTestBypass) {
+    // Test-bypass: Godkjent direkte
+  } else if (isDevMode) {
+    // I dev-mode: godta "1234" som gyldig kode
     if (kode !== validDevCode) {
       return c.json({ error: "Feil kode" }, 401);
     }
   } else {
-    // I produksjon: Her skal SMS-verifisering implementeres
-    // For nå: Avvis alle innlogginger i production uten ekte SMS-system
-    return c.json({ error: "SMS-verifisering ikke konfigurert" }, 501);
+    // I produksjon: Verifiser mot OTP-tabellen (koder er hashet)
+    const kodeHash = hashOTP(kode, telefon);
+    const otp = db.prepare(
+      "SELECT rowid FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
+    ).get(telefon, kodeHash);
+
+    if (!otp) {
+      return c.json({ error: "Feil kode" }, 401);
+    }
+
+    // Marker koden som brukt
+    db.prepare("UPDATE otp_codes SET used = 1 WHERE rowid = ?").run(otp.rowid);
   }
 
   const token = generateToken(bruker);
@@ -1291,8 +2612,9 @@ app.post("/api/auth/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din innloggingskode for Fuglehundprøve: ${code}`);
 
@@ -1313,12 +2635,14 @@ app.post("/api/auth/verify-code-only", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234
-  const isTestBypass = telefon === "90852833" && code === "1234";
+  // Bypass for utvikler (Aleksander Roel): telefon 90852833 med kode 1234
+  const isTestBypass = (telefon === "90852833" && code === "1234");
 
+  // Hash koden før sammenligning (OTP lagres hashet i databasen)
+  const codeHash = hashOTP(code, telefon);
   const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1342,12 +2666,14 @@ app.post("/api/auth/verify-code", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
-  // Bypass for testing: telefon 90852833 med kode 1234
-  const isTestBypass = telefon === "90852833" && code === "1234";
+  // Bypass for utvikler (Aleksander Roel): telefon 90852833 med kode 1234
+  const isTestBypass = (telefon === "90852833" && code === "1234");
 
+  // Hash koden før sammenligning
+  const codeHash = hashOTP(code, telefon);
   const otp = isTestBypass ? { rowid: -1 } : db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1361,12 +2687,29 @@ app.post("/api/auth/verify-code", async (c) => {
   let bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
 
   // Sjekk om dette er en FKF-godkjent dommer
+  // Først prøv match på telefonnummer
   const normalized = normalizePhone(telefon);
-  const fkfDommer = db.prepare(`
+  let fkfDommer = db.prepare(`
     SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost, linked_bruker_telefon
     FROM fkf_godkjente_dommere
     WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
   `).get(normalized, normalized);
+
+  // Hvis ingen telefon-match og bruker finnes, prøv match på navn
+  if (!fkfDommer && bruker && bruker.fornavn && bruker.etternavn) {
+    fkfDommer = db.prepare(`
+      SELECT id, fornavn, etternavn, adresse, postnummer, sted, epost, linked_bruker_telefon
+      FROM fkf_godkjente_dommere
+      WHERE aktiv = 1
+        AND linked_bruker_telefon IS NULL
+        AND LOWER(fornavn) = LOWER(?)
+        AND LOWER(etternavn) = LOWER(?)
+    `).get(bruker.fornavn.trim(), bruker.etternavn.trim());
+
+    if (fkfDommer) {
+      console.log(`[Auto-dommer] Matchet på navn ved innlogging: ${bruker.fornavn} ${bruker.etternavn} -> FKF-dommer ID ${fkfDommer.id}`);
+    }
+  }
 
   if (bruker) {
     // Sjekk om eksisterende bruker mangler dommer-rolle men er FKF-godkjent
@@ -1399,44 +2742,18 @@ app.post("/api/auth/verify-code", async (c) => {
     });
   }
 
-  // Ny bruker - opprett automatisk hvis FKF-dommer
+  // FKF-dommer uten brukerkonto - krev fullstendig registrering med samtykke
   if (fkfDommer) {
-    const rolle = 'deltaker,dommer';
-    db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      telefon,
-      fkfDommer.fornavn || '',
-      fkfDommer.etternavn || '',
-      fkfDommer.epost || '',
-      fkfDommer.adresse || '',
-      fkfDommer.postnummer || '',
-      fkfDommer.sted || '',
-      rolle
-    );
-
-    console.log(`[Auto-dommer] Ny bruker ${telefon} opprettet med dommer-rolle (FKF: ${fkfDommer.fornavn} ${fkfDommer.etternavn})`);
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "auto_bruker_dommer",
-      `Ny bruker opprettet automatisk fra FKF-dommerliste: ${fkfDommer.fornavn} ${fkfDommer.etternavn} (${telefon})`
-    );
-
-    // Oppdater linked_bruker_telefon på FKF-dommer
-    db.prepare("UPDATE fkf_godkjente_dommere SET linked_bruker_telefon = ?, linked_at = datetime('now') WHERE id = ?").run(telefon, fkfDommer.id);
-
-    bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
-    const token = generateToken(bruker);
+    console.log(`[FKF-dommer] ${fkfDommer.fornavn} ${fkfDommer.etternavn} (${telefon}) må fullføre registrering`);
     return c.json({
-      token,
-      bruker: {
-        telefon: bruker.telefon,
-        fornavn: bruker.fornavn,
-        etternavn: bruker.etternavn,
-        rolle: bruker.rolle
-      },
+      requiresRegistration: true,
       isFkfDommer: true,
-      autoCreated: true
+      fkfDommerInfo: {
+        fornavn: fkfDommer.fornavn,
+        etternavn: fkfDommer.etternavn,
+        epost: fkfDommer.epost || ''
+      },
+      message: "Du er registrert som FKF-dommer, men må fullføre registrering med SMS-samtykke."
     });
   }
 
@@ -1455,11 +2772,18 @@ app.post("/api/auth/verify-code", async (c) => {
   });
 });
 
-// Registrer samtykke (GDPR)
+// Registrer samtykke (GDPR) - oppdaterer både gamle og nye samtykke-felt
 app.post("/api/auth/consent", requireAuth, (c) => {
   const payload = c.get("bruker");
-  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(payload.telefon);
-  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE brukere
+    SET samtykke_gitt = datetime('now'),
+        sms_samtykke = 1,
+        sms_samtykke_tidspunkt = ?
+    WHERE telefon = ?
+  `).run(now, payload.telefon);
+  return c.json({ ok: true, samtykke_gitt: now, sms_samtykke: true });
 });
 
 // ============================================
@@ -1495,8 +2819,9 @@ app.post("/api/auth/register/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din verifiseringskode for Fuglehundprøve: ${code}`);
 
@@ -1530,10 +2855,11 @@ app.post("/api/auth/register/verify", async (c) => {
     return c.json({ error: "Fornavn og etternavn er påkrevd" }, 400);
   }
 
-  // Verifiser OTP
+  // Verifiser OTP (hash koden først)
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1574,12 +2900,29 @@ app.post("/api/auth/register/verify", async (c) => {
   console.log(`[Register] Bruker fra DB: ${bruker ? bruker.telefon : 'IKKE FUNNET'}`);
 
   // Sjekk om dette er en FKF-godkjent dommer
+  // Først prøv match på telefonnummer
   const normalized = normalizePhone(telefon);
-  const fkfDommer = db.prepare(`
+  let fkfDommer = db.prepare(`
     SELECT id, fornavn, etternavn, linked_bruker_telefon
     FROM fkf_godkjente_dommere
     WHERE aktiv = 1 AND (telefon1_normalized = ? OR telefon2_normalized = ?)
   `).get(normalized, normalized);
+
+  // Hvis ingen telefon-match, prøv match på navn (for dommere med kun fastnummer)
+  if (!fkfDommer && fornavn && etternavn) {
+    fkfDommer = db.prepare(`
+      SELECT id, fornavn, etternavn, linked_bruker_telefon
+      FROM fkf_godkjente_dommere
+      WHERE aktiv = 1
+        AND linked_bruker_telefon IS NULL
+        AND LOWER(fornavn) = LOWER(?)
+        AND LOWER(etternavn) = LOWER(?)
+    `).get(fornavn.trim(), etternavn.trim());
+
+    if (fkfDommer) {
+      console.log(`[Auto-dommer] Matchet på navn: ${fornavn} ${etternavn} -> FKF-dommer ID ${fkfDommer.id}`);
+    }
+  }
 
   let isFkfDommer = false;
   if (fkfDommer) {
@@ -1601,6 +2944,57 @@ app.post("/api/auth/register/verify", async (c) => {
     }
   }
 
+  // ============================================
+  // AUTO-KOBLE HUNDER FRA DELTAKERLISTE
+  // Når eier og fører er samme person i deltakerlisten,
+  // kobles hunden automatisk til brukerens "Mine hunder"
+  // ============================================
+  let hunderKoblet = 0;
+  try {
+    const fullNavn = `${fornavn} ${etternavn}`.trim().toLowerCase();
+
+    // Finn påmeldinger der brukerens navn matcher eier ELLER fører
+    // (mange deltakerlister har samme navn på begge)
+    const matchendePameldinger = db.prepare(`
+      SELECT pd.hund_regnr, pd.hund_navn, pd.rase, pd.eier_navn, pd.forer_navn, pd.prove_id
+      FROM parti_deltakere pd
+      WHERE (LOWER(pd.eier_navn) LIKE ? OR LOWER(pd.forer_navn) LIKE ?)
+        AND pd.hund_regnr IS NOT NULL
+        AND pd.hund_regnr != ''
+    `).all(`%${fullNavn}%`, `%${fullNavn}%`);
+
+    for (const pm of matchendePameldinger) {
+      // Sjekk om hunden allerede finnes i systemet
+      let hund = db.prepare("SELECT id, eier_telefon FROM hunder WHERE regnr = ?").get(pm.hund_regnr);
+
+      if (hund) {
+        // Hund finnes - oppdater eier hvis ikke satt
+        if (!hund.eier_telefon) {
+          db.prepare("UPDATE hunder SET eier_telefon = ? WHERE id = ?").run(telefon, hund.id);
+          hunderKoblet++;
+          console.log(`[Auto-koble] Hund ${pm.hund_regnr} (${pm.hund_navn}) koblet til bruker ${telefon}`);
+        }
+      } else {
+        // Hund finnes ikke - opprett den med denne brukeren som eier
+        const result = db.prepare(`
+          INSERT INTO hunder (regnr, navn, rase, eier_telefon)
+          VALUES (?, ?, ?, ?)
+        `).run(pm.hund_regnr, pm.hund_navn || 'Ukjent', pm.rase || '', telefon);
+        hunderKoblet++;
+        console.log(`[Auto-koble] Ny hund ${pm.hund_regnr} (${pm.hund_navn}) opprettet for bruker ${telefon}`);
+      }
+    }
+
+    if (hunderKoblet > 0) {
+      db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+        "auto_koble_hunder",
+        `${hunderKoblet} hund(er) automatisk koblet til bruker ${telefon} (${fornavn} ${etternavn}) fra deltakerliste`
+      );
+    }
+  } catch (e) {
+    console.error("[Auto-koble] Feil ved kobling av hunder:", e.message);
+  }
+
   // Generer JWT
   const token = jwt.sign(
     {
@@ -1609,7 +3003,7 @@ app.post("/api/auth/register/verify", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -1640,14 +3034,27 @@ app.post("/api/auth/login-password", async (c) => {
     return c.json({ error: "Passord er påkrevd" }, 400);
   }
 
+  // Hent verifisert bruker
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
 
   if (!bruker) {
     return c.json({ error: "Bruker ikke funnet eller ikke verifisert" }, 401);
   }
 
+  // Sjekk passord
   if (!verifyPassword(passord, bruker.passord_hash)) {
     return c.json({ error: "Feil passord" }, 401);
+  }
+
+  // Oppgrader passord-hash til bcrypt hvis det er legacy SHA256
+  if (needsHashUpgrade(bruker.passord_hash)) {
+    try {
+      const newHash = hashPassword(passord);
+      db.prepare("UPDATE brukere SET passord_hash = ? WHERE telefon = ?").run(newHash, telefon);
+      console.log(`[Auth] Oppgradert passord-hash til bcrypt for ${telefon}`);
+    } catch (e) {
+      console.error(`[Auth] Feil ved oppgradering av passord-hash: ${e.message}`);
+    }
   }
 
   // Sjekk om re-verifisering kreves (>60 dager)
@@ -1659,8 +3066,11 @@ app.post("/api/auth/login-password", async (c) => {
     }, 200);
   }
 
-  // Oppdater siste innlogging
+  // Oppdater siste innlogging og logg vellykket pålogging
   db.prepare("UPDATE brukere SET siste_innlogging = datetime('now') WHERE telefon = ?").run(telefon);
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_innlogget", JSON.stringify({ telefon, rolle: bruker.rolle || 'deltaker', metode: 'passord' })
+  );
 
   const token = jwt.sign(
     {
@@ -1669,7 +3079,7 @@ app.post("/api/auth/login-password", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -1707,8 +3117,9 @@ app.post("/api/auth/reverify/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din verifiseringskode for Fuglehundprøve: ${code}`);
 
@@ -1729,9 +3140,10 @@ app.post("/api/auth/reverify/verify", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1744,8 +3156,11 @@ app.post("/api/auth/reverify/verify", async (c) => {
     return c.json({ error: "Bruker ikke funnet" }, 404);
   }
 
-  // Oppdater siste innlogging
+  // Oppdater siste innlogging og logg vellykket pålogging
   db.prepare("UPDATE brukere SET siste_innlogging = datetime('now') WHERE telefon = ?").run(telefon);
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "bruker_innlogget", JSON.stringify({ telefon, rolle: bruker.rolle || 'deltaker', metode: 'sms_otp' })
+  );
 
   const token = jwt.sign(
     {
@@ -1754,7 +3169,7 @@ app.post("/api/auth/reverify/verify", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -1800,8 +3215,9 @@ app.post("/api/auth/forgot-password/send-code", async (c) => {
 
   // Generer ny kode
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Din kode for å tilbakestille passord: ${code}`);
 
@@ -1822,9 +3238,10 @@ app.post("/api/auth/forgot-password/verify-code", async (c) => {
     return c.json({ error: "Telefon og kode er påkrevd" }, 400);
   }
 
+  const kodeHash = hashOTP(kode, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, kode);
+  ).get(telefon, kodeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -1894,7 +3311,7 @@ app.post("/api/auth/forgot-password/reset", async (c) => {
       etternavn: bruker.etternavn,
       rolle: bruker.rolle || "deltaker"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -1990,8 +3407,9 @@ app.post("/api/auth/klubb/register/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Verifiseringskode for ${klubbNavn}: ${code}`);
 
@@ -2018,9 +3436,10 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
     return c.json({ error: "Alle påkrevde felt må fylles ut" }, 400);
   }
 
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -2067,11 +3486,11 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
     const rolle = fkfDommer ? 'deltaker,dommer' : 'deltaker';
 
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, rolle)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(telefon, fornavn, etternavn, epost, passordHash, now, rolle);
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, passord_hash, verifisert, siste_innlogging, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1, ?)
+    `).run(telefon, fornavn, etternavn, epost, passordHash, now, rolle, now);
     brukerOpprettet = true;
-    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})${fkfDommer ? ' [FKF-dommer]' : ''}`);
+    console.log(`📱 Brukerprofil opprettet for klubbleder: ${lederNavn} (${telefon})${fkfDommer ? ' [FKF-dommer]' : ''} (SMS-samtykke: Ja)`);
 
     // Oppdater FKF-dommer kobling
     if (fkfDommer && !fkfDommer.linked_bruker_telefon) {
@@ -2096,7 +3515,7 @@ app.post("/api/auth/klubb/register/verify", async (c) => {
       navn: klubb.navn,
       type: "klubb"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2158,7 +3577,7 @@ app.post("/api/auth/klubb/login", async (c) => {
       navn: klubb.navn,
       type: "klubb"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2193,8 +3612,9 @@ app.post("/api/auth/klubb/reverify/send-code", async (c) => {
   db.prepare("UPDATE otp_codes SET used = 1 WHERE telefon = ? AND used = 0").run(telefon);
 
   const code = generateOTP();
+  const codeHash = hashOTP(code, telefon);
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, code, expiresAt);
+  db.prepare("INSERT INTO otp_codes (telefon, code, expires_at) VALUES (?, ?, ?)").run(telefon, codeHash, expiresAt);
 
   const smsResult = await sendSMS(telefon, `Verifiseringskode for ${klubb.navn}: ${code}`);
 
@@ -2218,9 +3638,10 @@ app.post("/api/auth/klubb/reverify/verify", async (c) => {
 
   const telefon = klubb.admin_telefon;
 
+  const codeHash = hashOTP(code, telefon);
   const otp = db.prepare(
     "SELECT rowid, * FROM otp_codes WHERE telefon = ? AND code = ? AND used = 0 AND expires_at > datetime('now') ORDER BY created_at DESC LIMIT 1"
-  ).get(telefon, code);
+  ).get(telefon, codeHash);
 
   if (!otp) {
     return c.json({ error: "Ugyldig eller utløpt kode" }, 401);
@@ -2235,7 +3656,7 @@ app.post("/api/auth/klubb/reverify/verify", async (c) => {
       navn: klubb.navn,
       type: "klubb"
     },
-    JWT_SECRET,
+    JWT_SECRET_FINAL,
     { expiresIn: JWT_EXPIRES_IN }
   );
 
@@ -2335,8 +3756,8 @@ app.delete("/api/storage/:key", requireAdmin, (c) => {
   return c.json({ ok: true });
 });
 
-// Liste alle keys krever admin
-app.get("/api/storage", requireAdmin, (c) => {
+// Liste alle keys (for admin-panel data explorer)
+app.get("/api/storage", (c) => {
   const rows = db.prepare("SELECT key, updated_at FROM kv_store ORDER BY key").all();
   return c.json({ keys: rows });
 });
@@ -2368,11 +3789,155 @@ app.put("/api/trial", requireAdmin, async (c) => {
   return c.json(row);
 });
 
-// --- Admin log (krever admin) ---
-app.get("/api/admin/log", requireAdmin, (c) => {
-  const limit = Number(c.req.query("limit") || 50);
-  const rows = db.prepare("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?").all(limit);
-  return c.json({ items: rows });
+// --- Admin log (for admin-panel) ---
+app.get("/api/admin/log", (c) => {
+  const limit = Number(c.req.query("limit") || 100);
+  const klubbId = c.req.query("klubb_id") || "";
+  const proveId = c.req.query("prove_id") || "";
+  const type = c.req.query("type") || "";
+
+  let whereClause = "1=1";
+  const params = [];
+
+  // Hent klubber og prøver for filter-dropdowns
+  const klubber = db.prepare("SELECT id, navn FROM klubber ORDER BY navn").all();
+  const alleProver = db.prepare("SELECT id, navn, klubb_id FROM prover ORDER BY start_dato DESC").all();
+
+  // Filter på klubb - finn alle prøve-IDer for denne klubben
+  if (klubbId) {
+    const klubbProver = alleProver.filter(p => p.klubb_id === klubbId);
+    const klubbNavn = klubber.find(k => k.id === klubbId)?.navn || '';
+
+    if (klubbProver.length > 0) {
+      // Søk etter klubb-id, klubbnavn, eller prøve-IDer som tilhører klubben
+      const proveIds = klubbProver.map(p => p.id);
+      const proveNavner = klubbProver.map(p => p.navn);
+      const searchTerms = [klubbId, klubbNavn, ...proveIds, ...proveNavner].filter(t => t);
+      const likeClauses = searchTerms.map(() => "detail LIKE ?").join(" OR ");
+      whereClause += ` AND (${likeClauses})`;
+      searchTerms.forEach(t => params.push(`%${t}%`));
+    } else {
+      // Bare søk på klubb-id og klubbnavn
+      whereClause += " AND (detail LIKE ? OR detail LIKE ?)";
+      params.push(`%${klubbId}%`, `%${klubbNavn}%`);
+    }
+  }
+
+  // Filter på prøve
+  if (proveId) {
+    const prove = alleProver.find(p => p.id === proveId);
+    const proveNavn = prove?.navn || '';
+    whereClause += " AND (detail LIKE ? OR detail LIKE ?)";
+    params.push(`%${proveId}%`, `%${proveNavn}%`);
+  }
+
+  // Filter på type
+  if (type === "innlogging") {
+    whereClause += " AND action LIKE '%innlogg%'";
+  } else if (type === "prove") {
+    whereClause += " AND (action LIKE '%prove%' OR action LIKE '%prøve%' OR action LIKE '%pamelding%' OR action LIKE '%kritikk%' OR action LIKE '%trial%')";
+  } else if (type === "bruker") {
+    // Bruker-endringer: registrering, sletting, rolle-endring, samtykke - MEN IKKE innlogging
+    whereClause += " AND (action IN ('bruker_registrert', 'bruker_slettet', 'bruker_rolle_endret', 'samtykke_registrert', 'samtykke_registrert_admin', 'samtykke_trukket') OR (action LIKE '%dommer%' AND action NOT LIKE '%innlogg%'))";
+  } else if (type === "klubb") {
+    whereClause += " AND (action LIKE '%klubb%' OR action IN ('klubb_foresporsel', 'klubb_godkjent', 'klubb_avslatt', 'klubb_opprettet'))";
+  } else if (type === "sms") {
+    whereClause += " AND action LIKE '%sms%'";
+  }
+
+  const rows = db.prepare(`SELECT * FROM admin_log WHERE ${whereClause} ORDER BY id DESC LIMIT ?`).all(...params, limit);
+
+  // For prøve-dropdown: filtrer basert på valgt klubb
+  let prover = alleProver;
+  if (klubbId) {
+    prover = alleProver.filter(p => p.klubb_id === klubbId);
+  }
+
+  return c.json({ items: rows, klubber, prover });
+});
+
+// ============================================
+// PARTIFORDELINGSREGLER API
+// ============================================
+
+// Hent partifordelingsregler (åpen for alle - brukes av frontend)
+app.get("/api/partifordeling/regler", (c) => {
+  const row = db.prepare("SELECT * FROM partifordeling_regler WHERE id = 1").get();
+  if (!row) {
+    // Returner standardverdier om ingen rad finnes
+    return c.json({
+      eier_samme_parti: true,
+      eier_ikke_samme_slipp: true,
+      eier_identifikator: 'begge',
+      maks_per_parti_ukak: 14,
+      maks_per_parti_vk: 20,
+      beskrivelse: 'Hunder fra samme eier/fører plasseres på samme parti, men ikke i samme slipp.'
+    });
+  }
+  return c.json({
+    eier_samme_parti: !!row.eier_samme_parti,
+    eier_ikke_samme_slipp: !!row.eier_ikke_samme_slipp,
+    eier_identifikator: row.eier_identifikator || 'begge',
+    maks_per_parti_ukak: row.maks_per_parti_ukak || 14,
+    maks_per_parti_vk: row.maks_per_parti_vk || 20,
+    beskrivelse: row.beskrivelse || '',
+    oppdatert_av: row.oppdatert_av,
+    updated_at: row.updated_at
+  });
+});
+
+// Oppdater partifordelingsregler (krever admin)
+app.put("/api/partifordeling/regler", requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      eier_samme_parti,
+      eier_ikke_samme_slipp,
+      eier_identifikator,
+      maks_per_parti_ukak,
+      maks_per_parti_vk,
+      beskrivelse
+    } = body;
+
+    // Valider eier_identifikator
+    const validIdentifikatorer = ['telefon', 'navn', 'begge'];
+    const ident = validIdentifikatorer.includes(eier_identifikator) ? eier_identifikator : 'begge';
+
+    // Hent bruker fra auth (hvis tilgjengelig)
+    const oppdatertAv = c.get('user')?.telefon || 'ukjent';
+
+    db.prepare(`
+      UPDATE partifordeling_regler SET
+        eier_samme_parti = ?,
+        eier_ikke_samme_slipp = ?,
+        eier_identifikator = ?,
+        maks_per_parti_ukak = ?,
+        maks_per_parti_vk = ?,
+        beskrivelse = ?,
+        oppdatert_av = ?,
+        updated_at = datetime('now')
+      WHERE id = 1
+    `).run(
+      eier_samme_parti ? 1 : 0,
+      eier_ikke_samme_slipp ? 1 : 0,
+      ident,
+      maks_per_parti_ukak || 14,
+      maks_per_parti_vk || 20,
+      beskrivelse || '',
+      oppdatertAv
+    );
+
+    // Logg endringen
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "partifordeling_regler_oppdatert",
+      `Regler oppdatert av ${oppdatertAv}: eier_samme_parti=${eier_samme_parti}, eier_ikke_samme_slipp=${eier_ikke_samme_slipp}`
+    );
+
+    return c.json({ ok: true, message: "Partifordelingsregler oppdatert" });
+  } catch (err) {
+    console.error("Feil ved oppdatering av partifordelingsregler:", err);
+    return c.json({ error: "Kunne ikke oppdatere regler" }, 500);
+  }
 });
 
 // ============================================
@@ -2439,6 +4004,74 @@ app.get("/api/stats", (c) => {
   return c.json({ kvEntries: kvCount, adminLogEntries: logCount, trial, brukere: brukerCount, hunder: hundCount, klubber: klubbCount, prover: proveCount });
 });
 
+// Sanntids prøve-dashboard statistikk for prøveleder
+app.get("/api/stats/prove/:proveId", (c) => {
+  const proveId = c.req.param("proveId");
+
+  // Prøve-info
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+
+  // Kritikk-statistikk
+  const kritikkStats = db.prepare(`
+    SELECT
+      COUNT(*) as totalt,
+      SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as utkast,
+      SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as innsendt,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as godkjent
+    FROM kritikker
+    WHERE prove_id = ?
+  `).get(proveId);
+
+  // Premiefordeling
+  const premiefordeling = db.prepare(`
+    SELECT premie, klasse, COUNT(*) as antall
+    FROM kritikker
+    WHERE prove_id = ? AND premie IS NOT NULL AND premie != ''
+    GROUP BY premie, klasse
+    ORDER BY klasse, premie
+  `).all(proveId);
+
+  // Siste aktivitet
+  const sisteAktivitet = db.prepare(`
+    SELECT k.*, h.navn as hund_navn, h.regnr
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    WHERE k.prove_id = ?
+    ORDER BY k.updated_at DESC
+    LIMIT 10
+  `).all(proveId);
+
+  // Per-parti statistikk
+  const partiStats = db.prepare(`
+    SELECT
+      parti,
+      COUNT(*) as antall_kritikker,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as godkjente,
+      SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as ventende
+    FROM kritikker
+    WHERE prove_id = ?
+    GROUP BY parti
+  `).all(proveId);
+
+  // DVK-kontroller
+  const dvkStats = db.prepare(`
+    SELECT COUNT(*) as antall,
+           SUM(CASE WHEN tiltak_advarsel = 1 OR tiltak_diskvalifikasjon = 1 THEN 1 ELSE 0 END) as alvorlige
+    FROM dvk_kontroller
+    WHERE prove_id = ?
+  `).get(proveId);
+
+  return c.json({
+    prove,
+    kritikker: kritikkStats,
+    premiefordeling,
+    sisteAktivitet,
+    partiStats,
+    dvk: dvkStats,
+    oppdatert: new Date().toISOString()
+  });
+});
+
 // Dommer-statistikk for superadmin
 app.get("/api/stats/dommere", (c) => {
   const totalt = db.prepare("SELECT COUNT(*) as n FROM fkf_godkjente_dommere WHERE aktiv = 1").get().n;
@@ -2470,14 +4103,23 @@ app.get("/api/stats/dommere", (c) => {
 // BRUKERE API
 // ============================================
 
-// Hent alle brukere
-app.get("/api/brukere", (c) => {
-  const rows = db.prepare("SELECT * FROM brukere ORDER BY etternavn, fornavn").all();
+// Hent alle brukere - KUN superadmin, og ALDRI passord_hash
+app.get("/api/brukere", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+  if (!hasAnyRole(bruker.rolle, ["superadmin"])) {
+    return c.json({ error: "Krever superadmin-tilgang" }, 403);
+  }
+  const rows = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
+           rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
+           siste_innlogging, verifisert, sms_samtykke, sms_samtykke_tidspunkt
+    FROM brukere ORDER BY etternavn, fornavn
+  `).all();
   return c.json(rows);
 });
 
-// Søk etter brukere (for autocomplete)
-app.get("/api/brukere/sok", (c) => {
+// Søk etter brukere (for autocomplete) - krever innlogging
+app.get("/api/brukere/sok", requireAuth, (c) => {
   const q = c.req.query("q") || "";
   if (q.length < 2) {
     return c.json([]);
@@ -2493,21 +4135,29 @@ app.get("/api/brukere/sok", (c) => {
   return c.json(rows);
 });
 
-// Hent én bruker på telefon
+// Hent én bruker på telefon - ALDRI eksponer passord_hash
 app.get("/api/brukere/:telefon", (c) => {
   const telefon = c.req.param("telefon");
-  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  const row = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
+           rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
+           siste_innlogging, verifisert, sms_samtykke, sms_samtykke_tidspunkt
+    FROM brukere WHERE telefon = ?
+  `).get(telefon);
   if (!row) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  // Hent også klubb-info hvis bruker er admin
-  const klubbAdmin = db.prepare(`
+  // Hent alle klubber brukeren er admin for
+  const klubbAdmins = db.prepare(`
     SELECT ka.rolle as klubb_rolle, k.id as klubb_id, k.navn as klubb_navn
     FROM klubb_admins ka
     JOIN klubber k ON ka.klubb_id = k.id
     WHERE ka.telefon = ?
-  `).get(telefon);
+  `).all(telefon);
 
-  return c.json({ ...row, klubbAdmin: klubbAdmin || null });
+  // Bakoverkompatibilitet: klubbAdmin = første klubb (eller null)
+  const klubbAdmin = klubbAdmins.length > 0 ? klubbAdmins[0] : null;
+
+  return c.json({ ...row, klubbAdmin, klubbAdmins });
 });
 
 // Opprett eller oppdater bruker
@@ -2564,10 +4214,10 @@ app.put("/api/brukere/:telefon", async (c) => {
       db.prepare(`UPDATE brukere SET ${sets.join(", ")} WHERE telefon = ?`).run(...vals, telefon);
     }
   } else {
-    // Opprett ny
+    // Opprett ny - sms_samtykke = 0 fordi admin-opprettelse krever at brukeren selv avgir samtykke senere
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, adresse, postnummer, sted, rolle, sms_samtykke)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run(
       telefon,
       body.fornavn || '',
@@ -2578,9 +4228,15 @@ app.put("/api/brukere/:telefon", async (c) => {
       body.sted || '',
       nyRolle
     );
+    console.log(`[Admin] Ny bruker opprettet: ${telefon} (SMS-samtykke: Nei - må avgis av bruker)`);
   }
 
-  const row = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
+  const row = db.prepare(`
+    SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
+           rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
+           siste_innlogging, verifisert, sms_samtykke, sms_samtykke_tidspunkt
+    FROM brukere WHERE telefon = ?
+  `).get(telefon);
   return c.json(row);
 });
 
@@ -2724,7 +4380,9 @@ app.get("/api/hunder", (c) => {
 // Opprett ny hund
 app.post("/api/hunder", async (c) => {
   const body = await c.req.json();
-  const { regnr, navn, rase, kjonn, fodselsdato, eier_telefon, klubb_id, bilde } = body;
+  const { regnr, navn, rase, kjonn, fodselsdato, eier_telefon, klubb_id, bilde,
+          eierbevis, eierbevis_dato, aversjonsbevis, aversjonsbevis_dato,
+          vaksinasjon, vaksinasjon_dato } = body;
 
   if (!navn) {
     return c.json({ error: "Navn er påkrevd" }, 400);
@@ -2750,9 +4408,13 @@ app.post("/api/hunder", async (c) => {
 
   try {
     const result = db.prepare(`
-      INSERT INTO hunder (regnr, navn, rase, kjonn, fodt, eier_telefon, klubb_id, bilde)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(regnr || null, navn, rase || null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null);
+      INSERT INTO hunder (regnr, navn, rase, kjonn, fodt, eier_telefon, klubb_id, bilde,
+                          eierbevis, eierbevis_dato, aversjonsbevis, aversjonsbevis_dato,
+                          vaksinasjon, vaksinasjon_dato)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(regnr || null, navn, rase || null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null,
+           eierbevis || null, eierbevis_dato || null, aversjonsbevis || null, aversjonsbevis_dato || null,
+           vaksinasjon || null, vaksinasjon_dato || null);
 
     const newHund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(result.lastInsertRowid);
     return c.json(newHund, 201);
@@ -2775,7 +4437,10 @@ app.put("/api/hunder/:id", async (c) => {
   // Map frontend field names → db column names
   const fieldMap = {
     regnr: "regnr", navn: "navn", rase: "rase", kjonn: "kjonn",
-    fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde"
+    fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde",
+    eierbevis: "eierbevis", eierbevis_dato: "eierbevis_dato",
+    vaksinasjon: "vaksinasjon", vaksinasjon_dato: "vaksinasjon_dato",
+    aversjonsbevis: "aversjonsbevis", aversjonsbevis_dato: "aversjonsbevis_dato"
   };
   const sets = [];
   const vals = [];
@@ -2833,6 +4498,156 @@ app.get("/api/hunder/:id", (c) => {
 });
 
 // ============================================
+// HUND-SØK PÅ REGNR (for bruker-registrering)
+// ============================================
+
+// Batch-oppslag av hunder basert på regnr-liste (for import-overstyring)
+app.post("/api/hunder/lookup", async (c) => {
+  try {
+    const body = await c.req.json();
+    const regnrList = body.regnrList || [];
+    if (!Array.isArray(regnrList) || regnrList.length === 0) {
+      return c.json({});
+    }
+    const result = {};
+    const stmt = db.prepare("SELECT regnr, navn, rase FROM hunder WHERE regnr = ?");
+    for (const regnr of regnrList.slice(0, 500)) {
+      const hund = stmt.get(regnr);
+      if (hund) {
+        result[regnr] = { navn: hund.navn, rase: hund.rase };
+      }
+    }
+    return c.json(result);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Søk etter hund basert på registreringsnummer
+// Normaliserer regnr for å håndtere variasjoner (mellomrom, case)
+app.get("/api/hunder/sok/regnr", (c) => {
+  const regnrQuery = (c.req.query("q") || "").trim().toUpperCase().replace(/\s+/g, '');
+
+  if (!regnrQuery || regnrQuery.length < 3) {
+    return c.json({ error: "Søkestreng må være minst 3 tegn" }, 400);
+  }
+
+  // Søk med normalisert regnr (fjerner mellomrom og konverterer til uppercase)
+  // Støtter både eksakt match og partial match
+  const hunder = db.prepare(`
+    SELECT h.id, h.regnr, h.navn, h.rase, h.fodt, h.eier_telefon,
+           b.fornavn || ' ' || b.etternavn as eier_navn,
+           o.eier_navn as import_eier_navn, o.forer_navn as import_forer_navn
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    LEFT JOIN eier_oppslag o ON h.regnr = o.regnr
+    WHERE UPPER(REPLACE(h.regnr, ' ', '')) = ?
+       OR UPPER(REPLACE(h.regnr, ' ', '')) LIKE ?
+    LIMIT 10
+  `).all(regnrQuery, `%${regnrQuery}%`);
+
+  return c.json({
+    results: hunder.map(h => ({
+      id: h.id,
+      regnr: h.regnr,
+      navn: h.navn,
+      rase: h.rase,
+      fodt: h.fodt,
+      harEier: !!h.eier_telefon,
+      eierNavn: h.eier_navn || h.import_eier_navn || null,
+      forerNavn: h.import_forer_navn || null
+    }))
+  });
+});
+
+// Koble bruker til hund basert på regnr (bruker-initiert)
+app.post("/api/hunder/koble", requireAuth, async (c) => {
+  try {
+    const bruker = c.get("bruker");
+    const body = await c.req.json();
+    const { regnr, fodselsdato } = body;
+
+    if (!regnr) {
+      return c.json({ error: "Registreringsnummer er påkrevd" }, 400);
+    }
+
+    if (!fodselsdato) {
+      return c.json({ error: "Fødselsdato er påkrevd" }, 400);
+    }
+
+    // Normaliser regnr
+    const normalizedRegnr = regnr.trim().toUpperCase().replace(/\s+/g, '');
+
+    // Valider at fødselsdato matcher årstall i regnr
+    const regnrYearMatch = normalizedRegnr.match(/\/(\d{2,4})$/);
+    if (regnrYearMatch) {
+      let regnrYear = regnrYearMatch[1];
+      if (regnrYear.length === 2) {
+        regnrYear = (parseInt(regnrYear) > 50 ? '19' : '20') + regnrYear;
+      }
+      const fodtYear = new Date(fodselsdato).getFullYear().toString();
+      if (fodtYear !== regnrYear) {
+        return c.json({
+          error: `Fødselsdato (${fodtYear}) matcher ikke årstall i regnr (${regnrYear})`
+        }, 400);
+      }
+    }
+
+    // Finn hunden
+    const hund = db.prepare(`
+      SELECT id, regnr, navn, eier_telefon
+      FROM hunder
+      WHERE UPPER(REPLACE(regnr, ' ', '')) = ?
+    `).get(normalizedRegnr);
+
+    if (!hund) {
+      return c.json({ error: "Hund ikke funnet med dette regnr" }, 404);
+    }
+
+    // Sjekk om hunden allerede har eier
+    if (hund.eier_telefon && hund.eier_telefon !== bruker.telefon) {
+      return c.json({
+        error: "Denne hunden er allerede registrert på en annen bruker",
+        hint: "Kontakt administrator hvis dette er feil"
+      }, 409);
+    }
+
+    // Oppdater hunden med eier og fødselsdato
+    db.prepare(`
+      UPDATE hunder
+      SET eier_telefon = ?, fodt = ?
+      WHERE id = ?
+    `).run(bruker.telefon, fodselsdato, hund.id);
+
+    // Sjekk om det finnes fullmakter som skal opprettes fra eier_oppslag
+    const oppslag = db.prepare(`
+      SELECT eier_navn, forer_navn FROM eier_oppslag WHERE regnr = ?
+    `).get(hund.regnr);
+
+    if (oppslag && oppslag.forer_navn && oppslag.forer_navn !== oppslag.eier_navn) {
+      // Fører er forskjellig fra eier - logg for manuell fullmakt-opprettelse
+      // (fullmakt opprettes når fører registrerer seg og matcher)
+      console.log(`Fullmakt kan opprettes: ${oppslag.eier_navn} → ${oppslag.forer_navn} for hund ${hund.regnr}`);
+    }
+
+    return c.json({
+      success: true,
+      message: `Hunden "${hund.navn}" er nå koblet til din profil`,
+      hund: {
+        id: hund.id,
+        regnr: hund.regnr,
+        navn: hund.navn,
+        fodt: fodselsdato
+      }
+    });
+
+  } catch (err) {
+    console.error("Feil ved kobling av hund:", err);
+    return c.json({ error: "Feil ved kobling: " + err.message }, 500);
+  }
+});
+
+// ============================================
 // BRØNNØYSUND OPPSLAG (organisasjonsnummer)
 // ============================================
 
@@ -2864,6 +4679,10 @@ app.get("/api/brreg/:orgnr", async (c) => {
       orgnr: data.organisasjonsnummer,
       navn: data.navn,
       organisasjonsform: data.organisasjonsform?.beskrivelse || null,
+      hjemmeside: data.hjemmeside || null,
+      epostadresse: data.epostadresse || null,
+      telefon: data.telefon || null,
+      mobil: data.mobil || null,
       forretningsadresse: data.forretningsadresse ? {
         adresse: data.forretningsadresse.adresse?.join(', ') || '',
         postnummer: data.forretningsadresse.postnummer || '',
@@ -2896,6 +4715,17 @@ app.get("/api/klubber", (c) => {
 });
 
 // Hent én klubb
+// Helper: Fjern sensitive Vipps-nøkler fra klubb-objekt før retur til frontend
+function sanitizeKlubbForResponse(klubb) {
+  if (!klubb) return klubb;
+  const { vipps_client_secret, vipps_subscription_key, ...safe } = klubb;
+  // Returner kun om nøkler er konfigurert (ikke selve nøklene)
+  return {
+    ...safe,
+    vipps_configured: !!(klubb.vipps_client_id && klubb.vipps_client_secret && klubb.vipps_subscription_key)
+  };
+}
+
 app.get("/api/klubber/:id", (c) => {
   const id = c.req.param("id");
   const row = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
@@ -2909,7 +4739,8 @@ app.get("/api/klubber/:id", (c) => {
     WHERE ka.klubb_id = ?
   `).all(id);
 
-  return c.json({ ...row, admins });
+  // Fjern sensitive Vipps-nøkler fra respons
+  return c.json({ ...sanitizeKlubbForResponse(row), admins });
 });
 
 // Hent prøver for en klubb
@@ -2940,12 +4771,43 @@ app.put("/api/klubber/:id", async (c) => {
   if (body.navn !== undefined) { updates.push("navn = ?"); params.push(body.navn); }
   if (body.region !== undefined) { updates.push("region = ?"); params.push(body.region); }
   if (body.orgnummer !== undefined) { updates.push("orgnummer = ?"); params.push(body.orgnummer); }
-  if (body.vipps_nummer !== undefined) { updates.push("vipps_nummer = ?"); params.push(body.vipps_nummer); }
+  if (body.vipps_nummer !== undefined) {
+    // STRENG validering: Vipps-bedriftsnummer må være 5-6 siffer (eller null/tom)
+    // Dette hindrer at telefonnummer fra browser-autofill blir lagret ved en feil
+    const vippsNr = body.vipps_nummer;
+    if (vippsNr !== null && vippsNr !== '' && !/^\d{5,6}$/.test(String(vippsNr).trim())) {
+      return c.json({
+        error: `Ugyldig Vipps-nummer: "${vippsNr}". Må være 5-6 siffer.`
+      }, 400);
+    }
+    updates.push("vipps_nummer = ?");
+    params.push(vippsNr || null);
+  }
   if (body.epost !== undefined) { updates.push("epost = ?"); params.push(body.epost); }
   if (body.telefon !== undefined) { updates.push("telefon = ?"); params.push(body.telefon); }
   if (body.nettside !== undefined) { updates.push("nettside = ?"); params.push(body.nettside); }
   if (body.adresse !== undefined) { updates.push("adresse = ?"); params.push(body.adresse); }
   if (body.sted !== undefined) { updates.push("sted = ?"); params.push(body.sted); }
+  // Vipps Business API-felter (sensitive data krypteres)
+  if (body.vipps_client_id !== undefined) {
+    updates.push("vipps_client_id = ?");
+    params.push(body.vipps_client_id ? encryptSensitive(body.vipps_client_id) : null);
+  }
+  if (body.vipps_client_secret !== undefined) {
+    updates.push("vipps_client_secret = ?");
+    params.push(body.vipps_client_secret ? encryptSensitive(body.vipps_client_secret) : null);
+  }
+  if (body.vipps_subscription_key !== undefined) {
+    updates.push("vipps_subscription_key = ?");
+    params.push(body.vipps_subscription_key ? encryptSensitive(body.vipps_subscription_key) : null);
+  }
+  if (body.vipps_merchant_serial !== undefined) { updates.push("vipps_merchant_serial = ?"); params.push(body.vipps_merchant_serial); }
+  if (body.vipps_api_modus !== undefined) { updates.push("vipps_api_modus = ?"); params.push(body.vipps_api_modus); }
+  if (body.logo !== undefined) {
+    updates.push("logo = ?");
+    params.push(body.logo);
+    updates.push("logo_oppdatert = datetime('now')");
+  }
 
   if (updates.length === 0) return c.json({ error: "Ingen felt å oppdatere" }, 400);
 
@@ -2954,6 +4816,67 @@ app.put("/api/klubber/:id", async (c) => {
 
   const updated = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
   return c.json(updated);
+});
+
+// Last opp logo for klubb (FormData)
+app.post("/api/klubber/:id/logo", async (c) => {
+  const id = c.req.param("id");
+
+  const klubb = db.prepare("SELECT * FROM klubber WHERE id = ?").get(id);
+  if (!klubb) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get("logo");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "Ingen fil mottatt" }, 400);
+    }
+
+    // Sjekk filtype
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!["png", "jpg", "jpeg", "svg", "webp"].includes(ext)) {
+      return c.json({ error: "Ugyldig filformat. Bruk PNG, JPG, SVG eller WebP." }, 400);
+    }
+
+    // Konverter til base64 og lagre i database
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = `data:image/${ext === 'svg' ? 'svg+xml' : ext};base64,${buffer.toString('base64')}`;
+
+    db.prepare(`
+      UPDATE klubber
+      SET logo = ?, logo_oppdatert = datetime('now')
+      WHERE id = ?
+    `).run(base64, id);
+
+    console.log(`[Klubb-logo] Lastet opp logo for klubb ${id} (${(buffer.length / 1024).toFixed(1)} KB)`);
+
+    return c.json({
+      success: true,
+      message: "Logo lastet opp og lagret i database",
+      size: buffer.length
+    });
+  } catch (err) {
+    console.error("[Klubb-logo] Feil:", err);
+    return c.json({ error: "Feil ved opplasting: " + err.message }, 500);
+  }
+});
+
+// Hent logo for klubb
+app.get("/api/klubber/:id/logo", (c) => {
+  const id = c.req.param("id");
+
+  const klubb = db.prepare("SELECT logo FROM klubber WHERE id = ?").get(id);
+  if (!klubb) return c.json({ error: "Klubb ikke funnet" }, 404);
+
+  if (!klubb.logo) {
+    return c.json({ error: "Ingen logo lastet opp" }, 404);
+  }
+
+  return c.json({
+    logo: klubb.logo,
+    hasLogo: true
+  });
 });
 
 // ============================================
@@ -3106,6 +5029,10 @@ app.post("/api/klubb-foresporsel", async (c) => {
   const lederRolle = body.leder_rolle || 'leder';
   const passord = body.passord || '';
   const ekstraAdmins = body.ekstra_admins || body.admins || '[]';
+  // Data fra Brønnøysundregisteret (valgfrie)
+  const nettside = body.nettside || '';
+  const klubbTelefon = body.klubb_telefon || '';
+  const klubbEpost = body.klubb_epost || '';
 
   if (!orgnummer || !navn || !lederNavn || !lederTelefon) {
     return c.json({ error: "Mangler påkrevde felt" }, 400);
@@ -3131,26 +5058,27 @@ app.post("/api/klubb-foresporsel", async (c) => {
 
   const normalizedPhone = normalizePhone(lederTelefon);
 
-  // Opprett brukerprofil umiddelbart (hvis ikke finnes)
+  // Opprett brukerprofil umiddelbart (hvis ikke finnes) - med SMS-samtykke og verifisert siden de har bekreftet via SMS
   const existingUser = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(normalizedPhone);
   if (!existingUser) {
     const nameParts = lederNavn.trim().split(' ');
     const fornavn = nameParts[0] || '';
     const etternavn = nameParts.slice(1).join(' ') || '';
+    const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash)
-      VALUES (?, ?, ?, ?, 'deltaker', ?)
-    `).run(normalizedPhone, fornavn, etternavn, lederEpost, passordHash);
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt, verifisert)
+      VALUES (?, ?, ?, ?, 'deltaker', ?, 1, ?, 1)
+    `).run(normalizedPhone, fornavn, etternavn, lederEpost, passordHash, now);
   } else if (passordHash) {
-    // Oppdater passord hvis bruker finnes men ikke har passord
+    // Oppdater passord og sett verifisert hvis bruker finnes men ikke har passord
     db.prepare(`
-      UPDATE brukere SET passord_hash = ? WHERE telefon = ? AND (passord_hash IS NULL OR passord_hash = '')
+      UPDATE brukere SET passord_hash = ?, verifisert = 1 WHERE telefon = ? AND (passord_hash IS NULL OR passord_hash = '')
     `).run(passordHash, normalizedPhone);
   }
 
   const result = db.prepare(`
-    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, leder_rolle, passord_hash, ekstra_admins)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO klubb_foresporsel (orgnummer, navn, postnummer, sted, adresse, leder_navn, leder_telefon, leder_epost, leder_rolle, passord_hash, ekstra_admins, nettside, klubb_telefon, klubb_epost)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     orgnummer.replace(/\s/g, ''),
     navn.trim(),
@@ -3162,7 +5090,10 @@ app.post("/api/klubb-foresporsel", async (c) => {
     lederEpost,
     lederRolle,
     passordHash,
-    typeof ekstraAdmins === 'string' ? ekstraAdmins : JSON.stringify(ekstraAdmins)
+    typeof ekstraAdmins === 'string' ? ekstraAdmins : JSON.stringify(ekstraAdmins),
+    nettside,
+    klubbTelefon,
+    klubbEpost
   );
 
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -3171,7 +5102,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
   );
 
   // Send SMS-varsling til superadmin (Aleksander Roel)
-  const superadminTelefon = "47419082"; // Aleksander Roel
+  const superadminTelefon = "90852833"; // Aleksander Roel
   const rolleNavn = {
     'leder': 'Leder',
     'nestleder': 'Nestleder',
@@ -3188,7 +5119,22 @@ app.post("/api/klubb-foresporsel", async (c) => {
     console.error('Feil ved sending av SMS til superadmin:', err);
   }
 
-  return c.json({ success: true, id: result.lastInsertRowid, telefon: normalizedPhone });
+  // Generer JWT-token slik at bruker kan logge inn direkte uten ny verifisering
+  const brukerData = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(normalizedPhone);
+  const token = brukerData ? generateToken(brukerData) : null;
+
+  return c.json({
+    success: true,
+    id: result.lastInsertRowid,
+    telefon: normalizedPhone,
+    token,
+    bruker: brukerData ? {
+      telefon: brukerData.telefon,
+      fornavn: brukerData.fornavn,
+      etternavn: brukerData.etternavn,
+      rolle: brukerData.rolle
+    } : null
+  });
 });
 
 // Hent alle klubb-forespørsler (kun superadmin)
@@ -3215,17 +5161,25 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     return c.json({ error: "Denne forespørselen er allerede behandlet" }, 400);
   }
 
-  // Generer klubb-ID fra navn
-  const klubbId = foresporsel.navn
+  // Generer klubb-ID fra navn - med unikkhetssjekk
+  let baseKlubbId = foresporsel.navn
     .toLowerCase()
     .replace(/[^a-zæøå0-9\s]/g, '')
     .replace(/\s+/g, '-')
     .substring(0, 30);
 
-  // Opprett klubb med passord_hash fra forespørselen
+  let klubbId = baseKlubbId;
+  let suffix = 1;
+  while (db.prepare("SELECT id FROM klubber WHERE id = ?").get(klubbId)) {
+    klubbId = `${baseKlubbId}-${suffix}`;
+    suffix++;
+  }
+
+  // Opprett klubb med passord_hash fra forespørselen og kontaktinfo fra Brønnøysund
   db.prepare(`
-    INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO klubber (id, orgnummer, navn, region, passord_hash, admin_telefon, admin_epost,
+                        epost, telefon, nettside, adresse, postnummer, sted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     klubbId,
     foresporsel.orgnummer,
@@ -3233,31 +5187,44 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     '',
     foresporsel.passord_hash || '',
     foresporsel.leder_telefon,
-    foresporsel.leder_epost
+    foresporsel.leder_epost,
+    foresporsel.klubb_epost || foresporsel.leder_epost || null,
+    foresporsel.klubb_telefon || null,
+    foresporsel.nettside || null,
+    foresporsel.adresse || null,
+    foresporsel.postnummer || null,
+    foresporsel.sted || null
   );
 
   // Opprett bruker for leder hvis ikke finnes
-  const existingUser = db.prepare("SELECT telefon, passord_hash FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
+  const existingUser = db.prepare("SELECT telefon, passord_hash, rolle, verifisert FROM brukere WHERE telefon = ?").get(foresporsel.leder_telefon);
   if (!existingUser) {
     const nameParts = foresporsel.leder_navn.split(' ');
     const fornavn = nameParts[0] || '';
     const etternavn = nameParts.slice(1).join(' ') || '';
+    const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash)
-      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?)
-    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '');
+      INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, passord_hash, sms_samtykke, sms_samtykke_tidspunkt, verifisert)
+      VALUES (?, ?, ?, ?, 'deltaker,klubbleder', ?, 1, ?, 1)
+    `).run(foresporsel.leder_telefon, fornavn, etternavn, foresporsel.leder_epost, foresporsel.passord_hash || '', now);
   } else {
-    // Oppdater rolle til å inkludere klubbleder og sett passord hvis mangler
-    if (!existingUser.passord_hash && foresporsel.passord_hash) {
-      db.prepare(`
-        UPDATE brukere SET rolle = rolle || ',klubbleder', passord_hash = ?
-        WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
-      `).run(foresporsel.passord_hash, foresporsel.leder_telefon);
-    } else {
-      db.prepare(`
-        UPDATE brukere SET rolle = rolle || ',klubbleder'
-        WHERE telefon = ? AND rolle NOT LIKE '%klubbleder%'
-      `).run(foresporsel.leder_telefon);
+    // Legg til klubbleder-rolle hvis den ikke finnes (deduplisert) + sett verifisert
+    const eksisterendeRoller = (existingUser.rolle || '').split(',').map(r => r.trim()).filter(r => r);
+    if (!eksisterendeRoller.includes('klubbleder')) {
+      eksisterendeRoller.push('klubbleder');
+      const nyRolle = [...new Set(eksisterendeRoller)].join(',');
+
+      if (!existingUser.passord_hash && foresporsel.passord_hash) {
+        db.prepare(`UPDATE brukere SET rolle = ?, passord_hash = ?, verifisert = 1 WHERE telefon = ?`).run(nyRolle, foresporsel.passord_hash, foresporsel.leder_telefon);
+      } else {
+        db.prepare(`UPDATE brukere SET rolle = ?, verifisert = 1 WHERE telefon = ?`).run(nyRolle, foresporsel.leder_telefon);
+      }
+    } else if (!existingUser.passord_hash && foresporsel.passord_hash) {
+      // Brukeren har allerede klubbleder-rolle, men mangler passord - oppdater passord og sett verifisert
+      db.prepare(`UPDATE brukere SET passord_hash = ?, verifisert = 1 WHERE telefon = ?`).run(foresporsel.passord_hash, foresporsel.leder_telefon);
+    } else if (!existingUser.verifisert) {
+      // Sørg for at brukeren er verifisert
+      db.prepare(`UPDATE brukere SET verifisert = 1 WHERE telefon = ?`).run(foresporsel.leder_telefon);
     }
   }
 
@@ -3268,19 +5235,33 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
     VALUES (?, ?, ?)
   `).run(foresporsel.leder_telefon, klubbId, lederRolle);
 
-  // Behandle ekstra admins
+  // Behandle ekstra admins - opprett brukerprofil hvis de ikke finnes
   try {
     const ekstraAdmins = JSON.parse(foresporsel.ekstra_admins || '[]');
+    const now = new Date().toISOString();
     for (const admin of ekstraAdmins) {
       if (admin.phone) {
         const adminTlf = normalizePhone(admin.phone);
+
+        // Opprett brukerprofil hvis den ikke finnes
+        const eksisterendeAdmin = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(adminTlf);
+        if (!eksisterendeAdmin) {
+          db.prepare(`
+            INSERT INTO brukere (telefon, fornavn, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+            VALUES (?, '', 'deltaker', 1, ?)
+          `).run(adminTlf, now);
+          console.log(`📱 Brukerprofil opprettet for ekstra admin: ${adminTlf}`);
+        }
+
         db.prepare(`
           INSERT OR IGNORE INTO klubb_admins (telefon, klubb_id, rolle)
           VALUES (?, ?, 'admin')
         `).run(adminTlf, klubbId);
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.error("Feil ved behandling av ekstra admins:", e);
+  }
 
   // Oppdater forespørsel-status
   db.prepare(`
@@ -3298,7 +5279,7 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
   try {
     await sendSMS(
       foresporsel.leder_telefon,
-      `Hei! "${foresporsel.navn}" er godkjent. Du har tilgang til klubbens profil via "Min side" på fuglehundprove.no`,
+      `Gratulerer! "${foresporsel.navn}" er nå godkjent på fuglehundprove.no. Logg inn med ditt mobilnummer og passord for å administrere klubben og opprette prøver. Velkommen!`,
       { type: 'klubb_godkjent' }
     );
     console.log(`📱 SMS sendt til ${foresporsel.leder_telefon} om godkjent klubb: ${foresporsel.navn}`);
@@ -3331,6 +5312,24 @@ app.post("/api/klubb-foresporsel/:id/avslaa", async (c) => {
     "klubb_avslatt",
     `Avslått klubb-forespørsel: ${foresporsel.navn} - ${grunn || 'Ingen grunn oppgitt'}`
   );
+
+  // Send SMS til søker om avslag
+  try {
+    let smsText = `Hei! Din forespørsel om å opprette "${foresporsel.navn}" på fuglehundprove.no ble dessverre ikke godkjent.`;
+    if (grunn) {
+      smsText += ` Begrunnelse: ${grunn}`;
+    }
+    smsText += ` Ta kontakt på post@fuglehundprove.no ved spørsmål.`;
+
+    await sendSMS(
+      foresporsel.leder_telefon,
+      smsText,
+      { type: 'klubb_avslatt' }
+    );
+    console.log(`📱 SMS sendt til ${foresporsel.leder_telefon} om avslått klubb: ${foresporsel.navn}`);
+  } catch (smsErr) {
+    console.error("Kunne ikke sende avslags-SMS:", smsErr);
+  }
 
   return c.json({ success: true });
 });
@@ -3374,6 +5373,52 @@ app.get("/api/superadmin/brukere", (c) => {
     : db.prepare("SELECT COUNT(*) as n FROM brukere").get();
 
   return c.json({ brukere: rows, total: totalQuery.n });
+});
+
+// Hent alle hunder (kun superadmin)
+app.get("/api/superadmin/hunder", (c) => {
+  const search = c.req.query("search") || '';
+  const rase = c.req.query("rase") || '';
+  const limit = parseInt(c.req.query("limit") || '50');
+  const offset = parseInt(c.req.query("offset") || '0');
+
+  let whereConditions = [];
+  let params = [];
+
+  if (search) {
+    whereConditions.push("(h.navn LIKE ? OR h.regnr LIKE ? OR h.nkk_id LIKE ? OR b.fornavn LIKE ? OR b.etternavn LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  if (rase) {
+    if (rase === 'annen') {
+      whereConditions.push("(h.rase NOT IN ('Engelsk Setter', 'Gordon Setter', 'Irsk Setter', 'Pointer', 'Breton', 'Tysk Korthåret Hønsehund') OR h.rase IS NULL)");
+    } else {
+      whereConditions.push("h.rase = ?");
+      params.push(rase);
+    }
+  }
+
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+
+  const rows = db.prepare(`
+    SELECT h.id, h.regnr, h.nkk_id, h.navn, h.rase, h.kjonn, h.fodt, h.eier_telefon, h.created_at, h.kilde,
+           b.fornavn || ' ' || b.etternavn as eier_navn
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    ${whereClause}
+    ORDER BY h.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  const totalQuery = db.prepare(`
+    SELECT COUNT(*) as n
+    FROM hunder h
+    LEFT JOIN brukere b ON h.eier_telefon = b.telefon
+    ${whereClause}
+  `).get(...params);
+
+  return c.json({ hunder: rows, total: totalQuery.n });
 });
 
 // Oppdater bruker-rolle (kun superadmin)
@@ -3459,6 +5504,7 @@ app.get("/api/superadmin/sms-samtykke/export", (c) => {
 // ============================================
 
 // Hent samtykke-oversikt med søk og filter
+// Bruker sms_samtykke (settes ved registrering) som primært samtykke-felt
 app.get("/api/superadmin/samtykker", (c) => {
   const search = c.req.query("search") || "";
   const filter = c.req.query("filter") || "alle";
@@ -3474,15 +5520,18 @@ app.get("/api/superadmin/samtykker", (c) => {
     params.push(searchParam, searchParam, searchParam, searchParam);
   }
 
-  // Filter
+  // Filter - bruk sms_samtykke som primært felt
   if (filter === "med_samtykke") {
-    whereClause += " AND samtykke_gitt IS NOT NULL";
+    whereClause += " AND sms_samtykke = 1";
   } else if (filter === "uten_samtykke") {
-    whereClause += " AND samtykke_gitt IS NULL";
+    whereClause += " AND (sms_samtykke IS NULL OR sms_samtykke = 0)";
   }
 
   const brukere = db.prepare(`
-    SELECT telefon, fornavn, etternavn, epost, rolle, samtykke_gitt, created_at
+    SELECT telefon, fornavn, etternavn, epost, rolle,
+           sms_samtykke, sms_samtykke_tidspunkt,
+           CASE WHEN sms_samtykke = 1 THEN sms_samtykke_tidspunkt ELSE NULL END as samtykke_gitt,
+           created_at
     FROM brukere
     WHERE ${whereClause}
     ORDER BY created_at DESC
@@ -3491,7 +5540,7 @@ app.get("/api/superadmin/samtykker", (c) => {
 
   // Statistikk
   const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
-  const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE samtykke_gitt IS NOT NULL").get().n;
+  const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE sms_samtykke = 1").get().n;
 
   return c.json({
     brukere,
@@ -3545,9 +5594,10 @@ app.post("/api/superadmin/samtykke/:telefon", (c) => {
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  db.prepare("UPDATE brukere SET samtykke_gitt = datetime('now') WHERE telefon = ?").run(telefon);
+  const now = new Date().toISOString();
+  db.prepare("UPDATE brukere SET sms_samtykke = 1, sms_samtykke_tidspunkt = ? WHERE telefon = ?").run(now, telefon);
 
-  return c.json({ ok: true, samtykke_gitt: new Date().toISOString() });
+  return c.json({ ok: true, samtykke_gitt: now, sms_samtykke: true });
 });
 
 // Trekk samtykke (superadmin)
@@ -3557,7 +5607,7 @@ app.delete("/api/superadmin/samtykke/:telefon", (c) => {
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
   if (!bruker) return c.json({ error: "Bruker ikke funnet" }, 404);
 
-  db.prepare("UPDATE brukere SET samtykke_gitt = NULL WHERE telefon = ?").run(telefon);
+  db.prepare("UPDATE brukere SET sms_samtykke = 0, sms_samtykke_tidspunkt = NULL WHERE telefon = ?").run(telefon);
 
   return c.json({ ok: true });
 });
@@ -3565,12 +5615,12 @@ app.delete("/api/superadmin/samtykke/:telefon", (c) => {
 // Eksporter samtykker til CSV
 app.get("/api/superadmin/samtykker/eksport", (c) => {
   const brukere = db.prepare(`
-    SELECT telefon, fornavn, etternavn, epost, rolle, samtykke_gitt, created_at
+    SELECT telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt, created_at
     FROM brukere
-    ORDER BY samtykke_gitt DESC NULLS LAST, created_at DESC
+    ORDER BY sms_samtykke_tidspunkt DESC NULLS LAST, created_at DESC
   `).all();
 
-  const header = "Telefon,Fornavn,Etternavn,E-post,Rolle,Samtykke gitt,Bruker opprettet";
+  const header = "Telefon,Fornavn,Etternavn,E-post,Rolle,SMS-samtykke,Samtykke tidspunkt,Bruker opprettet";
   const rows = brukere.map(b => {
     return [
       b.telefon,
@@ -3578,7 +5628,8 @@ app.get("/api/superadmin/samtykker/eksport", (c) => {
       b.etternavn || '',
       b.epost || '',
       b.rolle || 'deltaker',
-      b.samtykke_gitt || 'Mangler',
+      b.sms_samtykke ? 'Ja' : 'Nei',
+      b.sms_samtykke_tidspunkt || 'Mangler',
       b.created_at || ''
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
   });
@@ -3702,6 +5753,44 @@ app.get("/api/superadmin/sms-stats", (c) => {
   });
 });
 
+// Hent SMS-kø status
+app.get("/api/superadmin/sms-queue", (c) => {
+  const stats = getSmsQueueStats();
+
+  // Hent de siste 20 køede/feilede
+  const recent = db.prepare(`
+    SELECT id, telefon, type, status, attempts, error_message, created_at, processed_at
+    FROM sms_queue
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all();
+
+  return c.json({
+    stats,
+    recent,
+    config: {
+      batchSize: SMS_QUEUE_BATCH_SIZE,
+      batchDelay: SMS_QUEUE_BATCH_DELAY_MS,
+      interval: SMS_QUEUE_INTERVAL_MS
+    }
+  });
+});
+
+// Tøm feilede SMS fra kø
+app.delete("/api/superadmin/sms-queue/failed", (c) => {
+  const result = db.prepare("DELETE FROM sms_queue WHERE status = 'failed'").run();
+  return c.json({ deleted: result.changes });
+});
+
+// Retry feilede SMS
+app.post("/api/superadmin/sms-queue/retry-failed", (c) => {
+  const result = db.prepare(`
+    UPDATE sms_queue SET status = 'pending', attempts = 0, error_message = NULL
+    WHERE status = 'failed'
+  `).run();
+  return c.json({ reset: result.changes });
+});
+
 // Hent alle klubber som har sendt/mottatt SMS
 app.get("/api/superadmin/sms-klubber", (c) => {
   const klubber = db.prepare(`
@@ -3777,15 +5866,24 @@ app.get("/api/superadmin/sms-export", (c) => {
 // VIPPS-FORESPØRSLER API
 // ============================================
 
-// Opprett ny Vipps-forespørsel
+// Opprett ny Vipps-forespørsel (med valgfri automatisk SMS-utsending)
 app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
-  const { opprettet_av, beskrivelse, belop, vipps_nummer, mottakere } = body;
+  const { opprettet_av, beskrivelse, belop, vipps_nummer, mottakere, send_sms } = body;
 
   if (!opprettet_av || !beskrivelse || !belop || !vipps_nummer || !mottakere?.length) {
     return c.json({ error: "Mangler påkrevde felt" }, 400);
   }
+
+  // Hent klubbnavn fra prøven
+  const prove = db.prepare(`
+    SELECT p.navn as prove_navn, k.navn as klubb_navn
+    FROM prover p
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+  const klubbNavn = prove?.klubb_navn || 'Klubben';
 
   // Opprett forespørsel
   const result = db.prepare(`
@@ -3805,17 +5903,52 @@ app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
     insertMottaker.run(foresporselId, m.telefon, m.navn);
   }
 
-  // Generer Vipps-lenker for hver mottaker
-  const vippsLenker = mottakere.map(m => ({
-    telefon: m.telefon,
-    navn: m.navn,
-    lenke: `https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`
-  }));
+  // Generer Vipps-lenke og SMS-melding
+  const vippsLenke = `https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`;
+  const smsMelding = `Hei fra ${klubbNavn}! Vennligst betal ${belop} kr for "${beskrivelse}". Trykk her: ${vippsLenke}`;
+
+  // Send SMS automatisk hvis send_sms=true
+  let smsSendt = 0;
+  let smsFeil = [];
+
+  if (send_sms) {
+    console.log(`[Vipps] Sender SMS til ${mottakere.length} mottakere for "${beskrivelse}"`);
+
+    for (const m of mottakere) {
+      if (!m.telefon) continue;
+
+      try {
+        // Formater telefonnummer
+        let phone = m.telefon.replace(/\s/g, '');
+        if (!phone.startsWith('+')) {
+          phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
+        }
+
+        const smsResult = await sendSMS(phone, smsMelding, { type: 'vipps' });
+        if (smsResult.success) {
+          smsSendt++;
+        } else {
+          console.error(`[Vipps SMS] Feil til ${m.telefon}:`, smsResult.error);
+          smsFeil.push({ telefon: m.telefon, feil: smsResult.error || 'Ukjent feil' });
+        }
+      } catch (err) {
+        console.error(`[Vipps SMS] Exception til ${m.telefon}:`, err.message);
+        smsFeil.push({ telefon: m.telefon, feil: err.message });
+      }
+    }
+
+    console.log(`[Vipps] SMS-utsending fullført: ${smsSendt}/${mottakere.length} sendt${smsFeil.length > 0 ? `, ${smsFeil.length} feilet` : ''}`);
+  }
 
   return c.json({
     id: foresporselId,
-    vipps_lenker: vippsLenker,
-    melding: `Vennligst betal ${belop} kr for ${beskrivelse}: https://qr.vipps.no/28/2/01/031/${vipps_nummer}?v=1&s=${belop}`
+    beskrivelse,
+    belop,
+    antall_mottakere: mottakere.length,
+    sms_sendt: smsSendt,
+    sms_feil: smsFeil,
+    vipps_lenke: vippsLenke,
+    melding: smsMelding
   });
 });
 
@@ -3898,11 +6031,541 @@ app.put("/api/vipps-foresporsler/:id/mottakere/:telefon", async (c) => {
   return c.json({ success: true });
 });
 
+// Slett én mottaker fra en Vipps-forespørsel
+app.delete("/api/vipps-foresporsler/:id/mottakere/:telefon", (c) => {
+  const foresporselId = c.req.param("id");
+  const telefon = c.req.param("telefon");
+
+  // Sjekk om det er flere mottakere igjen
+  const count = db.prepare("SELECT COUNT(*) as count FROM vipps_mottakere WHERE foresporsel_id = ?").get(foresporselId);
+
+  if (count.count <= 1) {
+    // Hvis dette er siste mottaker, slett hele forespørselen
+    db.prepare("DELETE FROM vipps_foresporsler WHERE id = ?").run(foresporselId);
+  } else {
+    // Slett bare denne mottakeren
+    db.prepare("DELETE FROM vipps_mottakere WHERE foresporsel_id = ? AND deltaker_telefon = ?").run(foresporselId, telefon);
+  }
+
+  return c.json({ success: true });
+});
+
 // Slett en Vipps-forespørsel
 app.delete("/api/vipps-foresporsler/:id", (c) => {
   const id = c.req.param("id");
   db.prepare("DELETE FROM vipps_foresporsler WHERE id = ?").run(id);
   return c.json({ success: true });
+});
+
+// Hent Vipps-betalingsstatistikk for økonomimodulen
+app.get("/api/prover/:id/vipps-statistikk", (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent alle Vipps-forespørsler for prøven med betalingsstatus
+  const foresporsler = db.prepare(`
+    SELECT
+      vf.id,
+      vf.beskrivelse,
+      vf.belop,
+      vf.created_at,
+      COUNT(vm.id) as antall_mottakere,
+      SUM(CASE WHEN vm.status = 'betalt' THEN 1 ELSE 0 END) as antall_betalt,
+      SUM(CASE WHEN vm.status = 'betalt' THEN vf.belop ELSE 0 END) as sum_betalt,
+      SUM(CASE WHEN vm.status = 'venter' THEN vf.belop ELSE 0 END) as sum_venter
+    FROM vipps_foresporsler vf
+    LEFT JOIN vipps_mottakere vm ON vf.id = vm.foresporsel_id
+    WHERE vf.prove_id = ?
+    GROUP BY vf.id
+    ORDER BY vf.created_at DESC
+  `).all(proveId);
+
+  // Beregn totaler og grupper per kategori
+  let totalBetalt = 0;
+  let totalVenter = 0;
+  let totalForventet = 0;
+
+  // Grupper betalinger per kategori (basert på beskrivelse)
+  const perKategori = {
+    parkering: { betalt: 0, venter: 0, antall: 0 },
+    loddsalg: { betalt: 0, venter: 0, antall: 0 },
+    semifinale: { betalt: 0, venter: 0, antall: 0 },
+    finale: { betalt: 0, venter: 0, antall: 0 },
+    jegermiddag: { betalt: 0, venter: 0, antall: 0 },
+    annet: { betalt: 0, venter: 0, antall: 0 }
+  };
+
+  foresporsler.forEach(f => {
+    totalBetalt += f.sum_betalt || 0;
+    totalVenter += f.sum_venter || 0;
+    totalForventet += (f.antall_mottakere || 0) * f.belop;
+
+    // Kategoriser basert på beskrivelse
+    const beskrivelse = (f.beskrivelse || '').toLowerCase();
+    let kategori = 'annet';
+
+    if (beskrivelse.includes('parkering')) {
+      kategori = 'parkering';
+    } else if (beskrivelse.includes('lodd')) {
+      kategori = 'loddsalg';
+    } else if (beskrivelse.includes('semifinale')) {
+      kategori = 'semifinale';
+    } else if (beskrivelse.includes('finale') || beskrivelse.includes('vk-finale')) {
+      kategori = 'finale';
+    } else if (beskrivelse.includes('jegermiddag') || beskrivelse.includes('middag')) {
+      kategori = 'jegermiddag';
+    }
+
+    perKategori[kategori].betalt += f.sum_betalt || 0;
+    perKategori[kategori].venter += f.sum_venter || 0;
+    perKategori[kategori].antall += f.antall_betalt || 0;
+  });
+
+  // Hent også betalte påmeldinger (startavgifter)
+  const pameldinger = db.prepare(`
+    SELECT
+      klasse,
+      COUNT(*) as antall,
+      SUM(CASE WHEN betalt = 1 THEN 1 ELSE 0 END) as antall_betalt,
+      SUM(CASE WHEN betalt = 1 THEN betalt_belop ELSE 0 END) as sum_betalt
+    FROM pameldinger
+    WHERE prove_id = ? AND status IN ('pameldt', 'bekreftet', 'betalt')
+    GROUP BY klasse
+  `).all(proveId);
+
+  let startavgifterBetalt = 0;
+  const startavgifterPerKlasse = {};
+  pameldinger.forEach(p => {
+    startavgifterBetalt += p.sum_betalt || 0;
+    startavgifterPerKlasse[p.klasse] = {
+      antall: p.antall,
+      antallBetalt: p.antall_betalt,
+      sumBetalt: p.sum_betalt || 0
+    };
+  });
+
+  // Hent jegermiddag-betalinger
+  const jegermiddag = db.prepare(`
+    SELECT
+      COUNT(*) as antall_pameldinger,
+      SUM(antall_personer) as antall_personer,
+      SUM(CASE WHEN betalt = 1 THEN belop ELSE 0 END) as sum_betalt,
+      SUM(CASE WHEN betalt = 0 THEN belop ELSE 0 END) as sum_venter
+    FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND status != 'avmeldt'
+  `).get(proveId);
+
+  return c.json({
+    vippsForesporsler: foresporsler,
+    vippsTotaler: {
+      betalt: totalBetalt,
+      venter: totalVenter,
+      forventet: totalForventet
+    },
+    perKategori: perKategori,
+    startavgifter: {
+      perKlasse: startavgifterPerKlasse,
+      totalBetalt: startavgifterBetalt
+    },
+    jegermiddag: {
+      antallPameldinger: jegermiddag?.antall_pameldinger || 0,
+      antallPersoner: jegermiddag?.antall_personer || 0,
+      sumBetalt: jegermiddag?.sum_betalt || 0,
+      sumVenter: jegermiddag?.sum_venter || 0
+    },
+    totaltMottatt: totalBetalt + startavgifterBetalt + (jegermiddag?.sum_betalt || 0)
+  });
+});
+
+// ============================================
+// VIPPS ePAYMENT API INTEGRASJON
+// ============================================
+
+// Cache for Vipps access tokens per klubb (MSN)
+const vippsTokenCache = new Map();
+
+// Hent Vipps access token for en klubb
+async function getVippsAccessToken(klubb) {
+  const cacheKey = klubb.vipps_merchant_serial;
+  const cached = vippsTokenCache.get(cacheKey);
+
+  // Bruk cached token hvis den er gyldig (med 5 min margin)
+  if (cached && cached.expiresAt > Date.now() + 300000) {
+    return cached.token;
+  }
+
+  const baseUrl = process.env.VIPPS_ENV === 'production'
+    ? 'https://api.vipps.no'
+    : 'https://apitest.vipps.no';
+
+  try {
+    // Dekrypter Vipps-nøkler (støtter både krypterte og ukrypterte verdier)
+    const clientId = decryptSensitive(klubb.vipps_client_id);
+    const clientSecret = decryptSensitive(klubb.vipps_client_secret);
+    const subscriptionKey = decryptSensitive(klubb.vipps_subscription_key);
+
+    const response = await fetch(`${baseUrl}/accesstoken/get`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'client_id': clientId,
+        'client_secret': clientSecret,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
+        'Merchant-Serial-Number': klubb.vipps_merchant_serial
+      },
+      body: ''
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('[Vipps] Token-feil:', err);
+      throw new Error('Kunne ikke hente Vipps access token');
+    }
+
+    const data = await response.json();
+    const expiresIn = parseInt(data.expires_in) || 3600;
+
+    // Cache token
+    vippsTokenCache.set(cacheKey, {
+      token: data.access_token,
+      expiresAt: Date.now() + (expiresIn * 1000)
+    });
+
+    return data.access_token;
+  } catch (err) {
+    console.error('[Vipps] Token-exception:', err.message);
+    throw err;
+  }
+}
+
+// Opprett Vipps ePayment betaling for én mottaker
+async function createVippsPayment(klubb, mottaker, belop, beskrivelse, returnUrl) {
+  const accessToken = await getVippsAccessToken(klubb);
+
+  const baseUrl = process.env.VIPPS_ENV === 'production'
+    ? 'https://api.vipps.no'
+    : 'https://apitest.vipps.no';
+
+  // Generer unik referanse
+  const reference = `fp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Formater telefonnummer (Vipps krever format 47XXXXXXXX)
+  let phoneNumber = mottaker.telefon.replace(/\s/g, '').replace(/^\+/, '');
+  if (!phoneNumber.startsWith('47')) {
+    phoneNumber = '47' + phoneNumber;
+  }
+
+  const payload = {
+    amount: {
+      currency: 'NOK',
+      value: belop * 100  // Vipps bruker øre
+    },
+    paymentMethod: {
+      type: 'WALLET'
+    },
+    customer: {
+      phoneNumber: phoneNumber
+    },
+    reference: reference,
+    returnUrl: returnUrl,
+    userFlow: 'WEB_REDIRECT',
+    paymentDescription: beskrivelse
+  };
+
+  try {
+    const subscriptionKey = decryptSensitive(klubb.vipps_subscription_key);
+    const response = await fetch(`${baseUrl}/epayment/v1/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
+        'Merchant-Serial-Number': klubb.vipps_merchant_serial,
+        'Idempotency-Key': reference,
+        'Vipps-System-Name': 'Fuglehundprove',
+        'Vipps-System-Version': '1.0.0'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      console.error('[Vipps ePayment] Feil:', err);
+      throw new Error(err.title || err.message || 'Vipps-feil');
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      reference: reference,
+      redirectUrl: data.redirectUrl
+    };
+  } catch (err) {
+    console.error('[Vipps ePayment] Exception:', err.message);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+// Sjekk betalingsstatus for en Vipps-betaling
+async function checkVippsPaymentStatus(klubb, reference) {
+  const accessToken = await getVippsAccessToken(klubb);
+
+  const baseUrl = process.env.VIPPS_ENV === 'production'
+    ? 'https://api.vipps.no'
+    : 'https://apitest.vipps.no';
+
+  try {
+    const subscriptionKey = decryptSensitive(klubb.vipps_subscription_key);
+    const response = await fetch(`${baseUrl}/epayment/v1/payments/${reference}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
+        'Merchant-Serial-Number': klubb.vipps_merchant_serial
+      }
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.title || 'Kunne ikke hente status');
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      state: data.state,  // CREATED, AUTHORIZED, TERMINATED, EXPIRED, etc.
+      aggregate: data.aggregate  // authorizedAmount, capturedAmount, etc.
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+// API: Opprett Vipps ePayment forespørsel (Business API-modus)
+app.post("/api/prover/:id/vipps-epayment", async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { opprettet_av, beskrivelse, belop, mottakere } = body;
+
+  if (!opprettet_av || !beskrivelse || !belop || !mottakere?.length) {
+    return c.json({ error: "Mangler påkrevde felt" }, 400);
+  }
+
+  // Hent prøve og klubb
+  const prove = db.prepare(`
+    SELECT p.*, k.*
+    FROM prover p
+    JOIN klubber k ON p.klubb_id = k.id
+    WHERE p.id = ?
+  `).get(proveId);
+
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Sjekk at klubben har API-konfigurasjon
+  if (!prove.vipps_client_id || !prove.vipps_merchant_serial) {
+    return c.json({ error: "Klubben har ikke konfigurert Vipps Business API" }, 400);
+  }
+
+  // Opprett forespørsel i database
+  const result = db.prepare(`
+    INSERT INTO vipps_foresporsler (prove_id, opprettet_av, beskrivelse, belop, vipps_nummer)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(proveId, opprettet_av, beskrivelse, belop, prove.vipps_merchant_serial);
+
+  const foresporselId = result.lastInsertRowid;
+
+  // Return URL for Vipps (dit brukeren sendes etter betaling)
+  const baseUrl = process.env.BASE_URL || 'https://fuglehundprove.no';
+  const returnUrl = `${baseUrl}/vipps-callback.html?fid=${foresporselId}`;
+
+  // Opprett betalinger for hver mottaker
+  const insertMottaker = db.prepare(`
+    INSERT INTO vipps_mottakere (foresporsel_id, deltaker_telefon, deltaker_navn, vipps_reference)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  let suksess = 0;
+  let feil = [];
+
+  for (const m of mottakere) {
+    const paymentResult = await createVippsPayment(
+      prove,  // Klubb-data
+      m,
+      belop,
+      `${beskrivelse} - ${prove.klubb_navn || 'Fuglehundprøve'}`,
+      returnUrl
+    );
+
+    if (paymentResult.success) {
+      insertMottaker.run(foresporselId, m.telefon, m.navn, paymentResult.reference);
+      suksess++;
+
+      // Send SMS med Vipps-lenke
+      if (m.telefon) {
+        let phone = m.telefon.replace(/\s/g, '');
+        if (!phone.startsWith('+')) {
+          phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
+        }
+        const smsMsg = `Hei fra ${prove.klubb_navn || 'klubben'}! Betal ${belop} kr for "${beskrivelse}". Trykk her: ${paymentResult.redirectUrl}`;
+        await sendSMS(phone, smsMsg, { type: 'vipps_epayment' });
+      }
+    } else {
+      // Legg til mottaker uten referanse (mislykket)
+      insertMottaker.run(foresporselId, m.telefon, m.navn, null);
+      feil.push({ telefon: m.telefon, feil: paymentResult.error });
+    }
+  }
+
+  console.log(`[Vipps ePayment] Opprettet ${suksess}/${mottakere.length} betalinger for "${beskrivelse}"`);
+
+  return c.json({
+    id: foresporselId,
+    beskrivelse,
+    belop,
+    antall_mottakere: mottakere.length,
+    suksess: suksess,
+    feil: feil
+  });
+});
+
+// API: Sjekk og oppdater betalingsstatus for alle ventende mottakere i en forespørsel
+app.post("/api/vipps-foresporsler/:id/sjekk-status", async (c) => {
+  const foresporselId = c.req.param("id");
+
+  // Hent forespørsel med klubb-data
+  const foresporsel = db.prepare(`
+    SELECT vf.*, p.klubb_id, k.*
+    FROM vipps_foresporsler vf
+    JOIN prover p ON vf.prove_id = p.id
+    JOIN klubber k ON p.klubb_id = k.id
+    WHERE vf.id = ?
+  `).get(foresporselId);
+
+  if (!foresporsel) {
+    return c.json({ error: "Forespørsel ikke funnet" }, 404);
+  }
+
+  if (!foresporsel.vipps_client_id) {
+    return c.json({ error: "Klubben bruker ikke Business API" }, 400);
+  }
+
+  // Hent ventende mottakere med vipps_reference
+  const ventende = db.prepare(`
+    SELECT * FROM vipps_mottakere
+    WHERE foresporsel_id = ? AND status = 'venter' AND vipps_reference IS NOT NULL
+  `).all(foresporselId);
+
+  let oppdatert = 0;
+
+  for (const m of ventende) {
+    const status = await checkVippsPaymentStatus(foresporsel, m.vipps_reference);
+
+    if (status.success) {
+      // AUTHORIZED eller CAPTURED betyr betalt
+      if (status.state === 'AUTHORIZED' || status.state === 'CAPTURED') {
+        db.prepare(`
+          UPDATE vipps_mottakere
+          SET status = 'betalt', betalt_dato = datetime('now'), notert_av = 'vipps_api'
+          WHERE id = ?
+        `).run(m.id);
+        oppdatert++;
+      } else if (status.state === 'TERMINATED' || status.state === 'EXPIRED') {
+        db.prepare(`
+          UPDATE vipps_mottakere SET status = 'kansellert' WHERE id = ?
+        `).run(m.id);
+      }
+    }
+  }
+
+  return c.json({
+    sjekket: ventende.length,
+    oppdatert: oppdatert
+  });
+});
+
+// Offentlig endepunkt for callback-siden å sjekke betalingsstatus
+// Returnerer kun status, ingen sensitiv info
+app.get("/api/vipps/foresporsel/:id/status", async (c) => {
+  const foresporselId = c.req.param("id");
+
+  // Hent mottaker-info for denne forespørselen
+  const mottaker = db.prepare(`
+    SELECT vm.status, vm.betalt_dato, vf.belop
+    FROM vipps_mottakere vm
+    JOIN vipps_foresporsler vf ON vm.foresporsel_id = vf.id
+    WHERE vm.vipps_reference = ? OR vf.id = ?
+    LIMIT 1
+  `).get(foresporselId, foresporselId);
+
+  if (!mottaker) {
+    // Prøv å finne direkte i forespørsler-tabellen
+    const foresporsel = db.prepare(`
+      SELECT belop FROM vipps_foresporsler WHERE id = ?
+    `).get(foresporselId);
+
+    if (!foresporsel) {
+      return c.json({ error: "Forespørsel ikke funnet", status: "ukjent" }, 404);
+    }
+
+    // Returner pending hvis vi ikke har mottaker-status ennå
+    return c.json({ status: "venter", belop: foresporsel.belop });
+  }
+
+  // Map intern status til brukervenlig status
+  let statusText = mottaker.status;
+  if (mottaker.status === 'betalt') {
+    statusText = 'PAID';
+  } else if (mottaker.status === 'venter') {
+    statusText = 'PENDING';
+  } else if (mottaker.status === 'kansellert' || mottaker.status === 'avbrutt') {
+    statusText = 'CANCELLED';
+  }
+
+  return c.json({
+    status: statusText,
+    belop: mottaker.belop || null,
+    betaltDato: mottaker.betalt_dato || null
+  });
+});
+
+// Webhook-endepunkt for Vipps (mottar statusoppdateringer automatisk)
+app.post("/api/vipps/webhook", async (c) => {
+  const body = await c.req.json();
+
+  console.log('[Vipps Webhook] Mottatt:', JSON.stringify(body).substring(0, 500));
+
+  // Vipps sender reference i webhook-payload
+  const reference = body.reference;
+  const state = body.state || body.pspReference;
+
+  if (!reference) {
+    return c.json({ received: true });
+  }
+
+  // Finn mottaker med denne referansen
+  const mottaker = db.prepare(`
+    SELECT * FROM vipps_mottakere WHERE vipps_reference = ?
+  `).get(reference);
+
+  if (mottaker && mottaker.status === 'venter') {
+    if (state === 'AUTHORIZED' || state === 'CAPTURED' || state === 'SALE') {
+      db.prepare(`
+        UPDATE vipps_mottakere
+        SET status = 'betalt', betalt_dato = datetime('now'), notert_av = 'vipps_webhook'
+        WHERE id = ?
+      `).run(mottaker.id);
+      console.log(`[Vipps Webhook] Oppdatert mottaker ${mottaker.id} til betalt`);
+    }
+  }
+
+  return c.json({ received: true });
 });
 
 // ============================================
@@ -3959,7 +6622,7 @@ app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
   try {
     db.prepare(`
       INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)
-      ON CONFLICT(prove_id, dommer_telefon) DO UPDATE SET parti = excluded.parti, dommer_rolle = excluded.dommer_rolle
+      ON CONFLICT(prove_id, parti, dommer_telefon) DO UPDATE SET dommer_rolle = excluded.dommer_rolle
     `).run(proveId, dommer_telefon, parti, dommer_rolle || null);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -3981,7 +6644,7 @@ app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireAdmin, (c) 
   return c.json({ success: true });
 });
 
-// Bulk-oppdater dommere for et parti
+// Bulk-oppdater dommere for et parti (tillater tom array for å fjerne alle)
 app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
   const parti = c.req.param("parti");
@@ -3990,21 +6653,49 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
 
   if (!Array.isArray(dommere)) return c.json({ error: "dommere må være en array" }, 400);
 
-  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
-  if (partiType === 'VK' && dommere.length !== 2) return c.json({ error: "VK-partier må ha nøyaktig 2 dommere" }, 400);
-  if (partiType === 'UKAK' && (dommere.length < 1 || dommere.length > 2)) return c.json({ error: "UK/AK-partier må ha 1-2 dommere" }, 400);
+  // Valider kun hvis det faktisk er dommere (tom array tillates for å fjerne alle)
+  if (dommere.length > 0) {
+    const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+    if (partiType === 'VK' && dommere.length > 2) return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
+    if (partiType === 'UKAK' && dommere.length > 2) return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+  }
 
   try {
     db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ? AND parti = ?").run(proveId, parti);
-    const insert = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
-    for (const d of dommere) {
-      insert.run(proveId, d.telefon, parti, d.rolle || null);
+    if (dommere.length > 0) {
+      const insert = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
+      for (const d of dommere) {
+        insert.run(proveId, d.telefon, parti, d.rolle || null);
+      }
     }
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_parti_oppdatert", `${parti}: ${dommere.map(d => d.telefon).join(', ')}`);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_parti_oppdatert", `${parti}: ${dommere.length > 0 ? dommere.map(d => d.telefon).join(', ') : '(fjernet alle)'}`);
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);
   }
+});
+
+// Hent alle tildelinger for en dommer (basert på telefon)
+app.get("/api/dommer/:telefon/tildelinger", (c) => {
+  const telefon = c.req.param("telefon");
+  const normalized = normalizePhone(telefon);
+
+  if (!normalized) {
+    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+  }
+
+  const tildelinger = db.prepare(`
+    SELECT dt.id, dt.parti, dt.dommer_rolle, dt.prove_id,
+           p.navn as prove_navn, p.start_dato, p.slutt_dato, p.sted,
+           k.navn as klubb_navn
+    FROM dommer_tildelinger dt
+    JOIN prover p ON dt.prove_id = p.id
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE dt.dommer_telefon = ?
+    ORDER BY p.start_dato DESC
+  `).all(normalized);
+
+  return c.json(tildelinger);
 });
 
 // ============================================
@@ -4179,6 +6870,371 @@ app.delete("/api/fkf-dommere/:id", requireAdmin, (c) => {
 });
 
 // ============================================
+// DOMMERFORESPØRSEL API
+// ============================================
+
+// Hent alle forespørsler for en prøve
+app.get("/api/prover/:id/dommer-foresporsler", (c) => {
+  const proveId = c.req.param("id");
+  const foresporsler = db.prepare(`
+    SELECT df.*, b.fornavn || ' ' || b.etternavn as sendt_av_navn
+    FROM dommer_foresporsler df
+    LEFT JOIN brukere b ON df.sendt_av = b.telefon
+    WHERE df.prove_id = ?
+    ORDER BY df.sendt_dato DESC
+  `).all(proveId);
+  return c.json(foresporsler);
+});
+
+// Hent forespørsler sendt til en dommer (for dommeren selv)
+app.get("/api/dommer-foresporsler/mine", requireAuth, (c) => {
+  const telefon = c.get("user")?.telefon;
+  if (!telefon) return c.json({ error: "Ikke autentisert" }, 401);
+
+  const foresporsler = db.prepare(`
+    SELECT df.*, p.navn as prove_navn, p.start_dato, p.slutt_dato, p.sted as prove_sted,
+           k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as sendt_av_navn
+    FROM dommer_foresporsler df
+    JOIN prover p ON df.prove_id = p.id
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    LEFT JOIN brukere b ON df.sendt_av = b.telefon
+    WHERE df.dommer_telefon = ?
+    ORDER BY df.sendt_dato DESC
+  `).all(telefon);
+  return c.json(foresporsler);
+});
+
+// Send ny dommerforespørsel
+app.post("/api/prover/:id/dommer-foresporsler", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+  const { dommer_telefon, dommer_navn, dommer_epost, parti, melding, reise_bil, reise_fly, reise_leiebil, reise_annet } = body;
+
+  if (!dommer_telefon || !dommer_navn) {
+    return c.json({ error: "Dommer telefon og navn er påkrevd" }, 400);
+  }
+
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO dommer_foresporsler
+        (prove_id, dommer_telefon, dommer_navn, dommer_epost, parti, melding,
+         reise_bil, reise_fly, reise_leiebil, reise_annet, sendt_av)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      proveId, dommer_telefon, dommer_navn, dommer_epost || '', parti || '',
+      melding || '', reise_bil ? 1 : 0, reise_fly ? 1 : 0, reise_leiebil ? 1 : 0,
+      reise_annet || '', user.telefon
+    );
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_forespurt", `Forespørsel sendt til ${dommer_navn} (${dommer_telefon}) for prøve ${prove.navn}`
+    );
+
+    // Sjekk om bedømming er utenfor systemet (manuell bedømming med penn og papir)
+    let bedommingUtenforSystemet = false;
+    try {
+      const praktiskInfoRow = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(`praktiskInfo_${proveId}`);
+      if (praktiskInfoRow && praktiskInfoRow.value) {
+        const praktiskInfo = JSON.parse(praktiskInfoRow.value);
+        bedommingUtenforSystemet = praktiskInfo.bedommingUtenforSystemet === true;
+      }
+    } catch (e) {
+      console.warn("Kunne ikke sjekke bedømmingsmetode:", e.message);
+    }
+
+    // Send SMS til dommer hvis konfigurert OG bedømming er i systemet
+    if (smsProvider !== 'dev' && !bedommingUtenforSystemet) {
+      const smsText = `Hei ${dommer_navn.split(' ')[0]}! Du er forespurt som dommer på ${prove.navn} (${prove.start_dato}). Logg inn på fuglehundprove.no for å svare. Mvh ${user.fornavn || 'Prøveleder'}`;
+      try {
+        await sendSms(dommer_telefon, smsText);
+        db.prepare("INSERT INTO sms_log (retning, fra, til, type, melding) VALUES (?, ?, ?, ?, ?)").run(
+          'ut', 'system', dommer_telefon, 'dommer_forespørsel', smsText
+        );
+      } catch (smsErr) {
+        console.error("SMS-feil:", smsErr.message);
+      }
+    } else if (bedommingUtenforSystemet) {
+      console.log(`[SMS SKIP] Bedømming utenfor systemet - ingen SMS til dommer ${dommer_telefon} for prøve ${proveId}`);
+    }
+
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    if (err.message.includes('UNIQUE constraint')) {
+      return c.json({ error: "Denne dommeren har allerede fått forespørsel til denne prøven" }, 400);
+    }
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Svar på dommerforespørsel (aksepter/avslå)
+app.put("/api/dommer-foresporsler/:id/svar", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+  const { status, svar_melding } = body;
+
+  if (!['akseptert', 'avslatt'].includes(status)) {
+    return c.json({ error: "Ugyldig status. Må være 'akseptert' eller 'avslatt'" }, 400);
+  }
+
+  const foresporsel = db.prepare("SELECT * FROM dommer_foresporsler WHERE id = ?").get(id);
+  if (!foresporsel) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  // Sjekk at brukeren er den forespurte dommeren
+  if (foresporsel.dommer_telefon !== user.telefon) {
+    return c.json({ error: "Du kan kun svare på forespørsler sendt til deg" }, 403);
+  }
+
+  db.prepare(`
+    UPDATE dommer_foresporsler
+    SET status = ?, svar_melding = ?, svar_dato = datetime('now')
+    WHERE id = ?
+  `).run(status, svar_melding || '', id);
+
+  // Hvis akseptert, legg til dommer-tildeling
+  if (status === 'akseptert' && foresporsel.parti) {
+    try {
+      db.prepare(`
+        INSERT OR IGNORE INTO dommer_tildelinger (prove_id, dommer_telefon, parti)
+        VALUES (?, ?, ?)
+      `).run(foresporsel.prove_id, foresporsel.dommer_telefon, foresporsel.parti);
+    } catch (e) {
+      console.log("Dommer allerede tildelt:", e.message);
+    }
+  }
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    `dommer_${status}`, `${foresporsel.dommer_navn} ${status} forespørsel for prøve ${foresporsel.prove_id}`
+  );
+
+  // Send varsel-SMS til prøveleder
+  if (smsProvider !== 'dev') {
+    const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(foresporsel.prove_id);
+    const statusTekst = status === 'akseptert' ? 'akseptert' : 'avslått';
+    const smsText = `${foresporsel.dommer_navn} har ${statusTekst} dommerforespørselen til ${prove?.navn || foresporsel.prove_id}.`;
+    try {
+      await sendSms(foresporsel.sendt_av, smsText);
+    } catch (smsErr) {
+      console.error("SMS-feil:", smsErr.message);
+    }
+  }
+
+  return c.json({ success: true });
+});
+
+// Marker forespørsel som sett
+app.put("/api/dommer-foresporsler/:id/sett", requireAuth, (c) => {
+  const id = c.req.param("id");
+  const user = c.get("user");
+
+  const foresporsel = db.prepare("SELECT * FROM dommer_foresporsler WHERE id = ?").get(id);
+  if (!foresporsel) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  if (foresporsel.dommer_telefon !== user.telefon) {
+    return c.json({ error: "Ikke tilgang" }, 403);
+  }
+
+  if (foresporsel.status === 'sendt') {
+    db.prepare("UPDATE dommer_foresporsler SET status = 'sett', sett_dato = datetime('now') WHERE id = ?").run(id);
+  }
+
+  return c.json({ success: true });
+});
+
+// Kanseller forespørsel (prøveleder)
+app.delete("/api/prover/:proveId/dommer-foresporsler/:id", requireAuth, (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+
+  const result = db.prepare("UPDATE dommer_foresporsler SET status = 'kansellert' WHERE id = ? AND prove_id = ?").run(id, proveId);
+  if (result.changes === 0) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+
+  return c.json({ success: true });
+});
+
+// ============================================
+// DOMMEROPPGJØR API
+// ============================================
+
+// Hent alle oppgjør for en prøve
+app.get("/api/prover/:id/dommer-oppgjor", (c) => {
+  const proveId = c.req.param("id");
+  const oppgjor = db.prepare(`
+    SELECT * FROM dommer_oppgjor WHERE prove_id = ? ORDER BY dommer_navn
+  `).all(proveId);
+  return c.json(oppgjor);
+});
+
+// Hent mine oppgjør (for dommer)
+app.get("/api/dommer-oppgjor/mine", requireAuth, (c) => {
+  const telefon = c.get("user")?.telefon;
+  if (!telefon) return c.json({ error: "Ikke autentisert" }, 401);
+
+  const oppgjor = db.prepare(`
+    SELECT do.*, p.navn as prove_navn, p.start_dato, p.slutt_dato, k.navn as klubb_navn
+    FROM dommer_oppgjor do
+    JOIN prover p ON do.prove_id = p.id
+    LEFT JOIN klubber k ON p.klubb_id = k.id
+    WHERE do.dommer_telefon = ?
+    ORDER BY do.created_at DESC
+  `).all(telefon);
+  return c.json(oppgjor);
+});
+
+// Opprett eller oppdater oppgjør
+app.post("/api/prover/:id/dommer-oppgjor", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+
+  const {
+    dommer_telefon, dommer_navn,
+    // Reisevarighet
+    reise_fra, reise_til, reisedekning,
+    // Kjøregodtgjørelse
+    reise_km, reise_km_sats, reise_passasjerer,
+    // Dynamiske lister (lagret som JSON)
+    bompenger, parkeringer, kollektivreiser, fradrag,
+    // Diett (nye satser)
+    diett3_6_antall, diett6_12_antall, diett_over12_antall, bor_utenfor_hk_antall,
+    // Dommergodtgjørelse
+    dommer_dager,
+    // Signatur
+    signatur_dato, signatur_sted, signatur,
+    kontonummer, kommentar, status
+  } = body;
+
+  if (!dommer_telefon || !dommer_navn) {
+    return c.json({ error: "Dommer telefon og navn er påkrevd" }, 400);
+  }
+
+  // Satser
+  const SATSER = {
+    km: 3.50,
+    passasjer: 1.00,
+    diett3_6: 150,
+    diett6_12: 200,
+    diettOver12: 400,
+    borUtenforHK: 500,
+    dommer: 500
+  };
+
+  // Beregn beløp
+  const km = reise_km || 0;
+  const passasjerer = reise_passasjerer || 0;
+  const kmBelop = (km * SATSER.km) + (km * passasjerer * SATSER.passasjer);
+
+  // Parse JSON-lister
+  const bompengerListe = typeof bompenger === 'string' ? JSON.parse(bompenger || '[]') : (bompenger || []);
+  const parkeringerListe = typeof parkeringer === 'string' ? JSON.parse(parkeringer || '[]') : (parkeringer || []);
+  const kollektivListe = typeof kollektivreiser === 'string' ? JSON.parse(kollektivreiser || '[]') : (kollektivreiser || []);
+  const fradragListe = typeof fradrag === 'string' ? JSON.parse(fradrag || '[]') : (fradrag || []);
+
+  const bomSum = bompengerListe.reduce((sum, b) => sum + (parseFloat(b.belop) || 0), 0);
+  const parkSum = parkeringerListe.reduce((sum, p) => sum + (parseFloat(p.belop) || 0), 0);
+  const kollektivSum = kollektivListe.reduce((sum, k) => sum + (parseFloat(k.belop) || 0), 0);
+  const fradragSum = fradragListe.reduce((sum, f) => sum + (parseFloat(f.belop) || 0), 0);
+
+  // Diett
+  const diett3_6 = (diett3_6_antall || 0) * SATSER.diett3_6;
+  const diett6_12 = (diett6_12_antall || 0) * SATSER.diett6_12;
+  const diettOver12 = (diett_over12_antall || 0) * SATSER.diettOver12;
+  const borUtenforHK = (bor_utenfor_hk_antall || 0) * SATSER.borUtenforHK;
+  const diettSum = diett3_6 + diett6_12 + diettOver12 + borUtenforHK;
+
+  // Dommergodtgjørelse
+  const dommerBelop = (dommer_dager || 0) * SATSER.dommer;
+
+  // Total
+  const total_belop = kmBelop + bomSum + parkSum + kollektivSum + diettSum + dommerBelop - fradragSum;
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO dommer_oppgjor
+        (prove_id, dommer_telefon, dommer_navn,
+         reise_fra, reise_til, reisedekning,
+         reise_km, reise_km_sats, reise_passasjerer,
+         bompenger, parkeringer, kollektivreiser,
+         diett3_6_antall, diett6_12_antall, diett_over12_antall, bor_utenfor_hk_antall,
+         dommer_dager, fradrag,
+         signatur_dato, signatur_sted, signatur,
+         kontonummer, kommentar, total_belop, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(prove_id, dommer_telefon) DO UPDATE SET
+        dommer_navn = excluded.dommer_navn,
+        reise_fra = excluded.reise_fra, reise_til = excluded.reise_til, reisedekning = excluded.reisedekning,
+        reise_km = excluded.reise_km, reise_km_sats = excluded.reise_km_sats, reise_passasjerer = excluded.reise_passasjerer,
+        bompenger = excluded.bompenger, parkeringer = excluded.parkeringer, kollektivreiser = excluded.kollektivreiser,
+        diett3_6_antall = excluded.diett3_6_antall, diett6_12_antall = excluded.diett6_12_antall,
+        diett_over12_antall = excluded.diett_over12_antall, bor_utenfor_hk_antall = excluded.bor_utenfor_hk_antall,
+        dommer_dager = excluded.dommer_dager, fradrag = excluded.fradrag,
+        signatur_dato = excluded.signatur_dato, signatur_sted = excluded.signatur_sted, signatur = excluded.signatur,
+        kontonummer = excluded.kontonummer, kommentar = excluded.kommentar,
+        total_belop = excluded.total_belop, status = excluded.status, updated_at = datetime('now')
+    `).run(
+      proveId, dommer_telefon, dommer_navn,
+      reise_fra || null, reise_til || null, reisedekning || 'tur_retur',
+      km, SATSER.km, passasjerer,
+      JSON.stringify(bompengerListe), JSON.stringify(parkeringerListe), JSON.stringify(kollektivListe),
+      diett3_6_antall || 0, diett6_12_antall || 0, diett_over12_antall || 0, bor_utenfor_hk_antall || 0,
+      dommer_dager || 0, JSON.stringify(fradragListe),
+      signatur_dato || null, signatur_sted || '', signatur || '',
+      kontonummer || '', kommentar || '', total_belop, status || 'utkast'
+    );
+
+    return c.json({ success: true, id: result.lastInsertRowid, total_belop });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Oppdater oppgjør-status
+app.put("/api/dommer-oppgjor/:id/status", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const user = c.get("user");
+  const { status, betalt_dato } = body;
+
+  if (!['utkast', 'innsendt', 'godkjent', 'utbetalt', 'avvist'].includes(status)) {
+    return c.json({ error: "Ugyldig status" }, 400);
+  }
+
+  const oppgjor = db.prepare("SELECT * FROM dommer_oppgjor WHERE id = ?").get(id);
+  if (!oppgjor) return c.json({ error: "Oppgjør ikke funnet" }, 404);
+
+  const updates = { status };
+  if (status === 'utbetalt') {
+    updates.betalt = 1;
+    updates.betalt_dato = betalt_dato || new Date().toISOString().split('T')[0];
+    updates.betalt_av = user.telefon;
+  }
+
+  db.prepare(`
+    UPDATE dommer_oppgjor
+    SET status = ?, betalt = COALESCE(?, betalt), betalt_dato = COALESCE(?, betalt_dato), betalt_av = COALESCE(?, betalt_av), updated_at = datetime('now')
+    WHERE id = ?
+  `).run(status, updates.betalt, updates.betalt_dato, updates.betalt_av, id);
+
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "dommer_oppgjor_status", `Oppgjør ${id} for ${oppgjor.dommer_navn}: ${status}`
+  );
+
+  return c.json({ success: true });
+});
+
+// Slett oppgjør
+app.delete("/api/dommer-oppgjor/:id", requireAuth, (c) => {
+  const id = c.req.param("id");
+  const result = db.prepare("DELETE FROM dommer_oppgjor WHERE id = ?").run(id);
+  if (result.changes === 0) return c.json({ error: "Oppgjør ikke funnet" }, 404);
+  return c.json({ success: true });
+});
+
+// ============================================
 // PRØVER API
 // ============================================
 
@@ -4187,11 +7243,15 @@ app.get("/api/prover", (c) => {
   const rows = db.prepare(`
     SELECT p.*, k.navn as klubb_navn,
            pl.fornavn || ' ' || pl.etternavn as proveleder_navn,
-           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn
+           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn,
+           nv.fornavn || ' ' || nv.etternavn as nkkvara_navn,
+           COALESCE(p.dvk_navn, dv.fornavn || ' ' || dv.etternavn) as dvk_navn_display
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
     LEFT JOIN brukere pl ON p.proveleder_telefon = pl.telefon
     LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+    LEFT JOIN brukere nv ON p.nkkvara_telefon = nv.telefon
+    LEFT JOIN brukere dv ON p.dvk_telefon = dv.telefon
     ORDER BY p.start_dato DESC
   `).all();
   return c.json(rows);
@@ -4202,15 +7262,83 @@ app.get("/api/prover/alle", (c) => {
   try {
     const prover = db.prepare(`
       SELECT p.*, k.navn as klubb_navn,
-             (SELECT COUNT(*) FROM pameldte WHERE prove_id = p.id) as antall_pameldte
+             (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
       FROM prover p
       LEFT JOIN klubber k ON p.klubb_id = k.id
-      ORDER BY p.dato_fra DESC
+      ORDER BY p.start_dato DESC
     `).all();
     return c.json({ prover });
   } catch (err) {
-    // Hvis tabellen ikke finnes ennå
-    return c.json({ prover: [] });
+    console.error("Feil ved henting av prøver:", err);
+    return c.json({ prover: [], error: err.message });
+  }
+});
+
+// Hent KUN prøver for innlogget brukers klubber (for admin.html terminliste)
+// Støtter ?klubbId=X for å filtrere på spesifikk klubb (med tilgangskontroll)
+// Superadmin ser alle prøver hvis ikke klubbId er spesifisert
+app.get("/api/prover/mine", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+  const erSuperadmin = hasRole(bruker.rolle, "superadmin");
+  const filterKlubbId = c.req.query("klubbId") || null;
+
+  try {
+    let prover;
+
+    // Hvis klubbId er spesifisert, filtrer KUN på den klubben (med tilgangskontroll)
+    if (filterKlubbId) {
+      // Sjekk at brukeren har tilgang til denne klubben (admin eller superadmin)
+      const harTilgang = erSuperadmin || db.prepare(
+        "SELECT 1 FROM klubb_admins WHERE telefon = ? AND klubb_id = ?"
+      ).get(bruker.telefon, filterKlubbId);
+
+      if (!harTilgang) {
+        return c.json({ prover: [], error: "Ingen tilgang til denne klubben" }, 403);
+      }
+
+      prover = db.prepare(`
+        SELECT p.*, k.navn as klubb_navn,
+               (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        WHERE p.klubb_id = ?
+        ORDER BY p.start_dato DESC
+      `).all(filterKlubbId);
+      return c.json({ prover });
+    }
+
+    // Hvis ingen klubbId-filter: superadmin ser alle, andre ser sine klubber
+    if (erSuperadmin) {
+      prover = db.prepare(`
+        SELECT p.*, k.navn as klubb_navn,
+               (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        ORDER BY p.start_dato DESC
+      `).all();
+    } else {
+      // Hent klubber der brukeren er admin
+      const klubber = db.prepare("SELECT klubb_id FROM klubb_admins WHERE telefon = ?").all(bruker.telefon);
+      const klubbIds = klubber.map(k => k.klubb_id);
+
+      if (klubbIds.length === 0) {
+        return c.json({ prover: [] });
+      }
+
+      const placeholders = klubbIds.map(() => '?').join(',');
+      prover = db.prepare(`
+        SELECT p.*, k.navn as klubb_navn,
+               (SELECT COUNT(*) FROM pameldinger WHERE prove_id = p.id) as antall_pameldte
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        WHERE p.klubb_id IN (${placeholders})
+        ORDER BY p.start_dato DESC
+      `).all(...klubbIds);
+    }
+    return c.json({ prover });
+  } catch (err) {
+    console.error("Feil ved henting av mine prøver:", err);
+    return c.json({ prover: [], error: err.message }, 500);
   }
 });
 
@@ -4220,11 +7348,15 @@ app.get("/api/prover/:id", (c) => {
   const row = db.prepare(`
     SELECT p.*, k.navn as klubb_navn,
            pl.fornavn || ' ' || pl.etternavn as proveleder_navn, pl.telefon as proveleder_telefon,
-           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn, nr.telefon as nkkrep_telefon
+           nr.fornavn || ' ' || nr.etternavn as nkkrep_navn, nr.telefon as nkkrep_telefon,
+           nv.fornavn || ' ' || nv.etternavn as nkkvara_navn, nv.telefon as nkkvara_telefon,
+           COALESCE(p.dvk_navn, dv.fornavn || ' ' || dv.etternavn) as dvk_navn_display, dv.telefon as dvk_telefon
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
     LEFT JOIN brukere pl ON p.proveleder_telefon = pl.telefon
     LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+    LEFT JOIN brukere nv ON p.nkkvara_telefon = nv.telefon
+    LEFT JOIN brukere dv ON p.dvk_telefon = dv.telefon
     WHERE p.id = ?
   `).get(id);
 
@@ -4263,8 +7395,13 @@ app.post("/api/prover", requireAdmin, async (c) => {
       klubb_id = null,
       proveleder_telefon = null,
       nkkrep_telefon = null,
+      nkkvara_telefon = null,
+      dvk_telefon = null,
+      dvk_navn = '',
       klasser = { uk: true, ak: true, vk: true },
-      partier = {}
+      partier = {},
+      prove_type = 'høyfjell_host',
+      arrangor_navn = null
     } = body;
 
     if (!navn) {
@@ -4275,8 +7412,8 @@ app.post("/api/prover", requireAdmin, async (c) => {
     }
 
     db.prepare(`
-      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, klasser, partier, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt')
+      INSERT INTO prover (id, navn, sted, start_dato, slutt_dato, klubb_id, proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon, dvk_navn, klasser, partier, status, prove_type, arrangor_navn)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planlagt', ?, ?)
     `).run(
       id,
       navn,
@@ -4286,8 +7423,13 @@ app.post("/api/prover", requireAdmin, async (c) => {
       klubb_id,
       proveleder_telefon,
       nkkrep_telefon,
+      nkkvara_telefon,
+      dvk_telefon,
+      dvk_navn,
       JSON.stringify(klasser),
-      JSON.stringify(partier)
+      JSON.stringify(partier),
+      prove_type,
+      arrangor_navn
     );
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -4316,7 +7458,7 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
       return c.json({ error: "Prøve ikke funnet" }, 404);
     }
 
-    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "nkkrep_telefon", "status"];
+    const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "proveleder_navn", "nkkrep_telefon", "nkkrep_navn", "nkkvara_telefon", "nkkvara_navn", "dvk_telefon", "dvk_navn", "status", "prove_type", "arrangor_navn"];
     const sets = [];
     const vals = [];
 
@@ -4335,6 +7477,12 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
     if ('partier' in body) {
       sets.push("partier = ?");
       vals.push(JSON.stringify(body.partier));
+    }
+    // Logo (base64)
+    if ('logo' in body) {
+      sets.push("logo = ?");
+      vals.push(body.logo);
+      sets.push("logo_oppdatert = datetime('now')");
     }
 
     if (sets.length > 0) {
@@ -4357,6 +7505,80 @@ app.put("/api/prover/:id", requireAdmin, async (c) => {
     console.error("Feil ved oppdatering av prøve:", err);
     return c.json({ error: err.message }, 500);
   }
+});
+
+// Last opp logo for prøve (FormData)
+app.post("/api/prover/:id/logo", async (c) => {
+  const id = c.req.param("id");
+
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get("logo");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "Ingen fil mottatt" }, 400);
+    }
+
+    // Sjekk filtype
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!["png", "jpg", "jpeg", "svg", "webp"].includes(ext)) {
+      return c.json({ error: "Ugyldig filformat. Bruk PNG, JPG, SVG eller WebP." }, 400);
+    }
+
+    // Konverter til base64 og lagre i database
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const base64 = `data:image/${ext === 'svg' ? 'svg+xml' : ext};base64,${buffer.toString('base64')}`;
+
+    db.prepare(`
+      UPDATE prover
+      SET logo = ?, logo_oppdatert = datetime('now')
+      WHERE id = ?
+    `).run(base64, id);
+
+    console.log(`[Prøve-logo] Lastet opp logo for prøve ${id} (${(buffer.length / 1024).toFixed(1)} KB)`);
+
+    return c.json({
+      success: true,
+      message: "Logo lastet opp og lagret i database",
+      size: buffer.length
+    });
+  } catch (err) {
+    console.error("[Prøve-logo] Feil:", err);
+    return c.json({ error: "Feil ved opplasting: " + err.message }, 500);
+  }
+});
+
+// Hent logo for prøve
+app.get("/api/prover/:id/logo", (c) => {
+  const id = c.req.param("id");
+
+  const prove = db.prepare("SELECT logo FROM prover WHERE id = ?").get(id);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  if (!prove.logo) {
+    // Fallback: sjekk om klubben har logo
+    const proveData = db.prepare("SELECT klubb_id FROM prover WHERE id = ?").get(id);
+    if (proveData?.klubb_id) {
+      const klubb = db.prepare("SELECT logo FROM klubber WHERE id = ?").get(proveData.klubb_id);
+      if (klubb?.logo) {
+        return c.json({
+          logo: klubb.logo,
+          hasLogo: true,
+          source: "klubb"
+        });
+      }
+    }
+    return c.json({ error: "Ingen logo lastet opp" }, 404);
+  }
+
+  return c.json({
+    logo: prove.logo,
+    hasLogo: true,
+    source: "prove"
+  });
 });
 
 // Slett prøve
@@ -4439,9 +7661,17 @@ function validerKlasse(fodselsdato, provedato, klasse, har1AK = false) {
 }
 
 // Hjelpefunksjon: Sjekk venteliste og opprykk
+// Returnerer liste over påmeldinger som rykket opp (for varsling)
 function oppdaterVenteliste(proveId, klasse) {
   const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
-  if (!config) return;
+  if (!config) return [];
+
+  // Sjekk om automatisk opprykk er aktivert (default: ja)
+  const autoOpprykk = config.auto_venteliste_opprykk !== 0;
+  if (!autoOpprykk) {
+    console.log(`[Venteliste] Automatisk opprykk er deaktivert for prøve ${proveId}`);
+    return [];
+  }
 
   const maksField = klasse === 'UK' ? 'maks_deltakere_uk' : klasse === 'AK' ? 'maks_deltakere_ak' : 'maks_deltakere_vk';
   const maks = config[maksField] || 40;
@@ -4452,13 +7682,17 @@ function oppdaterVenteliste(proveId, klasse) {
     WHERE prove_id = ? AND klasse = ? AND status IN ('pameldt', 'bekreftet')
   `).get(proveId, klasse).n;
 
+  const opprykkListe = [];
+
   if (antallPameldt < maks) {
     // Rykk opp fra venteliste
     const ledigePlasser = maks - antallPameldt;
     const venteliste = db.prepare(`
-      SELECT id, forer_telefon FROM pameldinger
-      WHERE prove_id = ? AND klasse = ? AND status = 'venteliste'
-      ORDER BY venteliste_plass ASC
+      SELECT p.id, p.forer_telefon, p.hund_id, h.navn as hund_navn
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      WHERE p.prove_id = ? AND p.klasse = ? AND p.status = 'venteliste'
+      ORDER BY p.venteliste_plass ASC
       LIMIT ?
     `).all(proveId, klasse, ledigePlasser);
 
@@ -4468,10 +7702,19 @@ function oppdaterVenteliste(proveId, klasse) {
         WHERE id = ?
       `).run(p.id);
 
-      // TODO: Send SMS-varsling om opprykk
-      console.log(`📱 Opprykk fra venteliste: ${p.forer_telefon} rykket opp til ${klasse}`);
+      opprykkListe.push({
+        pamelding_id: p.id,
+        forer_telefon: p.forer_telefon,
+        hund_id: p.hund_id,
+        hund_navn: p.hund_navn,
+        klasse: klasse
+      });
+
+      console.log(`📱 Opprykk fra venteliste: ${p.forer_telefon} (${p.hund_navn}) rykket opp til ${klasse}`);
     }
   }
+
+  return opprykkListe;
 }
 
 // Hent alle påmeldinger for en prøve
@@ -4524,6 +7767,166 @@ app.get("/api/prover/:id/pameldinger", (c) => {
   }
 
   return c.json({ pameldinger, antall, config });
+});
+
+// ============================================
+// MASSE-SMS TIL DELTAKERE
+// ============================================
+app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+  const { melding, mottakere, mottakerliste } = body;
+
+  if (!melding || !melding.trim()) {
+    return c.json({ error: "Melding er påkrevd" }, 400);
+  }
+
+  // Rate limiting - beskytt mot utilsiktet spam
+  const now = Date.now();
+  const rateLimitKey = `prove_${proveId}`;
+  const rateData = masseSmsRateLimit.get(rateLimitKey) || { lastSent: 0, timestamps: [] };
+
+  // Fjern gamle timestamps (eldre enn 1 time)
+  rateData.timestamps = rateData.timestamps.filter(t => now - t < 60 * 60 * 1000);
+
+  // Sjekk cooldown siden siste utsendelse
+  if (now - rateData.lastSent < MASSE_SMS_COOLDOWN_MS) {
+    const gjenstår = Math.ceil((MASSE_SMS_COOLDOWN_MS - (now - rateData.lastSent)) / 1000);
+    return c.json({
+      error: `Vent ${gjenstår} sekunder før neste utsendelse. Dette beskytter mot utilsiktet dobbelt-sending.`,
+      cooldown: gjenstår
+    }, 429);
+  }
+
+  // Sjekk maks antall utsendelser per time
+  if (rateData.timestamps.length >= MASSE_SMS_MAX_PER_HOUR) {
+    return c.json({
+      error: `Maks ${MASSE_SMS_MAX_PER_HOUR} masse-SMS utsendelser per time. Prøv igjen senere.`,
+      maxReached: true
+    }, 429);
+  }
+
+  // Hent prøve for logging
+  const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Bruk mottakerliste fra frontend hvis tilgjengelig (cached partiliste)
+  // Dette sikrer at listen er "frosset" til tidspunktet den ble lastet
+  const unikeTelefoner = new Map();
+
+  if (mottakerliste && Array.isArray(mottakerliste) && mottakerliste.length > 0) {
+    // Bruk den forhåndsinnlastede listen fra frontend
+    for (const m of mottakerliste) {
+      if (m.telefon && !unikeTelefoner.has(m.telefon)) {
+        unikeTelefoner.set(m.telefon, m.navn || 'Deltaker');
+      }
+    }
+  } else if (mottakere === 'waitlist') {
+    // Venteliste hentes alltid fra database
+    const venteliste = db.prepare(`
+      SELECT DISTINCT p.forer_telefon as telefon, b.fornavn || ' ' || b.etternavn as navn
+      FROM pameldinger p
+      LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE p.prove_id = ? AND p.status = 'venteliste'
+        AND p.forer_telefon IS NOT NULL AND p.forer_telefon != ''
+    `).all(proveId);
+
+    for (const v of venteliste) {
+      if (v.telefon) {
+        unikeTelefoner.set(v.telefon, v.navn || 'Deltaker');
+      }
+    }
+  } else {
+    // Fallback: Hent alle fra parti_deltakere (for bakoverkompatibilitet)
+    const deltakere = db.prepare(`
+      SELECT DISTINCT forer_telefon as telefon, forer_navn as navn
+      FROM parti_deltakere
+      WHERE prove_id = ? AND forer_telefon IS NOT NULL AND forer_telefon != ''
+    `).all(proveId);
+
+    for (const d of deltakere) {
+      if (d.telefon && !unikeTelefoner.has(d.telefon)) {
+        unikeTelefoner.set(d.telefon, d.navn || 'Deltaker');
+      }
+    }
+  }
+
+  if (unikeTelefoner.size === 0) {
+    return c.json({ error: "Ingen mottakere funnet. Sjekk at partilister er lastet inn.", sendt: 0, feilet: 0 }, 400);
+  }
+
+  // Send SMS til alle
+  let sendt = 0;
+  let feilet = 0;
+
+  for (const [telefon, navn] of unikeTelefoner) {
+    try {
+      // Formater telefonnummer
+      let phone = telefon.replace(/\s/g, '');
+      if (!phone.startsWith('+')) {
+        phone = phone.startsWith('47') ? `+${phone}` : `+47${phone}`;
+      }
+
+      const result = await sendSMS(phone, melding, {
+        type: 'masse_sms',
+        prove_id: proveId,
+        mottaker_navn: navn || null
+      });
+      if (result.success) {
+        sendt++;
+      } else {
+        feilet++;
+        console.error(`[Masse-SMS] Feil til ${telefon}:`, result.error);
+      }
+    } catch (e) {
+      feilet++;
+      console.error(`[Masse-SMS] Exception til ${telefon}:`, e.message);
+    }
+  }
+
+  // Oppdater rate limiting etter vellykket utsendelse
+  rateData.lastSent = now;
+  rateData.timestamps.push(now);
+  masseSmsRateLimit.set(rateLimitKey, rateData);
+
+  // Logg utsendelsen
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "masse_sms_sendt",
+    JSON.stringify({
+      prove_id: proveId,
+      prove_navn: prove.navn,
+      mottakere: mottakere,
+      antall_mottakere: unikeTelefoner.size,
+      sendt: sendt,
+      feilet: feilet,
+      melding: melding.substring(0, 100),
+      utfort_av: bruker.telefon
+    })
+  );
+
+  console.log(`[Masse-SMS] ${prove.navn}: ${sendt}/${unikeTelefoner.size} sendt, ${feilet} feilet`);
+
+  return c.json({
+    success: true,
+    sendt,
+    feilet,
+    totalt: unikeTelefoner.size
+  });
+});
+
+// Hent SMS-historikk for en prøve (for prøvedokumenter)
+app.get("/api/prover/:id/sms-historikk", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+  const rows = db.prepare(`
+    SELECT id, retning, fra, til, type, melding, status, mottaker_navn, created_at
+    FROM sms_log
+    WHERE prove_id = ?
+    ORDER BY created_at DESC
+  `).all(proveId);
+  return c.json(rows);
 });
 
 // Meld på til prøve
@@ -4701,6 +8104,294 @@ app.delete("/api/prover/:proveId/pameldinger/:id", requireAuth, async (c) => {
   });
 });
 
+// ============================================
+// AVMELDING MED ÅRSAK (ny, forbedret avmelding)
+// ============================================
+
+// Meld av hund fra prøve med årsak (sendes til prøveledelsens innboks)
+app.post("/api/prover/:proveId/avmeldinger", requireAuth, async (c) => {
+  const proveId = c.req.param("proveId");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const { pamelding_id, arsak, arsak_beskrivelse, lopetid_egenerklaring } = body;
+
+  // Valider påkrevde felt
+  if (!pamelding_id || !arsak) {
+    return c.json({ error: "Mangler påkrevde felt (pamelding_id, arsak)" }, 400);
+  }
+
+  // Valider løpetid-egenerklæring hvis årsak er løpetid
+  if (arsak === 'lopetid') {
+    if (!lopetid_egenerklaring) {
+      return c.json({ error: "Løpetid krever utfylt egenerklæring" }, 400);
+    }
+    const { startgebyr, kontonummer, digital_signatur } = lopetid_egenerklaring;
+    if (!startgebyr || !kontonummer || !digital_signatur) {
+      return c.json({ error: "Egenerklæring mangler påkrevde felt (startgebyr, kontonummer, signatur)" }, 400);
+    }
+    // Valider kontonummer (11 siffer)
+    const kontoRen = kontonummer.replace(/\s/g, '');
+    if (kontoRen.length !== 11 || !/^\d+$/.test(kontoRen)) {
+      return c.json({ error: "Ugyldig kontonummer (må være 11 siffer)" }, 400);
+    }
+  }
+
+  // Valider årsak
+  const gyldigeArsaker = ['sykdom_hund', 'sykdom_forer', 'lopetid', 'annet'];
+  if (!gyldigeArsaker.includes(arsak)) {
+    return c.json({ error: "Ugyldig årsak. Må være: " + gyldigeArsaker.join(', ') }, 400);
+  }
+
+  // Hent påmelding med hund-info
+  const pamelding = db.prepare(`
+    SELECT p.*, h.navn as hund_navn, h.regnr as hund_regnr
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    WHERE p.id = ? AND p.prove_id = ?
+  `).get(pamelding_id, proveId);
+
+  if (!pamelding) {
+    return c.json({ error: "Påmelding ikke funnet" }, 404);
+  }
+
+  // Sjekk tilgang (eier, fører, eller admin)
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(pamelding.hund_id);
+  const erEier = hund && hund.eier_telefon === bruker.telefon;
+  const erForer = pamelding.forer_telefon === bruker.telefon;
+  const erAdmin = ['admin', 'superadmin', 'klubbleder', 'proveleder', 'sekretaer'].includes(bruker.rolle);
+
+  if (!erEier && !erForer && !erAdmin) {
+    return c.json({ error: "Du har ikke tilgang til å avmelde denne hunden" }, 403);
+  }
+
+  // Sjekk at påmeldingen ikke allerede er avmeldt
+  if (pamelding.status === 'avmeldt') {
+    return c.json({ error: "Hunden er allerede avmeldt" }, 400);
+  }
+
+  // Hent prøve for refusjonsberegning og info
+  const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
+
+  // Beregn refusjon basert på NKK regler
+  let refusjon = { belop: 0, prosent: 0 };
+  if (pamelding.betalt && pamelding.betalt_belop > 0) {
+    if (pamelding.status === 'venteliste') {
+      // 100% refusjon for venteliste som ikke fikk plass
+      refusjon = { belop: pamelding.betalt_belop, prosent: 100 };
+    } else if (arsak === 'sykdom_hund' || arsak === 'sykdom_forer' || arsak === 'lopetid') {
+      // 75% refusjon ved dokumentert sykdom/løpetid (krever dokumentasjon)
+      const prosent = config?.refusjon_prosent || 75;
+      refusjon = { belop: Math.round(pamelding.betalt_belop * prosent / 100), prosent };
+    }
+    // 'annet' gir 0% refusjon (frivillig avmelding uten grunn)
+  }
+
+  // Opprett avmelding i ny tabell
+  const avmeldingResult = db.prepare(`
+    INSERT INTO avmeldinger (
+      pamelding_id, prove_id, hund_id, forer_telefon,
+      arsak, arsak_beskrivelse, refusjon_belop, refusjon_prosent,
+      lopetid_egenerklaring
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    pamelding_id, proveId, pamelding.hund_id, bruker.telefon,
+    arsak, arsak_beskrivelse || '', refusjon.belop, refusjon.prosent,
+    arsak === 'lopetid' && lopetid_egenerklaring ? JSON.stringify(lopetid_egenerklaring) : null
+  );
+
+  const avmeldingId = avmeldingResult.lastInsertRowid;
+
+  // Oppdater påmelding-status
+  db.prepare(`
+    UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(pamelding_id);
+
+  // Oppdater venteliste og få info om hvem som rykket opp
+  const opprykkListe = oppdaterVenteliste(proveId, pamelding.klasse);
+
+  // Registrer opprykk i avmeldingen (hvis noen rykket opp)
+  if (opprykkListe.length > 0) {
+    db.prepare(`
+      UPDATE avmeldinger SET opprykk_pamelding_id = ? WHERE id = ?
+    `).run(opprykkListe[0].pamelding_id, avmeldingId);
+  }
+
+  // Send melding til prøveledelsens innboks
+  const arsakTekst = {
+    'sykdom_hund': 'Sykdom hos hund',
+    'sykdom_forer': 'Sykdom hos fører',
+    'lopetid': 'Løpetid',
+    'annet': 'Annen årsak'
+  }[arsak];
+
+  const brukerNavn = bruker.fornavn && bruker.etternavn
+    ? `${bruker.fornavn} ${bruker.etternavn}`
+    : bruker.telefon;
+
+  let meldingTekst = `Avmelding fra ${brukerNavn}:\n\n`;
+  meldingTekst += `Hund: ${pamelding.hund_navn} (${pamelding.hund_regnr || 'uten regnr'})\n`;
+  meldingTekst += `Klasse: ${pamelding.klasse}\n`;
+  meldingTekst += `Årsak: ${arsakTekst}\n`;
+  if (arsak_beskrivelse) {
+    meldingTekst += `Beskrivelse: ${arsak_beskrivelse}\n`;
+  }
+
+  // Legg til løpetid-egenerklæring hvis relevant
+  if (arsak === 'lopetid' && lopetid_egenerklaring) {
+    meldingTekst += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    meldingTekst += `📋 EGENERKLÆRING LØPETID\n`;
+    meldingTekst += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    meldingTekst += `Jeg erklærer herved at min hund ${lopetid_egenerklaring.hund_navn || pamelding.hund_navn}\n`;
+    meldingTekst += `med registreringsnummer ${lopetid_egenerklaring.regnr || pamelding.hund_regnr || '-'}\n`;
+    meldingTekst += `har fått løpetid og ikke kan starte på prøven\n`;
+    meldingTekst += `som starter ${lopetid_egenerklaring.start_dato || '-'}.\n\n`;
+    meldingTekst += `Jeg ber om å få tilbakebetalt startgebyret:\n`;
+    meldingTekst += `Beløp: ${lopetid_egenerklaring.startgebyr} kr\n`;
+    meldingTekst += `Kontonummer: ${lopetid_egenerklaring.kontonummer}\n\n`;
+    meldingTekst += `Eier/fører: ${lopetid_egenerklaring.eier_navn || brukerNavn}\n`;
+    if (lopetid_egenerklaring.eier_adresse) {
+      meldingTekst += `Adresse: ${lopetid_egenerklaring.eier_adresse}\n`;
+    }
+    if (lopetid_egenerklaring.sted) {
+      meldingTekst += `Sted: ${lopetid_egenerklaring.sted}\n`;
+    }
+    meldingTekst += `Dato: ${lopetid_egenerklaring.signert_dato || new Date().toISOString().split('T')[0]}\n\n`;
+    meldingTekst += `✅ Digitalt signert av ${brukerNavn}\n`;
+    meldingTekst += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  }
+
+  meldingTekst += `\nRefusjon: ${refusjon.prosent}%`;
+  if (refusjon.belop > 0) {
+    meldingTekst += ` (${refusjon.belop} kr)`;
+  }
+  if (arsak !== 'annet' && refusjon.prosent > 0 && arsak !== 'lopetid') {
+    meldingTekst += `\n⚠️ Krever dokumentasjon for refusjon.`;
+  }
+  if (arsak === 'lopetid') {
+    meldingTekst += `\n✅ Egenerklæring mottatt som dokumentasjon.`;
+  }
+
+  // Opprett melding i innboks
+  db.prepare(`
+    INSERT INTO meldinger (prove_id, fra_telefon, fra_navn, til_type, hund_id, hund_regnr, hund_navn, emne, melding)
+    VALUES (?, ?, ?, 'proveledelse', ?, ?, ?, ?, ?)
+  `).run(
+    proveId,
+    bruker.telefon,
+    brukerNavn,
+    pamelding.hund_id,
+    pamelding.hund_regnr || '',
+    pamelding.hund_navn,
+    `Avmelding: ${pamelding.hund_navn}`,
+    meldingTekst
+  );
+
+  // Logg
+  db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+    "avmelding_registrert",
+    JSON.stringify({
+      avmelding_id: avmeldingId,
+      pamelding_id,
+      hund_navn: pamelding.hund_navn,
+      arsak,
+      refusjon,
+      har_lopetid_egenerklaring: arsak === 'lopetid' && !!lopetid_egenerklaring,
+      opprykk: opprykkListe.length > 0 ? opprykkListe[0] : null
+    })
+  );
+
+  return c.json({
+    ok: true,
+    avmelding_id: avmeldingId,
+    refusjon,
+    opprykk: opprykkListe.length > 0 ? {
+      hund_navn: opprykkListe[0].hund_navn,
+      klasse: opprykkListe[0].klasse
+    } : null,
+    message: `Avmelding registrert. ${refusjon.prosent > 0 ? `Mulig refusjon: ${refusjon.prosent}% (krever dokumentasjon).` : 'Ingen refusjon.'}`
+  });
+});
+
+// Hent avmeldinger for en prøve (prøveledelse)
+app.get("/api/prover/:proveId/avmeldinger", (c) => {
+  const proveId = c.req.param("proveId");
+  const status = c.req.query("status"); // 'mottatt', 'behandlet', etc.
+
+  let query = `
+    SELECT a.*, h.navn as hund_navn, h.regnr as hund_regnr,
+           b.fornavn || ' ' || b.etternavn as forer_navn
+    FROM avmeldinger a
+    JOIN hunder h ON a.hund_id = h.id
+    LEFT JOIN brukere b ON a.forer_telefon = b.telefon
+    WHERE a.prove_id = ?
+  `;
+  const params = [proveId];
+
+  if (status) {
+    query += ` AND a.status = ?`;
+    params.push(status);
+  }
+
+  query += ` ORDER BY a.created_at DESC`;
+
+  const avmeldinger = db.prepare(query).all(...params);
+  return c.json({ items: avmeldinger, count: avmeldinger.length });
+});
+
+// Behandle avmelding (prøveledelse godkjenner/avviser refusjon)
+app.put("/api/prover/:proveId/avmeldinger/:id", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const avmelding = db.prepare("SELECT * FROM avmeldinger WHERE id = ? AND prove_id = ?").get(id, proveId);
+  if (!avmelding) {
+    return c.json({ error: "Avmelding ikke funnet" }, 404);
+  }
+
+  const { status, behandlet_kommentar, refusjon_utbetalt } = body;
+
+  // Oppdater avmelding
+  db.prepare(`
+    UPDATE avmeldinger SET
+      status = COALESCE(?, status),
+      behandlet_av = ?,
+      behandlet_dato = datetime('now'),
+      behandlet_kommentar = COALESCE(?, behandlet_kommentar),
+      refusjon_utbetalt = COALESCE(?, refusjon_utbetalt),
+      updated_at = datetime('now')
+    WHERE id = ?
+  `).run(status, bruker.telefon, behandlet_kommentar, refusjon_utbetalt ? 1 : 0, id);
+
+  const oppdatert = db.prepare("SELECT * FROM avmeldinger WHERE id = ?").get(id);
+  return c.json({ ok: true, avmelding: oppdatert });
+});
+
+// Hent mine aktive påmeldinger (for avmeldings-UI)
+app.get("/api/mine-pameldinger", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+
+  // Hent alle aktive påmeldinger der bruker er eier eller fører
+  const pameldinger = db.prepare(`
+    SELECT p.*,
+           pr.navn as prove_navn, pr.start_dato, pr.slutt_dato, pr.sted as prove_sted,
+           h.navn as hund_navn, h.regnr as hund_regnr, h.rase as hund_rase
+    FROM pameldinger p
+    JOIN prover pr ON p.prove_id = pr.id
+    JOIN hunder h ON p.hund_id = h.id
+    WHERE (p.forer_telefon = ? OR h.eier_telefon = ?)
+      AND p.status IN ('pameldt', 'bekreftet', 'venteliste')
+      AND pr.start_dato >= date('now', '-1 day')
+    ORDER BY pr.start_dato ASC
+  `).all(bruker.telefon, bruker.telefon);
+
+  return c.json({ items: pameldinger, count: pameldinger.length });
+});
+
 // Oppdater påmelding (admin)
 app.put("/api/prover/:proveId/pameldinger/:id", requireAdmin, async (c) => {
   const proveId = c.req.param("proveId");
@@ -4755,6 +8446,10 @@ app.get("/api/prover/:id/config", (c) => {
       maks_deltakere_ak: 40,
       maks_deltakere_vk: 20,
       vk_dag: null,
+      vk_type: '1dag',
+      vk_kval_dag: null,
+      vk_semi_dag: null,
+      vk_finale_dag: null,
       pris_hogfjell: 1350,
       pris_lavland: 1050,
       pris_skog: 900,
@@ -4776,6 +8471,9 @@ app.put("/api/prover/:id/config", requireAdmin, async (c) => {
 
   const fields = [
     "maks_deltakere_uk", "maks_deltakere_ak", "maks_deltakere_vk",
+    "vk_dag",  // For 1-dags VK: hvilken dag VK går
+    "vk_type", // '1dag', '2dag', '3dag'
+    "vk_kval_dag", "vk_semi_dag", "vk_finale_dag", // For fler-dagers VK
     "pris_hogfjell", "pris_lavland", "pris_skog", "pris_apport",
     "frist_pamelding", "frist_avmelding", "refusjon_prosent",
     "krever_sauebevis", "krever_vaksinasjon", "krever_rabies"
@@ -4797,6 +8495,576 @@ app.put("/api/prover/:id/config", requireAdmin, async (c) => {
 
   const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);
   return c.json(config);
+});
+
+// ============================================
+// JEGERMIDDAG API
+// ============================================
+
+// Hent jegermiddag-info for en prøve (offentlig)
+app.get("/api/prover/:id/jegermiddag", (c) => {
+  const proveId = c.req.param("id");
+
+  const config = db.prepare(`
+    SELECT jegermiddag_aktivert, jegermiddag_dato, jegermiddag_tid,
+           jegermiddag_sted, jegermiddag_pris, jegermiddag_maks_personer,
+           jegermiddag_info, jegermiddag_frist
+    FROM prove_config
+    WHERE prove_id = ?
+  `).get(proveId);
+
+  if (!config || !config.jegermiddag_aktivert) {
+    return c.json({ aktivert: false });
+  }
+
+  // Tell antall påmeldte
+  const stats = db.prepare(`
+    SELECT COUNT(*) as antall_pameldinger, SUM(antall_personer) as total_personer
+    FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND status != 'avmeldt'
+  `).get(proveId);
+
+  return c.json({
+    aktivert: true,
+    dato: config.jegermiddag_dato,
+    tid: config.jegermiddag_tid,
+    sted: config.jegermiddag_sted,
+    pris: config.jegermiddag_pris,
+    maks_personer: config.jegermiddag_maks_personer,
+    info: config.jegermiddag_info,
+    frist: config.jegermiddag_frist,
+    antall_pameldinger: stats?.antall_pameldinger || 0,
+    total_personer: stats?.total_personer || 0,
+    plasser_igjen: config.jegermiddag_maks_personer - (stats?.total_personer || 0)
+  });
+});
+
+// Oppdater jegermiddag-konfigurasjon (admin)
+app.put("/api/prover/:id/jegermiddag/config", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+
+  // Opprett prove_config hvis den ikke finnes
+  db.prepare("INSERT OR IGNORE INTO prove_config (prove_id) VALUES (?)").run(proveId);
+
+  const fields = [
+    "jegermiddag_aktivert", "jegermiddag_dato", "jegermiddag_tid",
+    "jegermiddag_sted", "jegermiddag_pris", "jegermiddag_maks_personer",
+    "jegermiddag_info", "jegermiddag_frist"
+  ];
+
+  const sets = [];
+  const vals = [];
+  for (const f of fields) {
+    if (f in body) {
+      sets.push(`${f} = ?`);
+      vals.push(body[f]);
+    }
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    db.prepare(`UPDATE prove_config SET ${sets.join(", ")} WHERE prove_id = ?`).run(...vals, proveId);
+  }
+
+  return c.json({ ok: true });
+});
+
+// Hent alle jegermiddag-påmeldinger for en prøve (admin)
+app.get("/api/prover/:id/jegermiddag/pameldinger", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const pameldinger = db.prepare(`
+    SELECT jp.*, b.fornavn, b.etternavn, b.telefon, b.epost
+    FROM jegermiddag_pameldinger jp
+    JOIN brukere b ON jp.bruker_telefon = b.telefon
+    WHERE jp.prove_id = ?
+    ORDER BY jp.created_at ASC
+  `).all(proveId);
+
+  // Statistikk
+  const stats = {
+    totalt_pameldinger: pameldinger.length,
+    totalt_personer: pameldinger.reduce((sum, p) => sum + (p.antall_personer || 1), 0),
+    antall_vegetar: pameldinger.filter(p => p.vegetar).reduce((sum, p) => sum + p.antall_personer, 0),
+    antall_med_allergi: pameldinger.filter(p => p.allergier && p.allergier.trim()).length,
+    antall_betalt: pameldinger.filter(p => p.betalt).length,
+    sum_betalt: pameldinger.filter(p => p.betalt).reduce((sum, p) => sum + (p.belop || 0), 0)
+  };
+
+  return c.json({ items: pameldinger, stats });
+});
+
+// Meld på til jegermiddag (deltaker)
+app.post("/api/prover/:id/jegermiddag/pamelding", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  // Sjekk at brukeren er påmeldt prøven (som fører eller har hund påmeldt)
+  const erPameldt = db.prepare(`
+    SELECT COUNT(*) as count FROM pameldinger
+    WHERE prove_id = ? AND (forer_telefon = ? OR eier_telefon = ?)
+  `).get(proveId, bruker.telefon, bruker.telefon);
+
+  // Sjekk også om brukeren er team-medlem eller har en offisiell rolle
+  const erTeam = db.prepare(`
+    SELECT COUNT(*) as count FROM prove_team
+    WHERE prove_id = ? AND telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  const prove = db.prepare(`
+    SELECT proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon
+    FROM prover WHERE id = ?
+  `).get(proveId);
+
+  const erOffisiellRolle = prove && (
+    prove.proveleder_telefon === bruker.telefon ||
+    prove.nkkrep_telefon === bruker.telefon ||
+    prove.nkkvara_telefon === bruker.telefon ||
+    prove.dvk_telefon === bruker.telefon
+  );
+
+  if (!erPameldt?.count && !erTeam?.count && !erOffisiellRolle) {
+    return c.json({
+      error: "Du må være påmeldt prøven (som deltaker, team-medlem eller med offisiell rolle) for å melde deg på jegermiddag"
+    }, 403);
+  }
+
+  // Sjekk at jegermiddag er aktivert
+  const config = db.prepare(`
+    SELECT jegermiddag_aktivert, jegermiddag_maks_personer, jegermiddag_pris, jegermiddag_frist
+    FROM prove_config WHERE prove_id = ?
+  `).get(proveId);
+
+  if (!config || !config.jegermiddag_aktivert) {
+    return c.json({ error: "Jegermiddag er ikke aktivert for denne prøven" }, 400);
+  }
+
+  // Sjekk frist
+  if (config.jegermiddag_frist) {
+    const frist = new Date(config.jegermiddag_frist);
+    if (new Date() > frist) {
+      return c.json({ error: "Påmeldingsfristen for jegermiddag har gått ut" }, 400);
+    }
+  }
+
+  // Sjekk om det er plass
+  const stats = db.prepare(`
+    SELECT SUM(antall_personer) as total
+    FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND status != 'avmeldt'
+  `).get(proveId);
+
+  const antallPersoner = body.antall_personer || 1;
+  if ((stats?.total || 0) + antallPersoner > config.jegermiddag_maks_personer) {
+    return c.json({ error: "Det er ikke nok ledige plasser" }, 400);
+  }
+
+  // Sjekk om bruker allerede er påmeldt
+  const eksisterende = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  if (eksisterende) {
+    return c.json({ error: "Du er allerede påmeldt jegermiddag" }, 400);
+  }
+
+  const belop = config.jegermiddag_pris * antallPersoner;
+
+  db.prepare(`
+    INSERT INTO jegermiddag_pameldinger
+    (prove_id, bruker_telefon, antall_personer, allergier, vegetar, annen_info, belop)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    proveId,
+    bruker.telefon,
+    antallPersoner,
+    body.allergier || '',
+    body.vegetar ? 1 : 0,
+    body.annen_info || '',
+    belop
+  );
+
+  const pamelding = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  return c.json({ ok: true, pamelding });
+});
+
+// Oppdater jegermiddag-påmelding (deltaker)
+app.put("/api/prover/:id/jegermiddag/pamelding", requireAuth, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const eksisterende = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  if (!eksisterende) {
+    return c.json({ error: "Du er ikke påmeldt jegermiddag" }, 404);
+  }
+
+  // Hent konfig for prisberegning
+  const config = db.prepare(`
+    SELECT jegermiddag_pris FROM prove_config WHERE prove_id = ?
+  `).get(proveId);
+
+  const antallPersoner = body.antall_personer || eksisterende.antall_personer;
+  const belop = (config?.jegermiddag_pris || 350) * antallPersoner;
+
+  db.prepare(`
+    UPDATE jegermiddag_pameldinger
+    SET antall_personer = ?, allergier = ?, vegetar = ?, annen_info = ?, belop = ?, updated_at = datetime('now')
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).run(
+    antallPersoner,
+    body.allergier || eksisterende.allergier,
+    body.vegetar ? 1 : 0,
+    body.annen_info || eksisterende.annen_info,
+    belop,
+    proveId,
+    bruker.telefon
+  );
+
+  const oppdatert = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  return c.json({ ok: true, pamelding: oppdatert });
+});
+
+// Meld av fra jegermiddag (deltaker)
+app.delete("/api/prover/:id/jegermiddag/pamelding", requireAuth, (c) => {
+  const proveId = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const eksisterende = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).get(proveId, bruker.telefon);
+
+  if (!eksisterende) {
+    return c.json({ error: "Du er ikke påmeldt jegermiddag" }, 404);
+  }
+
+  // Marker som avmeldt (beholder historikk)
+  db.prepare(`
+    UPDATE jegermiddag_pameldinger
+    SET status = 'avmeldt', updated_at = datetime('now')
+    WHERE prove_id = ? AND bruker_telefon = ?
+  `).run(proveId, bruker.telefon);
+
+  return c.json({ ok: true });
+});
+
+// Hent min jegermiddag-påmelding for en prøve
+app.get("/api/prover/:id/jegermiddag/min-pamelding", requireAuth, (c) => {
+  const proveId = c.req.param("id");
+  const bruker = c.get("bruker");
+
+  const pamelding = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE prove_id = ? AND bruker_telefon = ? AND status != 'avmeldt'
+  `).get(proveId, bruker.telefon);
+
+  return c.json({ pamelding: pamelding || null });
+});
+
+// Oppdater betalingsstatus for jegermiddag-påmelding (admin)
+app.put("/api/prover/:proveId/jegermiddag/pameldinger/:id/betaling", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const pamelding = db.prepare(`
+    SELECT * FROM jegermiddag_pameldinger
+    WHERE id = ? AND prove_id = ?
+  `).get(id, proveId);
+
+  if (!pamelding) {
+    return c.json({ error: "Påmelding ikke funnet" }, 404);
+  }
+
+  db.prepare(`
+    UPDATE jegermiddag_pameldinger
+    SET betalt = ?, betalt_dato = ?, status = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    body.betalt ? 1 : 0,
+    body.betalt ? (body.betalt_dato || new Date().toISOString().split('T')[0]) : null,
+    body.betalt ? 'betalt' : 'pameldt',
+    id
+  );
+
+  return c.json({ ok: true });
+});
+
+// Eksporter jegermiddag-liste til Excel (admin)
+app.get("/api/prover/:id/jegermiddag/eksport", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
+  const pameldinger = db.prepare(`
+    SELECT jp.*, b.fornavn, b.etternavn, b.telefon, b.epost
+    FROM jegermiddag_pameldinger jp
+    JOIN brukere b ON jp.bruker_telefon = b.telefon
+    WHERE jp.prove_id = ? AND jp.status != 'avmeldt'
+    ORDER BY jp.created_at ASC
+  `).all(proveId);
+
+  // Bygg Excel-data
+  const data = pameldinger.map((p, i) => ({
+    'Nr': i + 1,
+    'Navn': `${p.fornavn} ${p.etternavn}`,
+    'Telefon': p.telefon,
+    'E-post': p.epost || '',
+    'Antall personer': p.antall_personer,
+    'Allergier': p.allergier || '',
+    'Vegetar': p.vegetar ? 'Ja' : 'Nei',
+    'Annen info': p.annen_info || '',
+    'Beløp': `${p.belop} kr`,
+    'Betalt': p.betalt ? 'Ja' : 'Nei',
+    'Status': p.status
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Jegermiddag');
+
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+  const filename = `jegermiddag_${prove?.navn || proveId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`
+    }
+  });
+});
+
+// ============================================
+// FRATATTE AVERSJONSBEVIS (NJFF-RAPPORT)
+// ============================================
+
+// Registrer fratatt aversjonsbevis
+app.post("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const bruker = c.get("bruker");
+
+  const { hund_id, arsak, hendelsesdato, kommentar } = body;
+
+  if (!hund_id || !arsak) {
+    return c.json({ error: "Hund og årsak er påkrevd" }, 400);
+  }
+
+  // Hent hund-info
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(hund_id);
+  if (!hund) {
+    return c.json({ error: "Hund ikke funnet" }, 404);
+  }
+
+  // Hent eier-info
+  let eierNavn = hund.eier_navn || 'Ukjent';
+  let eierAdresse = '';
+  if (hund.eier_telefon) {
+    const eier = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(hund.eier_telefon);
+    if (eier) {
+      eierNavn = `${eier.fornavn || ''} ${eier.etternavn || ''}`.trim() || eierNavn;
+      eierAdresse = eier.adresse || '';
+    }
+  }
+
+  // Sjekk om allerede registrert
+  const eksisterer = db.prepare(`
+    SELECT id FROM fratatte_aversjonsbevis WHERE prove_id = ? AND hund_id = ?
+  `).get(proveId, hund_id);
+
+  if (eksisterer) {
+    return c.json({ error: "Denne hunden er allerede registrert med fratatt aversjonsbevis for denne prøven" }, 400);
+  }
+
+  db.prepare(`
+    INSERT INTO fratatte_aversjonsbevis
+    (prove_id, hund_id, eier_navn, eier_telefon, eier_adresse, hund_navn, hund_regnr, hund_rase, hund_chip_id, arsak, hendelsesdato, registrert_av, kommentar)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    proveId,
+    hund_id,
+    eierNavn,
+    hund.eier_telefon || null,
+    eierAdresse,
+    hund.navn,
+    hund.regnr || '',
+    hund.rase || '',
+    hund.chip_id || hund.aversjonsbevis_chip_id || '',
+    arsak,
+    hendelsesdato || new Date().toISOString().split('T')[0],
+    bruker.telefon,
+    kommentar || ''
+  );
+
+  // Marker hundens aversjonsbevis som fratatt i hunder-tabellen
+  db.prepare(`
+    UPDATE hunder SET aversjonsbevis_godkjent = -1, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(hund_id);
+
+  return c.json({ ok: true });
+});
+
+// Hent alle fratatte aversjonsbevis for en prøve
+app.get("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const fratatte = db.prepare(`
+    SELECT fa.*, p.navn as prove_navn, p.start_dato as prove_dato
+    FROM fratatte_aversjonsbevis fa
+    JOIN prover p ON fa.prove_id = p.id
+    WHERE fa.prove_id = ?
+    ORDER BY fa.created_at DESC
+  `).all(proveId);
+
+  return c.json({ items: fratatte, count: fratatte.length });
+});
+
+// Slett registrering av fratatt aversjonsbevis
+app.delete("/api/prover/:proveId/fratatte-aversjonsbevis/:id", requireAdmin, (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+
+  const fratatt = db.prepare(`
+    SELECT * FROM fratatte_aversjonsbevis WHERE id = ? AND prove_id = ?
+  `).get(id, proveId);
+
+  if (!fratatt) {
+    return c.json({ error: "Registrering ikke funnet" }, 404);
+  }
+
+  // Gjenopprett hundens aversjonsbevis-status
+  db.prepare(`
+    UPDATE hunder SET aversjonsbevis_godkjent = 1, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(fratatt.hund_id);
+
+  db.prepare("DELETE FROM fratatte_aversjonsbevis WHERE id = ?").run(id);
+
+  return c.json({ ok: true });
+});
+
+// Eksporter NJFF-rapport (Excel)
+app.get("/api/prover/:id/fratatte-aversjonsbevis/eksport", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  const prove = db.prepare("SELECT navn, start_dato FROM prover WHERE id = ?").get(proveId);
+  const fratatte = db.prepare(`
+    SELECT * FROM fratatte_aversjonsbevis WHERE prove_id = ? ORDER BY created_at ASC
+  `).all(proveId);
+
+  // Bygg Excel-data
+  const data = fratatte.map((f, i) => ({
+    'Nr': i + 1,
+    'Hundens navn': f.hund_navn,
+    'Reg.nr': f.hund_regnr,
+    'Rase': f.hund_rase,
+    'Chip-ID': f.hund_chip_id || '',
+    'Eiers navn': f.eier_navn,
+    'Eiers telefon': f.eier_telefon || '',
+    'Eiers adresse': f.eier_adresse || '',
+    'Årsak til fratakelse': f.arsak,
+    'Hendelsesdato': f.hendelsesdato,
+    'Kommentar': f.kommentar || '',
+    'Registrert dato': f.created_at?.split('T')[0] || ''
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Fratatte aversjonsbevis');
+
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+  const filename = `njff_fratatte_aversjonsbevis_${prove?.navn || proveId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`
+    }
+  });
+});
+
+// Marker som meldt til NJFF
+app.put("/api/prover/:proveId/fratatte-aversjonsbevis/:id/meldt", requireAdmin, async (c) => {
+  const proveId = c.req.param("proveId");
+  const id = c.req.param("id");
+
+  db.prepare(`
+    UPDATE fratatte_aversjonsbevis
+    SET meldt_njff = 1, meldt_njff_dato = date('now'), updated_at = datetime('now')
+    WHERE id = ? AND prove_id = ?
+  `).run(id, proveId);
+
+  return c.json({ ok: true });
+});
+
+// Hent hunder med uønsket adferd fra kritikker (for NJFF-visning)
+app.get("/api/prover/:id/uonsket-adferd", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent kritikker med uønsket adferd fra denne prøven
+  // Vi sjekker både det nye uonsket_adferd-feltet og adferd-tekstfeltet (for bakoverkompatibilitet)
+  const kritikker = db.prepare(`
+    SELECT
+      k.id as kritikk_id,
+      k.hund_id,
+      k.dato,
+      k.klasse,
+      k.parti,
+      k.uonsket_adferd,
+      k.uonsket_adferd_tekst,
+      k.adferd,
+      k.dommer_telefon,
+      h.navn as hund_navn,
+      h.regnr as hund_regnr,
+      h.rase as hund_rase,
+      h.eier_telefon,
+      COALESCE(eier.fornavn || ' ' || eier.etternavn, '') as eier_navn,
+      b.fornavn as dommer_fornavn,
+      b.etternavn as dommer_etternavn
+    FROM kritikker k
+    JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere eier ON h.eier_telefon = eier.telefon
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.prove_id = ?
+      AND (k.uonsket_adferd = 1 OR (k.adferd IS NOT NULL AND k.adferd != ''))
+    ORDER BY k.dato DESC, k.parti
+  `).all(proveId);
+
+  // Sjekk også hvilke av disse som allerede er registrert som fratatt
+  const fratatteIds = db.prepare(`
+    SELECT hund_id FROM fratatte_aversjonsbevis WHERE prove_id = ?
+  `).all(proveId).map(f => f.hund_id);
+
+  const resultat = kritikker.map(k => ({
+    ...k,
+    dommer_navn: [k.dommer_fornavn, k.dommer_etternavn].filter(Boolean).join(' ') || 'Ukjent dommer',
+    kommentar: k.uonsket_adferd_tekst || k.adferd || '',
+    allerede_fratatt: fratatteIds.includes(k.hund_id)
+  }));
+
+  return c.json({
+    items: resultat,
+    count: resultat.length,
+    ikke_fratatt_count: resultat.filter(r => !r.allerede_fratatt).length
+  });
 });
 
 // ============================================
@@ -4885,12 +9153,15 @@ app.post("/api/prover/:id/trekning", requireAdmin, async (c) => {
   });
 });
 
-// Hent trekning/partilister
+// Hent trekning/partilister (OFFENTLIG - uten telefonnumre)
+// GDPR: Dette endepunktet er offentlig tilgjengelig, så telefonnumre fjernes
 app.get("/api/prover/:id/partier", (c) => {
   const proveId = c.req.param("id");
 
   const pameldinger = db.prepare(`
-    SELECT p.*, h.navn as hund_navn, h.regnr, h.rase,
+    SELECT p.id, p.prove_id, p.hund_id, p.parti, p.startnummer, p.klasse,
+           p.makker_hund_id, p.status, p.created_at,
+           h.navn as hund_navn, h.regnr, h.rase,
            b.fornavn || ' ' || b.etternavn as forer_navn,
            e.fornavn || ' ' || e.etternavn as eier_navn,
            mh.navn as makker_navn, mh.regnr as makker_regnr
@@ -4915,24 +9186,360 @@ app.get("/api/prover/:id/partier", (c) => {
   return c.json({ partier });
 });
 
-// Hent prøver for en bruker (der brukeren har en rolle)
+// ========================================
+// PARTILISTER - Server-lagring
+// ========================================
+
+// Hent alle partier med deltakere for en prøve
+// VIKTIG: Dette endepunktet er OFFENTLIG - telefonnumre MÅ IKKE eksponeres!
+// Admin-versjonen med telefonnumre er /api/prover/:id/partilister/admin
+app.get("/api/prover/:id/partilister", (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent partier
+  const partier = db.prepare(`
+    SELECT * FROM partier WHERE prove_id = ? ORDER BY sortering, dato, navn
+  `).all(proveId);
+
+  // Hent deltakere for hvert parti
+  const deltakere = db.prepare(`
+    SELECT pd.*, p.navn as parti_navn
+    FROM parti_deltakere pd
+    JOIN partier p ON pd.parti_id = p.id
+    WHERE pd.prove_id = ?
+    ORDER BY pd.startnummer
+  `).all(proveId);
+
+  // Bygg opp struktur som matcher localStorage-formatet
+  // GDPR: Telefonnumre fjernes fra offentlig API
+  const result = partier.map(parti => ({
+    id: parti.id,
+    name: parti.navn,
+    displayName: parti.display_navn || parti.navn,
+    type: parti.type,
+    date: parti.dato,
+    klasse: parti.klasse,
+    dogs: deltakere
+      .filter(d => d.parti_id === parti.id)
+      .map(d => ({
+        regnr: d.hund_regnr,
+        hundenavn: d.hund_navn,
+        rase: d.rase,
+        kjonn: d.kjonn,
+        klasse: d.klasse,
+        eier: d.eier_navn,
+        // eierTelefon fjernet fra offentlig API (GDPR)
+        forer: d.forer_navn,
+        // forerTelefon fjernet fra offentlig API (GDPR)
+        startnummer: d.startnummer,
+        confirmed: d.bekreftet === 1,
+        status: d.status
+      }))
+  }));
+
+  return c.json(result);
+});
+
+// Admin-versjon med telefonnumre (krever autentisering)
+app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
+  const proveId = c.req.param("id");
+
+  // Hent partier
+  const partier = db.prepare(`
+    SELECT * FROM partier WHERE prove_id = ? ORDER BY sortering, dato, navn
+  `).all(proveId);
+
+  // Hent deltakere for hvert parti
+  const deltakere = db.prepare(`
+    SELECT pd.*, p.navn as parti_navn
+    FROM parti_deltakere pd
+    JOIN partier p ON pd.parti_id = p.id
+    WHERE pd.prove_id = ?
+    ORDER BY pd.startnummer
+  `).all(proveId);
+
+  // Full versjon med telefonnumre for admin
+  const result = partier.map(parti => ({
+    id: parti.id,
+    name: parti.navn,
+    displayName: parti.display_navn || parti.navn,
+    type: parti.type,
+    date: parti.dato,
+    klasse: parti.klasse,
+    dogs: deltakere
+      .filter(d => d.parti_id === parti.id)
+      .map(d => ({
+        regnr: d.hund_regnr,
+        hundenavn: d.hund_navn,
+        rase: d.rase,
+        kjonn: d.kjonn,
+        klasse: d.klasse,
+        eier: d.eier_navn,
+        eierTelefon: d.eier_telefon,
+        forer: d.forer_navn,
+        forerTelefon: d.forer_telefon,
+        startnummer: d.startnummer,
+        confirmed: d.bekreftet === 1,
+        status: d.status
+      }))
+  }));
+
+  return c.json(result);
+});
+
+// Lagre partilister (erstatter alle eksisterende for prøven)
+app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { partier } = body;
+
+  if (!Array.isArray(partier)) {
+    return c.json({ error: "partier må være en array" }, 400);
+  }
+
+  // Verifiser at prøven eksisterer
+  const prove = db.prepare("SELECT id FROM prover WHERE id = ?").get(proveId);
+  if (!prove) {
+    return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  try {
+    // Start transaksjon
+    db.exec("BEGIN TRANSACTION");
+
+    // Slett eksisterende partier og deltakere for denne prøven
+    db.prepare("DELETE FROM parti_deltakere WHERE prove_id = ?").run(proveId);
+    db.prepare("DELETE FROM partier WHERE prove_id = ?").run(proveId);
+
+    // Sett inn nye partier
+    const insertParti = db.prepare(`
+      INSERT INTO partier (prove_id, navn, display_navn, type, dato, klasse, sortering)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertDeltaker = db.prepare(`
+      INSERT INTO parti_deltakere (parti_id, prove_id, hund_regnr, hund_navn, rase, kjonn, klasse,
+                                   eier_navn, eier_telefon, forer_navn, forer_telefon, startnummer, bekreftet, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let sortering = 0;
+    for (const parti of partier) {
+      // Sett inn parti
+      const partiResult = insertParti.run(
+        proveId,
+        parti.name,
+        parti.displayName || parti.name,
+        parti.type || 'ukak',
+        parti.date || null,
+        parti.klasse || null,
+        sortering++
+      );
+
+      const partiId = partiResult.lastInsertRowid;
+
+      // Sett inn deltakere (hunder)
+      if (Array.isArray(parti.dogs)) {
+        let startnummer = 1;
+        for (const dog of parti.dogs) {
+          insertDeltaker.run(
+            partiId,
+            proveId,
+            dog.regnr || '',
+            dog.hundenavn || dog.navn || '',
+            dog.rase || '',
+            dog.kjonn || '',
+            dog.klasse || '',
+            dog.eier || '',
+            dog.eierTelefon || '',
+            dog.forer || '',
+            dog.forerTelefon || '',
+            dog.startnummer || startnummer++,
+            dog.confirmed ? 1 : 0,
+            dog.status || 'aktiv'
+          );
+        }
+      }
+    }
+
+    db.exec("COMMIT");
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "partilister_lagret",
+      `Lagret ${partier.length} partier med totalt ${partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)} deltakere for prøve ${proveId}`
+    );
+
+    return c.json({
+      success: true,
+      partier: partier.length,
+      deltakere: partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)
+    });
+
+  } catch (err) {
+    db.exec("ROLLBACK");
+    console.error("Feil ved lagring av partilister:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent venteliste for en prøve
+app.get("/api/prover/:id/venteliste", (c) => {
+  const proveId = c.req.param("id");
+
+  const venteliste = db.prepare(`
+    SELECT * FROM venteliste WHERE prove_id = ? ORDER BY dag, klasse, prioritet
+  `).all(proveId);
+
+  // Grupper etter dag og klasse (matcher localStorage-format, støtter 1-4 dager)
+  const result = {
+    dag1: { uk: [], ak: [] },
+    dag2: { uk: [], ak: [] },
+    dag3: { uk: [], ak: [] },
+    dag4: { uk: [], ak: [] },
+    vk: []
+  };
+
+  for (const v of venteliste) {
+    const entry = {
+      regnr: v.hund_regnr,
+      hundenavn: v.hund_navn,
+      rase: v.rase,
+      klasse: v.klasse,
+      eier: v.eier_navn,
+      forer: v.forer_navn
+    };
+
+    if (v.klasse === 'VK') {
+      result.vk.push(entry);
+    } else if (v.dag >= 1 && v.dag <= 4) {
+      const dagKey = `dag${v.dag}`;
+      if (v.klasse === 'UK') result[dagKey].uk.push(entry);
+      else result[dagKey].ak.push(entry);
+    }
+  }
+
+  return c.json(result);
+});
+
+// Lagre venteliste
+app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+  const { venteliste } = body;
+
+  if (!venteliste || typeof venteliste !== 'object') {
+    return c.json({ error: "venteliste må være et objekt" }, 400);
+  }
+
+  try {
+    const insert = db.prepare(`
+      INSERT INTO venteliste (prove_id, hund_regnr, hund_navn, rase, klasse, dag, eier_navn, forer_navn, prioritet)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const saveAll = db.transaction(() => {
+      db.prepare("DELETE FROM venteliste WHERE prove_id = ?").run(proveId);
+
+      let total = 0;
+
+      for (let d = 1; d <= 4; d++) {
+        const dagKey = `dag${d}`;
+        if (Array.isArray(venteliste[dagKey]?.uk)) {
+          let prio = 0;
+          for (const v of venteliste[dagKey].uk) {
+            insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'UK', d, v.eier || '', v.forer || '', prio++);
+            total++;
+          }
+        }
+        if (Array.isArray(venteliste[dagKey]?.ak)) {
+          let prio = 0;
+          for (const v of venteliste[dagKey].ak) {
+            insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'AK', d, v.eier || '', v.forer || '', prio++);
+            total++;
+          }
+        }
+      }
+
+      if (Array.isArray(venteliste.vk)) {
+        let prio = 0;
+        for (const v of venteliste.vk) {
+          insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'VK', null, v.eier || '', v.forer || '', prio++);
+          total++;
+        }
+      }
+
+      return total;
+    });
+
+    const total = saveAll();
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "venteliste_lagret",
+      `Lagret venteliste med ${total} hunder for prøve ${proveId}`
+    );
+
+    return c.json({ success: true, total });
+
+  } catch (err) {
+    console.error("Feil ved lagring av venteliste:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent prøver for en bruker (der brukeren har en rolle ELLER er påmeldt som deltaker ELLER er team-medlem)
 app.get("/api/brukere/:telefon/prover", (c) => {
   const telefon = c.req.param("telefon");
 
-  // Finn prøver der bruker er prøveleder, NKK-rep, eller dommer
+  // Finn prøver der bruker er prøveleder, NKK-rep, dommer, NKK-vara, DVK, DELTAKER, eller TEAM-MEDLEM
   const prover = db.prepare(`
     SELECT DISTINCT p.*, k.navn as klubb_navn,
            CASE
              WHEN p.proveleder_telefon = ? THEN 'proveleder'
              WHEN p.nkkrep_telefon = ? THEN 'nkkrep'
+             WHEN p.nkkvara_telefon = ? THEN 'nkkvara'
+             WHEN p.dvk_telefon = ? THEN 'dvk'
              ELSE NULL
-           END as admin_rolle
+           END as admin_rolle,
+           CASE
+             WHEN EXISTS (
+               SELECT 1 FROM pameldinger pm
+               JOIN hunder h ON pm.hund_id = h.id
+               WHERE pm.prove_id = p.id
+                 AND (pm.forer_telefon = ? OR h.eier_telefon = ?)
+                 AND pm.status NOT IN ('avmeldt')
+             ) THEN 1
+             WHEN EXISTS (
+               SELECT 1 FROM parti_deltakere pd
+               WHERE pd.prove_id = p.id AND pd.forer_telefon = ?
+             ) THEN 1
+             ELSE 0
+           END as er_deltaker,
+           (SELECT rolle FROM prove_team WHERE prove_id = p.id AND telefon = ?) as team_rolle
     FROM prover p
     LEFT JOIN klubber k ON p.klubb_id = k.id
-    WHERE p.proveleder_telefon = ? OR p.nkkrep_telefon = ?
+    WHERE p.proveleder_telefon = ?
+       OR p.nkkrep_telefon = ?
+       OR p.nkkvara_telefon = ?
+       OR p.dvk_telefon = ?
        OR p.id IN (SELECT prove_id FROM dommer_tildelinger WHERE dommer_telefon = ?)
+       OR p.id IN (
+         SELECT pm.prove_id FROM pameldinger pm
+         JOIN hunder h ON pm.hund_id = h.id
+         WHERE (pm.forer_telefon = ? OR h.eier_telefon = ?)
+           AND pm.status NOT IN ('avmeldt')
+       )
+       OR p.id IN (
+         SELECT pd.prove_id FROM parti_deltakere pd
+         WHERE pd.forer_telefon = ?
+       )
+       OR p.id IN (
+         SELECT prove_id FROM prove_team WHERE telefon = ?
+       )
     ORDER BY p.start_dato DESC
-  `).all(telefon, telefon, telefon, telefon, telefon);
+  `).all(
+    telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon,
+    telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon, telefon
+  );
 
   // Hent dommer-info for hver prøve
   const getDommerInfo = db.prepare("SELECT parti, dommer_rolle FROM dommer_tildelinger WHERE prove_id = ? AND dommer_telefon = ?");
@@ -4943,7 +9550,9 @@ app.get("/api/brukere/:telefon/prover", (c) => {
       ...p,
       klasser: JSON.parse(p.klasser || '{}'),
       partier: JSON.parse(p.partier || '{}'),
-      dommerInfo: dommerInfo || null
+      dommerInfo: dommerInfo || null,
+      erDeltaker: p.er_deltaker === 1,
+      teamRolle: p.team_rolle || null
     };
   });
 
@@ -5449,6 +10058,492 @@ app.post("/api/hunder/:id/aversjonsbevis/godkjenn", (c) => {
   return c.json({ success: true, message: "Aversjonsbevis godkjent" });
 });
 
+// Last opp og analyser aversjonsbevis med AI (utvidet versjon)
+app.post("/api/hunder/:id/aversjonsbevis/analyser", async (c) => {
+  const id = c.req.param("id");
+
+  // Sjekk at hunden finnes
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const body = await c.req.json();
+  const { bilde } = body;
+
+  if (!bilde) {
+    return c.json({ error: "Bilde er påkrevd" }, 400);
+  }
+
+  // Sjekk at bildet er base64 og ikke for stort (maks 10MB for AI-analyse)
+  let base64Data = bilde;
+  let mediaType = "image/jpeg";
+
+  // Håndter data URL format
+  const dataUrlMatch = bilde.match(/^data:(image\/[a-z]+|application\/pdf);base64,(.+)$/i);
+  if (dataUrlMatch) {
+    mediaType = dataUrlMatch[1];
+    base64Data = dataUrlMatch[2];
+  }
+
+  const sizeInBytes = (base64Data.length * 3) / 4;
+  const maxSize = 10 * 1024 * 1024; // 10MB
+
+  if (sizeInBytes > maxSize) {
+    return c.json({ error: "Filen er for stor. Maks 10MB tillatt." }, 400);
+  }
+
+  // Hvis AI ikke er konfigurert, returner en melding om manuell utfylling
+  if (!aiConfigured) {
+    // Lagre bildet uten AI-analyse
+    db.prepare(`
+      UPDATE hunder
+      SET aversjonsbevis = ?,
+          aversjonsbevis_dato = ?,
+          aversjonsbevis_godkjent = 0,
+          aversjonsbevis_bekreftet = 0
+      WHERE id = ?
+    `).run(bilde, new Date().toISOString().slice(0, 10), id);
+
+    return c.json({
+      success: true,
+      aiAnalyse: false,
+      melding: "Bilde lagret. AI-avlesning er ikke konfigurert - vennligst fyll inn feltene manuelt.",
+      avlestData: null
+    });
+  }
+
+  // Kall Claude API for bildeanalyse
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: base64Data
+              }
+            },
+            {
+              type: "text",
+              text: `Analyser dette aversjonsbeviset for en hund. Trekk ut følgende informasjon og returner som JSON:
+
+{
+  "dyretype": "Sau eller Rein (hva hunden har aversjon mot)",
+  "gyldig": true/false (om beviset viser at hunden er godkjent/gyldig),
+  "chip_id": "Hundens ID-nummer/chip-nummer (15 siffer)",
+  "hundenavn": "Hundens fulle navn",
+  "regnr": "Registreringsnummer (f.eks. NO12345/2020 eller DK14775/2018)",
+  "rase": "Hundens rase",
+  "dato_godkjent": "Dato for godkjent aversjon (format: YYYY-MM-DD)",
+  "dato_utstedt": "Dagens dato på beviset (format: YYYY-MM-DD)",
+  "lesbarhet": "god/middels/dårlig - hvor lesbart er dokumentet",
+  "kommentar": "Eventuelle merknader om avlesningen"
+}
+
+Returner KUN gyldig JSON, ingen annen tekst. Hvis et felt ikke kan leses, sett verdien til null.`
+            }
+          ]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Claude API feil:", errorText);
+
+      // Lagre bildet uten AI-data ved feil
+      db.prepare(`
+        UPDATE hunder
+        SET aversjonsbevis = ?,
+            aversjonsbevis_dato = ?,
+            aversjonsbevis_godkjent = 0,
+            aversjonsbevis_bekreftet = 0
+        WHERE id = ?
+      `).run(bilde, new Date().toISOString().slice(0, 10), id);
+
+      return c.json({
+        success: true,
+        aiAnalyse: false,
+        melding: "Bilde lagret, men AI-avlesning feilet. Vennligst fyll inn feltene manuelt.",
+        avlestData: null
+      });
+    }
+
+    const aiResponse = await response.json();
+    const aiText = aiResponse.content?.[0]?.text || "";
+
+    // Parse JSON fra AI-respons
+    let avlestData = null;
+    try {
+      // Finn JSON i responsen (kan være pakket inn i markdown code blocks)
+      const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        avlestData = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseErr) {
+      console.error("Kunne ikke parse AI-respons:", parseErr, aiText);
+    }
+
+    // Lagre bildet og AI-avlest data
+    db.prepare(`
+      UPDATE hunder
+      SET aversjonsbevis = ?,
+          aversjonsbevis_dato = ?,
+          aversjonsbevis_dyretype = ?,
+          aversjonsbevis_chip_id = ?,
+          aversjonsbevis_avlest_navn = ?,
+          aversjonsbevis_avlest_regnr = ?,
+          aversjonsbevis_avlest_rase = ?,
+          aversjonsbevis_gyldig = ?,
+          aversjonsbevis_godkjent = 0,
+          aversjonsbevis_bekreftet = 0
+      WHERE id = ?
+    `).run(
+      bilde,
+      avlestData?.dato_godkjent || new Date().toISOString().slice(0, 10),
+      avlestData?.dyretype || null,
+      avlestData?.chip_id || null,
+      avlestData?.hundenavn || null,
+      avlestData?.regnr || null,
+      avlestData?.rase || null,
+      avlestData?.gyldig === true ? 1 : (avlestData?.gyldig === false ? 0 : null),
+      id
+    );
+
+    // Sjekk om avlest data matcher hundens registrerte data
+    const matchWarnings = [];
+    if (avlestData?.regnr && hund.regnr) {
+      const normalizedAvlest = (avlestData.regnr || "").replace(/\s/g, "").toUpperCase();
+      const normalizedHund = (hund.regnr || "").replace(/\s/g, "").toUpperCase();
+      if (normalizedAvlest !== normalizedHund) {
+        matchWarnings.push(`Registreringsnummer på beviset (${avlestData.regnr}) stemmer ikke med hundens registrerte nummer (${hund.regnr})`);
+      }
+    }
+    if (avlestData?.hundenavn && hund.navn) {
+      const navnLikhet = avlestData.hundenavn.toLowerCase().includes(hund.navn.toLowerCase()) ||
+                         hund.navn.toLowerCase().includes(avlestData.hundenavn.toLowerCase());
+      if (!navnLikhet) {
+        matchWarnings.push(`Hundenavn på beviset (${avlestData.hundenavn}) kan avvike fra registrert navn (${hund.navn})`);
+      }
+    }
+
+    return c.json({
+      success: true,
+      aiAnalyse: true,
+      avlestData: avlestData,
+      matchWarnings: matchWarnings,
+      lesbarhet: avlestData?.lesbarhet || "ukjent",
+      melding: avlestData?.lesbarhet === "dårlig"
+        ? "Dokumentet var vanskelig å lese. Vennligst kontroller at dataen er riktig."
+        : "Aversjonsbevis analysert. Vennligst bekreft at informasjonen er korrekt."
+    });
+
+  } catch (err) {
+    console.error("AI-analyse feil:", err);
+
+    // Lagre bildet ved feil
+    db.prepare(`
+      UPDATE hunder
+      SET aversjonsbevis = ?,
+          aversjonsbevis_dato = ?,
+          aversjonsbevis_godkjent = 0,
+          aversjonsbevis_bekreftet = 0
+      WHERE id = ?
+    `).run(bilde, new Date().toISOString().slice(0, 10), id);
+
+    return c.json({
+      success: true,
+      aiAnalyse: false,
+      melding: "Bilde lagret, men AI-avlesning feilet. Vennligst fyll inn feltene manuelt.",
+      avlestData: null
+    });
+  }
+});
+
+// Bekreft/oppdater avlest aversjonsbevis-data
+app.post("/api/hunder/:id/aversjonsbevis/bekreft", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+
+  const {
+    dyretype,
+    chip_id,
+    hundenavn,
+    regnr,
+    rase,
+    dato_godkjent,
+    gyldig,
+    bekreftet_av
+  } = body;
+
+  db.prepare(`
+    UPDATE hunder
+    SET aversjonsbevis_dyretype = ?,
+        aversjonsbevis_chip_id = ?,
+        aversjonsbevis_avlest_navn = ?,
+        aversjonsbevis_avlest_regnr = ?,
+        aversjonsbevis_avlest_rase = ?,
+        aversjonsbevis_dato = ?,
+        aversjonsbevis_gyldig = ?,
+        aversjonsbevis_bekreftet = 1,
+        aversjonsbevis_bekreftet_av = ?,
+        aversjonsbevis_bekreftet_dato = ?
+    WHERE id = ?
+  `).run(
+    dyretype || null,
+    chip_id || null,
+    hundenavn || null,
+    regnr || null,
+    rase || null,
+    dato_godkjent || null,
+    gyldig === true ? 1 : (gyldig === false ? 0 : null),
+    bekreftet_av || null,
+    new Date().toISOString(),
+    id
+  );
+
+  return c.json({ success: true, message: "Aversjonsbevis bekreftet og lagret" });
+});
+
+// Hent alle hunder med aversjonsbevis-status (for DVK/admin)
+app.get("/api/prover/:proveId/aversjonsbevis-oversikt", (c) => {
+  const proveId = c.req.param("proveId");
+
+  // Hent alle deltakere på prøven med aversjonsbevis-info
+  const deltakere = db.prepare(`
+    SELECT
+      h.id,
+      h.navn,
+      h.regnr,
+      h.rase,
+      h.aversjonsbevis IS NOT NULL as har_bevis,
+      h.aversjonsbevis_dyretype as dyretype,
+      h.aversjonsbevis_dato as aversjon_dato,
+      h.aversjonsbevis_gyldig as gyldig,
+      h.aversjonsbevis_bekreftet as bekreftet,
+      h.aversjonsbevis_godkjent as godkjent,
+      pd.klasse,
+      p.navn as parti,
+      pd.eier_navn,
+      pd.eier_telefon
+    FROM parti_deltakere pd
+    LEFT JOIN hunder h ON pd.hund_regnr = h.regnr
+    LEFT JOIN partier p ON pd.parti_id = p.id
+    WHERE pd.prove_id = ?
+    ORDER BY h.aversjonsbevis IS NULL DESC, h.navn ASC
+  `).all(proveId);
+
+  // Beregn statistikk
+  const total = deltakere.length;
+  const medBevis = deltakere.filter(d => d.har_bevis).length;
+  const utenBevis = total - medBevis;
+  const bekreftet = deltakere.filter(d => d.bekreftet).length;
+  const godkjent = deltakere.filter(d => d.godkjent).length;
+
+  return c.json({
+    deltakere,
+    statistikk: {
+      total,
+      medBevis,
+      utenBevis,
+      bekreftet,
+      godkjent
+    }
+  });
+});
+
+// Hent utvidet aversjonsbevis-info for en hund
+app.get("/api/hunder/:id/aversjonsbevis/detaljer", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare(`
+    SELECT
+      id, navn, regnr, rase,
+      aversjonsbevis,
+      aversjonsbevis_dato,
+      aversjonsbevis_dyretype,
+      aversjonsbevis_chip_id,
+      aversjonsbevis_avlest_navn,
+      aversjonsbevis_avlest_regnr,
+      aversjonsbevis_avlest_rase,
+      aversjonsbevis_gyldig,
+      aversjonsbevis_godkjent,
+      aversjonsbevis_bekreftet,
+      aversjonsbevis_bekreftet_av,
+      aversjonsbevis_bekreftet_dato
+    FROM hunder WHERE id = ?
+  `).get(id);
+
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  return c.json({
+    harBevis: !!hund.aversjonsbevis,
+    bilde: hund.aversjonsbevis,
+    datoGodkjent: hund.aversjonsbevis_dato,
+    dyretype: hund.aversjonsbevis_dyretype,
+    chipId: hund.aversjonsbevis_chip_id,
+    avlestNavn: hund.aversjonsbevis_avlest_navn,
+    avlestRegnr: hund.aversjonsbevis_avlest_regnr,
+    avlestRase: hund.aversjonsbevis_avlest_rase,
+    gyldig: hund.aversjonsbevis_gyldig === 1,
+    godkjent: hund.aversjonsbevis_godkjent === 1,
+    bekreftet: hund.aversjonsbevis_bekreftet === 1,
+    bekreftetAv: hund.aversjonsbevis_bekreftet_av,
+    bekreftetDato: hund.aversjonsbevis_bekreftet_dato,
+    // Registrert data for sammenligning
+    registrert: {
+      navn: hund.navn,
+      regnr: hund.regnr,
+      rase: hund.rase
+    }
+  });
+});
+
+// ============================================
+// EIERBEVIS API
+// ============================================
+
+// Last opp eierbevis for en hund
+app.post("/api/hunder/:id/eierbevis", async (c) => {
+  const id = c.req.param("id");
+
+  // Sjekk at hunden finnes
+  const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  const body = await c.req.json();
+  const { bilde, dato } = body;
+
+  if (!bilde) {
+    return c.json({ error: "Bilde er påkrevd" }, 400);
+  }
+
+  // Sjekk at bildet er base64 og ikke for stort (maks 5MB)
+  const base64Data = bilde.replace(/^data:image\/[a-z]+;base64,/, "");
+  const sizeInBytes = (base64Data.length * 3) / 4;
+  const maxSize = 5 * 1024 * 1024; // 5MB
+
+  if (sizeInBytes > maxSize) {
+    return c.json({ error: "Bildet er for stort. Maks 5MB tillatt." }, 400);
+  }
+
+  // Sjekk at det er et gyldig bilde-format
+  if (!bilde.match(/^data:image\/(jpeg|jpg|png|gif|webp);base64,/)) {
+    return c.json({ error: "Ugyldig bildeformat. Bruk JPEG, PNG, GIF eller WebP." }, 400);
+  }
+
+  db.prepare(`
+    UPDATE hunder
+    SET eierbevis = ?,
+        eierbevis_dato = ?
+    WHERE id = ?
+  `).run(bilde, dato || new Date().toISOString().slice(0, 10), id);
+
+  console.log(`[Eierbevis] Lastet opp for hund ${id} (${hund.navn})`);
+
+  return c.json({
+    success: true,
+    message: "Eierbevis lastet opp og lagret."
+  });
+});
+
+// Hent eierbevis for en hund
+app.get("/api/hunder/:id/eierbevis", (c) => {
+  const id = c.req.param("id");
+  const hund = db.prepare(`
+    SELECT id, navn, regnr, eierbevis, eierbevis_dato
+    FROM hunder WHERE id = ?
+  `).get(id);
+
+  if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
+
+  return c.json({
+    harEierbevis: !!hund.eierbevis,
+    bilde: hund.eierbevis,
+    dato: hund.eierbevis_dato
+  });
+});
+
+// Slett eierbevis
+app.delete("/api/hunder/:id/eierbevis", (c) => {
+  const id = c.req.param("id");
+
+  db.prepare(`
+    UPDATE hunder
+    SET eierbevis = NULL,
+        eierbevis_dato = NULL
+    WHERE id = ?
+  `).run(id);
+
+  return c.json({ success: true });
+});
+
+// ============================================
+// PARTILISTE API
+// ============================================
+
+// Hent partiliste med hunder for et parti
+app.get("/api/partiliste/:partyId", (c) => {
+  const partyId = c.req.param("partyId");
+  const proveId = c.req.query("prove_id");
+
+  // Finn aktiv prøve hvis ikke spesifisert
+  let prove = null;
+  if (proveId) {
+    prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
+  } else {
+    // Finn nyeste aktive prøve (støtter både norsk og engelsk status)
+    prove = db.prepare("SELECT * FROM prover WHERE status IN ('aktiv', 'active', 'publisert', 'published', 'pagaende', 'ongoing') ORDER BY created_at DESC LIMIT 1").get();
+  }
+
+  if (!prove) {
+    return c.json({ error: "Ingen aktiv prøve funnet" }, 404);
+  }
+
+  // Hent påmeldinger for dette partiet
+  const pameldinger = db.prepare(`
+    SELECT
+      p.id as pamelding_id,
+      p.klasse,
+      p.parti,
+      p.forer_telefon,
+      h.id as hund_id,
+      h.navn,
+      h.regnr,
+      h.rase,
+      h.kjonn,
+      h.fodt,
+      b_eier.fornavn || ' ' || b_eier.etternavn as eier_navn,
+      b_forer.fornavn || ' ' || b_forer.etternavn as forer_navn
+    FROM pameldinger p
+    JOIN hunder h ON p.hund_id = h.id
+    LEFT JOIN brukere b_eier ON h.eier_telefon = b_eier.telefon
+    LEFT JOIN brukere b_forer ON p.forer_telefon = b_forer.telefon
+    WHERE p.prove_id = ? AND p.parti = ? AND p.status = 'bekreftet'
+    ORDER BY
+      CASE p.klasse WHEN 'UK' THEN 1 WHEN 'AK' THEN 2 WHEN 'VK' THEN 3 ELSE 4 END,
+      p.id
+  `).all(prove.id, partyId);
+
+  return c.json({
+    prove_id: prove.id,
+    prove_navn: prove.navn,
+    parti: partyId,
+    parti_navn: partyId.toUpperCase().replace('UKAK', 'UK/AK Parti ').replace('VK', 'VK Parti '),
+    hunder: pameldinger
+  });
+});
+
 // ============================================
 // PARTI-SIGNATURER API
 // ============================================
@@ -5480,7 +10575,7 @@ app.post("/api/prover/:proveId/parti/:parti/signer-dommer", async (c) => {
   const proveId = c.req.param("proveId");
   const parti = c.req.param("parti");
   const body = await c.req.json();
-  const { dommerTelefon } = body;
+  const { dommerTelefon, dommerNavn } = body;
 
   if (!dommerTelefon) {
     return c.json({ error: "Mangler dommerTelefon" }, 400);
@@ -5493,18 +10588,33 @@ app.post("/api/prover/:proveId/parti/:parti/signer-dommer", async (c) => {
   `).get(proveId, parti, dommerTelefon);
 
   if (existing) {
-    // Oppdater eksisterende
-    db.prepare(`
-      UPDATE parti_signaturer
-      SET dommer_signert_at = datetime('now')
-      WHERE id = ?
-    `).run(existing.id);
+    // Oppdater eksisterende - inkluder dommer_navn hvis oppgitt
+    if (dommerNavn) {
+      db.prepare(`
+        UPDATE parti_signaturer
+        SET dommer_signert_at = datetime('now'), dommer_navn = ?
+        WHERE id = ?
+      `).run(dommerNavn, existing.id);
+    } else {
+      db.prepare(`
+        UPDATE parti_signaturer
+        SET dommer_signert_at = datetime('now')
+        WHERE id = ?
+      `).run(existing.id);
+    }
   } else {
-    // Opprett ny
-    db.prepare(`
-      INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_signert_at)
-      VALUES (?, ?, ?, datetime('now'))
-    `).run(proveId, parti, dommerTelefon);
+    // Opprett ny - inkluder dommer_navn hvis oppgitt
+    if (dommerNavn) {
+      db.prepare(`
+        INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_navn, dommer_signert_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+      `).run(proveId, parti, dommerTelefon, dommerNavn);
+    } else {
+      db.prepare(`
+        INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_signert_at)
+        VALUES (?, ?, ?, datetime('now'))
+      `).run(proveId, parti, dommerTelefon);
+    }
   }
 
   return c.json({ success: true, message: "Partiliste signert av dommer" });
@@ -5563,19 +10673,32 @@ app.get("/api/prover/:proveId/signaturer", (c) => {
 // KRITIKKER API
 // ============================================
 
-// Hent alle kritikker for en hund
+// Hent alle kritikker for en hund (støtter både id og regnr)
 app.get("/api/hunder/:id/kritikker", (c) => {
-  const id = c.req.param("id");
+  const idParam = c.req.param("id");
+
+  // Prøv først å finne hund via regnr (for kompatibilitet med frontend)
+  let hund = null;
+  if (isNaN(parseInt(idParam))) {
+    // Ikke et tall, sannsynligvis regnr
+    hund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(idParam);
+  }
+
+  // Bruk hund_id direkte, eller funnet hund-ID fra regnr
+  const hundId = hund ? hund.id : idParam;
+
   const kritikker = db.prepare(`
     SELECT k.*,
+           h.navn as hund_navn, h.regnr,
            p.navn as prove_navn, p.sted as prove_sted,
            b.fornavn || ' ' || b.etternavn as dommer_navn
     FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
     LEFT JOIN prover p ON k.prove_id = p.id
     LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
-    WHERE k.hund_id = ?
+    WHERE k.hund_id = ? OR h.regnr = ?
     ORDER BY k.dato DESC
-  `).all(id);
+  `).all(hundId, idParam);
   return c.json(kritikker);
 });
 
@@ -5605,6 +10728,74 @@ app.post("/api/kritikker", requireDommer, async (c) => {
   // Bruk innlogget dommers telefon
   const dommer_telefon = bruker.telefon;
 
+  // Slå opp hund_id fra regnr hvis ikke oppgitt direkte
+  let hund_id = body.hund_id;
+  if (!hund_id && body.hund_regnr) {
+    const hund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(body.hund_regnr);
+    if (hund) {
+      hund_id = hund.id;
+    }
+  }
+
+  // Hvis vi fortsatt ikke har hund_id, opprett hund basert på info vi har
+  if (!hund_id && body.hund_navn) {
+    try {
+      const insertHund = db.prepare(`
+        INSERT INTO hunder (navn, regnr, rase) VALUES (?, ?, ?)
+      `).run(body.hund_navn, body.hund_regnr || '', body.rase || '');
+      hund_id = insertHund.lastInsertRowid;
+    } catch (e) {
+      // Hund finnes kanskje allerede, ignorer feil
+      console.log('Kunne ikke opprette hund:', e.message);
+    }
+  }
+
+  // DUPLIKATSJEKK: Sjekk om det allerede finnes kritikk for denne hunden DENNE DAGEN
+  // En hund kan ha flere kritikker per prøve (flere dager), men kun én per dag
+  const kritikkDato = body.dato || new Date().toISOString().split('T')[0];
+  const existingKritikk = db.prepare(`
+    SELECT id, dommer_telefon, status FROM kritikker
+    WHERE (hund_id = ? OR (hund_id IS NULL AND prove_id = ? AND parti = ?))
+    AND dato = ?
+    AND prove_id = ?
+  `).get(hund_id, body.prove_id, body.parti, kritikkDato, body.prove_id);
+
+  if (existingKritikk) {
+    // Kritikk finnes allerede for denne dagen
+    if (existingKritikk.dommer_telefon === dommer_telefon) {
+      // Samme dommer - oppdater eksisterende kritikk i stedet
+      console.log(`[Kritikk] Oppdaterer eksisterende kritikk ${existingKritikk.id} for hund ${hund_id} på dato ${kritikkDato}`);
+      db.prepare(`
+        UPDATE kritikker SET
+          presisjon = ?, reising = ?, godkjent_reising = ?,
+          stand_m = ?, stand_u = ?, tomstand = ?, makker_stand = ?, sjanse = ?, slipptid = ?,
+          jaktlyst = ?, fart = ?, selvstendighet = ?, soksbredde = ?, reviering = ?, samarbeid = ?,
+          sek_spontan = ?, sek_forbi = ?, apport = ?, rapport_spontan = ?,
+          adferd = ?, premie = ?, kritikk_tekst = ?,
+          uonsket_adferd = ?, uonsket_adferd_tekst = ?,
+          status = ?, submitted_at = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
+        body.stand_m, body.stand_u, body.tomstand, body.makker_stand, body.sjanse, body.slipptid,
+        body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+        body.sek_spontan || 0, body.sek_forbi || 0, body.apport, body.rapport_spontan ? 1 : 0,
+        body.adferd || '', body.premie, body.kritikk_tekst,
+        body.uonsket_adferd ? 1 : 0, body.uonsket_adferd_tekst || '',
+        body.status || 'submitted', new Date().toISOString(),
+        existingKritikk.id
+      );
+      return c.json({ id: existingKritikk.id, ok: true, updated: true });
+    } else {
+      // Annen dommer har allerede kritikk for denne hunden denne dagen
+      return c.json({
+        error: "Duplikat kritikk",
+        message: `Hunden har allerede en kritikk for denne dagen (${kritikkDato}). En hund kan kun ha én kritikk per dag i samme prøve.`,
+        existing_id: existingKritikk.id
+      }, 409);
+    }
+  }
+
   const result = db.prepare(`
     INSERT INTO kritikker (
       hund_id, prove_id, dommer_telefon, dato, klasse, parti, sted,
@@ -5612,20 +10803,23 @@ app.post("/api/kritikker", requireDommer, async (c) => {
       stand_m, stand_u, tomstand, makker_stand, sjanse, slipptid,
       jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
       sek_spontan, sek_forbi, apport, rapport_spontan,
-      adferd, premie, kritikk_tekst
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      adferd, premie, kritikk_tekst, uonsket_adferd, uonsket_adferd_tekst,
+      status, submitted_at, submitted_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    body.hund_id, body.prove_id, dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
+    hund_id, body.prove_id, dommer_telefon, body.dato, body.klasse, body.parti, body.sted,
     body.presisjon, body.reising, body.godkjent_reising ? 1 : 0,
     body.stand_m, body.stand_u, body.tomstand, body.makker_stand, body.sjanse, body.slipptid,
     body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
-    body.sek_spontan, body.sek_forbi, body.apport, body.rapport_spontan ? 1 : 0,
-    body.adferd, body.premie, body.kritikk_tekst
+    body.sek_spontan || 0, body.sek_forbi || 0, body.apport, body.rapport_spontan ? 1 : 0,
+    body.adferd || '', body.premie, body.kritikk_tekst,
+    body.uonsket_adferd ? 1 : 0, body.uonsket_adferd_tekst || '',
+    body.status || 'submitted', new Date().toISOString(), dommer_telefon
   );
 
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
     "kritikk_opprettet",
-    JSON.stringify({ kritikk_id: result.lastInsertRowid, dommer: dommer_telefon, hund_id: body.hund_id })
+    JSON.stringify({ kritikk_id: result.lastInsertRowid, dommer: dommer_telefon, hund_id: hund_id })
   );
 
   return c.json({ id: result.lastInsertRowid, ok: true });
@@ -5652,7 +10846,8 @@ app.put("/api/kritikker/:id", requireDommer, async (c) => {
     "stand_m", "stand_u", "tomstand", "makker_stand", "sjanse", "slipptid",
     "jaktlyst", "fart", "selvstendighet", "soksbredde", "reviering", "samarbeid",
     "sek_spontan", "sek_forbi", "apport", "rapport_spontan",
-    "adferd", "premie", "kritikk_tekst"
+    "adferd", "premie", "kritikk_tekst",
+    "uonsket_adferd", "uonsket_adferd_tekst"
   ];
 
   const sets = [];
@@ -5705,6 +10900,22 @@ app.get("/api/kritikker/pending", (c) => {
     LEFT JOIN prover p ON k.prove_id = p.id
     WHERE k.status = 'submitted'
     ORDER BY k.submitted_at DESC
+  `).all();
+  return c.json(rows);
+});
+
+// Hent godkjente kritikker
+app.get("/api/kritikker/approved", (c) => {
+  const rows = db.prepare(`
+    SELECT k.*, h.navn as hund_navn, h.regnr, h.rase,
+           b.fornavn || ' ' || b.etternavn as dommer_navn,
+           p.navn as prove_navn, p.sted as prove_sted
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    LEFT JOIN prover p ON k.prove_id = p.id
+    WHERE k.status = 'approved'
+    ORDER BY k.approved_at DESC
   `).all();
   return c.json(rows);
 });
@@ -5795,6 +11006,86 @@ app.get("/api/backup", requireAdmin, (c) => {
   c.header("Content-Type", "application/octet-stream");
   c.header("Content-Disposition", `attachment; filename="fuglehund-${new Date().toISOString().slice(0, 10)}.db"`);
   return c.body(data);
+});
+
+// ============================================
+// RAPPORT-LOGG API
+// ============================================
+
+// Logg en generert/sendt rapport
+app.post("/api/prover/:id/rapport-logg", async (c) => {
+  const proveId = c.req.param("id");
+  const body = await c.req.json();
+
+  const {
+    rapport_type,  // 'NKK', 'FKF', 'raseklubb', 'NJFF'
+    mottaker,
+    generert_av,
+    filnavn,
+    antall_kritikker,
+    detaljer
+  } = body;
+
+  if (!rapport_type) {
+    return c.json({ error: "rapport_type er påkrevd" }, 400);
+  }
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO rapport_logg (prove_id, rapport_type, mottaker, generert_av, filnavn, antall_kritikker, detaljer)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      proveId,
+      rapport_type,
+      mottaker || '',
+      generert_av || '',
+      filnavn || '',
+      antall_kritikker || 0,
+      typeof detaljer === 'object' ? JSON.stringify(detaljer) : (detaljer || '')
+    );
+
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (e) {
+    console.error("Feil ved logging av rapport:", e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Hent rapport-logg for en prøve
+app.get("/api/prover/:id/rapport-logg", (c) => {
+  const proveId = c.req.param("id");
+
+  try {
+    const logg = db.prepare(`
+      SELECT * FROM rapport_logg
+      WHERE prove_id = ?
+      ORDER BY created_at DESC
+    `).all(proveId);
+
+    return c.json(logg);
+  } catch (e) {
+    console.error("Feil ved henting av rapport-logg:", e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Hent all rapport-logg (for oversikt)
+app.get("/api/rapport-logg", (c) => {
+  try {
+    const logg = db.prepare(`
+      SELECT rl.*, p.navn as prove_navn
+      FROM rapport_logg rl
+      LEFT JOIN prover p ON rl.prove_id = p.id
+      ORDER BY rl.created_at DESC
+      LIMIT 100
+    `).all();
+
+    return c.json(logg);
+  } catch (e) {
+    console.error("Feil ved henting av rapport-logg:", e);
+    return c.json({ error: e.message }, 500);
+  }
 });
 
 // --- Helper: Convert "Etternavn, Fornavn" to "Fornavn Etternavn" ---
@@ -6055,6 +11346,300 @@ app.post("/api/parse-participants", async (c) => {
   }
 });
 
+// --- Import deltakere til database ---
+// Oppretter hunder og midlertidige eieroppslag basert på deltakerliste
+app.post("/api/import-participants", requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { participants, proveId } = body;
+
+    if (!participants || !Array.isArray(participants)) {
+      return c.json({ error: "Ingen deltakere å importere" }, 400);
+    }
+
+    const results = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: []
+    };
+
+    // Transaksjonsbehandling
+    const insertHund = db.prepare(`
+      INSERT INTO hunder (regnr, navn, rase, kjonn, eier_telefon, kilde)
+      VALUES (?, ?, ?, ?, ?, 'import')
+    `);
+
+    const updateHund = db.prepare(`
+      UPDATE hunder SET navn = ?, rase = ?, eier_telefon = COALESCE(eier_telefon, ?), kilde = COALESCE(kilde, 'import')
+      WHERE regnr = ?
+    `);
+
+    const findHund = db.prepare("SELECT id, eier_telefon FROM hunder WHERE regnr = ?");
+
+    // Opprett midlertidig eier-oppslag tabell hvis ikke finnes
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS eier_oppslag (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        regnr TEXT UNIQUE NOT NULL,
+        eier_navn TEXT,
+        eier_epost TEXT,
+        forer_navn TEXT,
+        forer_epost TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const insertEierOppslag = db.prepare(`
+      INSERT OR REPLACE INTO eier_oppslag (regnr, eier_navn, eier_epost, forer_navn, forer_epost)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    // Opprett tabell for ventende fullmakter (fra deltakerlister)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ventende_fullmakter (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        prove_id TEXT,
+        hund_regnr TEXT NOT NULL,
+        hund_navn TEXT,
+        eier_navn TEXT NOT NULL,
+        forer_navn TEXT NOT NULL,
+        eier_telefon TEXT,
+        forer_telefon TEXT,
+        eier_epost TEXT,
+        forer_epost TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(prove_id, hund_regnr, forer_navn)
+      )
+    `);
+
+    const insertVentendeFullmakt = db.prepare(`
+      INSERT OR IGNORE INTO ventende_fullmakter (prove_id, hund_regnr, hund_navn, eier_navn, forer_navn, eier_epost, forer_epost)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let fullmakterOpprettet = 0;
+
+    for (const p of participants) {
+      try {
+        const regnr = (p.regnr || '').trim();
+        if (!regnr) {
+          results.skipped++;
+          continue;
+        }
+
+        // Lagre eierinfo i oppslag-tabell for senere kobling
+        insertEierOppslag.run(
+          regnr,
+          p.eier || null,
+          p.epost || null,
+          p.forer || null,
+          null
+        );
+
+        // Sjekk om hunden allerede finnes
+        const existing = findHund.get(regnr);
+
+        if (existing) {
+          // Oppdater eksisterende hund (kun hvis ikke allerede har eier)
+          updateHund.run(
+            p.hundenavn || p.navn,
+            p.rase || null,
+            null, // Ikke overskrive eksisterende eier_telefon
+            regnr
+          );
+          results.updated++;
+        } else {
+          // Opprett ny hund (uten eier_telefon foreløpig)
+          insertHund.run(
+            regnr,
+            p.hundenavn || p.navn,
+            p.rase || null,
+            null, // Kjønn ikke i deltakerliste
+            null  // Eier kobles senere når bruker registrerer seg
+          );
+          results.created++;
+        }
+
+        // Opprett ventende fullmakt hvis fører er forskjellig fra eier
+        const eierNavn = (p.eier || '').trim();
+        const forerNavn = (p.forer || '').trim();
+        const eierEpost = (p.eier_epost || p.eierEpost || '').trim().toLowerCase();
+        const forerEpost = (p.forer_epost || p.forerEpost || '').trim().toLowerCase();
+
+        if (eierNavn && forerNavn && eierNavn.toLowerCase() !== forerNavn.toLowerCase()) {
+          try {
+            insertVentendeFullmakt.run(
+              proveId || null,
+              regnr,
+              p.hundenavn || p.navn,
+              eierNavn,
+              forerNavn,
+              eierEpost || null,
+              forerEpost || null
+            );
+            fullmakterOpprettet++;
+          } catch (e) {
+            // Ignorer duplikater
+          }
+        }
+      } catch (err) {
+        results.errors.push({
+          regnr: p.regnr,
+          error: err.message
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `Importert ${results.created} nye hunder, oppdatert ${results.updated}. ${fullmakterOpprettet} ventende fullmakter opprettet.`,
+      fullmakterOpprettet,
+      ...results
+    });
+
+  } catch (err) {
+    console.error("Import error:", err);
+    return c.json({ error: "Feil ved import: " + err.message }, 500);
+  }
+});
+
+// --- Koble bruker til hunder basert på e-post/telefon/navn ---
+// Denne kalles IKKE automatisk lenger - brukeren kobler manuelt via regnr-søk
+// Men vi beholder den for bakoverkompatibilitet og for å aktivere ventende fullmakter
+app.post("/api/koble-hunder", requireAuth, async (c) => {
+  try {
+    const bruker = c.get("bruker");
+    const telefon = bruker.telefon;
+    const epost = (bruker.epost || '').trim().toLowerCase();
+    const fullNavn = `${bruker.fornavn || ''} ${bruker.etternavn || ''}`.trim();
+    const navnLower = fullNavn.toLowerCase();
+
+    // 1. Sjekk om brukeren er FØRER i noen ventende fullmakter
+    // Matching-prioritet: 1) Telefon (eksakt), 2) Epost (eksakt), 3) Navn (fuzzy)
+    // Når fører registrerer seg, opprettes fullmakt automatisk
+    const ventendeForForer = db.prepare(`
+      SELECT vf.*, h.id as hund_id, h.eier_telefon
+      FROM ventende_fullmakter vf
+      LEFT JOIN hunder h ON h.regnr = vf.hund_regnr
+      WHERE vf.status = 'pending'
+        AND (
+          vf.forer_telefon = ?
+          OR (? != '' AND LOWER(vf.forer_epost) = ?)
+          OR LOWER(REPLACE(vf.forer_navn, ' ', '')) = LOWER(REPLACE(?, ' ', ''))
+        )
+    `).all(telefon, epost, epost, fullNavn);
+
+    let fullmakterAktivert = 0;
+
+    // Opprett fullmakter-tabell hvis ikke finnes
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS fullmakter (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL CHECK(type IN ('given', 'received')),
+        giver_telefon TEXT NOT NULL,
+        mottaker_telefon TEXT,
+        mottaker_navn TEXT,
+        hund_id INTEGER,
+        dog_name TEXT,
+        dog_owner TEXT,
+        trial TEXT,
+        valid_from TEXT,
+        valid_to TEXT,
+        permissions TEXT DEFAULT '["run","results"]',
+        status TEXT DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (hund_id) REFERENCES hunder(id)
+      )
+    `);
+
+    const insertFullmakt = db.prepare(`
+      INSERT INTO fullmakter (type, giver_telefon, mottaker_telefon, mottaker_navn, hund_id, dog_name, trial, permissions, status)
+      VALUES ('given', ?, ?, ?, ?, ?, ?, '["run","results"]', 'active')
+    `);
+
+    const updateVentendeFullmakt = db.prepare(`
+      UPDATE ventende_fullmakter SET status = 'activated', forer_telefon = ? WHERE id = ?
+    `);
+
+    for (const vf of ventendeForForer) {
+      // Fører er denne brukeren - sjekk om eier finnes
+      if (vf.eier_telefon && vf.hund_id) {
+        try {
+          // Opprett fullmakt fra eier til denne føreren
+          insertFullmakt.run(
+            vf.eier_telefon,     // giver (eier)
+            telefon,             // mottaker (fører)
+            fullNavn,            // mottaker_navn
+            vf.hund_id,          // hund_id
+            vf.hund_navn,        // dog_name
+            vf.prove_id          // trial
+          );
+          updateVentendeFullmakt.run(telefon, vf.id);
+          fullmakterAktivert++;
+        } catch (e) {
+          console.error('Feil ved aktivering av fullmakt:', e);
+        }
+      }
+    }
+
+    // 2. Sjekk om brukeren er EIER - oppdater ventende fullmakter med eier_telefon
+    // Matching-prioritet: 1) Telefon (eksakt), 2) Epost (eksakt), 3) Navn (eksakt uten mellomrom)
+    const ventendeForEier = db.prepare(`
+      SELECT vf.id, vf.hund_regnr, vf.forer_navn, vf.forer_telefon
+      FROM ventende_fullmakter vf
+      WHERE vf.status = 'pending'
+        AND (
+          vf.eier_telefon = ?
+          OR (? != '' AND LOWER(vf.eier_epost) = ?)
+          OR LOWER(REPLACE(vf.eier_navn, ' ', '')) = LOWER(REPLACE(?, ' ', ''))
+        )
+    `).all(telefon, epost, epost, fullNavn);
+
+    const updateVentendeEier = db.prepare(`
+      UPDATE ventende_fullmakter SET eier_telefon = ? WHERE id = ?
+    `);
+
+    for (const vf of ventendeForEier) {
+      updateVentendeEier.run(telefon, vf.id);
+
+      // Hvis fører allerede er registrert, opprett fullmakt
+      if (vf.forer_telefon) {
+        const hund = db.prepare("SELECT id, navn FROM hunder WHERE regnr = ?").get(vf.hund_regnr);
+        if (hund) {
+          try {
+            insertFullmakt.run(
+              telefon,             // giver (eier)
+              vf.forer_telefon,    // mottaker (fører)
+              vf.forer_navn,       // mottaker_navn
+              hund.id,             // hund_id
+              hund.navn,           // dog_name
+              null                 // trial
+            );
+            updateVentendeFullmakt.run(vf.forer_telefon, vf.id);
+            fullmakterAktivert++;
+          } catch (e) {
+            console.error('Feil ved aktivering av fullmakt for eier:', e);
+          }
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      fullmakterAktivert,
+      message: fullmakterAktivert > 0
+        ? `${fullmakterAktivert} fullmakt${fullmakterAktivert === 1 ? '' : 'er'} aktivert automatisk`
+        : 'Ingen ventende fullmakter funnet'
+    });
+
+  } catch (err) {
+    console.error("Kobling error:", err);
+    return c.json({ error: "Feil ved kobling: " + err.message }, 500);
+  }
+});
+
 // --- Logo upload endpoint ---
 app.post("/api/upload-logo", async (c) => {
   try {
@@ -6098,6 +11683,9 @@ app.get("/storage-shim.js", (c) => {
 
 app.get("/auth.js", (c) => {
   c.header("Content-Type", "application/javascript");
+  c.header("Cache-Control", "no-cache, no-store, must-revalidate");
+  c.header("Pragma", "no-cache");
+  c.header("Expires", "0");
   return c.body(readFileSync(join(__dirname, "auth.js"), "utf-8"));
 });
 
@@ -6124,7 +11712,7 @@ function serveWithShim(filePath, c, isAdmin = false) {
   if (isAdmin) {
     injected += `<script src="/admin-lock.js"></script>\n`;
   }
-  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/navbar.js" defer></script>`;
+  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/error-handler.js"></script>\n<script src="/navbar.js" defer></script>`;
 
   if (html.includes("<head>")) {
     html = html.replace("<head>", `<head>\n${injected}`);
@@ -6143,17 +11731,45 @@ app.get("/", (c) => serveWithShim(join(__dirname, "index.html"), c));
 // Clean URL for undersøkelse landingsside
 app.get("/undersokelse", (c) => serveWithShim(join(__dirname, "undersokelse.html"), c));
 
-// Clean URL for dommer-testside
-app.get("/dommertest", (c) => serveWithShim(join(__dirname, "dommertest.html"), c));
+// Clean URL for dommer-testsider
+// BLOKKERT I PRODUKSJON - disse sidene hopper over autentisering
+const blockTestPagesInProd = (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.text("Test-sider er deaktivert i produksjon", 403);
+  }
+  return null;
+};
 
-// Clean URL for VK dommer-testside
-app.get("/dommertestvk", (c) => serveWithShim(join(__dirname, "dommer-vk-test.html"), c));
+app.get("/dommertest", (c) => {
+  const blocked = blockTestPagesInProd(c);
+  if (blocked) return blocked;
+  return serveWithShim(join(__dirname, "dommertest.html"), c);
+});
 
-// Clean URL for UK/AK todelt dommer-testside
-app.get("/dommertestukak", (c) => serveWithShim(join(__dirname, "dommer-ukak-dual.html"), c));
+app.get("/dommertestvk", (c) => {
+  const blocked = blockTestPagesInProd(c);
+  if (blocked) return blocked;
+  return serveWithShim(join(__dirname, "dommer-vk-test.html"), c);
+});
+
+app.get("/dommertestukak", (c) => {
+  const blocked = blockTestPagesInProd(c);
+  if (blocked) return blocked;
+  return serveWithShim(join(__dirname, "dommer-ukak-dual.html"), c);
+});
+
+// Test-filer som blokkeres i produksjon (unntatt demo-sider for salg/visning)
+const TEST_PAGES = ['dommertest.html'];
+// dommer-ukak-test.html og dommer-vk-test.html er tillatt for demo/testing
 
 app.get("/:page{.+\\.html}", (c) => {
   const page = c.req.param("page");
+
+  // Blokker test-sider i produksjon
+  if (process.env.NODE_ENV === 'production' && TEST_PAGES.includes(page)) {
+    return c.text("Test-sider er deaktivert i produksjon", 403);
+  }
+
   const isAdmin = ADMIN_PAGES.includes(page);
   return serveWithShim(join(__dirname, page), c, isAdmin);
 });
@@ -6324,6 +11940,358 @@ app.post("/api/sms/send", async (c) => {
   }
 });
 
+// =============================================
+// MELDINGER (deltaker <-> prøveledelse)
+// =============================================
+
+// Hent meldinger for admin (innboks)
+app.get("/api/meldinger", requireAdmin, (c) => {
+  try {
+    const proveId = c.req.query("prove_id");
+    const uleste = c.req.query("uleste") === "true";
+
+    let query = `
+      SELECT m.*,
+        (SELECT COUNT(*) FROM meldinger r WHERE r.parent_id = m.id) as svar_count
+      FROM meldinger m
+      WHERE m.parent_id IS NULL
+    `;
+    const params = [];
+
+    if (proveId) {
+      query += " AND m.prove_id = ?";
+      params.push(proveId);
+    }
+
+    // Filtrer på uleste (inkluderer meldinger der minst én er ulest)
+    if (uleste) {
+      query += " AND (m.lest = 0 OR EXISTS (SELECT 1 FROM meldinger r WHERE r.parent_id = m.id AND r.lest = 0))";
+    }
+
+    query += " ORDER BY m.created_at DESC";
+
+    const meldinger = db.prepare(query).all(...params);
+
+    // Hent svar for hver melding
+    const result = meldinger.map(m => {
+      const svar = db.prepare(`
+        SELECT * FROM meldinger
+        WHERE parent_id = ?
+        ORDER BY created_at ASC
+      `).all(m.id);
+      return { ...m, svar };
+    });
+
+    return c.json({ success: true, meldinger: result });
+  } catch (err) {
+    console.error("Hent meldinger feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Hent brukerens aktive påmeldinger med hunder (for meldingssystem)
+app.get("/api/meldinger/mine-pameldinger", requireAuth, (c) => {
+  try {
+    const telefon = c.get("user").telefon;
+
+    // Hent påmeldinger der brukeren er fører (aktive prøver)
+    const pameldinger = db.prepare(`
+      SELECT p.prove_id, p.hund_id, p.klasse, p.status,
+             pr.navn as prove_navn, pr.start_dato, pr.slutt_dato, pr.sted, pr.klubb_id,
+             h.navn as hund_navn, h.regnr as hund_regnr,
+             'egen' as type
+      FROM pameldinger p
+      JOIN prover pr ON p.prove_id = pr.id
+      JOIN hunder h ON p.hund_id = h.id
+      WHERE p.forer_telefon = ?
+        AND p.status NOT IN ('avmeldt')
+        AND pr.slutt_dato >= date('now')
+      ORDER BY pr.start_dato ASC
+    `).all(telefon);
+
+    // Hent fullmakter der brukeren er mottaker (hunder andre har gitt fullmakt til)
+    const fullmaktHunder = db.prepare(`
+      SELECT f.hund_id, f.dog_name as hund_navn, f.trial as prove_navn,
+             f.giver_telefon, h.regnr as hund_regnr,
+             'fullmakt' as type
+      FROM fullmakter f
+      LEFT JOIN hunder h ON f.hund_id = h.id
+      WHERE f.mottaker_telefon = ?
+        AND f.status = 'active'
+        AND (f.valid_to IS NULL OR f.valid_to >= date('now'))
+    `).all(telefon);
+
+    // Grupper etter prøve
+    const proverMap = new Map();
+
+    pameldinger.forEach(p => {
+      if (!proverMap.has(p.prove_id)) {
+        proverMap.set(p.prove_id, {
+          prove_id: p.prove_id,
+          prove_navn: p.prove_navn,
+          start_dato: p.start_dato,
+          slutt_dato: p.slutt_dato,
+          sted: p.sted,
+          klubb_id: p.klubb_id,
+          hunder: []
+        });
+      }
+      proverMap.get(p.prove_id).hunder.push({
+        hund_id: p.hund_id,
+        hund_navn: p.hund_navn,
+        hund_regnr: p.hund_regnr,
+        klasse: p.klasse,
+        type: p.type
+      });
+    });
+
+    // Legg til fullmaktshunder (hvis de ikke allerede er med)
+    fullmaktHunder.forEach(f => {
+      // Finn prøve basert på prøvenavn (kan være upresist, men bedre enn ingenting)
+      for (const [proveId, prove] of proverMap) {
+        if (f.hund_id && !prove.hunder.some(h => h.hund_id === f.hund_id)) {
+          prove.hunder.push({
+            hund_id: f.hund_id,
+            hund_navn: f.hund_navn,
+            hund_regnr: f.hund_regnr,
+            klasse: null,
+            type: 'fullmakt'
+          });
+        }
+      }
+    });
+
+    const prover = Array.from(proverMap.values());
+
+    return c.json({ success: true, prover });
+  } catch (err) {
+    console.error("Hent mine påmeldinger feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Hent meldinger for deltaker
+app.get("/api/meldinger/mine", requireAuth, (c) => {
+  try {
+    const telefon = c.get("bruker")?.telefon;
+    if (!telefon) return c.json({ error: "Ikke autentisert" }, 401);
+
+    // Hent alle meldinger der brukeren er avsender ELLER mottaker av svar
+    const meldinger = db.prepare(`
+      SELECT m.*,
+        (SELECT COUNT(*) FROM meldinger r WHERE r.parent_id = m.id) as svar_count
+      FROM meldinger m
+      WHERE m.fra_telefon = ? AND m.parent_id IS NULL
+      ORDER BY m.created_at DESC
+    `).all(telefon);
+
+    // Hent svar for hver melding
+    const result = meldinger.map(m => {
+      const svar = db.prepare(`
+        SELECT * FROM meldinger
+        WHERE parent_id = ?
+        ORDER BY created_at ASC
+      `).all(m.id);
+      return { ...m, svar };
+    });
+
+    return c.json({ success: true, meldinger: result });
+  } catch (err) {
+    console.error("Hent mine meldinger feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Send ny melding fra deltaker til prøveledelse
+app.post("/api/meldinger", requireAuth, async (c) => {
+  try {
+    const user = c.get("user");
+    const body = await c.req.json();
+    const { prove_id, hund_id, emne, melding } = body;
+
+    if (!prove_id || !emne || !melding) {
+      return c.json({ success: false, error: "Mangler påkrevde felt" }, 400);
+    }
+
+    // Hent hund-info hvis angitt
+    let hundRegnr = null;
+    let hundNavn = null;
+    if (hund_id) {
+      const hund = db.prepare("SELECT regnr, navn FROM hunder WHERE id = ?").get(hund_id);
+      if (hund) {
+        hundRegnr = hund.regnr;
+        hundNavn = hund.navn;
+      }
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO meldinger (prove_id, fra_telefon, fra_navn, til_type, hund_id, hund_regnr, hund_navn, emne, melding)
+      VALUES (?, ?, ?, 'proveledelse', ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      prove_id,
+      user.telefon,
+      user.navn || "Ukjent",
+      hund_id || null,
+      hundRegnr,
+      hundNavn,
+      emne,
+      melding
+    );
+
+    // Logg
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "melding_sendt",
+      `Ny melding fra ${user.navn || user.telefon}: ${emne}`
+    );
+
+    // Auto-backup ved ny melding (viktig kommunikasjon)
+    autoBackup("melding_sendt");
+
+    // Checkpoint WAL for å sikre at meldingen er skrevet til disk
+    try {
+      db.pragma("wal_checkpoint(PASSIVE)");
+    } catch (e) {
+      console.error("WAL checkpoint error:", e.message);
+    }
+
+    return c.json({
+      success: true,
+      melding_id: result.lastInsertRowid,
+      message: "Meldingen er sendt til prøveledelsen"
+    });
+  } catch (err) {
+    console.error("Send melding feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Svar på melding (fra prøveledelse)
+app.post("/api/meldinger/:id/svar", requireAdmin, async (c) => {
+  try {
+    const meldingId = c.req.param("id");
+    const body = await c.req.json();
+    const { melding: svarTekst, avsender_navn } = body;
+
+    if (!svarTekst) {
+      return c.json({ success: false, error: "Mangler svar-tekst" }, 400);
+    }
+
+    // Hent original melding
+    const original = db.prepare("SELECT * FROM meldinger WHERE id = ?").get(meldingId);
+    if (!original) {
+      return c.json({ success: false, error: "Finner ikke meldingen" }, 404);
+    }
+
+    // Opprett svar
+    const stmt = db.prepare(`
+      INSERT INTO meldinger (prove_id, fra_telefon, fra_navn, til_type, hund_id, hund_regnr, hund_navn, emne, melding, parent_id)
+      VALUES (?, 'proveledelse', ?, 'deltaker', ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      original.prove_id,
+      avsender_navn || "Prøveledelsen",
+      original.hund_id,
+      original.hund_regnr,
+      original.hund_navn,
+      `Svar: ${original.emne}`,
+      svarTekst,
+      meldingId
+    );
+
+    // Marker original som lest
+    db.prepare("UPDATE meldinger SET lest = 1, lest_dato = datetime('now') WHERE id = ?").run(meldingId);
+
+    // Send SMS-varsling til deltaker
+    const smsResult = await sendSMS(
+      original.fra_telefon,
+      `Du har fått svar fra prøveledelsen på din henvendelse "${original.emne}". Logg inn på fuglehundprove.no for å se svaret.`,
+      { type: "melding_svar", klubb_id: null }
+    );
+
+    // Logg
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "melding_besvart",
+      `Svar sendt til ${original.fra_navn} (${original.fra_telefon}). SMS: ${smsResult.success ? 'OK' : 'Feilet'}`
+    );
+
+    // Auto-backup ved svar på melding (viktig kommunikasjon)
+    autoBackup("melding_besvart");
+
+    // Checkpoint WAL for å sikre at svaret er skrevet til disk
+    try {
+      db.pragma("wal_checkpoint(PASSIVE)");
+    } catch (e) {
+      console.error("WAL checkpoint error:", e.message);
+    }
+
+    return c.json({
+      success: true,
+      svar_id: result.lastInsertRowid,
+      sms_sendt: smsResult.success,
+      message: "Svar er sendt" + (smsResult.success ? " og deltaker er varslet på SMS" : " (SMS-varsling feilet)")
+    });
+  } catch (err) {
+    console.error("Svar på melding feil:", err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Marker melding som lest
+app.put("/api/meldinger/:id/lest", requireAdmin, (c) => {
+  try {
+    const meldingId = c.req.param("id");
+
+    db.prepare(`
+      UPDATE meldinger
+      SET lest = 1, lest_dato = datetime('now')
+      WHERE id = ?
+    `).run(meldingId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Slett melding (kun admin)
+app.delete("/api/meldinger/:id", requireAdmin, (c) => {
+  try {
+    const meldingId = c.req.param("id");
+
+    // Slett svar først
+    db.prepare("DELETE FROM meldinger WHERE parent_id = ?").run(meldingId);
+    // Slett hovedmelding
+    db.prepare("DELETE FROM meldinger WHERE id = ?").run(meldingId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+// Hent antall uleste meldinger (for badge)
+app.get("/api/meldinger/uleste", requireAdmin, (c) => {
+  try {
+    const proveId = c.req.query("prove_id");
+
+    let query = "SELECT COUNT(*) as antall FROM meldinger WHERE lest = 0 AND til_type = 'proveledelse'";
+    const params = [];
+
+    if (proveId) {
+      query += " AND prove_id = ?";
+      params.push(proveId);
+    }
+
+    const result = db.prepare(query).get(...params);
+    return c.json({ success: true, antall: result.antall });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
 // Backup-liste (driftsadmin)
 app.get("/api/backups", (c) => {
   const fs = require("fs");
@@ -6441,6 +12409,271 @@ app.delete("/api/superadmin/brukere/:telefon", (c) => {
 });
 
 // ==========================================
+// TESTMODUS - For å teste hele flyten
+// ==========================================
+
+// Sjekk status for testmodus
+app.get("/api/superadmin/testmodus/status", (c) => {
+  try {
+    // Finn testprøver (de som starter med [TEST])
+    const prove = db.prepare("SELECT * FROM prover WHERE navn LIKE '[TEST]%' ORDER BY created_at DESC LIMIT 1").get();
+
+    if (!prove) {
+      return c.json({ aktiv: false });
+    }
+
+    // Tell deltakere og kritikker
+    const deltakere = db.prepare("SELECT COUNT(*) as count FROM paameldinger WHERE prove_id = ?").get(prove.id)?.count || 0;
+    const kritikker = db.prepare("SELECT COUNT(*) as count FROM kritikker WHERE prove_id = ?").get(prove.id)?.count || 0;
+
+    return c.json({
+      aktiv: true,
+      prove: {
+        id: prove.id,
+        navn: prove.navn,
+        created_at: prove.created_at
+      },
+      deltakere,
+      kritikker
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Opprett testprøve med fiktive data
+app.post("/api/superadmin/testmodus/opprett", (c) => {
+  try {
+    // Sjekk om det allerede finnes en testprøve
+    const eksisterende = db.prepare("SELECT id FROM prover WHERE navn LIKE '[TEST]%'").get();
+    if (eksisterende) {
+      return c.json({ error: "Det finnes allerede en testprøve. Slett den først." }, 400);
+    }
+
+    // Finn eller opprett en testklubb
+    let klubbId = db.prepare("SELECT id FROM klubber WHERE navn = 'Testklubben'").get()?.id;
+    if (!klubbId) {
+      // Generer en unik ID for klubben (tabellen bruker TEXT id, ikke autoincrement)
+      klubbId = 'test-klubb-' + Date.now();
+      db.prepare(`
+        INSERT INTO klubber (id, navn, orgnummer, region)
+        VALUES (?, 'Testklubben', '999999999', 'Test')
+      `).run(klubbId);
+    }
+
+    // Opprett testprøve
+    const nesteDag = new Date();
+    nesteDag.setDate(nesteDag.getDate() + 7);
+    const startDato = nesteDag.toISOString().split('T')[0];
+    const proveId = 'test-prove-' + Date.now();
+
+    db.prepare(`
+      INSERT INTO prover (
+        id, navn, sted, start_dato, slutt_dato, klubb_id, klasser, status
+      ) VALUES (
+        ?, '[TEST] Testprøve 2026', 'Testfjellet', ?, ?, ?,
+        '{"uk":true,"ak":true,"vk":true}', 'aktiv'
+      )
+    `).run(proveId, startDato, startDato, klubbId);
+
+    // Opprett en testdommer (NKK-rep) som skal motta kritikkene
+    const dommerTelefon = '99900000';
+    const nkkrepTelefon = '99900099';
+
+    const dommerExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(dommerTelefon);
+    if (!dommerExists) {
+      db.prepare(`
+        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+        VALUES (?, 'Test', 'Dommer', 'test.dommer@test.no', 'dommer', 1, datetime('now'))
+      `).run(dommerTelefon);
+    }
+
+    const nkkrepExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(nkkrepTelefon);
+    if (!nkkrepExists) {
+      db.prepare(`
+        INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+        VALUES (?, 'Test', 'NKK-Rep', 'test.nkkrep@test.no', 'admin', 1, datetime('now'))
+      `).run(nkkrepTelefon);
+    }
+
+    // Sett NKK-rep på prøven
+    db.prepare("UPDATE prover SET nkkrep_telefon = ? WHERE id = ?").run(nkkrepTelefon, proveId);
+
+    // Fiktive hunder og førere - UK/AK går sammen i "ukak1", VK i "vk1"
+    const testData = [
+      { hund: 'TEST-Duke', regnr: 'NO99999/01', rase: 'Engelsk Setter', klasse: 'UK', parti: 'ukak1', forer: 'Test Testesen', telefon: '99900001' },
+      { hund: 'TEST-Bella', regnr: 'NO99999/02', rase: 'Pointer', klasse: 'UK', parti: 'ukak1', forer: 'Kari Testmann', telefon: '99900002' },
+      { hund: 'TEST-Max', regnr: 'NO99999/03', rase: 'Gordon Setter', klasse: 'AK', parti: 'ukak1', forer: 'Per Testvik', telefon: '99900003' },
+      { hund: 'TEST-Luna', regnr: 'NO99999/04', rase: 'Irsk Setter', klasse: 'AK', parti: 'ukak1', forer: 'Anne Testberg', telefon: '99900004' },
+      { hund: 'TEST-Rex', regnr: 'NO99999/05', rase: 'Engelsk Setter', klasse: 'VK', parti: 'vk1', forer: 'Ole Testgård', telefon: '99900005' },
+      { hund: 'TEST-Tara', regnr: 'NO99999/06', rase: 'Pointer', klasse: 'VK', parti: 'vk1', forer: 'Lise Testmo', telefon: '99900006' }
+    ];
+
+    // Opprett testbrukere, hunder og påmeldinger
+    let deltakereOpprettet = 0;
+    const opprettedeHunder = [];
+
+    for (const td of testData) {
+      // Opprett bruker hvis ikke eksisterer - testbrukere har samtykke
+      const brukerExists = db.prepare("SELECT telefon FROM brukere WHERE telefon = ?").get(td.telefon);
+      if (!brukerExists) {
+        db.prepare(`
+          INSERT INTO brukere (telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt)
+          VALUES (?, ?, '', ?, 'deltaker', 1, datetime('now'))
+        `).run(td.telefon, td.forer, `${td.forer.toLowerCase().replace(' ', '.')}@test.no`);
+      }
+
+      // Opprett hund (bruk regnr-kolonnen)
+      const eksisterendeHund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(td.regnr);
+      let hundId;
+      if (!eksisterendeHund) {
+        const hundResult = db.prepare(`
+          INSERT INTO hunder (regnr, navn, rase, fodt, eier_telefon)
+          VALUES (?, ?, ?, '2022-01-01', ?)
+        `).run(td.regnr, td.hund, td.rase, td.telefon);
+        hundId = hundResult.lastInsertRowid;
+      } else {
+        hundId = eksisterendeHund.id;
+      }
+
+      opprettedeHunder.push({ ...td, hundId });
+
+      // Opprett påmelding (bruk riktig tabellstruktur - parti er ukak1 eller vk1)
+      db.prepare(`
+        INSERT INTO pameldinger (
+          prove_id, hund_id, forer_telefon, klasse, parti, status
+        ) VALUES (?, ?, ?, ?, ?, 'bekreftet')
+      `).run(proveId, hundId, td.telefon, td.klasse, td.parti);
+
+      deltakereOpprettet++;
+    }
+
+    // Tildel testdommer til partiet ukak1 (UK/AK går sammen)
+    // Merk: UNIQUE constraint på (prove_id, dommer_telefon), så vi må velge ett parti
+    db.prepare(`
+      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti)
+      VALUES (?, ?, 'ukak1')
+    `).run(proveId, dommerTelefon);
+
+    // IKKE opprett ferdigutfylte dommerkort - la testdommeren fylle ut selv
+    // slik at vi kan teste hele flyten fra start til slutt
+
+    // Logg
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "testmodus_opprettet", `Testprøve opprettet med ID ${proveId}, ${deltakereOpprettet} deltakere, dommer: ${dommerTelefon}, NKK-rep: ${nkkrepTelefon}`
+    );
+
+    return c.json({
+      success: true,
+      prove_id: proveId,
+      deltakere: deltakereOpprettet,
+      dommer: dommerTelefon,
+      nkkrep: nkkrepTelefon,
+      melding: `Testprøve opprettet! Logg inn som dommer med tlf ${dommerTelefon}. NKK-rep er ${nkkrepTelefon}.`
+    });
+
+  } catch (err) {
+    console.error('Feil ved opprettelse av testprøve:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett all testdata
+app.delete("/api/superadmin/testmodus/slett", (c) => {
+  try {
+    // Finn alle testprøver
+    const testProver = db.prepare("SELECT id FROM prover WHERE navn LIKE '[TEST]%'").all();
+    const proveIds = testProver.map(p => p.id);
+
+    if (proveIds.length === 0) {
+      return c.json({ error: "Ingen testdata å slette" }, 404);
+    }
+
+    let kritikkerSlettet = 0;
+    let deltagereSlettet = 0;
+    let proverSlettet = 0;
+
+    for (const proveId of proveIds) {
+      // Slett kritikker
+      const k = db.prepare("DELETE FROM kritikker WHERE prove_id = ?").run(proveId);
+      kritikkerSlettet += k.changes;
+
+      // Slett påmeldinger
+      const p = db.prepare("DELETE FROM pameldinger WHERE prove_id = ?").run(proveId);
+      deltagereSlettet += p.changes;
+
+      // Slett dommer-tildelinger
+      db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ?").run(proveId);
+
+      // Slett prøven
+      db.prepare("DELETE FROM prover WHERE id = ?").run(proveId);
+      proverSlettet++;
+    }
+
+    // Slett testbrukere (99900001-99900006)
+    db.prepare("DELETE FROM brukere WHERE telefon LIKE '999000%'").run();
+
+    // Slett testhunder
+    db.prepare("DELETE FROM hunder WHERE regnr LIKE 'NO99999%'").run();
+
+    // Slett testklubb
+    db.prepare("DELETE FROM klubber WHERE id LIKE 'test-klubb-%'").run();
+
+    // Logg
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "testmodus_slettet", `Testdata slettet: ${proverSlettet} prøver, ${deltagereSlettet} deltakere, ${kritikkerSlettet} kritikker`
+    );
+
+    return c.json({
+      success: true,
+      prover_slettet: proverSlettet,
+      deltakere_slettet: deltagereSlettet,
+      kritikker_slettet: kritikkerSlettet
+    });
+
+  } catch (err) {
+    console.error('Feil ved sletting av testdata:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ==========================================
+// GDPR BILDEANALYSE
+// ==========================================
+
+// Analyser bilde for personopplysninger (simulert AI-analyse)
+app.post("/api/gdpr/analyser-bilde", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { image } = body;
+
+    if (!image) {
+      return c.json({ error: "Mangler bilde" }, 400);
+    }
+
+    // For nå: Returner en instruks om manuell beskrivelse
+    // I fremtiden kan dette kobles til en AI-tjeneste (f.eks. OpenAI Vision, Google Cloud Vision)
+    // som faktisk analyserer bildet for personopplysninger
+
+    // Simulert respons - ber brukeren beskrive bildet
+    const beskrivelse = "Bildet er lastet opp. For nøyaktig GDPR-analyse, beskriv følgende i tekstfeltet:\n" +
+      "• Hvilke personer er synlige (ansikter, barn, gjenkjennelige)\n" +
+      "• Tekst som er synlig i bildet (navn, adresser, telefonnumre)\n" +
+      "• Kjøretøy med synlige skiltnummer\n" +
+      "• Andre identifiserende detaljer (uniformer, logoer, steder)";
+
+    return c.json({
+      beskrivelse: beskrivelse,
+      manuell_analyse_kreves: true
+    });
+
+  } catch (err) {
+    console.error('Feil ved bildeanalyse:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ==========================================
 // NKK-REP VARSLING
 // ==========================================
 
@@ -6448,10 +12681,26 @@ app.delete("/api/superadmin/brukere/:telefon", (c) => {
 app.post("/api/varsle-nkkrep", async (c) => {
   try {
     const body = await c.req.json();
-    const { partyId, partyName, judgeName, dogCount } = body;
+    const { partyId, partyName, judgeName, dogCount, proveId } = body;
 
     if (!partyId || !judgeName) {
       return c.json({ error: "Mangler påkrevde felter" }, 400);
+    }
+
+    // Hent prøve-info for navn og klubb
+    let proveNavn = '';
+    let klubbNavn = '';
+    if (proveId) {
+      const prove = db.prepare(`
+        SELECT p.navn, k.navn as klubb_navn
+        FROM prover p
+        LEFT JOIN klubber k ON p.klubb_id = k.id
+        WHERE p.id = ?
+      `).get(proveId);
+      if (prove) {
+        proveNavn = prove.navn || '';
+        klubbNavn = prove.klubb_navn || '';
+      }
     }
 
     // Hent NKK-rep info fra trialTeam i kv_store
@@ -6474,8 +12723,23 @@ app.post("/api/varsle-nkkrep", async (c) => {
     const nkkRepPhone = team.nkkrep.phone;
     const nkkRepName = team.nkkrep.name || "NKK-rep";
 
-    // Lag SMS-melding
-    const message = `Kritikker fra ${partyName || partyId} er klare for godkjenning. Dommer: ${judgeName}. ${dogCount ? dogCount + ' hunder. ' : ''}Logg inn på fuglehundprove.no/nkk-godkjenning`;
+    // Lag SMS-melding med prøvenavn og klubb
+    let message = '';
+    if (proveNavn) {
+      message = `${proveNavn}: Kritikker fra ${partyName || partyId} er klare for godkjenning. `;
+    } else {
+      message = `Kritikker fra ${partyName || partyId} er klare for godkjenning. `;
+    }
+    message += `Dommer: ${judgeName}. `;
+    if (dogCount) {
+      message += `${dogCount} hunder. `;
+    }
+    message += `Logg inn: fuglehundprove.no/nkk-godkjenning`;
+
+    // Legg til signatur med klubbnavn (maks 160 tegn for SMS)
+    if (klubbNavn && message.length + klubbNavn.length + 10 <= 160) {
+      message += ` - ${klubbNavn}`;
+    }
 
     // Send SMS
     const smsResult = await sendSMS(nkkRepPhone, message, { type: "nkk_varsling" });
@@ -6499,6 +12763,1395 @@ app.post("/api/varsle-nkkrep", async (c) => {
 
   } catch (err) {
     console.error("Feil ved NKK-varsling:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// DVK-KONTROLLER API
+// =============================================
+
+// Hent alle DVK-kontroller for en prøve
+app.get("/api/dvk-kontroller/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const kontroller = db.prepare(`
+      SELECT * FROM dvk_kontroller
+      WHERE prove_id = ?
+      ORDER BY created_at DESC
+    `).all(prove_id);
+    return c.json(kontroller);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Opprett ny DVK-kontroll
+app.post("/api/dvk-kontroller", async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      prove_id, tidspunkt, parti, type, hund, forer, beskrivelse,
+      obs_hundehold, obs_behandling, obs_vannmat, obs_hvile, obs_veiledning, obs_bekymring,
+      tiltak_ingen, tiltak_veiledning, tiltak_advarsel, tiltak_dommer, tiltak_proveleder, tiltak_diskvalifikasjon,
+      registrert_av
+    } = body;
+
+    if (!prove_id || !tidspunkt || !type || !registrert_av) {
+      return c.json({ error: "Mangler påkrevde felt: prove_id, tidspunkt, type, registrert_av" }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO dvk_kontroller (
+        prove_id, tidspunkt, parti, type, hund, forer, beskrivelse,
+        obs_hundehold, obs_behandling, obs_vannmat, obs_hvile, obs_veiledning, obs_bekymring,
+        tiltak_ingen, tiltak_veiledning, tiltak_advarsel, tiltak_dommer, tiltak_proveleder, tiltak_diskvalifikasjon,
+        registrert_av
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      prove_id, tidspunkt, parti || null, type, hund || null, forer || null, beskrivelse || null,
+      obs_hundehold ? 1 : 0, obs_behandling ? 1 : 0, obs_vannmat ? 1 : 0,
+      obs_hvile ? 1 : 0, obs_veiledning ? 1 : 0, obs_bekymring ? 1 : 0,
+      tiltak_ingen ? 1 : 0, tiltak_veiledning ? 1 : 0, tiltak_advarsel ? 1 : 0,
+      tiltak_dommer ? 1 : 0, tiltak_proveleder ? 1 : 0, tiltak_diskvalifikasjon ? 1 : 0,
+      registrert_av
+    );
+
+    autoBackup("dvk-kontroll");
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett en DVK-kontroll
+app.delete("/api/dvk-kontroller/:id", (c) => {
+  const { id } = c.req.param();
+  try {
+    const result = db.prepare("DELETE FROM dvk_kontroller WHERE id = ?").run(id);
+    if (result.changes === 0) {
+      return c.json({ error: "Kontroll ikke funnet" }, 404);
+    }
+    autoBackup("dvk-kontroll-delete");
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent DVK-signatur for en prøve
+app.get("/api/dvk-signatur/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const signatur = db.prepare("SELECT * FROM dvk_signaturer WHERE prove_id = ?").get(prove_id);
+    if (!signatur) {
+      return c.json({ exists: false });
+    }
+    return c.json({ exists: true, ...signatur });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater DVK-signatur
+app.post("/api/dvk-signatur", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { prove_id, dvk_navn, dvk_telefon, initialer, signert_dato, signert_tid, full_signatur } = body;
+
+    if (!prove_id || !dvk_navn || !signert_dato || !signert_tid || !full_signatur) {
+      return c.json({ error: "Mangler påkrevde felt" }, 400);
+    }
+
+    // Upsert - oppdater hvis finnes, ellers opprett
+    db.prepare(`
+      INSERT INTO dvk_signaturer (prove_id, dvk_navn, dvk_telefon, initialer, signert_dato, signert_tid, full_signatur)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(prove_id) DO UPDATE SET
+        dvk_navn = excluded.dvk_navn,
+        dvk_telefon = excluded.dvk_telefon,
+        initialer = excluded.initialer,
+        signert_dato = excluded.signert_dato,
+        signert_tid = excluded.signert_tid,
+        full_signatur = excluded.full_signatur
+    `).run(prove_id, dvk_navn, dvk_telefon || null, initialer || null, signert_dato, signert_tid, full_signatur);
+
+    autoBackup("dvk-signatur");
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// DVK-JOURNAL API (komplett journal)
+// =============================================
+
+// Hent DVK-journal for en prøve
+app.get("/api/dvk-journal/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const journal = db.prepare("SELECT * FROM dvk_journaler WHERE prove_id = ?").get(prove_id);
+    if (!journal) {
+      return c.json({ exists: false });
+    }
+    // Parse JSON-felt
+    return c.json({
+      exists: true,
+      ...journal,
+      kontroller: journal.kontroller_json ? JSON.parse(journal.kontroller_json) : {},
+      avvik: journal.avvik_json ? JSON.parse(journal.avvik_json) : [],
+      vetHenvisninger: journal.vet_henvisninger_json ? JSON.parse(journal.vet_henvisninger_json) : [],
+      signatur: journal.signatur_json ? JSON.parse(journal.signatur_json) : null
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater DVK-journal (auto-save)
+app.post("/api/dvk-journal", async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      prove_id, prove_navn, arrangor_sted, prove_dato,
+      dvk_navn, dvk_telefon, dvk_assistent,
+      kontroller, avvik, vetHenvisninger
+    } = body;
+
+    if (!prove_id || !dvk_navn) {
+      return c.json({ error: "Mangler påkrevde felt: prove_id, dvk_navn" }, 400);
+    }
+
+    // Upsert
+    db.prepare(`
+      INSERT INTO dvk_journaler (
+        prove_id, prove_navn, arrangor_sted, prove_dato,
+        dvk_navn, dvk_telefon, dvk_assistent,
+        kontroller_json, avvik_json, vet_henvisninger_json,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(prove_id) DO UPDATE SET
+        prove_navn = excluded.prove_navn,
+        arrangor_sted = excluded.arrangor_sted,
+        prove_dato = excluded.prove_dato,
+        dvk_navn = excluded.dvk_navn,
+        dvk_telefon = excluded.dvk_telefon,
+        dvk_assistent = excluded.dvk_assistent,
+        kontroller_json = excluded.kontroller_json,
+        avvik_json = excluded.avvik_json,
+        vet_henvisninger_json = excluded.vet_henvisninger_json,
+        updated_at = datetime('now')
+    `).run(
+      prove_id, prove_navn || null, arrangor_sted || null, prove_dato || null,
+      dvk_navn, dvk_telefon || null, dvk_assistent || null,
+      JSON.stringify(kontroller || {}),
+      JSON.stringify(avvik || []),
+      JSON.stringify(vetHenvisninger || [])
+    );
+
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Signer og ferdigstill DVK-journal
+app.post("/api/dvk-journal/:prove_id/sign", async (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const body = await c.req.json();
+    const { signatur, journalData } = body;
+
+    if (!signatur || !signatur.fullSignatur) {
+      return c.json({ error: "Mangler signatur" }, 400);
+    }
+
+    // Oppdater journalen med signatur og sett status til signed
+    db.prepare(`
+      UPDATE dvk_journaler SET
+        prove_navn = ?,
+        arrangor_sted = ?,
+        prove_dato = ?,
+        dvk_navn = ?,
+        dvk_telefon = ?,
+        dvk_assistent = ?,
+        kontroller_json = ?,
+        avvik_json = ?,
+        vet_henvisninger_json = ?,
+        signatur_json = ?,
+        status = 'signed',
+        signed_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE prove_id = ?
+    `).run(
+      journalData.proveName || null,
+      journalData.arrangorSted || null,
+      journalData.proveDato || null,
+      journalData.dvkNavn,
+      journalData.dvkTelefon || null,
+      journalData.dvkAssistent || null,
+      JSON.stringify(journalData.kontroller || {}),
+      JSON.stringify(journalData.avvik || []),
+      JSON.stringify(journalData.vetHenvisninger || []),
+      JSON.stringify(signatur),
+      prove_id
+    );
+
+    // Hvis journal ikke finnes, opprett den
+    const exists = db.prepare("SELECT id FROM dvk_journaler WHERE prove_id = ?").get(prove_id);
+    if (!exists) {
+      db.prepare(`
+        INSERT INTO dvk_journaler (
+          prove_id, prove_navn, arrangor_sted, prove_dato,
+          dvk_navn, dvk_telefon, dvk_assistent,
+          kontroller_json, avvik_json, vet_henvisninger_json,
+          signatur_json, status, signed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', datetime('now'))
+      `).run(
+        prove_id,
+        journalData.proveName || null,
+        journalData.arrangorSted || null,
+        journalData.proveDato || null,
+        journalData.dvkNavn,
+        journalData.dvkTelefon || null,
+        journalData.dvkAssistent || null,
+        JSON.stringify(journalData.kontroller || {}),
+        JSON.stringify(journalData.avvik || []),
+        JSON.stringify(journalData.vetHenvisninger || []),
+        JSON.stringify(signatur)
+      );
+    }
+
+    // Lagre også i dokumentarkivet
+    db.prepare(`
+      INSERT INTO prove_dokumenter (prove_id, dokument_type, tittel, innhold_json, opprettet_av)
+      VALUES (?, 'dvk_journal', 'DVK Kontrolljournal', ?, ?)
+    `).run(
+      prove_id,
+      JSON.stringify({ ...journalData, signatur }),
+      signatur.navn
+    );
+
+    autoBackup("dvk-journal-signed");
+    return c.json({ success: true, message: "Journal signert og arkivert" });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// RAPPORT-VERSJONER API (Audit-trail)
+// =============================================
+
+// Lagre ny versjon av rapport
+app.post("/api/rapport-versjoner", requireAuth, async (c) => {
+  try {
+    const body = await c.req.json();
+    const user = c.get('user');
+    const { prove_id, rapport_type, data, endring_beskrivelse } = body;
+
+    if (!prove_id || !rapport_type) {
+      return c.json({ error: "prove_id og rapport_type er påkrevd" }, 400);
+    }
+
+    // Finn neste versjonsnummer
+    const lastVersion = db.prepare(`
+      SELECT MAX(versjon) as max_versjon FROM rapport_versjoner
+      WHERE prove_id = ? AND rapport_type = ?
+    `).get(prove_id, rapport_type);
+
+    const nyVersjon = (lastVersion?.max_versjon || 0) + 1;
+
+    // Lagre ny versjon
+    const result = db.prepare(`
+      INSERT INTO rapport_versjoner (prove_id, rapport_type, versjon, data_json, endret_av, endret_av_navn, endring_beskrivelse)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      prove_id,
+      rapport_type,
+      nyVersjon,
+      JSON.stringify(data || {}),
+      user?.telefon || null,
+      user ? `${user.fornavn || ''} ${user.etternavn || ''}`.trim() : 'Ukjent',
+      endring_beskrivelse || null
+    );
+
+    // Logg til admin_log
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "rapport_versjon",
+      JSON.stringify({ prove_id, rapport_type, versjon: nyVersjon, endret_av: user?.telefon })
+    );
+
+    return c.json({
+      success: true,
+      id: result.lastInsertRowid,
+      versjon: nyVersjon
+    });
+  } catch (err) {
+    console.error("Rapport-versjon POST error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent alle versjoner for en rapport
+app.get("/api/rapport-versjoner/:prove_id/:rapport_type", (c) => {
+  try {
+    const { prove_id, rapport_type } = c.req.param();
+
+    const versjoner = db.prepare(`
+      SELECT id, versjon, endret_av, endret_av_navn, endring_beskrivelse,
+             signatur_status, proveleder_signert_at, nkkrep_signert_at, created_at
+      FROM rapport_versjoner
+      WHERE prove_id = ? AND rapport_type = ?
+      ORDER BY versjon DESC
+    `).all(prove_id, rapport_type);
+
+    return c.json({ versjoner });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent én spesifikk versjon med full data
+app.get("/api/rapport-versjoner/:prove_id/:rapport_type/:versjon", (c) => {
+  try {
+    const { prove_id, rapport_type, versjon } = c.req.param();
+
+    const ver = db.prepare(`
+      SELECT * FROM rapport_versjoner
+      WHERE prove_id = ? AND rapport_type = ? AND versjon = ?
+    `).get(prove_id, rapport_type, parseInt(versjon));
+
+    if (!ver) {
+      return c.json({ error: "Versjon ikke funnet" }, 404);
+    }
+
+    return c.json({
+      ...ver,
+      data: JSON.parse(ver.data_json || '{}')
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Oppdater signaturstatus for rapport-versjon
+app.post("/api/rapport-versjoner/:id/signer", requireAuth, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const user = c.get('user');
+    const { rolle } = body; // 'proveleder' eller 'nkkrep'
+
+    if (!rolle || !['proveleder', 'nkkrep'].includes(rolle)) {
+      return c.json({ error: "Ugyldig rolle" }, 400);
+    }
+
+    const versjon = db.prepare("SELECT * FROM rapport_versjoner WHERE id = ?").get(id);
+    if (!versjon) {
+      return c.json({ error: "Versjon ikke funnet" }, 404);
+    }
+
+    // Oppdater riktig signatur-felt
+    const signertAt = new Date().toISOString();
+    if (rolle === 'proveleder') {
+      db.prepare("UPDATE rapport_versjoner SET proveleder_signert_at = ? WHERE id = ?").run(signertAt, id);
+    } else {
+      db.prepare("UPDATE rapport_versjoner SET nkkrep_signert_at = ? WHERE id = ?").run(signertAt, id);
+    }
+
+    // Sjekk om begge har signert
+    const oppdatert = db.prepare("SELECT proveleder_signert_at, nkkrep_signert_at FROM rapport_versjoner WHERE id = ?").get(id);
+    let nyStatus = 'usignert';
+    if (oppdatert.proveleder_signert_at && oppdatert.nkkrep_signert_at) {
+      nyStatus = 'fullstendig_signert';
+    } else if (oppdatert.proveleder_signert_at || oppdatert.nkkrep_signert_at) {
+      nyStatus = 'delvis_signert';
+    }
+
+    db.prepare("UPDATE rapport_versjoner SET signatur_status = ? WHERE id = ?").run(nyStatus, id);
+
+    // Logg signatur
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "rapport_signert",
+      JSON.stringify({ id, prove_id: versjon.prove_id, rapport_type: versjon.rapport_type, rolle, signert_av: user?.telefon })
+    );
+
+    return c.json({
+      success: true,
+      signatur_status: nyStatus
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Send notifikasjon til NKK-rep om ventende rapport
+app.post("/api/rapport-versjoner/:prove_id/varsle-nkkrep", requireAuth, async (c) => {
+  try {
+    const { prove_id } = c.req.param();
+    const body = await c.req.json();
+    const user = c.get('user');
+    const { rapport_type } = body;
+
+    // Hent prøve med NKK-rep info
+    const prove = db.prepare(`
+      SELECT p.*, nr.fornavn as nkkrep_fornavn, nr.etternavn as nkkrep_etternavn
+      FROM prover p
+      LEFT JOIN brukere nr ON p.nkkrep_telefon = nr.telefon
+      WHERE p.id = ?
+    `).get(prove_id);
+
+    if (!prove) {
+      return c.json({ error: "Prøve ikke funnet" }, 404);
+    }
+
+    if (!prove.nkkrep_telefon) {
+      return c.json({ error: "Ingen NKK-representant er tildelt prøven" }, 400);
+    }
+
+    // Bestem rapporttype-navn
+    const rapportNavn = {
+      'nkk': 'NKK-rapport',
+      'fkf': 'FKF-rapport',
+      'kritikker': 'Kritikk-sammendrag'
+    }[rapport_type] || 'Rapport';
+
+    // Send SMS
+    const melding = `Hei ${prove.nkkrep_fornavn || ''}! ${rapportNavn} for ${prove.navn} er klar for din signatur. Logg inn på fuglehundprove.no for å gjennomgå og signere.`;
+
+    const smsResult = await sendSMS(prove.nkkrep_telefon, melding, { type: "rapport_signatur_varsling" });
+
+    // Logg varsling
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "nkkrep_varslet",
+      JSON.stringify({ prove_id, rapport_type, nkkrep_telefon: prove.nkkrep_telefon, varslet_av: user?.telefon })
+    );
+
+    return c.json({
+      success: smsResult.success,
+      message: smsResult.success ? "SMS sendt til NKK-representant" : "Kunne ikke sende SMS",
+      error: smsResult.error || null
+    });
+  } catch (err) {
+    console.error("Varsle NKK-rep error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// DOKUMENTARKIV API
+// =============================================
+
+// Hent alle dokumenter for en prøve
+app.get("/api/prove-dokumenter/:prove_id", (c) => {
+  const { prove_id } = c.req.param();
+  try {
+    const dokumenter = db.prepare(`
+      SELECT id, prove_id, dokument_type, tittel, filnavn, opprettet_av, created_at
+      FROM prove_dokumenter
+      WHERE prove_id = ?
+      ORDER BY created_at DESC
+    `).all(prove_id);
+    return c.json(dokumenter);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent ett dokument med innhold
+app.get("/api/prove-dokumenter/:prove_id/:id", (c) => {
+  const { prove_id, id } = c.req.param();
+  try {
+    const dok = db.prepare(`
+      SELECT * FROM prove_dokumenter WHERE prove_id = ? AND id = ?
+    `).get(prove_id, id);
+    if (!dok) {
+      return c.json({ error: "Dokument ikke funnet" }, 404);
+    }
+    return c.json({
+      ...dok,
+      innhold: dok.innhold_json ? JSON.parse(dok.innhold_json) : null
+    });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Legg til dokument i arkivet
+app.post("/api/prove-dokumenter", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { prove_id, dokument_type, tittel, filnavn, innhold, opprettet_av } = body;
+
+    if (!prove_id || !dokument_type || !tittel) {
+      return c.json({ error: "Mangler påkrevde felt" }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO prove_dokumenter (prove_id, dokument_type, tittel, filnavn, innhold_json, opprettet_av)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      prove_id, dokument_type, tittel, filnavn || null,
+      innhold ? JSON.stringify(innhold) : null,
+      opprettet_av || null
+    );
+
+    autoBackup("dokument-arkivert");
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// =============================================
+// KLUBB-DOKUMENTARKIV API
+// =============================================
+
+// Hent alle dokumenter for en klubb (både prøve-dokumenter og generelle)
+app.get("/api/klubber/:klubb_id/dokumenter", (c) => {
+  const { klubb_id } = c.req.param();
+  const type = c.req.query("type"); // Filtrer på type
+  const prove_id = c.req.query("prove_id"); // Filtrer på prøve
+
+  try {
+    // Hent generelle klubb-dokumenter
+    let generalQuery = `
+      SELECT id, klubb_id, NULL as prove_id, dokument_type, tittel, beskrivelse, filnavn, opprettet_av, created_at, 'general' as kilde
+      FROM klubb_dokumenter
+      WHERE klubb_id = ?
+    `;
+    const generalParams = [klubb_id];
+
+    if (type) {
+      generalQuery += ` AND dokument_type = ?`;
+      generalParams.push(type);
+    }
+
+    // Hent prøve-dokumenter for denne klubben
+    let proveQuery = `
+      SELECT pd.id, pd.klubb_id, pd.prove_id, pd.dokument_type, pd.tittel, NULL as beskrivelse, pd.filnavn, pd.opprettet_av, pd.created_at, 'prove' as kilde
+      FROM prove_dokumenter pd
+      WHERE pd.klubb_id = ?
+    `;
+    const proveParams = [klubb_id];
+
+    if (type) {
+      proveQuery += ` AND pd.dokument_type = ?`;
+      proveParams.push(type);
+    }
+
+    if (prove_id) {
+      proveQuery += ` AND pd.prove_id = ?`;
+      proveParams.push(prove_id);
+    }
+
+    const generalDocs = db.prepare(generalQuery).all(...generalParams);
+    const proveDocs = db.prepare(proveQuery).all(...proveParams);
+
+    // Kombiner og sorter etter dato
+    const allDocs = [...generalDocs, ...proveDocs].sort((a, b) =>
+      new Date(b.created_at) - new Date(a.created_at)
+    );
+
+    return c.json(allDocs);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent prøver med dokumentstatistikk for en klubb
+app.get("/api/klubber/:klubb_id/dokumenter/prover", (c) => {
+  const { klubb_id } = c.req.param();
+
+  try {
+    // Hent alle prøver for klubben med dokumenttelling
+    const prover = db.prepare(`
+      SELECT
+        p.id,
+        p.navn,
+        p.start_dato,
+        p.status,
+        (SELECT COUNT(*) FROM prove_dokumenter WHERE prove_id = p.id OR prove_id = p.navn) as dok_count,
+        (SELECT COUNT(*) FROM dvk_journaler WHERE prove_id = p.id OR prove_id = p.navn) as dvk_count
+      FROM prover p
+      WHERE p.klubb_id = ?
+      ORDER BY p.start_dato DESC
+    `).all(klubb_id);
+
+    return c.json(prover);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent ett klubb-dokument
+app.get("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
+  const { klubb_id, id } = c.req.param();
+  const kilde = c.req.query("kilde") || "general";
+
+  try {
+    let dok;
+    if (kilde === "prove") {
+      dok = db.prepare(`SELECT * FROM prove_dokumenter WHERE id = ? AND klubb_id = ?`).get(id, klubb_id);
+    } else {
+      dok = db.prepare(`SELECT * FROM klubb_dokumenter WHERE id = ? AND klubb_id = ?`).get(id, klubb_id);
+    }
+
+    if (!dok) {
+      return c.json({ error: "Dokument ikke funnet" }, 404);
+    }
+
+    return c.json(dok);
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Legg til generelt klubb-dokument
+app.post("/api/klubber/:klubb_id/dokumenter", async (c) => {
+  const { klubb_id } = c.req.param();
+
+  try {
+    const body = await c.req.json();
+    const { dokument_type, tittel, beskrivelse, filnavn, innhold, opprettet_av } = body;
+
+    if (!dokument_type || !tittel) {
+      return c.json({ error: "Mangler påkrevde felt" }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO klubb_dokumenter (klubb_id, dokument_type, tittel, beskrivelse, filnavn, innhold_json, opprettet_av)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      klubb_id, dokument_type, tittel, beskrivelse || null, filnavn || null,
+      innhold ? JSON.stringify(innhold) : null,
+      opprettet_av || null
+    );
+
+    autoBackup("klubb-dokument-lagt-til");
+    return c.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett klubb-dokument
+app.delete("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
+  const { klubb_id, id } = c.req.param();
+  const kilde = c.req.query("kilde") || "general";
+
+  try {
+    let result;
+    if (kilde === "prove") {
+      result = db.prepare(`DELETE FROM prove_dokumenter WHERE id = ? AND klubb_id = ?`).run(id, klubb_id);
+    } else {
+      result = db.prepare(`DELETE FROM klubb_dokumenter WHERE id = ? AND klubb_id = ?`).run(id, klubb_id);
+    }
+
+    if (result.changes === 0) {
+      return c.json({ error: "Dokument ikke funnet" }, 404);
+    }
+
+    autoBackup("klubb-dokument-slettet");
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============================================
+// VK-BEDØMMING API (Vinnerklasse dommerkort)
+// ============================================
+
+// Hent VK-bedømming for et parti
+app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT * FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ exists: false });
+    }
+
+    return c.json({
+      exists: true,
+      data: {
+        id: bedomming.id,
+        prove_id: bedomming.prove_id,
+        parti: bedomming.parti,
+        dommer_telefon: bedomming.dommer_telefon,
+        vk_type: bedomming.vk_type,
+        current_slipp: bedomming.current_slipp,
+        current_round: bedomming.current_round,
+        plasseringer: JSON.parse(bedomming.plasseringer || '{}'),
+        tid_til_gode: JSON.parse(bedomming.tid_til_gode || '{}'),
+        dog_data: JSON.parse(bedomming.dog_data || '{}'),
+        slipp_comments: JSON.parse(bedomming.slipp_comments || '{}'),
+        slipp_dogs: JSON.parse(bedomming.slipp_dogs || '{}'),
+        round_pairings: JSON.parse(bedomming.round_pairings || '{}'),
+        opponents: JSON.parse(bedomming.opponents || '{}'),
+        judged_this_round: JSON.parse(bedomming.judged_this_round || '{}'),
+        round_snapshots: JSON.parse(bedomming.round_snapshots || '{}'),
+        premietildelinger: JSON.parse(bedomming.premietildelinger || '{}'),
+        status: bedomming.status,
+        updated_at: bedomming.updated_at
+      }
+    });
+  } catch (err) {
+    console.error("VK-bedomming GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater VK-bedømming
+app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const body = await c.req.json();
+
+    // Sjekk om det finnes fra før
+    const existing = db.prepare(`
+      SELECT id FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (existing) {
+      // Oppdater
+      db.prepare(`
+        UPDATE vk_bedomming SET
+          dommer_telefon = ?,
+          vk_type = ?,
+          current_slipp = ?,
+          current_round = ?,
+          plasseringer = ?,
+          tid_til_gode = ?,
+          dog_data = ?,
+          slipp_comments = ?,
+          slipp_dogs = ?,
+          round_pairings = ?,
+          opponents = ?,
+          judged_this_round = ?,
+          round_snapshots = ?,
+          premietildelinger = ?,
+          status = ?,
+          updated_at = datetime('now')
+        WHERE prove_id = ? AND parti = ?
+      `).run(
+        body.dommer_telefon || null,
+        body.vk_type || '1dag',
+        body.current_slipp || 1,
+        body.current_round || 1,
+        JSON.stringify(body.plasseringer || {}),
+        JSON.stringify(body.tid_til_gode || {}),
+        JSON.stringify(body.dog_data || {}),
+        JSON.stringify(body.slipp_comments || {}),
+        JSON.stringify(body.slipp_dogs || {}),
+        JSON.stringify(body.round_pairings || {}),
+        JSON.stringify(body.opponents || {}),
+        JSON.stringify(body.judged_this_round || {}),
+        JSON.stringify(body.round_snapshots || {}),
+        JSON.stringify(body.premietildelinger || {}),
+        body.status || 'aktiv',
+        proveId,
+        parti
+      );
+    } else {
+      // Opprett ny
+      db.prepare(`
+        INSERT INTO vk_bedomming (
+          prove_id, parti, dommer_telefon, vk_type,
+          current_slipp, current_round, plasseringer, tid_til_gode,
+          dog_data, slipp_comments, slipp_dogs, round_pairings,
+          opponents, judged_this_round, round_snapshots, premietildelinger, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        proveId,
+        parti,
+        body.dommer_telefon || null,
+        body.vk_type || '1dag',
+        body.current_slipp || 1,
+        body.current_round || 1,
+        JSON.stringify(body.plasseringer || {}),
+        JSON.stringify(body.tid_til_gode || {}),
+        JSON.stringify(body.dog_data || {}),
+        JSON.stringify(body.slipp_comments || {}),
+        JSON.stringify(body.slipp_dogs || {}),
+        JSON.stringify(body.round_pairings || {}),
+        JSON.stringify(body.opponents || {}),
+        JSON.stringify(body.judged_this_round || {}),
+        JSON.stringify(body.round_snapshots || {}),
+        JSON.stringify(body.premietildelinger || {}),
+        body.status || 'aktiv'
+      );
+    }
+
+    autoBackup("vk-bedomming-oppdatert");
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("VK-bedomming PUT error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Send inn VK-bedømming for godkjenning
+app.post("/api/vk-bedomming/:proveId/:parti/send-inn", async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    // Sjekk at bedømming finnes og er fullført
+    const bedomming = db.prepare(`
+      SELECT id, status, dommer_telefon FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+    }
+
+    if (bedomming.status !== 'fullfort') {
+      return c.json({ error: "VK-bedømming må være fullført før innsending" }, 400);
+    }
+
+    // Oppdater status til innsendt
+    db.prepare(`
+      UPDATE vk_bedomming
+      SET status = 'innsendt', submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE prove_id = ? AND parti = ?
+    `).run(proveId, parti);
+
+    // Varsle NKK-rep om ny innsending
+    const prove = db.prepare("SELECT nkkrep_telefon, navn FROM prover WHERE id = ?").get(proveId);
+    if (prove?.nkkrep_telefon) {
+      const dommer = db.prepare("SELECT fornavn, etternavn FROM brukere WHERE telefon = ?").get(bedomming.dommer_telefon);
+      const dommerNavn = dommer ? `${dommer.fornavn} ${dommer.etternavn}` : 'Dommer';
+
+      await sendSMS(prove.nkkrep_telefon,
+        `VK-bedømming fra ${dommerNavn} (parti ${parti}) er klar for godkjenning. Prøve: ${prove.navn}. Logg inn på fuglehundprove.no/nkk-godkjenning.html`,
+        { type: 'vk_godkjenning' }
+      );
+    }
+
+    autoBackup("vk-bedomming-innsendt");
+    return c.json({ success: true, message: "VK-bedømming sendt inn for godkjenning" });
+  } catch (err) {
+    console.error("VK-bedomming send-inn error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Godkjenn VK-bedømming (kun NKK-rep/admin)
+app.post("/api/vk-bedomming/:proveId/:parti/godkjenn", requireAdmin, async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const user = c.get('user');
+
+    const bedomming = db.prepare(`
+      SELECT id, status FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+    }
+
+    if (bedomming.status !== 'innsendt') {
+      return c.json({ error: "VK-bedømming må være innsendt før godkjenning" }, 400);
+    }
+
+    // Oppdater til godkjent
+    db.prepare(`
+      UPDATE vk_bedomming
+      SET status = 'godkjent', approved_at = datetime('now'), approved_by = ?, updated_at = datetime('now')
+      WHERE prove_id = ? AND parti = ?
+    `).run(user?.telefon || 'admin', proveId, parti);
+
+    autoBackup("vk-bedomming-godkjent");
+    return c.json({ success: true, message: "VK-bedømming godkjent" });
+  } catch (err) {
+    console.error("VK-bedomming godkjenn error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent innsendte VK-bedømminger for godkjenning
+app.get("/api/vk-bedomming/innsendte", (c) => {
+  try {
+    const innsendte = db.prepare(`
+      SELECT vb.*, p.navn as prove_navn, p.sted,
+             b.fornavn || ' ' || b.etternavn as dommer_navn
+      FROM vk_bedomming vb
+      JOIN prover p ON vb.prove_id = p.id
+      LEFT JOIN brukere b ON vb.dommer_telefon = b.telefon
+      WHERE vb.status = 'innsendt'
+      ORDER BY vb.submitted_at DESC
+    `).all();
+
+    return c.json(innsendte);
+  } catch (err) {
+    console.error("VK-bedomming innsendte error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent live rangering for VK (offentlig tilgjengelig)
+app.get("/api/vk-rangering/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT plasseringer, premietildelinger, vk_type, current_round, status, updated_at
+      FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ exists: false });
+    }
+
+    // Hent partiliste for å få hundenavn - sortert slik at nr tilsvarer posisjon
+    const pameldinger = db.prepare(`
+      SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase,
+             b.fornavn || ' ' || b.etternavn as forer_navn
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+      ORDER BY p.id
+    `).all(proveId, parti);
+
+    // Bygg mapping fra nr til hundeinfo (nr er 1-basert indeks i partilisten)
+    const nrToHund = {};
+    pameldinger.forEach((p, idx) => {
+      nrToHund[idx + 1] = {
+        hund_id: p.hund_id,
+        hund_navn: p.hund_navn,
+        rase: p.rase,
+        forer: p.forer_navn
+      };
+    });
+
+    const plasseringer = JSON.parse(bedomming.plasseringer || '{}');
+    const premietildelinger = JSON.parse(bedomming.premietildelinger || '{}');
+
+    // Bygg rangering med hundeinfo - plasseringer bruker nr (startnummer) som nøkkel
+    const rangering = Object.entries(plasseringer)
+      .filter(([_, plass]) => plass !== 'avsluttet')
+      .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+      .map(([nr, plass]) => {
+        const hund = nrToHund[parseInt(nr)];
+        return {
+          plass: parseInt(plass),
+          nr: parseInt(nr),
+          hund_id: hund?.hund_id || null,
+          hund_navn: hund?.hund_navn || `Hund #${nr}`,
+          rase: hund?.rase || '',
+          forer: hund?.forer || '',
+          premie: premietildelinger[nr] || null
+        };
+      });
+
+    const avsluttet = Object.entries(plasseringer)
+      .filter(([_, plass]) => plass === 'avsluttet')
+      .map(([nr, _]) => {
+        const hund = nrToHund[parseInt(nr)];
+        return {
+          nr: parseInt(nr),
+          hund_id: hund?.hund_id || null,
+          hund_navn: hund?.hund_navn || `Hund #${nr}`,
+          rase: hund?.rase || '',
+          forer: hund?.forer || ''
+        };
+      });
+
+    return c.json({
+      exists: true,
+      vk_type: bedomming.vk_type,
+      current_round: bedomming.current_round,
+      status: bedomming.status,
+      updated_at: bedomming.updated_at,
+      rangering,
+      avsluttet
+    });
+  } catch (err) {
+    console.error("VK-rangering GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent partiliste for VK-bedømming (for dommer)
+app.get("/api/vk-partiliste/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const pameldinger = db.prepare(`
+      SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase, h.regnr,
+             b.fornavn || ' ' || b.etternavn as forer_navn, b.telefon as forer_telefon
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      JOIN brukere b ON p.forer_telefon = b.telefon
+      WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+      ORDER BY p.id
+    `).all(proveId, parti);
+
+    // Formater som partiliste
+    const partiliste = pameldinger.map((p, idx) => ({
+      nr: idx + 1,
+      hund_id: p.hund_id,
+      race: p.rase || '',
+      name: p.hund_navn,
+      regnr: p.regnr || '',
+      owner: p.forer_navn,
+      owner_telefon: p.forer_telefon
+    }));
+
+    return c.json({ partiliste });
+  } catch (err) {
+    console.error("VK-partiliste GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============ DOMMER-NOTATER API (individuelle notater per dommer) ============
+
+// Hent dommerens notater for et parti
+app.get("/api/dommer-notater/:proveId/:parti", requireAuth, (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const user = c.get('user');
+    const dommer_telefon = user?.telefon;
+
+    if (!dommer_telefon) {
+      return c.json({ error: "Ikke autentisert" }, 401);
+    }
+
+    const notater = db.prepare(`
+      SELECT * FROM dommer_notater
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+      ORDER BY hund_id, slipp_nr
+    `).all(proveId, parti, dommer_telefon);
+
+    return c.json({ notater });
+  } catch (err) {
+    console.error("Dommer-notater GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Lagre/oppdater dommerens notater for en hund
+app.put("/api/dommer-notater/:proveId/:parti/:hundId", requireAuth, async (c) => {
+  try {
+    const { proveId, parti, hundId } = c.req.param();
+    const body = await c.req.json();
+    const user = c.get('user');
+    const dommer_telefon = user?.telefon;
+
+    if (!dommer_telefon) {
+      return c.json({ error: "Ikke autentisert" }, 401);
+    }
+
+    const slipp_nr = body.slipp_nr || 1;
+
+    // Sjekk om det finnes fra før
+    const existing = db.prepare(`
+      SELECT id FROM dommer_notater
+      WHERE prove_id = ? AND parti = ? AND hund_id = ? AND dommer_telefon = ? AND slipp_nr = ?
+    `).get(proveId, parti, hundId, dommer_telefon, slipp_nr);
+
+    if (existing) {
+      // Oppdater
+      db.prepare(`
+        UPDATE dommer_notater SET
+          slipptid = ?, stand_m = ?, stand_u = ?, tomstand = ?, makker_stand = ?, sjanse = ?,
+          jaktlyst = ?, fart = ?, selvstendighet = ?, soksbredde = ?, reviering = ?, samarbeid = ?,
+          presisjon = ?, reising = ?, apport = ?, notater = ?,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        body.slipptid || 0, body.stand_m || 0, body.stand_u || 0, body.tomstand || 0, body.makker_stand || 0, body.sjanse || 0,
+        body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+        body.presisjon, body.reising, body.apport, body.notater || '',
+        existing.id
+      );
+    } else {
+      // Opprett ny
+      db.prepare(`
+        INSERT INTO dommer_notater (
+          prove_id, parti, hund_id, dommer_telefon, slipp_nr,
+          slipptid, stand_m, stand_u, tomstand, makker_stand, sjanse,
+          jaktlyst, fart, selvstendighet, soksbredde, reviering, samarbeid,
+          presisjon, reising, apport, notater
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        proveId, parti, hundId, dommer_telefon, slipp_nr,
+        body.slipptid || 0, body.stand_m || 0, body.stand_u || 0, body.tomstand || 0, body.makker_stand || 0, body.sjanse || 0,
+        body.jaktlyst, body.fart, body.selvstendighet, body.soksbredde, body.reviering, body.samarbeid,
+        body.presisjon, body.reising, body.apport, body.notater || ''
+      );
+    }
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Dommer-notater PUT error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent alle dommere på et parti (for å vise hvem som er meddommer)
+app.get("/api/parti-dommere/:proveId/:parti", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const dommere = db.prepare(`
+      SELECT dt.dommer_telefon, dt.dommer_rolle, b.fornavn, b.etternavn
+      FROM dommer_tildelinger dt
+      JOIN brukere b ON dt.dommer_telefon = b.telefon
+      WHERE dt.prove_id = ? AND dt.parti = ?
+      ORDER BY dt.dommer_rolle
+    `).all(proveId, parti);
+
+    return c.json({ dommere });
+  } catch (err) {
+    console.error("Parti-dommere GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============ LIVE-RANGERING EIER (VK) ============
+
+// Sett hvem som eier live-rangeringen for et VK-parti
+app.post("/api/vk-bedomming/:proveId/:parti/set-live-eier", requireAuth, async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+    const body = await c.req.json();
+    const user = c.get('user');
+
+    // Sjekk at brukeren er en av dommerne på partiet
+    const dommer = db.prepare(`
+      SELECT dommer_telefon FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+    `).get(proveId, parti, user?.telefon);
+
+    if (!dommer) {
+      return c.json({ error: "Du er ikke tildelt dette partiet" }, 403);
+    }
+
+    // Sjekk om live-eier allerede er satt
+    const existing = db.prepare(`
+      SELECT live_rangering_eier FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (existing && existing.live_rangering_eier) {
+      return c.json({ error: "Live-rangering eier er allerede valgt", eier: existing.live_rangering_eier }, 409);
+    }
+
+    // Sett live-eier og innstillinger
+    const eierTelefon = body.eier_telefon || user.telefon;
+    const inkluderSlippKommentarer = body.inkluder_slipp_kommentarer ? 1 : 0;
+
+    if (existing) {
+      db.prepare(`
+        UPDATE vk_bedomming SET
+          live_rangering_eier = ?,
+          inkluder_slipp_kommentarer = ?,
+          updated_at = datetime('now')
+        WHERE prove_id = ? AND parti = ?
+      `).run(eierTelefon, inkluderSlippKommentarer, proveId, parti);
+    } else {
+      // Opprett ny vk_bedomming rad med live-eier
+      db.prepare(`
+        INSERT INTO vk_bedomming (prove_id, parti, dommer_telefon, live_rangering_eier, inkluder_slipp_kommentarer)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(proveId, parti, user.telefon, eierTelefon, inkluderSlippKommentarer);
+    }
+
+    return c.json({
+      success: true,
+      live_rangering_eier: eierTelefon,
+      inkluder_slipp_kommentarer: inkluderSlippKommentarer === 1
+    });
+  } catch (err) {
+    console.error("Set live-eier error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Hent live-rangering eier status
+app.get("/api/vk-bedomming/:proveId/:parti/live-eier", (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT live_rangering_eier, dommer_telefon, inkluder_slipp_kommentarer
+      FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) {
+      return c.json({ eier_valgt: false, live_rangering_eier: null, inkluder_slipp_kommentarer: false });
+    }
+
+    return c.json({
+      eier_valgt: !!bedomming.live_rangering_eier,
+      live_rangering_eier: bedomming.live_rangering_eier,
+      inkluder_slipp_kommentarer: bedomming.inkluder_slipp_kommentarer === 1
+    });
+  } catch (err) {
+    console.error("Get live-eier error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ============ MEDDOMMER-BEKREFTELSE FOR KRITIKKER ============
+
+// Hent kritikker som venter på meddommer-bekreftelse
+app.get("/api/kritikker/venter-meddommer/:telefon", requireAuth, (c) => {
+  try {
+    const telefon = c.req.param("telefon");
+
+    const kritikker = db.prepare(`
+      SELECT k.*, h.navn as hund_navn, h.rase, p.navn as prove_navn
+      FROM kritikker k
+      JOIN hunder h ON k.hund_id = h.id
+      JOIN prover p ON k.prove_id = p.id
+      WHERE k.meddommer_telefon = ? AND k.status = 'venter_meddommer'
+      ORDER BY k.created_at DESC
+    `).all(telefon);
+
+    return c.json({ kritikker });
+  } catch (err) {
+    console.error("Kritikker venter-meddommer GET error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Send kritikk til meddommer for bekreftelse
+app.post("/api/kritikker/:kritikkId/send-til-meddommer", requireAuth, async (c) => {
+  try {
+    const kritikkId = c.req.param("kritikkId");
+    const body = await c.req.json();
+    const user = c.get('user');
+
+    const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(kritikkId);
+    if (!kritikk) {
+      return c.json({ error: "Kritikk ikke funnet" }, 404);
+    }
+
+    // Verifiser at bruker er dommer på kritikken
+    if (kritikk.dommer_telefon !== user?.telefon) {
+      return c.json({ error: "Du har ikke tilgang til denne kritikken" }, 403);
+    }
+
+    // Oppdater kritikken med meddommer og status
+    db.prepare(`
+      UPDATE kritikker SET
+        meddommer_telefon = ?,
+        status = 'venter_meddommer',
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(body.meddommer_telefon, kritikkId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Send til meddommer error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Meddommer bekrefter kritikk
+app.post("/api/kritikker/:kritikkId/bekreft-meddommer", requireAuth, async (c) => {
+  try {
+    const kritikkId = c.req.param("kritikkId");
+    const user = c.get('user');
+
+    const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(kritikkId);
+    if (!kritikk) {
+      return c.json({ error: "Kritikk ikke funnet" }, 404);
+    }
+
+    // Verifiser at bruker er meddommer på kritikken
+    if (kritikk.meddommer_telefon !== user?.telefon) {
+      return c.json({ error: "Du er ikke meddommer på denne kritikken" }, 403);
+    }
+
+    if (kritikk.status !== 'venter_meddommer') {
+      return c.json({ error: "Kritikken venter ikke på meddommer-bekreftelse" }, 400);
+    }
+
+    // Oppdater kritikken til submitted (sendt til NKK-rep)
+    db.prepare(`
+      UPDATE kritikker SET
+        meddommer_bekreftet_at = datetime('now'),
+        status = 'submitted',
+        submitted_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(kritikkId);
+
+    // === AUTOMATISK MEDDOMMER-SIGNATUR PÅ PARTILISTEN ===
+    // Legg til meddommers signatur på partilisten
+    if (kritikk.prove_id && kritikk.parti) {
+      const meddommerNavn = user?.fornavn && user?.etternavn
+        ? `${user.fornavn} ${user.etternavn}`
+        : (user?.navn || 'Meddommer');
+
+      // Sjekk om meddommer allerede har signert dette partiet
+      const existingMeddommerSig = db.prepare(`
+        SELECT * FROM parti_signaturer
+        WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+      `).get(kritikk.prove_id, kritikk.parti, user?.telefon);
+
+      if (existingMeddommerSig) {
+        // Oppdater eksisterende signatur
+        db.prepare(`
+          UPDATE parti_signaturer
+          SET dommer_signert_at = datetime('now'), dommer_navn = ?
+          WHERE id = ?
+        `).run(meddommerNavn, existingMeddommerSig.id);
+      } else {
+        // Opprett ny signatur for meddommer
+        db.prepare(`
+          INSERT INTO parti_signaturer (prove_id, parti, dommer_telefon, dommer_navn, dommer_signert_at)
+          VALUES (?, ?, ?, ?, datetime('now'))
+        `).run(kritikk.prove_id, kritikk.parti, user?.telefon, meddommerNavn);
+      }
+      console.log(`📝 Meddommer-signatur lagt til for ${meddommerNavn} på parti ${kritikk.parti}`);
+    }
+
+    return c.json({ success: true, meddommerSignert: true });
+  } catch (err) {
+    console.error("Bekreft meddommer error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Meddommer avviser kritikk (sender tilbake til dommer)
+app.post("/api/kritikker/:kritikkId/avvis-meddommer", requireAuth, async (c) => {
+  try {
+    const kritikkId = c.req.param("kritikkId");
+    const body = await c.req.json();
+    const user = c.get('user');
+
+    const kritikk = db.prepare("SELECT * FROM kritikker WHERE id = ?").get(kritikkId);
+    if (!kritikk) {
+      return c.json({ error: "Kritikk ikke funnet" }, 404);
+    }
+
+    if (kritikk.meddommer_telefon !== user?.telefon) {
+      return c.json({ error: "Du er ikke meddommer på denne kritikken" }, 403);
+    }
+
+    // Send tilbake til dommer med kommentar
+    db.prepare(`
+      UPDATE kritikker SET
+        status = 'draft',
+        nkk_comment = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(body.kommentar || 'Avvist av meddommer', kritikkId);
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Avvis meddommer error:", err);
     return c.json({ error: err.message }, 500);
   }
 });

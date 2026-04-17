@@ -63,9 +63,13 @@
                     <label class="block text-sm font-medium text-bark-700 mb-1">Type</label>
                     <select id="filterType" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
                         <option value="">Alle typer</option>
-                        <option value="hogfjell">Høgfjellsprøve</option>
-                        <option value="lavland">Lavlandsprøve</option>
-                        <option value="skog">Skogsprøve</option>
+                        <option value="høyfjell_host">Høyfjell høst</option>
+                        <option value="høyfjell_vinter">Høyfjell vinter</option>
+                        <option value="lavland_host">Lavland høst</option>
+                        <option value="skogsfugl_host">Skogsfugl høst</option>
+                        <option value="skogsfugl_vinter">Skogsfugl vinter</option>
+                        <option value="fullkombinert">Fullkombinert</option>
+                        <option value="apport">Apport</option>
                     </select>
                 </div>
                 <div>
@@ -154,7 +158,7 @@
             const statusFilter = document.getElementById('filterStatus').value;
 
             let filtrert = prover.filter(p => {
-                if (typeFilter && p.type !== typeFilter) return false;
+                if (typeFilter && p.prove_type !== typeFilter) return false;
                 if (fylkeFilter && p.fylke !== fylkeFilter) return false;
                 if (statusFilter && p.status !== statusFilter) return false;
                 return true;
@@ -218,7 +222,7 @@
             }
 
             const statusBadge = getStatusBadge(prove);
-            const typeBadge = getTypeBadge(prove.type);
+            const typeBadge = getTypeBadge(prove.prove_type);
 
             // Formater klasser
             let klasserStr = '';
@@ -234,7 +238,7 @@
             } catch (e) {}
 
             return `
-                <div class="bg-white rounded-xl border border-bark-100 hover:border-warm-200 hover:shadow-md transition overflow-hidden">
+                <div class="bg-white rounded-xl border border-bark-100 hover:border-warm-200 hover:shadow-md transition overflow-hidden cursor-pointer" onclick="visProveDetaljer('${prove.id}')">
                     <div class="flex">
                         <!-- Dato-kolonne -->
                         <div class="w-20 bg-bark-50 flex flex-col items-center justify-center p-3 border-r border-bark-100">
@@ -266,15 +270,121 @@
                                     </div>
                                 </div>
 
-                                <!-- Status-tekst -->
-                                <div class="text-right">
-                                    <span class="text-xs text-bark-400">Påmelding åpner snart</span>
+                                <!-- Vis mer-ikon -->
+                                <div class="text-bark-400">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Ekspandert detalj-seksjon (skjult til klikk) -->
+                            <div id="proveDetaljer_${prove.id}" class="hidden mt-4 pt-4 border-t border-bark-100">
+                                <div id="proveDetaljerInnhold_${prove.id}" class="text-sm text-bark-600 whitespace-pre-wrap">
+                                    <span class="text-bark-400 italic">Laster informasjon...</span>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             `;
+        }
+
+        // Vis/skjul prøvedetaljer med tilleggsinformasjon
+        async function visProveDetaljer(proveId) {
+            const container = document.getElementById(`proveDetaljer_${proveId}`);
+            const innhold = document.getElementById(`proveDetaljerInnhold_${proveId}`);
+            if (!container || !innhold) return;
+
+            // Toggle visning
+            if (!container.classList.contains('hidden')) {
+                container.classList.add('hidden');
+                return;
+            }
+            container.classList.remove('hidden');
+
+            // Hvis allerede lastet, ikke last på nytt
+            if (innhold.dataset.loaded === '1') return;
+
+            try {
+                const [infoResp, partierResp] = await Promise.all([
+                    fetch(`/api/storage/praktiskInfo_${proveId}`),
+                    fetch(`/api/prover/${proveId}/partier`)
+                ]);
+
+                const parts = [];
+
+                // Sjekk om partilister finnes
+                let harPartilister = false;
+                if (partierResp.ok) {
+                    const partierData = await partierResp.json();
+                    const partier = partierData.partier || {};
+                    harPartilister = Object.keys(partier).length > 0;
+                }
+                if (!harPartilister) {
+                    try {
+                        const vkResp = await fetch(`/api/storage/vkSamletListe_${proveId}`);
+                        if (vkResp.ok) {
+                            const vkData = await vkResp.json();
+                            if (vkData.value && vkData.value.hunder?.length > 0) harPartilister = true;
+                        }
+                    } catch(e) {}
+                }
+
+                if (harPartilister) {
+                    parts.push(`<div class="mb-4">
+                        <a href="partilister.html?prove=${proveId}" class="inline-flex items-center gap-2 bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                            </svg>
+                            Se partilister
+                        </a>
+                    </div>`);
+                }
+
+                if (infoResp.ok) {
+                    const data = await infoResp.json();
+                    const info = data.value || {};
+
+                    if (info.oppropTid || info.oppropSted) {
+                        parts.push(`<div class="mb-3"><strong class="text-bark-800">Opprop:</strong> ${[info.oppropTid, info.oppropSted].filter(Boolean).join(', ')}</div>`);
+                    }
+                    if (info.provelederNavn) {
+                        parts.push(`<div class="mb-1"><strong class="text-bark-800">Prøveleder:</strong> ${escapeHtml(info.provelederNavn)}${info.provelederTelefon ? ' (' + escapeHtml(info.provelederTelefon) + ')' : ''}</div>`);
+                    }
+                    if (info.nkkRepNavn) {
+                        parts.push(`<div class="mb-1"><strong class="text-bark-800">NKK-representant:</strong> ${escapeHtml(info.nkkRepNavn)}</div>`);
+                    }
+                    if (info.dvkNavn) {
+                        parts.push(`<div class="mb-1"><strong class="text-bark-800">DVK:</strong> ${escapeHtml(info.dvkNavn)}</div>`);
+                    }
+                    if (info.tilleggsinformasjon) {
+                        parts.push(`<div class="mt-4 p-4 bg-warm-50 rounded-lg border border-warm-200">
+                            <div class="font-semibold text-warm-800 mb-2">Informasjon om prøven</div>
+                            <div class="text-bark-700 whitespace-pre-wrap">${escapeHtml(info.tilleggsinformasjon)}</div>
+                        </div>`);
+                    }
+                    if (info.premieutdelingSted) {
+                        parts.push(`<div class="mt-3"><strong class="text-bark-800">Premieutdeling:</strong> ${escapeHtml(info.premieutdelingSted)}</div>`);
+                    }
+                }
+
+                if (parts.length === 0) {
+                    innhold.innerHTML = '<span class="text-bark-400 italic">Ingen ytterligere informasjon tilgjengelig ennå.</span>';
+                } else {
+                    innhold.innerHTML = parts.join('');
+                }
+                innhold.dataset.loaded = '1';
+            } catch (err) {
+                innhold.innerHTML = '<span class="text-red-500">Kunne ikke laste informasjon.</span>';
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
         }
 
         function getStatusBadge(prove) {
@@ -289,11 +399,19 @@
 
         function getTypeBadge(type) {
             const types = {
-                'hogfjell': { label: 'Høgfjell', color: 'bg-blue-100 text-blue-800' },
+                'høyfjell_host': { label: 'Høyfjell høst', color: 'bg-warm-100 text-warm-700' },
+                'høyfjell_vinter': { label: 'Høyfjell vinter', color: 'bg-blue-100 text-blue-800' },
+                'lavland_host': { label: 'Lavland høst', color: 'bg-green-100 text-green-800' },
+                'skogsfugl_host': { label: 'Skogsfugl høst', color: 'bg-amber-100 text-amber-800' },
+                'skogsfugl_vinter': { label: 'Skogsfugl vinter', color: 'bg-teal-100 text-teal-800' },
+                'fullkombinert': { label: 'Fullkombinert', color: 'bg-purple-100 text-purple-800' },
+                'apport': { label: 'Apport', color: 'bg-rose-100 text-rose-800' },
+                // Bakoverkompatibilitet med gamle verdier
+                'hogfjell': { label: 'Høyfjell', color: 'bg-warm-100 text-warm-700' },
                 'lavland': { label: 'Lavland', color: 'bg-green-100 text-green-800' },
                 'skog': { label: 'Skog', color: 'bg-amber-100 text-amber-800' }
             };
-            const t = types[type] || { label: type || 'Ukjent', color: 'bg-bark-100 text-bark-600' };
+            const t = types[type] || { label: type || 'Høyfjell', color: 'bg-warm-100 text-warm-700' };
             return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${t.color}">${t.label}</span>`;
         }
 

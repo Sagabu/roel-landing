@@ -33,7 +33,7 @@
         .auth-loading header, .auth-loading nav, .auth-loading main { visibility: hidden; }
     </style>
     <script src="klasse-validator.js"></script>
-    <script src="auth.js"></script>
+    <!-- auth.js injiseres automatisk av serveren -->
 </head>
 <body class="bg-cream font-sans min-h-screen auth-loading">
 
@@ -49,6 +49,10 @@
                 </div>
                 <div class="flex items-center gap-3">
                     <!-- Search button injected by dog-search.js -->
+                    <!-- Superadmin-knapp (vises kun for superadmin) -->
+                    <a id="adminHeaderBtn" href="admin-panel.html" class="hidden bg-warm-500 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
+                        Superadmin
+                    </a>
                     <button onclick="logout()" class="bg-bark-800 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
                         Logg ut
                     </button>
@@ -64,7 +68,7 @@
                 <a href="min-side.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Min side</a>
                 <a href="profil.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Min profil</a>
                 <a href="mine-hunder.html" class="tab-active px-5 py-4 text-sm font-medium whitespace-nowrap border-b-2 border-warm-500 text-warm-800">Mine hunder</a>
-                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Jaktprover</a>
+                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Jaktprøver</a>
                 <a href="fullmakter.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Fullmakter</a>
             </div>
         </div>
@@ -143,12 +147,29 @@
                     <p class="text-xs text-bark-400 mt-2">Klikk for å legge til bilde</p>
                 </div>
 
-                <!-- Registration Number (Required) -->
-                <div>
+                <!-- Registration Number (Required) with autocomplete -->
+                <div class="relative">
                     <label class="block text-sm font-medium text-bark-700 mb-1">Registreringsnummer (NKK) *</label>
                     <input type="text" id="dogRegNumber" required placeholder="f.eks. NO12345/21"
-                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
-                    <p class="text-xs text-bark-500 mt-1">Regnr er påkrevd for å koble kritikker til hunden</p>
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none"
+                        oninput="searchDogByRegnr(this.value)" autocomplete="off">
+                    <p class="text-xs text-bark-500 mt-1">Norske: NO12345/23 | Svenske: SE12345/2023</p>
+
+                    <!-- Autocomplete dropdown -->
+                    <div id="regnrAutocomplete" class="hidden absolute z-20 w-full mt-1 bg-white border-2 border-bark-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                        <!-- Results will be injected here -->
+                    </div>
+
+                    <!-- Match found indicator -->
+                    <div id="regnrMatchInfo" class="hidden mt-2 p-3 bg-green-50 border border-green-200 rounded-xl">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span id="regnrMatchText" class="text-sm text-green-800 font-medium"></span>
+                        </div>
+                        <p id="regnrMatchDetails" class="text-xs text-green-600 mt-1"></p>
+                    </div>
                 </div>
 
                 <!-- Name -->
@@ -182,7 +203,9 @@
                 <div>
                     <label class="block text-sm font-medium text-bark-700 mb-1">Fødselsdato *</label>
                     <input type="date" id="dogBirthDate" required
-                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none">
+                        class="w-full px-4 py-3 rounded-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none"
+                        onchange="validateBirthDateAgainstRegnr()">
+                    <p id="birthDateValidation" class="text-xs mt-1 hidden"></p>
                     <p id="klasseInfo" class="text-xs text-bark-500 mt-1 hidden"></p>
                 </div>
 
@@ -217,7 +240,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
                                 <span id="eierbevisLabel" class="text-sm text-bark-500">Last opp eierbevis</span>
-                                <input type="file" id="eierbevisUpload" accept="image/*" class="hidden" onchange="handleDocumentUpload(event, 'eierbevis')">
+                                <input type="file" id="eierbevisUpload" accept="image/*,application/pdf" class="hidden" onchange="handleDocumentUpload(event, 'eierbevis')">
                             </label>
                             <button type="button" id="eierbevisDelete" class="hidden p-2 text-red-500 hover:bg-red-50 rounded-lg" onclick="deleteDocument('eierbevis')">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -239,7 +262,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
                                 <span id="aversjonsbevisLabel" class="text-sm text-bark-500">Last opp aversjonsbevis</span>
-                                <input type="file" id="aversjonsbevisUpload" accept="image/*" class="hidden" onchange="handleDocumentUpload(event, 'aversjonsbevis')">
+                                <input type="file" id="aversjonsbevisUpload" accept="image/*,application/pdf" class="hidden" onchange="handleDocumentUpload(event, 'aversjonsbevis')">
                             </label>
                             <button type="button" id="aversjonsbevisDelete" class="hidden p-2 text-red-500 hover:bg-red-50 rounded-lg" onclick="deleteDocument('aversjonsbevis')">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -261,7 +284,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
                                 <span id="vaksinasjonLabel" class="text-sm text-bark-500">Last opp vaksinasjonspapirer</span>
-                                <input type="file" id="vaksinasjonUpload" accept="image/*" class="hidden" onchange="handleDocumentUpload(event, 'vaksinasjon')">
+                                <input type="file" id="vaksinasjonUpload" accept="image/*,application/pdf" class="hidden" onchange="handleDocumentUpload(event, 'vaksinasjon')">
                             </label>
                             <button type="button" id="vaksinasjonDelete" class="hidden p-2 text-red-500 hover:bg-red-50 rounded-lg" onclick="deleteDocument('vaksinasjon')">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,17 +366,17 @@
 
             <div class="mb-6">
                 <p class="text-bark-600 text-sm mb-4">
-                    Last opp et tydelig bilde av hundens aversjonsbevis (sauetrening).
-                    Bildet må være lesbart slik at prøveleder kan verifisere det.
+                    Last opp et tydelig bilde eller PDF av hundens aversjonsbevis (sauetrening).
+                    Dokumentet må være lesbart slik at prøveleder kan verifisere det.
                 </p>
 
                 <div class="border-2 border-dashed border-bark-300 rounded-xl p-6 text-center hover:border-warm-400 transition cursor-pointer" onclick="document.getElementById('aversjonsInput').click()">
-                    <input type="file" id="aversjonsInput" class="hidden" accept="image/*" onchange="previewAversjonsbevis(this)">
+                    <input type="file" id="aversjonsInput" class="hidden" accept="image/*,application/pdf" onchange="previewAversjonsbevis(this)">
                     <svg class="w-12 h-12 text-bark-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
                     <p class="text-bark-500">Klikk for å velge bilde</p>
-                    <p class="text-xs text-bark-400 mt-1">JPEG, PNG, GIF eller WebP (maks 5MB)</p>
+                    <p class="text-xs text-bark-400 mt-1">JPEG, PNG, GIF, WebP eller PDF (maks 5MB)</p>
                 </div>
 
                 <img id="aversjonsPreview" class="hidden mt-4 w-full rounded-xl border border-bark-200" alt="Forhåndsvisning">
@@ -382,6 +405,121 @@
                 <button onclick="uploadAversjonsbevis()" class="flex-1 bg-warm-500 hover:bg-warm-600 text-white py-3 rounded-xl font-medium transition">
                     Last opp
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aversjonsbevis Bekreftelse Modal (AI-avlest data) -->
+    <div id="aversjonsBekreftModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-bark-100">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-bold font-serif text-bark-800">Bekreft aversjonsbevis</h3>
+                    <button onclick="closeAversjonsBekreftModal()" class="text-bark-400 hover:text-bark-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-6">
+                <!-- AI-analyse status -->
+                <div id="aversjonsAnalyseStatus" class="mb-4 p-3 rounded-xl bg-blue-50 border border-blue-200">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                        <span class="text-sm text-blue-800 font-medium">Automatisk avlesning utført</span>
+                    </div>
+                    <p id="aversjonsAnalyseMelding" class="text-xs text-blue-700 mt-1">Vennligst kontroller at informasjonen er korrekt.</p>
+                </div>
+
+                <!-- Advarsler om mismatch -->
+                <div id="aversjonsWarnings" class="hidden mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                    <div class="flex items-start gap-2">
+                        <svg class="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <p class="text-sm font-medium text-amber-800">OBS! Mulige avvik:</p>
+                            <ul id="aversjonsWarningsList" class="text-xs text-amber-700 mt-1 list-disc list-inside"></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bilde preview -->
+                <div class="mb-4">
+                    <img id="aversjonsBekreftBilde" class="w-full max-h-48 object-contain rounded-xl border border-bark-200" alt="Aversjonsbevis">
+                </div>
+
+                <!-- Redigerbare felter -->
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Dyretype (Sau/Rein) *</label>
+                        <select id="avBekDyretype" class="w-full px-4 py-2.5 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none bg-white">
+                            <option value="">Velg...</option>
+                            <option value="Sau">Sau</option>
+                            <option value="Rein">Rein</option>
+                            <option value="Sau og Rein">Sau og Rein</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="avBekGyldig" class="w-4 h-4 text-green-600 rounded" checked>
+                            <span class="text-sm text-bark-700">Beviset er gyldig</span>
+                        </label>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Dato for godkjent aversjon *</label>
+                        <input type="date" id="avBekDato" class="w-full px-4 py-2.5 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Hundens ID-nummer (chip)</label>
+                        <input type="text" id="avBekChipId" placeholder="15-sifret chip-nummer" class="w-full px-4 py-2.5 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Navn på beviset</label>
+                            <input type="text" id="avBekNavn" class="w-full px-4 py-2.5 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Reg.nr på beviset</label>
+                            <input type="text" id="avBekRegnr" class="w-full px-4 py-2.5 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Rase på beviset</label>
+                        <input type="text" id="avBekRase" class="w-full px-4 py-2.5 rounded-xl border-2 border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                </div>
+
+                <!-- Sammenligning med registrert data -->
+                <div id="avBekSammenligning" class="mt-4 p-3 rounded-xl bg-bark-50 border border-bark-200">
+                    <p class="text-xs font-medium text-bark-600 mb-2">Registrert i systemet:</p>
+                    <div class="text-xs text-bark-500 space-y-1">
+                        <p>Navn: <span id="avBekRegNavn" class="font-medium text-bark-700">-</span></p>
+                        <p>Reg.nr: <span id="avBekRegRegnr" class="font-medium text-bark-700">-</span></p>
+                        <p>Rase: <span id="avBekRegRase" class="font-medium text-bark-700">-</span></p>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 mt-6">
+                    <button onclick="closeAversjonsBekreftModal()" class="flex-1 bg-bark-100 hover:bg-bark-200 text-bark-700 py-3 rounded-xl font-medium transition">
+                        Avbryt
+                    </button>
+                    <button onclick="bekreftAversjonsbevis()" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Bekreft og lagre
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -510,7 +648,14 @@
                         gender: h.kjonn,
                         birthDate: h.fodt || h.fodselsdato || '',
                         photo: h.bilde || null,
-                        results: h.results || []
+                        results: h.results || [],
+                        // Dokumenter
+                        eierbevis: h.eierbevis || null,
+                        eierbevisDato: h.eierbevis_dato || null,
+                        aversjonsbevis: h.aversjonsbevis || null,
+                        aversjonsbevisDato: h.aversjonsbevis_dato || null,
+                        vaksinasjon: h.vaksinasjon || null,
+                        vaksinasjonDato: h.vaksinasjon_dato || null
                     }));
                     console.log('Transformerte hunder:', dogs);
                 } else {
@@ -542,6 +687,22 @@
             console.log('=================================');
 
             await loadDogs();
+
+            // Vis superadmin-knapp hvis bruker har superadmin-rolle
+            try {
+                const phone = FuglehundAuth.getSessionPhone();
+                if (phone) {
+                    const resp = await fetch(`/api/brukere/${phone}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const roller = (data.rolle || '').split(',').map(r => r.trim());
+                        if (roller.includes('superadmin')) {
+                            const adminBtn = document.getElementById('adminHeaderBtn');
+                            if (adminBtn) adminBtn.classList.remove('hidden');
+                        }
+                    }
+                }
+            } catch (e) { console.log('Kunne ikke sjekke admin-rolle:', e); }
         }
 
         function renderDogs() {
@@ -602,7 +763,7 @@
                     <!-- Results Summary -->
                     <div class="bg-bark-50 px-5 py-3 border-t border-bark-100 cursor-pointer hover:bg-bark-100 transition" onclick="viewDogDetails('${dog.id}')">
                         <div class="flex items-center justify-between text-sm">
-                            <span class="text-bark-500">Jaktprover og kritikker</span>
+                            <span class="text-bark-500">Jaktprøver og kritikker</span>
                             <span class="flex items-center gap-2">
                                 <span class="font-medium text-bark-700">${dog.results?.length || 0} prover</span>
                                 <svg class="w-4 h-4 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -663,31 +824,80 @@
                 `;
             }
 
-            // Hent aversjonsbevis-status
+            // Hent aversjonsbevis-status (utvidet med AI-data)
             let aversjonsHtml = '';
             try {
-                const avResp = await fetch(`/api/hunder/${dog.id}/aversjonsbevis`);
+                const avResp = await fetch(`/api/hunder/${dog.id}/aversjonsbevis/detaljer`);
                 if (avResp.ok) {
                     const avData = await avResp.json();
-                    if (avData.harAversjonsbevis) {
+                    if (avData.harBevis) {
+                        // Beregn alder på beviset
+                        let alderInfo = '';
+                        if (avData.datoGodkjent) {
+                            const datoObj = new Date(avData.datoGodkjent);
+                            const naa = new Date();
+                            const aarGammelt = Math.floor((naa - datoObj) / (365.25 * 24 * 60 * 60 * 1000));
+                            const maanederGammelt = Math.floor((naa - datoObj) / (30.44 * 24 * 60 * 60 * 1000));
+
+                            if (aarGammelt >= 2) {
+                                alderInfo = `<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full ml-2">${aarGammelt} år gammelt</span>`;
+                            } else if (maanederGammelt > 0) {
+                                alderInfo = `<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2">${maanederGammelt} mnd gammelt</span>`;
+                            }
+                        }
+
+                        // Statusbadge
+                        let statusBadge = '';
+                        if (avData.godkjent) {
+                            statusBadge = '<span class="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full">Godkjent av DVK</span>';
+                        } else if (avData.bekreftet) {
+                            statusBadge = '<span class="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded-full">Bekreftet av eier</span>';
+                        } else {
+                            statusBadge = '<span class="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">Venter bekreftelse</span>';
+                        }
+
                         aversjonsHtml = `
                             <div class="bg-green-50 border border-green-200 rounded-xl p-4">
-                                <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center justify-between mb-3">
                                     <div class="flex items-center gap-2">
                                         <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
-                                        <span class="font-medium text-green-800">Aversjonsbevis lastet opp</span>
+                                        <span class="font-medium text-green-800">Aversjonsbevis ${avData.dyretype ? `(${avData.dyretype})` : ''}</span>
                                     </div>
-                                    <span class="text-xs ${avData.godkjent ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'} px-2 py-1 rounded-full">
-                                        ${avData.godkjent ? 'Godkjent' : 'Venter godkjenning'}
-                                    </span>
+                                    ${statusBadge}
                                 </div>
-                                <p class="text-sm text-green-700 mb-3">Dato: ${avData.dato || 'Ukjent'}</p>
-                                <div class="flex gap-2">
-                                    <button onclick="showAversjonsbevis('${dog.id}')" class="text-sm text-warm-800 hover:text-warm-800 font-medium">Se bevis</button>
-                                    <span class="text-bark-300">|</span>
-                                    <button onclick="deleteAversjonsbevis('${dog.id}')" class="text-sm text-red-600 hover:text-red-700 font-medium">Slett</button>
+
+                                <div class="grid grid-cols-2 gap-2 text-sm mb-3">
+                                    <div>
+                                        <span class="text-green-600">Godkjent:</span>
+                                        <span class="text-green-800 font-medium">${avData.datoGodkjent || 'Ukjent'}</span>
+                                        ${alderInfo}
+                                    </div>
+                                    ${avData.dyretype ? `
+                                    <div>
+                                        <span class="text-green-600">Type:</span>
+                                        <span class="text-green-800 font-medium">${avData.dyretype}</span>
+                                    </div>
+                                    ` : ''}
+                                    ${avData.chipId ? `
+                                    <div class="col-span-2">
+                                        <span class="text-green-600">Chip-ID:</span>
+                                        <span class="text-green-800 font-medium font-mono text-xs">${avData.chipId}</span>
+                                    </div>
+                                    ` : ''}
+                                </div>
+
+                                ${avData.gyldig === false ? `
+                                <div class="bg-red-100 border border-red-200 rounded-lg p-2 mb-3">
+                                    <p class="text-xs text-red-700 font-medium">⚠️ Beviset er markert som ugyldig</p>
+                                </div>
+                                ` : ''}
+
+                                <div class="flex flex-wrap gap-2">
+                                    <button onclick="showAversjonsbevis('${dog.id}')" class="text-sm bg-white border border-green-300 text-green-700 hover:bg-green-100 px-3 py-1.5 rounded-lg transition">Se bevis</button>
+                                    <button onclick="openAversjonsUpload('${dog.id}')" class="text-sm bg-white border border-bark-300 text-bark-700 hover:bg-bark-100 px-3 py-1.5 rounded-lg transition">Last opp nytt</button>
+                                    <button onclick="deleteAversjonsbevis('${dog.id}')" class="text-sm text-red-600 hover:text-red-700 px-3 py-1.5 transition">Slett</button>
                                 </div>
                             </div>
                         `;
@@ -700,7 +910,7 @@
                                     </svg>
                                     <div class="flex-1">
                                         <p class="font-medium text-amber-800">Aversjonsbevis mangler</p>
-                                        <p class="text-sm text-amber-700 mt-1">Last opp bilde av aversjonsbeviset slik at prøveleder kan verifisere det.</p>
+                                        <p class="text-sm text-amber-700 mt-1">Last opp bilde av aversjonsbeviset. Systemet leser automatisk av informasjonen.</p>
                                         <button onclick="openAversjonsUpload('${dog.id}')" class="mt-3 bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 py-2 rounded-lg transition">
                                             Last opp aversjonsbevis
                                         </button>
@@ -778,14 +988,15 @@
 
             // Sjekk filstørrelse (maks 5MB)
             if (file.size > 5 * 1024 * 1024) {
-                alert('Bildet er for stort. Maks 5MB tillatt.');
+                alert('Filen er for stor. Maks 5MB tillatt.');
                 input.value = '';
                 return;
             }
 
-            // Sjekk filtype
-            if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
-                alert('Ugyldig filtype. Bruk JPEG, PNG, GIF eller WebP.');
+            // Sjekk filtype (bilder og PDF)
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('Ugyldig filtype. Bruk JPEG, PNG, GIF, WebP eller PDF.');
                 input.value = '';
                 return;
             }
@@ -793,11 +1004,21 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 const preview = document.getElementById('aversjonsPreview');
-                preview.src = e.target.result;
+                if (file.type === 'application/pdf') {
+                    // For PDF, vis et placeholder-ikon
+                    preview.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="#9A8268" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>');
+                    preview.alt = 'PDF-fil valgt: ' + file.name;
+                } else {
+                    preview.src = e.target.result;
+                }
                 preview.classList.remove('hidden');
             };
             reader.readAsDataURL(file);
         }
+
+        // Midlertidig lagring av AI-analyse resultat
+        let currentAversjonsAnalyse = null;
+        let currentAversjonsBilde = null;
 
         async function uploadAversjonsbevis() {
             const input = document.getElementById('aversjonsInput');
@@ -807,35 +1028,179 @@
                 return;
             }
 
+            // Vis loading-indikator
+            const uploadBtn = document.querySelector('#aversjonsModal button:last-child');
+            const originalText = uploadBtn.textContent;
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = `
+                <svg class="w-5 h-5 animate-spin inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Analyserer...
+            `;
+
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const base64 = e.target.result;
+                currentAversjonsBilde = base64;
 
                 try {
-                    const resp = await fetch(`/api/hunder/${currentAversjonsHundId}/aversjonsbevis`, {
+                    // Bruk det nye AI-analyse endepunktet
+                    const resp = await fetch(`/api/hunder/${currentAversjonsHundId}/aversjonsbevis/analyser`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            bilde: base64,
-                            dato: new Date().toISOString().slice(0, 10)
-                        })
+                        body: JSON.stringify({ bilde: base64 })
                     });
 
                     const data = await resp.json();
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = originalText;
+
                     if (resp.ok) {
-                        alert('Aversjonsbevis lastet opp!');
                         closeAversjonsModal();
-                        // Oppdater visningen
-                        const dog = dogs.find(d => d.id === currentAversjonsHundId);
-                        if (dog) viewDogDetails(dog.id);
+
+                        if (data.aiAnalyse && data.avlestData) {
+                            // AI har lest beviset - vis bekreftelsesmodal
+                            currentAversjonsAnalyse = data;
+                            showAversjonsBekreftModal(data);
+                        } else {
+                            // AI feilet eller ikke konfigurert - vis manuell utfylling
+                            currentAversjonsAnalyse = { avlestData: null };
+                            showAversjonsBekreftModal({
+                                aiAnalyse: false,
+                                melding: data.melding || 'Fyll inn informasjonen manuelt.',
+                                avlestData: null,
+                                matchWarnings: []
+                            });
+                        }
                     } else {
                         alert('Feil: ' + (data.error || 'Kunne ikke laste opp'));
                     }
                 } catch (e) {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = originalText;
                     alert('Nettverksfeil ved opplasting');
                 }
             };
             reader.readAsDataURL(file);
+        }
+
+        function showAversjonsBekreftModal(analyseData) {
+            const modal = document.getElementById('aversjonsBekreftModal');
+            const dog = dogs.find(d => d.id === currentAversjonsHundId);
+
+            // Sett bilde
+            document.getElementById('aversjonsBekreftBilde').src = currentAversjonsBilde;
+
+            // Oppdater status-melding
+            const statusEl = document.getElementById('aversjonsAnalyseStatus');
+            const meldingEl = document.getElementById('aversjonsAnalyseMelding');
+
+            if (analyseData.aiAnalyse) {
+                statusEl.className = 'mb-4 p-3 rounded-xl bg-green-50 border border-green-200';
+                statusEl.querySelector('svg').className = 'w-5 h-5 text-green-600';
+                statusEl.querySelector('span').className = 'text-sm text-green-800 font-medium';
+                statusEl.querySelector('span').textContent = 'Automatisk avlesning utført';
+                meldingEl.className = 'text-xs text-green-700 mt-1';
+
+                if (analyseData.lesbarhet === 'dårlig') {
+                    statusEl.className = 'mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200';
+                    statusEl.querySelector('svg').className = 'w-5 h-5 text-amber-600';
+                    statusEl.querySelector('span').className = 'text-sm text-amber-800 font-medium';
+                    statusEl.querySelector('span').textContent = 'Dokumentet var vanskelig å lese';
+                    meldingEl.className = 'text-xs text-amber-700 mt-1';
+                }
+            } else {
+                statusEl.className = 'mb-4 p-3 rounded-xl bg-blue-50 border border-blue-200';
+                statusEl.querySelector('svg').className = 'w-5 h-5 text-blue-600';
+                statusEl.querySelector('span').className = 'text-sm text-blue-800 font-medium';
+                statusEl.querySelector('span').textContent = 'Manuell utfylling';
+                meldingEl.className = 'text-xs text-blue-700 mt-1';
+            }
+            meldingEl.textContent = analyseData.melding;
+
+            // Vis advarsler
+            const warningsEl = document.getElementById('aversjonsWarnings');
+            const warningsList = document.getElementById('aversjonsWarningsList');
+            if (analyseData.matchWarnings && analyseData.matchWarnings.length > 0) {
+                warningsEl.classList.remove('hidden');
+                warningsList.innerHTML = analyseData.matchWarnings.map(w => `<li>${w}</li>`).join('');
+            } else {
+                warningsEl.classList.add('hidden');
+            }
+
+            // Fyll inn avlest data (eller tom)
+            const data = analyseData.avlestData || {};
+            document.getElementById('avBekDyretype').value = data.dyretype || '';
+            document.getElementById('avBekGyldig').checked = data.gyldig !== false;
+            document.getElementById('avBekDato').value = data.dato_godkjent || '';
+            document.getElementById('avBekChipId').value = data.chip_id || '';
+            document.getElementById('avBekNavn').value = data.hundenavn || '';
+            document.getElementById('avBekRegnr').value = data.regnr || '';
+            document.getElementById('avBekRase').value = data.rase || '';
+
+            // Vis registrert data for sammenligning
+            if (dog) {
+                document.getElementById('avBekRegNavn').textContent = dog.navn || '-';
+                document.getElementById('avBekRegRegnr').textContent = dog.regnr || '-';
+                document.getElementById('avBekRegRase').textContent = dog.rase || '-';
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeAversjonsBekreftModal() {
+            document.getElementById('aversjonsBekreftModal').classList.add('hidden');
+            currentAversjonsAnalyse = null;
+        }
+
+        async function bekreftAversjonsbevis() {
+            const dyretype = document.getElementById('avBekDyretype').value;
+            const gyldig = document.getElementById('avBekGyldig').checked;
+            const dato = document.getElementById('avBekDato').value;
+
+            if (!dyretype) {
+                alert('Velg dyretype (Sau/Rein)');
+                return;
+            }
+            if (!dato) {
+                alert('Fyll inn dato for godkjent aversjon');
+                return;
+            }
+
+            // Hent brukerinfo for "bekreftet av"
+            const userSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+            const bekreftetAv = userSession.name || userSession.phone || 'Eier';
+
+            try {
+                const resp = await fetch(`/api/hunder/${currentAversjonsHundId}/aversjonsbevis/bekreft`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dyretype: dyretype,
+                        gyldig: gyldig,
+                        dato_godkjent: dato,
+                        chip_id: document.getElementById('avBekChipId').value || null,
+                        hundenavn: document.getElementById('avBekNavn').value || null,
+                        regnr: document.getElementById('avBekRegnr').value || null,
+                        rase: document.getElementById('avBekRase').value || null,
+                        bekreftet_av: bekreftetAv
+                    })
+                });
+
+                if (resp.ok) {
+                    alert('✅ Aversjonsbevis lagret og bekreftet!');
+                    closeAversjonsBekreftModal();
+                    // Oppdater visningen
+                    const dog = dogs.find(d => d.id === currentAversjonsHundId);
+                    if (dog) viewDogDetails(dog.id);
+                } else {
+                    const err = await resp.json();
+                    alert('Feil: ' + (err.error || 'Kunne ikke lagre'));
+                }
+            } catch (e) {
+                alert('Nettverksfeil ved lagring');
+            }
         }
 
         async function showAversjonsbevis(hundId) {
@@ -1182,7 +1547,7 @@
 
         // Dokumenter (eierbevis, aversjonsbevis, vaksinasjon)
         let currentDocuments = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
-        let documentDates = { vaksinasjon: null };
+        let documentDates = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
 
         function handleDocumentUpload(event, docType) {
             const file = event.target.files[0];
@@ -1194,9 +1559,8 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     currentDocuments[docType] = e.target.result;
-                    if (docType === 'vaksinasjon') {
-                        documentDates.vaksinasjon = new Date().toISOString();
-                    }
+                    // Sett ny dato når dokument lastes opp
+                    documentDates[docType] = new Date().toISOString();
                     updateDocumentPreview(docType);
                 };
                 reader.readAsDataURL(file);
@@ -1210,7 +1574,13 @@
             const deleteBtn = document.getElementById(`${docType}Delete`);
 
             if (currentDocuments[docType]) {
-                preview.src = currentDocuments[docType];
+                // Sjekk om det er PDF
+                if (currentDocuments[docType].startsWith('data:application/pdf')) {
+                    // Vis PDF-ikon
+                    preview.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><text x="7" y="17" font-size="6" fill="#dc2626" stroke="none" font-family="sans-serif" font-weight="bold">PDF</text></svg>');
+                } else {
+                    preview.src = currentDocuments[docType];
+                }
                 previewContainer.classList.remove('hidden');
                 deleteBtn.classList.remove('hidden');
                 label.textContent = 'Endre';
@@ -1243,22 +1613,41 @@
 
         function viewDocument(docType) {
             if (currentDocuments[docType]) {
-                const win = window.open('', '_blank');
-                win.document.write(`
-                    <!DOCTYPE html>
-                    <html>
-                    <head><title>${docType === 'eierbevis' ? 'Eierbevis' : docType === 'aversjonsbevis' ? 'Aversjonsbevis' : 'Vaksinasjonspapirer'}</title></head>
-                    <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f0f0;">
-                        <img src="${currentDocuments[docType]}" style="max-width:100%;max-height:100vh;object-fit:contain;">
-                    </body>
-                    </html>
-                `);
+                const data = currentDocuments[docType];
+                const isPdf = data.startsWith('data:application/pdf');
+                const title = docType === 'eierbevis' ? 'Eierbevis' : docType === 'aversjonsbevis' ? 'Aversjonsbevis' : 'Vaksinasjonspapirer';
+
+                if (isPdf) {
+                    // Åpne PDF i ny fane
+                    const win = window.open('', '_blank');
+                    win.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head><title>${title}</title></head>
+                        <body style="margin:0;height:100vh;">
+                            <embed src="${data}" type="application/pdf" width="100%" height="100%">
+                        </body>
+                        </html>
+                    `);
+                } else {
+                    // Vis bilde
+                    const win = window.open('', '_blank');
+                    win.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head><title>${title}</title></head>
+                        <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f0f0;">
+                            <img src="${data}" style="max-width:100%;max-height:100vh;object-fit:contain;">
+                        </body>
+                        </html>
+                    `);
+                }
             }
         }
 
         function resetDocumentFields() {
             currentDocuments = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
-            documentDates = { vaksinasjon: null };
+            documentDates = { eierbevis: null, aversjonsbevis: null, vaksinasjon: null };
             ['eierbevis', 'aversjonsbevis', 'vaksinasjon'].forEach(docType => {
                 document.getElementById(`${docType}Upload`).value = '';
                 updateDocumentPreview(docType);
@@ -1272,6 +1661,8 @@
                 vaksinasjon: dog.vaksinasjon || null
             };
             documentDates = {
+                eierbevis: dog.eierbevisDato || null,
+                aversjonsbevis: dog.aversjonsbevisDato || null,
                 vaksinasjon: dog.vaksinasjonDato || null
             };
             ['eierbevis', 'aversjonsbevis', 'vaksinasjon'].forEach(docType => {
@@ -1295,7 +1686,15 @@
                 kjonn: genderInput ? genderInput.value : null,
                 fodselsdato: document.getElementById('dogBirthDate').value || null,
                 eier_telefon: userPhone,
-                bilde: currentDogPhoto || null
+                bilde: currentDogPhoto || null,
+                // Dokumenter (eierbevis, aversjonsbevis, vaksinasjon)
+                // Bevar eksisterende dato hvis dokumentet ikke er endret
+                eierbevis: currentDocuments.eierbevis || null,
+                eierbevis_dato: currentDocuments.eierbevis ? (documentDates.eierbevis || new Date().toISOString()) : null,
+                aversjonsbevis: currentDocuments.aversjonsbevis || null,
+                aversjonsbevis_dato: currentDocuments.aversjonsbevis ? (documentDates.aversjonsbevis || new Date().toISOString()) : null,
+                vaksinasjon: currentDocuments.vaksinasjon || null,
+                vaksinasjon_dato: currentDocuments.vaksinasjon ? (documentDates.vaksinasjon || new Date().toISOString()) : null
             };
 
             try {
@@ -1392,6 +1791,176 @@
                 FuglehundAuth.logout();
                 window.location.href = 'index.html';
             }
+        }
+
+        // ===== REGNR-SØK OG AUTOCOMPLETE =====
+        let regnrSearchTimeout = null;
+        let selectedDogFromSearch = null;
+
+        async function searchDogByRegnr(query) {
+            const autocompleteEl = document.getElementById('regnrAutocomplete');
+            const matchInfoEl = document.getElementById('regnrMatchInfo');
+
+            // Skjul match-info når bruker skriver
+            matchInfoEl.classList.add('hidden');
+            selectedDogFromSearch = null;
+
+            // Minst 3 tegn for å søke
+            if (!query || query.trim().length < 3) {
+                autocompleteEl.classList.add('hidden');
+                return;
+            }
+
+            // Debounce
+            if (regnrSearchTimeout) clearTimeout(regnrSearchTimeout);
+
+            regnrSearchTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/hunder/sok/regnr?q=${encodeURIComponent(query.trim())}`);
+                    if (!response.ok) {
+                        autocompleteEl.classList.add('hidden');
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (!data.results || data.results.length === 0) {
+                        autocompleteEl.innerHTML = `
+                            <div class="px-4 py-3 text-sm text-bark-500 border-b border-bark-100">
+                                Ingen hund funnet med dette regnr
+                            </div>
+                            <div class="px-4 py-2 text-xs text-bark-400">
+                                Du kan registrere hunden manuelt nedenfor
+                            </div>
+                        `;
+                        autocompleteEl.classList.remove('hidden');
+                        return;
+                    }
+
+                    // Vis resultater
+                    autocompleteEl.innerHTML = data.results.map(dog => `
+                        <button type="button" onclick="selectDogFromSearch(${JSON.stringify(dog).replace(/"/g, '&quot;')})"
+                            class="w-full px-4 py-3 text-left hover:bg-warm-50 border-b border-bark-100 last:border-0 transition">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <span class="font-medium text-bark-800">${dog.navn || 'Ukjent navn'}</span>
+                                    <span class="text-bark-500 text-sm ml-2">${dog.regnr}</span>
+                                </div>
+                                ${dog.harEier ? '<span class="text-xs bg-warm-100 text-warm-700 px-2 py-0.5 rounded-full">Har eier</span>' : ''}
+                            </div>
+                            <div class="text-xs text-bark-500 mt-1">
+                                ${dog.rase || 'Rase ikke angitt'}
+                                ${dog.eierNavn ? ` • Eier: ${dog.eierNavn}` : ''}
+                            </div>
+                        </button>
+                    `).join('');
+
+                    autocompleteEl.classList.remove('hidden');
+
+                } catch (err) {
+                    console.error('Feil ved søk:', err);
+                    autocompleteEl.classList.add('hidden');
+                }
+            }, 300);
+        }
+
+        function selectDogFromSearch(dog) {
+            const autocompleteEl = document.getElementById('regnrAutocomplete');
+            const matchInfoEl = document.getElementById('regnrMatchInfo');
+            const matchTextEl = document.getElementById('regnrMatchText');
+            const matchDetailsEl = document.getElementById('regnrMatchDetails');
+
+            // Lukk autocomplete
+            autocompleteEl.classList.add('hidden');
+
+            // Lagre valgt hund
+            selectedDogFromSearch = dog;
+
+            // Fyll inn feltene
+            document.getElementById('dogRegNumber').value = dog.regnr;
+            document.getElementById('dogName').value = dog.navn || '';
+
+            if (dog.rase) {
+                const raseSelect = document.getElementById('dogBreed');
+                // Prøv å finne match i dropdown
+                for (let opt of raseSelect.options) {
+                    if (opt.value.toLowerCase() === dog.rase.toLowerCase()) {
+                        raseSelect.value = opt.value;
+                        break;
+                    }
+                }
+            }
+
+            // Vis match-info
+            if (dog.harEier) {
+                matchTextEl.textContent = `Hunden "${dog.navn}" er allerede registrert`;
+                matchDetailsEl.textContent = 'Kontakt administrator hvis dette er din hund';
+                matchInfoEl.className = 'mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-xl';
+                matchInfoEl.querySelector('svg').className = 'w-5 h-5 text-yellow-600';
+                matchTextEl.className = 'text-sm text-yellow-800 font-medium';
+                matchDetailsEl.className = 'text-xs text-yellow-600 mt-1';
+            } else {
+                matchTextEl.textContent = `Fant hund: ${dog.navn}`;
+                matchDetailsEl.textContent = dog.eierNavn ? `Fra deltakerliste (${dog.eierNavn})` : 'Fra deltakerliste';
+                matchInfoEl.className = 'mt-2 p-3 bg-green-50 border border-green-200 rounded-xl';
+                matchInfoEl.querySelector('svg').className = 'w-5 h-5 text-green-600';
+                matchTextEl.className = 'text-sm text-green-800 font-medium';
+                matchDetailsEl.className = 'text-xs text-green-600 mt-1';
+            }
+            matchInfoEl.classList.remove('hidden');
+
+            // Fokuser på fødselsdato
+            document.getElementById('dogBirthDate').focus();
+        }
+
+        // Skjul autocomplete når man klikker utenfor
+        document.addEventListener('click', (e) => {
+            const autocompleteEl = document.getElementById('regnrAutocomplete');
+            const regnrInput = document.getElementById('dogRegNumber');
+            if (autocompleteEl && !autocompleteEl.contains(e.target) && e.target !== regnrInput) {
+                autocompleteEl.classList.add('hidden');
+            }
+        });
+
+        // ===== FØDSELSDATO-VALIDERING MOT REGNR =====
+        function validateBirthDateAgainstRegnr() {
+            const regnr = document.getElementById('dogRegNumber').value.trim().toUpperCase();
+            const fodselsdato = document.getElementById('dogBirthDate').value;
+            const validationEl = document.getElementById('birthDateValidation');
+
+            if (!regnr || !fodselsdato) {
+                validationEl.classList.add('hidden');
+                updateKlasseAnbefaling();
+                return;
+            }
+
+            // Hent årstall fra regnr (NO12345/23 eller SE12345/2023)
+            const yearMatch = regnr.match(/\/(\d{2,4})$/);
+            if (!yearMatch) {
+                validationEl.classList.add('hidden');
+                updateKlasseAnbefaling();
+                return;
+            }
+
+            let regnrYear = yearMatch[1];
+            if (regnrYear.length === 2) {
+                // Norsk format: 23 → 2023
+                regnrYear = (parseInt(regnrYear) > 50 ? '19' : '20') + regnrYear;
+            }
+
+            const fodtYear = new Date(fodselsdato).getFullYear().toString();
+
+            if (fodtYear !== regnrYear) {
+                validationEl.textContent = `Årstall i fødselsdato (${fodtYear}) matcher ikke regnr (${regnrYear})`;
+                validationEl.className = 'text-xs text-red-600 mt-1';
+                validationEl.classList.remove('hidden');
+            } else {
+                validationEl.textContent = `Årstall bekreftet: ${regnrYear}`;
+                validationEl.className = 'text-xs text-green-600 mt-1';
+                validationEl.classList.remove('hidden');
+            }
+
+            updateKlasseAnbefaling();
         }
 
         // Klassevalidering ved fødselsdato-endring

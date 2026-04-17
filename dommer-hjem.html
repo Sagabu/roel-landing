@@ -14,7 +14,8 @@
                         warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
                         cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
                         sky: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#FD8536', 400: '#E5721F', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14' },
-                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' },
+                        forest: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d' }
                     },
                     fontFamily: {
                         'serif': ['Playfair Display', 'Georgia', 'serif'],
@@ -27,7 +28,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="auth.js"></script>
+    <!-- auth.js injiseres automatisk av server -->
     <style>
         .party-card { transition: all 0.2s; }
         .party-card:hover { transform: translateY(-2px); }
@@ -137,6 +138,27 @@
             </p>
         </div>
 
+        <!-- Mine prøver og oppgjør -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mt-8">
+            <h3 class="text-lg font-semibold text-bark-700 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+                Mine oppgjør (kjøregodtgjørelse)
+            </h3>
+            <p class="text-sm text-bark-500 mb-4">Fyll ut og send inn reiseoppgjør for prøver du har dømt.</p>
+
+            <div id="mineOppgjorListe" class="space-y-3">
+                <!-- Fylles dynamisk -->
+                <div class="text-center py-6 text-bark-400">
+                    <svg class="w-8 h-8 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p>Laster oppgjør...</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Quick Info -->
         <div class="bg-bark-50 rounded-xl p-4 mt-8">
             <h4 class="font-semibold text-bark-700 mb-2 flex items-center gap-2">
@@ -153,10 +175,14 @@
 
     <script>
         // Hjelpefunksjon for å få ukedag-navn basert på dag-nummer
+        // Cached trial config for day names
+        let cachedTrialConfig = null;
+
         function getDayName(dayNumber) {
-            const config = JSON.parse(localStorage.getItem('trialConfig') || '{}');
+            // Prøv cachedTrialConfig først, deretter localStorage
+            const config = cachedTrialConfig || JSON.parse(localStorage.getItem('trialConfig') || '{}');
             const startDate = config.startDate || config.start_dato;
-            if (!startDate || isNaN(dayNumber)) return dayNumber; // Returner original hvis ugyldig
+            if (!startDate || isNaN(dayNumber)) return `Dag ${dayNumber}`; // Fallback med "Dag X"
 
             const start = new Date(startDate);
             const targetDate = new Date(start);
@@ -178,22 +204,46 @@
             vkfinale: { name: 'VK Finale', type: 'vkfinale', judges: 2, dogs: 12, dayNum: 2 }
         };
 
-        // Legg til day-property basert på getDayName
-        Object.keys(PARTIES).forEach(key => {
-            const p = PARTIES[key];
-            p.day = p.dayNum === 0 ? 'Demo' : getDayName(p.dayNum);
-        });
+        // Oppdater PARTIES med faktiske ukedager - kalles etter at config er lastet
+        function updatePartyDayNames() {
+            Object.keys(PARTIES).forEach(key => {
+                const p = PARTIES[key];
+                p.day = p.dayNum === 0 ? 'Demo' : getDayName(p.dayNum);
+            });
+        }
 
         let assignedPartyId = null;
+        let assignedProveId = null;
         let judgeRole = null;
         let judgeData = {};
 
         // Initialize page
         async function initPage() {
+            // Cache-versjon for å sikre at gammel feilaktig data ryddes (brukes kun ved behov)
+            // NB: Vi sletter IKKE lenger automatisk - brukeren kan ha gyldig bedømmingsdata
+
             // Bruk felles auth-modul for å synkronisere sessions
             if (!FuglehundAuth.isLoggedIn()) {
                 window.location.href = 'dommer.html';
                 return;
+            }
+
+            // Last prøvekonfig fra server for å få riktige ukedager
+            try {
+                const configResp = await fetch('/api/trial');
+                if (configResp.ok) {
+                    const config = await configResp.json();
+                    cachedTrialConfig = {
+                        startDate: config.start_date,
+                        start_dato: config.start_date
+                    };
+                    // Oppdater PARTIES med faktiske ukedager
+                    updatePartyDayNames();
+                }
+            } catch (e) {
+                console.log('Kunne ikke laste prøvekonfig, bruker localStorage fallback');
+                // Fallback: oppdater fra localStorage
+                updatePartyDayNames();
             }
 
             // Synkroniser alle sessions (oppdaterer userSession, judgeSession, userProfile)
@@ -215,12 +265,13 @@
             document.getElementById('judgeName').textContent = judgeData.name || 'Dommer';
             document.getElementById('judgeNameWelcome').textContent = judgeData.name || 'Dommer';
 
-            // Get assigned party from session
+            // Get assigned party from session (fallback)
             assignedPartyId = judgeData.assignedParty;
+            assignedProveId = judgeData.assignedProve;
             judgeRole = judgeData.judgeRole;
 
-            // If no party in session, try to fetch from API
-            if (!assignedPartyId && judgeData.phone) {
+            // ALLTID hent oppdatert parti-info fra API for å sikre synkronisering
+            if (judgeData.phone) {
                 try {
                     const resp = await fetch(`/api/brukere/${judgeData.phone}/dommer-info`);
                     if (resp.ok) {
@@ -228,29 +279,34 @@
                         if (data.isDommer && data.tildelinger?.length > 0) {
                             const tildeling = data.tildelinger[0];
                             assignedPartyId = tildeling.parti;
+                            assignedProveId = tildeling.prove_id;
                             judgeRole = tildeling.dommerRolle;
 
                             // Update session with party info
                             judgeData.assignedParty = assignedPartyId;
+                            judgeData.assignedProve = assignedProveId;
                             judgeData.judgeRole = judgeRole;
                             localStorage.setItem('judgeSession', JSON.stringify(judgeData));
                         }
                     }
                 } catch (e) {
                     console.error('Kunne ikke hente dommer-info:', e);
+                    // Bruk session-data som fallback ved feil
                 }
             }
 
             // Render the page
-            renderAssignedParty();
+            await renderAssignedParty();
         }
 
         // Render assigned party card
-        function renderAssignedParty() {
+        async function renderAssignedParty() {
             const container = document.getElementById('assignedPartyCard');
+            console.log('DEBUG renderAssignedParty START:', { assignedPartyId, hasParty: !!PARTIES[assignedPartyId] });
 
             if (!assignedPartyId || !PARTIES[assignedPartyId]) {
                 // No party assigned
+                console.log('DEBUG: Returning early - no party');
                 container.classList.add('hidden');
                 document.getElementById('noPartyMessage').classList.remove('hidden');
                 return;
@@ -260,25 +316,130 @@
             const isVK = party.type === 'vk' || party.type === 'vkfinale';
             const isFinale = party.type === 'vkfinale';
 
-            // Get progress status
+            // Get progress status - sjekk både gammel og ny storage-nøkkel
             let statusText = 'Ikke startet';
             let statusClasses = isFinale ? 'bg-amber-200 text-amber-800' : (isVK ? 'bg-warm-100 text-warm-800' : 'bg-warm-100 text-warm-800');
+            let allDogsFinished = false;
+            let totalDogs = party.dogs;
+            let finishedDogs = 0;
 
-            const saved = localStorage.getItem('judgeData_' + assignedPartyId);
-            if (saved) {
+            // Sjekk UK/AK dommerkort storage (ny format)
+            const ukakStorageKey = 'dommerkort_ukak_' + assignedPartyId;
+            let ukakSaved = localStorage.getItem(ukakStorageKey);
+
+            // Prøv også å hente fra server
+            if (!ukakSaved) {
                 try {
-                    const dogs = JSON.parse(saved);
-                    const done = dogs.filter(d => d.status === 'done').length;
-                    const total = dogs.length;
-                    if (done > 0) {
-                        statusText = `${done}/${total} ferdig`;
-                        if (done === total) {
-                            statusClasses = 'bg-green-100 text-green-700';
-                        } else {
-                            statusClasses = 'bg-blue-100 text-blue-700';
+                    const resp = await fetch('/api/storage/' + ukakStorageKey);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.value) {
+                            ukakSaved = JSON.stringify(data.value);
+                            localStorage.setItem(ukakStorageKey, ukakSaved);
                         }
                     }
                 } catch (e) {}
+            }
+
+            // Prøv å hente faktisk antall hunder fra partiliste-API
+            let gotTotalFromAPI = false;
+            try {
+                const partyListResp = await fetch('/api/partiliste/' + assignedPartyId);
+                if (partyListResp.ok) {
+                    const partyListData = await partyListResp.json();
+                    if (partyListData.hunder && partyListData.hunder.length > 0) {
+                        totalDogs = partyListData.hunder.length;
+                        gotTotalFromAPI = true;
+                    }
+                }
+            } catch (e) {
+                console.log('Kunne ikke hente partiliste, bruker lagret data');
+            }
+
+            if (ukakSaved) {
+                try {
+                    const ukakData = JSON.parse(ukakSaved);
+                    console.log('DEBUG ukakData:', { ferdigeDogs: ukakData.ferdigeDogs, dogData: Object.keys(ukakData.dogData || {}), totalDogs, gotTotalFromAPI });
+
+                    if (ukakData.ferdigeDogs) {
+                        finishedDogs = Object.keys(ukakData.ferdigeDogs).length;
+
+                        // Bare bruk dogData-count som totalDogs hvis vi IKKE fikk fra API
+                        if (!gotTotalFromAPI) {
+                            const dogDataCount = Object.keys(ukakData.dogData || {}).length;
+                            if (dogDataCount > 0 && dogDataCount > finishedDogs) {
+                                totalDogs = dogDataCount;
+                            } else if (dogDataCount > 0 && finishedDogs > 0) {
+                                totalDogs = Math.max(dogDataCount, finishedDogs);
+                            }
+                        }
+
+                        console.log('DEBUG ferdigeDogs check:', { finishedDogs, totalDogs, willBeAllDone: finishedDogs >= totalDogs && totalDogs > 0 });
+
+                        if (finishedDogs > 0) {
+                            statusText = `${finishedDogs}/${totalDogs} ferdig`;
+                            if (finishedDogs >= totalDogs && totalDogs > 0) {
+                                statusClasses = 'bg-green-100 text-green-700';
+                                statusText = 'Alle bedømt';
+                                allDogsFinished = true;
+                            } else {
+                                statusClasses = 'bg-blue-100 text-blue-700';
+                            }
+                        } else if (ukakData.currentSlipp > 1 || Object.keys(ukakData.dogData || {}).length > 0) {
+                            statusText = 'Pågår';
+                            statusClasses = 'bg-blue-100 text-blue-700';
+                        }
+                    }
+                } catch (e) {
+                    console.error('Feil ved parsing av ukak data:', e);
+                }
+            } else {
+                console.log('DEBUG: Ingen ukakSaved funnet for key:', ukakStorageKey);
+            }
+
+            // Fallback: sjekk gammel format (judgeData_*)
+            if (!ukakSaved) {
+                // Prøv localStorage først
+                let oldSaved = localStorage.getItem('judgeData_' + assignedPartyId);
+
+                // Prøv også server for gammelt format
+                if (!oldSaved) {
+                    try {
+                        const resp = await fetch('/api/storage/judgeData_' + assignedPartyId);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.value) {
+                                oldSaved = JSON.stringify(data.value);
+                                localStorage.setItem('judgeData_' + assignedPartyId, oldSaved);
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                if (oldSaved) {
+                    try {
+                        const dogs = JSON.parse(oldSaved);
+                        if (Array.isArray(dogs)) {
+                            const done = dogs.filter(d => d.status === 'done' || d.critiqueStatus).length;
+                            // Bruk totalDogs fra partiliste-API hvis tilgjengelig
+                            const total = totalDogs > 0 ? totalDogs : dogs.length;
+                            finishedDogs = done;
+
+                            if (done > 0) {
+                                statusText = `${done}/${total} ferdig`;
+                                if (done >= total && total > 0) {
+                                    statusClasses = 'bg-green-100 text-green-700';
+                                    statusText = 'Alle bedømt';
+                                    allDogsFinished = true;
+                                } else {
+                                    statusClasses = 'bg-blue-100 text-blue-700';
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Feil ved parsing av gammel data:', e);
+                    }
+                }
             }
 
             // Determine colors based on party type
@@ -312,7 +473,7 @@
                                 <h3 class="text-xl font-bold font-serif text-bark-800">${party.name}</h3>
                                 ${isFinale ? '<span class="text-amber-600">★</span>' : ''}
                             </div>
-                            <p class="text-bark-500">${party.dogs} hunder • ${party.day}</p>
+                            <p class="text-bark-500">${totalDogs} hunder • ${party.day}</p>
                         </div>
                         <div class="w-14 h-14 ${badgeColor} rounded-full flex items-center justify-center">
                             <span class="${badgeText} font-bold text-xl">${partyBadge}</span>
@@ -324,19 +485,42 @@
                         ${isVK ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
                     </div>
 
+                    ${(() => { console.log('DEBUG rendering buttons, allDogsFinished:', allDogsFinished); return allDogsFinished; })() ? `
+                    <!-- Alle hunder er bedømt - vis kritikk-knapper -->
+                    <div class="space-y-3">
+                        <button onclick="goToFinalCritique()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Skriv kritikker
+                        </button>
+                        <button onclick="goToAssessment()" class="w-full bg-bark-200 hover:bg-bark-300 text-bark-700 font-medium py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            Se/endre bedømming
+                        </button>
+                    </div>
+                    ` : `
+                    <!-- Bedømming pågår eller ikke startet -->
                     <button onclick="goToAssessment()" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
                         </svg>
-                        Start bedømming
+                        ${finishedDogs > 0 ? 'Fortsett bedømming' : 'Start bedømming'}
                     </button>
+                    `}
                 </div>
             `;
+            console.log('DEBUG: HTML contains Skriv kritikker:', container.innerHTML.includes('Skriv kritikker'));
+            console.log('DEBUG: HTML contains bg-forest-600:', container.innerHTML.includes('bg-forest-600'));
         }
 
         // Initialize page on load
         initPage().then(() => {
             checkPendingCritiques();
+            loadMineOppgjor();
         }).finally(() => document.body.classList.remove('auth-loading'));
 
         // Check if there are pending critiques (all dogs done but critiques not sent)
@@ -375,12 +559,16 @@
             // Update session with selected party info
             const sessionData = JSON.parse(localStorage.getItem('judgeSession') || '{}');
             sessionData.selectedParty = assignedPartyId;
+            sessionData.selectedProve = assignedProveId;
             localStorage.setItem('judgeSession', JSON.stringify(sessionData));
 
             // Navigate to correct assessment page based on party type
             const party = PARTIES[assignedPartyId];
             if (party && (party.type === 'vk' || party.type === 'vkfinale')) {
-                window.location.href = 'dommer-vk.html?party=' + assignedPartyId;
+                // VK-dommerkortet trenger prove og parti parametere for server-lagring
+                const proveParam = assignedProveId || 'demo';
+                const partiParam = encodeURIComponent(assignedPartyId);
+                window.location.href = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}`;
             } else {
                 // UK/AK parties use the new dommer-ukak.html
                 window.location.href = 'dommer-ukak.html?party=' + assignedPartyId;
@@ -391,6 +579,102 @@
             if (confirm('Er du sikker på at du vil logge ut?')) {
                 localStorage.removeItem('judgeSession');
                 window.location.href = 'dommer.html';
+            }
+        }
+
+        // Last mine oppgjør (prøver jeg har dømt)
+        async function loadMineOppgjor() {
+            const container = document.getElementById('mineOppgjorListe');
+            const telefon = judgeData.phone;
+
+            if (!telefon) {
+                container.innerHTML = '<p class="text-bark-500 text-center py-4">Kunne ikke finne telefonnummer</p>';
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/dommer/${telefon}/tildelinger`);
+                if (!resp.ok) throw new Error('Feil ved henting av tildelinger');
+
+                const tildelinger = await resp.json();
+
+                if (tildelinger.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-6 text-bark-400">
+                            <svg class="w-8 h-8 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <p>Ingen prøver ennå</p>
+                            <p class="text-xs mt-1">Når du blir tildelt en prøve, kan du fylle ut oppgjør her.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Hent oppgjør-status for hver tildeling
+                const oppgjorPromises = tildelinger.map(async t => {
+                    try {
+                        const oppgjorResp = await fetch(`/api/prover/${t.prove_id}/dommer-oppgjor`);
+                        const oppgjorListe = await oppgjorResp.json();
+                        const mittOppgjor = oppgjorListe.find(o => o.dommer_telefon === telefon);
+                        return { ...t, oppgjor: mittOppgjor };
+                    } catch {
+                        return { ...t, oppgjor: null };
+                    }
+                });
+
+                const tildelingerMedOppgjor = await Promise.all(oppgjorPromises);
+
+                container.innerHTML = tildelingerMedOppgjor.map(t => {
+                    const statusInfo = getOppgjorStatus(t.oppgjor);
+                    return `
+                        <div class="flex items-center justify-between p-4 border border-bark-100 rounded-xl hover:bg-bark-50 transition">
+                            <div>
+                                <h4 class="font-medium text-bark-800">${t.prove_navn || 'Ukjent prøve'}</h4>
+                                <p class="text-sm text-bark-500">${t.parti || '-'} • ${t.start_dato || '-'}</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs px-2 py-1 rounded-full ${statusInfo.classes}">${statusInfo.text}</span>
+                                <a href="dommer-mitt-oppgjor.html?prove=${t.prove_id}"
+                                   class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                    ${t.oppgjor ? 'Rediger' : 'Fyll ut'}
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (err) {
+                console.error('Feil ved lasting av oppgjør:', err);
+                container.innerHTML = `
+                    <div class="text-center py-6 text-bark-400">
+                        <p>Kunne ikke laste oppgjør</p>
+                        <button onclick="loadMineOppgjor()" class="text-forest-600 underline text-sm mt-2">Prøv igjen</button>
+                    </div>
+                `;
+            }
+        }
+
+        function getOppgjorStatus(oppgjor) {
+            if (!oppgjor) {
+                return { text: 'Ikke utfylt', classes: 'bg-bark-100 text-bark-600' };
+            }
+            switch (oppgjor.status) {
+                case 'utkast':
+                    return { text: 'Utkast', classes: 'bg-yellow-100 text-yellow-700' };
+                case 'innsendt':
+                    return { text: 'Innsendt', classes: 'bg-blue-100 text-blue-700' };
+                case 'godkjent':
+                    return { text: 'Godkjent', classes: 'bg-green-100 text-green-700' };
+                case 'utbetalt':
+                    return { text: 'Utbetalt', classes: 'bg-forest-100 text-forest-700' };
+                case 'avvist':
+                    return { text: 'Avvist', classes: 'bg-red-100 text-red-700' };
+                default:
+                    return { text: oppgjor.status, classes: 'bg-bark-100 text-bark-600' };
             }
         }
 

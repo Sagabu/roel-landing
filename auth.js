@@ -8,10 +8,36 @@
 const FuglehundAuth = (function() {
   const TOKEN_KEY = 'fuglehund_token';
   const USER_KEY = 'fuglehund_user';
+  const LAST_ACTIVITY_KEY = 'fuglehund_last_activity';
+
+  // Sesjon-timeouts
+  const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;      // 60 min uten aktivitet → logg ut
+  const ACTIVITY_CHECK_INTERVAL_MS = 60 * 1000;      // Sjekk hvert minutt
+  const ACTIVITY_UPDATE_THROTTLE_MS = 30 * 1000;     // Oppdater last_activity maks hvert 30 sek
+
+  let lastActivityUpdate = 0;
 
   // Hent lagret token
   function getToken() {
     return localStorage.getItem(TOKEN_KEY);
+  }
+
+  // Oppdater "siste aktivitet"-tidspunkt
+  function touchActivity() {
+    const now = Date.now();
+    // Throttle: ikke oppdater oftere enn hvert 30 sekund
+    if (now - lastActivityUpdate < ACTIVITY_UPDATE_THROTTLE_MS) return;
+    lastActivityUpdate = now;
+    try {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+    } catch {}
+  }
+
+  // Sjekk om sesjon har utløpt pga. inaktivitet
+  function isSessionExpiredByInactivity() {
+    const lastActivity = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY) || '0', 10);
+    if (!lastActivity) return false; // Ingen aktivitetssporing ennå - ikke utløpt
+    return (Date.now() - lastActivity) > INACTIVITY_TIMEOUT_MS;
   }
 
   // Hent lagret brukerinfo
@@ -39,111 +65,71 @@ const FuglehundAuth = (function() {
     return null;
   }
 
-  // Sjekk om bruker er innlogget
+  // Sjekk om bruker er innlogget (gyldig JWT OG ikke utløpt pga. inaktivitet)
   function isLoggedIn() {
-    // Sjekk JWT token først
+    // Sjekk JWT token - INGEN fallback til localStorage
+    // LocalStorage kan manipuleres av brukeren, JWT kan ikke
     const token = getToken();
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        const exp = payload.exp * 1000;
-        if (Date.now() < exp) return true;
-      } catch {
-        // Ugyldig token
+    if (!token) return false;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const exp = payload.exp * 1000;
+      if (Date.now() >= exp) {
+        // JWT har utløpt - rydd opp
+        clearSession();
+        return false;
       }
+    } catch {
+      // Ugyldig token - fjern det
+      clearSession();
+      return false;
     }
 
-    // Fallback: sjekk alle session-typer
-    return !!getSessionPhone();
+    // Sjekk inaktivitets-timeout
+    if (isSessionExpiredByInactivity()) {
+      console.log('[Auth] Sesjon utløpt pga. inaktivitet');
+      clearSession();
+      return false;
+    }
+
+    return true;
   }
 
-  // Sjekk rolle
+  // Rydd opp sesjons-data fra localStorage
+  function clearSession() {
+    const sessionKeys = ['userSession', 'judgeSession', 'userProfile', TOKEN_KEY, USER_KEY, LAST_ACTIVITY_KEY];
+    sessionKeys.forEach(key => {
+      try { localStorage.removeItem(key); } catch {}
+    });
+  }
+
+  // Sjekk rolle - KUN basert på JWT-verifisert brukerinfo
+  // INGEN fallback til localStorage da dette kan manipuleres
   function hasRole(rolle) {
-    // Sjekk JWT bruker først
+    // Sjekk først at bruker er innlogget med gyldig JWT
+    if (!isLoggedIn()) return false;
+
+    // Hent brukerinfo fra JWT (lagret ved innlogging)
     const user = getUser();
-    if (user) {
-      const roller = (user.rolle || '').split(',').map(r => r.trim());
-      if (rolle === 'admin') {
-        // Admin-rolle gis til admin, proveleder og klubbleder
-        return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
-      }
-      if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
-      if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
-      if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
-      if (rolle === 'proveleder') return roller.includes('proveleder') || roller.includes('admin');
-      return true;
+    if (!user) return false;
+
+    // Hvis rolle er null (bare krever innlogging), er vi allerede OK
+    if (rolle === null) return true;
+
+    const roller = (user.rolle || '').split(',').map(r => r.trim());
+
+    // Sjekk spesifikke roller
+    if (rolle === 'admin') {
+      // Admin-rolle gis til admin, proveleder og klubbleder
+      return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
     }
+    if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
+    if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
+    if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
+    if (rolle === 'proveleder') return roller.includes('proveleder') || roller.includes('admin');
 
-    // Fallback: sjekk judgeSession for dommer-rolle
-    if (rolle === 'dommer') {
-      const judgeSession = localStorage.getItem('judgeSession');
-      if (judgeSession) {
-        try {
-          const session = JSON.parse(judgeSession);
-          if (session.isJudge || session.assignedParty) return true;
-        } catch {}
-      }
-    }
-
-    // Fallback: sjekk userSession for roller
-    const userSession = localStorage.getItem('userSession');
-    if (userSession) {
-      // Hvis rolle er null (bare krever innlogging), godta det
-      if (rolle === null) return true;
-
-      try {
-        const session = JSON.parse(userSession);
-
-        // Sjekk om bruker har nkkrep-rolle fra API-data
-        if (rolle === 'nkkrep') {
-          if (session.trials?.some(t => t.roles?.some(r => r.type === 'nkkrep'))) {
-            return true;
-          }
-        }
-
-        // Sjekk om bruker har proveleder/klubbleder-rolle fra API-data (gir admin-tilgang)
-        if (rolle === 'admin' || rolle === 'proveleder') {
-          if (session.trials?.some(t => t.roles?.some(r =>
-            r.type === 'proveleder' || r.type === 'klubbleder'
-          ))) {
-            return true;
-          }
-          if (session.isTrialAdmin) {
-            return true;
-          }
-        }
-
-        // Sjekk klubbleder separat
-        if (rolle === 'klubbleder') {
-          if (session.trials?.some(t => t.roles?.some(r => r.type === 'klubbleder'))) {
-            return true;
-          }
-        }
-      } catch {}
-    }
-
-    // Fallback: sjekk userProfile for roller (legacy)
-    const userProfile = localStorage.getItem('userProfile');
-    if (userProfile) {
-      try {
-        const profile = JSON.parse(userProfile);
-        if (rolle === null && profile.phone) return true;
-
-        // Sjekk rolle-felt direkte (fra eldre innlogginger)
-        if (profile.role) {
-          const roller = profile.role.split(',').map(r => r.trim());
-          if (rolle === 'admin') {
-            if (roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder')) {
-              return true;
-            }
-          }
-          if (rolle === 'proveleder' && roller.includes('proveleder')) return true;
-          if (rolle === 'klubbleder' && roller.includes('klubbleder')) return true;
-          if (rolle === 'nkkrep' && roller.includes('nkkrep')) return true;
-        }
-      } catch {}
-    }
-
+    // Ukjent rolle - avvis
     return false;
   }
 
@@ -242,6 +228,29 @@ const FuglehundAuth = (function() {
     localStorage.setItem(TOKEN_KEY, data.token);
     localStorage.setItem(USER_KEY, JSON.stringify(data.bruker));
 
+    // Start aktivitetssporing ved innlogging
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    lastActivityUpdate = Date.now();
+
+    // Prøv å koble hunder fra deltakerliste til denne brukeren
+    try {
+      const kobleResp = await fetch('/api/koble-hunder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${data.token}`
+        }
+      });
+      if (kobleResp.ok) {
+        const kobleResult = await kobleResp.json();
+        if (kobleResult.linked > 0) {
+          // Hunder koblet til brukerprofil
+        }
+      }
+    } catch (err) {
+      console.warn('Kunne ikke koble hunder:', err);
+    }
+
     return data.bruker;
   }
 
@@ -262,8 +271,7 @@ const FuglehundAuth = (function() {
     }
 
     // Fjern ALLE session-typer
-    const sessionKeys = ['userSession', 'judgeSession', 'userProfile', TOKEN_KEY, USER_KEY];
-    sessionKeys.forEach(key => localStorage.removeItem(key));
+    clearSession();
   }
 
   // Hent Authorization header for API-kall
@@ -282,14 +290,23 @@ const FuglehundAuth = (function() {
 
     const response = await fetch(url, { ...options, headers });
 
+    // Vellykket API-kall teller som aktivitet (dommer som poller live-rangering, etc.)
+    if (response.ok) {
+      touchActivity();
+    }
+
     // Hvis 401, er token utløpt - logg ut
     if (response.status === 401) {
       logout();
-      // Redirect til login
-      if (window.location.pathname !== '/dommer.html' &&
-          window.location.pathname !== '/deltaker.html' &&
-          window.location.pathname !== '/index.html') {
-        window.location.href = '/dommer.html?expired=1';
+      // Redirect til login (min-side.html = passord-login)
+      const path = window.location.pathname;
+      if (path !== '/min-side.html' &&
+          path !== '/dommer.html' &&
+          path !== '/deltaker.html' &&
+          path !== '/index.html' &&
+          path !== '/') {
+        const returnTo = encodeURIComponent(path + window.location.search);
+        window.location.href = `/min-side.html?expired=1&returnTo=${returnTo}`;
       }
     }
 
@@ -399,16 +416,19 @@ const FuglehundAuth = (function() {
 
   // Automatisk auth-guard basert på side
   function checkPageAccess() {
+    // Skip auth if SKIP_AUTH is set (for testing)
+    if (window.SKIP_AUTH === true) return true;
+
     const page = window.location.pathname.split('/').pop() || 'index.html';
     const requiredRole = PROTECTED_PAGES[page];
 
     // Siden krever ikke beskyttelse
     if (requiredRole === undefined) return true;
 
-    // Sjekk om innlogget
+    // Sjekk om innlogget - redirect til passord-login (min-side.html)
     if (!isLoggedIn()) {
       const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.href = `/deltaker.html?returnTo=${returnTo}`;
+      window.location.href = `/min-side.html?returnTo=${returnTo}`;
       return false;
     }
 
@@ -422,15 +442,81 @@ const FuglehundAuth = (function() {
     return true;
   }
 
+  // Håndter sesjon-utløp: logg ut og redirect til passord-innloggingsside
+  function handleSessionExpired(reason) {
+    console.log('[Auth] Sesjon utløpt:', reason);
+    clearSession();
+
+    const page = window.location.pathname.split('/').pop() || 'index.html';
+    const requiresAuth = PROTECTED_PAGES[page] !== undefined;
+
+    if (requiresAuth) {
+      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+      // min-side.html er passord-login (ikke SMS-kode) - bedre UX ved timeout
+      window.location.href = `/min-side.html?expired=1&returnTo=${returnTo}`;
+    }
+    // Hvis siden ikke krever auth (f.eks. index.html), gjør ingenting - bare rydd opp
+  }
+
+  // Sett opp aktivitetssporing når bruker er innlogget
+  function setupActivityTracking() {
+    // Events som regnes som "aktivitet"
+    const activityEvents = ['click', 'keydown', 'scroll', 'mousemove', 'touchstart'];
+    activityEvents.forEach(evt => {
+      document.addEventListener(evt, touchActivity, { passive: true, capture: true });
+    });
+
+    // Wrap global fetch slik at alle vellykkede API-kall teller som aktivitet
+    // Dette dekker polling (dommer-VK live rangering), auto-save, direkte fetch-kall osv.
+    const _origFetch = window.fetch.bind(window);
+    window.fetch = async function(...args) {
+      const response = await _origFetch(...args);
+      // Kun vellykkede kall (2xx) teller som aktivitet
+      if (response.ok && getToken()) {
+        touchActivity();
+      }
+      return response;
+    };
+
+    // Periodisk sjekk av sesjon-status (hvert minutt)
+    setInterval(() => {
+      if (!getToken()) return; // Ikke innlogget - ingen sjekk trengs
+      if (!isLoggedIn()) {
+        handleSessionExpired('inaktivitet eller utløpt JWT');
+      }
+    }, ACTIVITY_CHECK_INTERVAL_MS);
+
+    // Sjekk også ved tabbytte/returning til vinduet
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && getToken()) {
+        if (!isLoggedIn()) {
+          handleSessionExpired('sesjon utløp mens tab var inaktiv');
+        } else {
+          touchActivity();
+        }
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      if (getToken() && !isLoggedIn()) {
+        handleSessionExpired('sesjon utløp mens vindu var inaktivt');
+      }
+    });
+  }
+
   // Auto-oppdater UI når DOM er klar
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       checkPageAccess();
       updateUI();
+      setupActivityTracking();
+      if (getToken()) touchActivity();
     });
   } else {
     checkPageAccess();
     updateUI();
+    setupActivityTracking();
+    if (getToken()) touchActivity();
   }
 
   // Refresh token i bakgrunnen
@@ -568,33 +654,36 @@ window.handleApiError = function(error, customMessage) {
   FuglehundToast.error(message);
 };
 
-// Superadmin knapp - vises kun for telefon 90852833
+// Superadmin knapp - vises for superadmin-rolle
 (function() {
-  const SUPERADMIN_PHONE = '90852833';
-
   function injectAdminButton() {
     try {
+      // Sjekk om bruker har superadmin-rolle
       const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
-      if (userData.telefon !== SUPERADMIN_PHONE) return;
+      const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+      const rolle = userProfile.rolle || userData.rolle || '';
+      const isSuperadmin = rolle.includes('superadmin');
 
-      // Ikke vis knappen på sider som allerede har admin-navigasjon
+      if (!isSuperadmin) return;
+
+      // Ikke vis knappen på sider som allerede har admin-navigasjon eller egen superadmin-knapp
       const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-      const excludedPages = ['admin-panel.html', 'admin.html', 'klubb.html', 'min-side.html'];
+      const excludedPages = ['admin-panel.html', 'admin.html', 'klubb.html', 'min-side.html', 'profil.html', 'mine-hunder.html', 'jaktprover.html', 'fullmakter.html'];
       if (excludedPages.includes(currentPage)) return;
 
-      // Sjekk om knappen allerede finnes
-      if (document.getElementById('superadmin-btn')) return;
+      // Sjekk om knappen allerede finnes (enten injisert eller statisk adminHeaderBtn)
+      if (document.getElementById('superadmin-btn') || document.getElementById('adminHeaderBtn')) return;
 
       // Finn header
       const header = document.querySelector('header');
       if (!header) return;
 
-      // Lag admin-knappen
+      // Lag superadmin-knappen
       const adminBtn = document.createElement('a');
       adminBtn.id = 'superadmin-btn';
       adminBtn.href = '/admin-panel.html';
-      adminBtn.className = 'bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
-      adminBtn.textContent = 'Admin';
+      adminBtn.className = 'bg-warm-500 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition text-white';
+      adminBtn.textContent = 'Superadmin';
 
       // Prøv å finne logg ut-knappen først
       const logoutBtn = header.querySelector('button[onclick*="logout"]');

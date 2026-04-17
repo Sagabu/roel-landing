@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dokumentarkiv - Klubb</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        forest: { 50: '#f6f7f4', 100: '#e3e7dc', 200: '#c7d0ba', 300: '#a4b391', 400: '#839770', 500: '#657a53', 600: '#4f6040', 700: '#3f4c34', 800: '#343e2d', 900: '#2c3526', 950: '#151a12' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+        .tab-active { border-bottom-color: #FD8536; color: #6E3018; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+
+    <!-- Header -->
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="klubb.html" class="flex items-center gap-3 hover:opacity-80 transition">
+                        <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                        <div>
+                            <h1 class="text-xl font-serif font-bold">Dokumentarkiv</h1>
+                            <p class="text-bark-300 text-sm" id="klubbNameDisplay">Laster...</p>
+                        </div>
+                    </a>
+                </div>
+                <div class="flex items-center gap-4">
+                    <a href="klubb.html" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                        Tilbake til klubb
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 py-8">
+
+        <!-- Oversikt -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-8">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-warm-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h2 class="text-xl font-bold font-serif text-bark-800">Klubbens dokumentarkiv</h2>
+                    <p class="text-bark-600 mt-1">
+                        Her finner du alle dokumenter, rapporter og journaler fra klubbens prøver, samt generelle klubbdokumenter.
+                    </p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-bark-500">Totalt</p>
+                    <p class="text-2xl font-bold text-warm-700" id="totalDokumenter">0</p>
+                    <p class="text-xs text-bark-400">dokumenter</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 mb-8">
+            <div class="border-b border-bark-100">
+                <nav class="flex">
+                    <button onclick="switchTab('prover')" id="tabProver" class="flex-1 px-6 py-4 text-center font-medium border-b-2 border-transparent hover:text-warm-700 transition tab-active">
+                        <svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        Prøver
+                    </button>
+                    <button onclick="switchTab('generelle')" id="tabGenerelle" class="flex-1 px-6 py-4 text-center font-medium border-b-2 border-transparent text-bark-500 hover:text-warm-700 transition">
+                        <svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        Generelle dokumenter
+                    </button>
+                    <button onclick="switchTab('alle')" id="tabAlle" class="flex-1 px-6 py-4 text-center font-medium border-b-2 border-transparent text-bark-500 hover:text-warm-700 transition">
+                        <svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        Alle dokumenter
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="tabContent" class="p-6">
+                <!-- Fylles dynamisk -->
+            </div>
+        </div>
+
+        <!-- Info boks -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+            <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div>
+                    <p class="font-semibold">Om dokumentarkivet</p>
+                    <p class="mt-1">
+                        Alle dokumenter fra prøver (DVK-journaler, NKK/FKF-rapporter, kritikker) lagres automatisk her.
+                        Du kan også laste opp generelle klubbdokumenter som vedtekter, protokoller, etc.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Last opp modal -->
+    <div id="uploadModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-bark-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-bark-800">Last opp dokument</h3>
+                <button onclick="closeUploadModal()" class="text-bark-400 hover:text-bark-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Tittel</label>
+                        <input type="text" id="uploadTittel" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none" placeholder="F.eks. Vedtekter 2026">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Type</label>
+                        <select id="uploadType" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none">
+                            <option value="vedtekter">Vedtekter</option>
+                            <option value="protokoll">Møteprotokoll</option>
+                            <option value="regnskap">Regnskap</option>
+                            <option value="handlingsplan">Handlingsplan</option>
+                            <option value="dommerkontrakt">Dommerkontrakt</option>
+                            <option value="annet">Annet</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-bark-700 mb-1">Beskrivelse (valgfritt)</label>
+                        <textarea id="uploadBeskrivelse" rows="3" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 outline-none" placeholder="Kort beskrivelse av dokumentet..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-bark-50 border-t border-bark-100 flex justify-end gap-3">
+                <button onclick="closeUploadModal()" class="px-4 py-2 text-bark-600 hover:text-bark-800 font-medium transition">
+                    Avbryt
+                </button>
+                <button onclick="saveDocument()" class="bg-warm-600 hover:bg-warm-700 text-white px-6 py-2 rounded-xl font-medium transition">
+                    Lagre dokument
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentKlubbId = null;
+        let currentKlubbData = null;
+        let alleDokumenter = [];
+        let proverMedDokumenter = [];
+        let currentTab = 'prover';
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Sjekk autentisering
+            if (!FuglehundAuth.isLoggedIn()) {
+                window.location.href = 'klubb-login.html';
+                return;
+            }
+
+            document.body.classList.remove('auth-loading');
+
+            // Hent klubb-ID fra URL eller bruker
+            const urlParams = new URLSearchParams(window.location.search);
+            const klubbIdFromUrl = urlParams.get('klubbId');
+
+            if (klubbIdFromUrl) {
+                currentKlubbId = klubbIdFromUrl;
+            } else {
+                // Prøv å hente fra brukerprofil
+                const phone = localStorage.getItem('userPhone');
+                if (phone) {
+                    try {
+                        const resp = await fetch(`/api/brukere/${phone}`);
+                        if (resp.ok) {
+                            const userData = await resp.json();
+                            if (userData.klubbAdmin && userData.klubbAdmin.klubb_id) {
+                                currentKlubbId = userData.klubbAdmin.klubb_id;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Kunne ikke hente brukerdata:', e);
+                    }
+                }
+            }
+
+            if (!currentKlubbId) {
+                showError('Ingen klubb funnet. Gå til klubbsiden først.');
+                return;
+            }
+
+            // Last klubbinfo
+            await loadKlubbInfo();
+
+            // Last dokumenter
+            await loadData();
+
+            // Vis prøver-tab som standard
+            switchTab('prover');
+        });
+
+        async function loadKlubbInfo() {
+            try {
+                const res = await fetch(`/api/klubber/${currentKlubbId}`);
+                if (res.ok) {
+                    currentKlubbData = await res.json();
+                    document.getElementById('klubbNameDisplay').textContent = currentKlubbData.navn || 'Klubb';
+
+                    // Oppdater tilbake-lenke
+                    const backLink = document.querySelector('a[href="klubb.html"]');
+                    if (backLink) {
+                        backLink.href = `klubb.html?klubbId=${currentKlubbId}`;
+                    }
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av klubbinfo:', err);
+            }
+        }
+
+        async function loadData() {
+            try {
+                // Last prøver med dokumenttelling
+                const proverRes = await fetch(`/api/klubber/${currentKlubbId}/dokumenter/prover`);
+                if (proverRes.ok) {
+                    proverMedDokumenter = await proverRes.json();
+                }
+
+                // Last alle dokumenter
+                const dokRes = await fetch(`/api/klubber/${currentKlubbId}/dokumenter`);
+                if (dokRes.ok) {
+                    alleDokumenter = await dokRes.json();
+                    document.getElementById('totalDokumenter').textContent = alleDokumenter.length;
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av data:', err);
+            }
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+
+            // Oppdater tab-styling
+            ['Prover', 'Generelle', 'Alle'].forEach(t => {
+                const tabEl = document.getElementById('tab' + t);
+                if (tabEl) {
+                    tabEl.classList.remove('tab-active', 'text-bark-500');
+                    if (t.toLowerCase() === tab || (t === 'Generelle' && tab === 'generelle')) {
+                        tabEl.classList.add('tab-active');
+                    } else {
+                        tabEl.classList.add('text-bark-500');
+                    }
+                }
+            });
+
+            // Render innhold
+            const content = document.getElementById('tabContent');
+
+            if (tab === 'prover') {
+                renderProverTab(content);
+            } else if (tab === 'generelle') {
+                renderGenerelleTab(content);
+            } else {
+                renderAlleTab(content);
+            }
+        }
+
+        function renderProverTab(container) {
+            if (proverMedDokumenter.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-bark-400">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="text-lg font-medium">Ingen prøver funnet</p>
+                        <p class="text-sm mt-1">Opprett prøver fra klubbsiden for å se dem her.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="space-y-4">
+                    ${proverMedDokumenter.map(prove => {
+                        const dato = prove.start_dato ? new Date(prove.start_dato) : null;
+                        const datoStr = dato ? dato.toLocaleDateString('no-NO', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+                        const totalDok = (prove.dok_count || 0) + (prove.dvk_count || 0);
+
+                        // Status badge
+                        let statusClass = 'bg-yellow-100 text-yellow-700';
+                        let statusText = 'Planlagt';
+                        if (prove.status === 'aktiv' || prove.status === 'pagaende') {
+                            statusClass = 'bg-warm-100 text-warm-700';
+                            statusText = 'Aktiv';
+                        } else if (prove.status === 'avsluttet' || prove.status === 'ferdig') {
+                            statusClass = 'bg-bark-100 text-bark-600';
+                            statusText = 'Avsluttet';
+                        }
+
+                        return `
+                            <div class="border border-bark-200 rounded-xl overflow-hidden hover:border-warm-300 transition">
+                                <div class="px-5 py-4 flex items-center justify-between bg-bark-50/50">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-12 h-12 bg-warm-100 rounded-xl flex items-center justify-center">
+                                            <svg class="w-6 h-6 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-semibold text-bark-800">${prove.navn || 'Uten navn'}</h3>
+                                            <p class="text-sm text-bark-500">${datoStr}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-4">
+                                        <span class="px-2 py-1 ${statusClass} rounded-lg text-xs font-medium">${statusText}</span>
+                                        <div class="text-right">
+                                            <p class="text-lg font-bold text-warm-700">${totalDok}</p>
+                                            <p class="text-xs text-bark-400">dokumenter</p>
+                                        </div>
+                                        <button onclick="toggleProveDocuments('${prove.id}')" class="p-2 hover:bg-bark-100 rounded-lg transition">
+                                            <svg class="w-5 h-5 text-bark-400 expand-icon-${prove.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="prove-docs-${prove.id}" class="hidden border-t border-bark-100 divide-y divide-bark-100">
+                                    <!-- Fylles dynamisk -->
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        async function toggleProveDocuments(proveId) {
+            const container = document.getElementById(`prove-docs-${proveId}`);
+            const icon = document.querySelector(`.expand-icon-${proveId}`);
+
+            if (container.classList.contains('hidden')) {
+                // Last dokumenter for denne prøven
+                const proveDocs = alleDokumenter.filter(d => d.prove_id === proveId || d.prove_id === proveId.toString());
+
+                if (proveDocs.length === 0) {
+                    container.innerHTML = `
+                        <div class="p-4 text-center text-bark-400 text-sm">
+                            Ingen dokumenter for denne prøven ennå.
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = proveDocs.map(dok => renderDokumentRow(dok)).join('');
+                }
+
+                container.classList.remove('hidden');
+                icon.style.transform = 'rotate(180deg)';
+            } else {
+                container.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function renderGenerelleTab(container) {
+            const generelleDok = alleDokumenter.filter(d => d.kilde === 'general');
+
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-lg font-semibold text-bark-800">Generelle klubbdokumenter</h3>
+                    <button onclick="openUploadModal()" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Last opp dokument
+                    </button>
+                </div>
+
+                ${generelleDok.length === 0 ? `
+                    <div class="text-center py-12 text-bark-400">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <p class="text-lg font-medium">Ingen generelle dokumenter</p>
+                        <p class="text-sm mt-1">Last opp vedtekter, protokoller, og andre klubbdokumenter.</p>
+                    </div>
+                ` : `
+                    <div class="divide-y divide-bark-100 border border-bark-200 rounded-xl overflow-hidden">
+                        ${generelleDok.map(dok => renderDokumentRow(dok)).join('')}
+                    </div>
+                `}
+            `;
+        }
+
+        function renderAlleTab(container) {
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <div class="flex items-center gap-4">
+                        <h3 class="text-lg font-semibold text-bark-800">Alle dokumenter</h3>
+                        <select id="filterType" onchange="filterDokumenter()" class="text-sm border border-bark-200 rounded-lg px-3 py-1.5 focus:border-warm-500 outline-none">
+                            <option value="">Alle typer</option>
+                            <option value="dvk_journal">DVK Kontrolljournal</option>
+                            <option value="nkk_rapport">NKK Rapport</option>
+                            <option value="fkf_rapport">FKF Rapport</option>
+                            <option value="kritikk">Kritikker</option>
+                            <option value="vedtekter">Vedtekter</option>
+                            <option value="protokoll">Møteprotokoll</option>
+                        </select>
+                    </div>
+                    <span class="text-sm text-bark-500">${alleDokumenter.length} dokumenter</span>
+                </div>
+
+                ${alleDokumenter.length === 0 ? `
+                    <div class="text-center py-12 text-bark-400">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-bark-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <p class="text-lg font-medium">Ingen dokumenter ennå</p>
+                    </div>
+                ` : `
+                    <div id="dokumentListe" class="divide-y divide-bark-100 border border-bark-200 rounded-xl overflow-hidden">
+                        ${alleDokumenter.map(dok => renderDokumentRow(dok)).join('')}
+                    </div>
+                `}
+            `;
+        }
+
+        function renderDokumentRow(dok) {
+            const typeLabels = {
+                'dvk_journal': { label: 'DVK Journal', color: 'green' },
+                'nkk_rapport': { label: 'NKK Rapport', color: 'red' },
+                'fkf_rapport': { label: 'FKF Rapport', color: 'emerald' },
+                'kritikk': { label: 'Kritikk', color: 'amber' },
+                'vedtekter': { label: 'Vedtekter', color: 'blue' },
+                'protokoll': { label: 'Protokoll', color: 'purple' },
+                'regnskap': { label: 'Regnskap', color: 'cyan' },
+                'annet': { label: 'Annet', color: 'bark' }
+            };
+
+            const type = typeLabels[dok.dokument_type] || { label: dok.dokument_type, color: 'bark' };
+            const dato = new Date(dok.created_at).toLocaleDateString('no-NO');
+            const kildeLabel = dok.kilde === 'prove' ? dok.prove_id : 'Generelt';
+
+            return `
+                <div class="p-4 hover:bg-bark-50 transition flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 bg-${type.color}-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-${type.color}-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-bark-800">${dok.tittel}</h4>
+                            <div class="flex items-center gap-3 text-sm text-bark-500">
+                                <span class="bg-${type.color}-100 text-${type.color}-700 px-2 py-0.5 rounded text-xs">${type.label}</span>
+                                <span>${dato}</span>
+                                ${dok.kilde === 'prove' ? `<span class="text-bark-400">Prøve: ${kildeLabel}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        ${dok.kilde === 'general' ? `
+                            <button onclick="deleteDokument(${dok.id}, '${dok.kilde}')" class="p-2 text-red-400 hover:text-red-600 transition" title="Slett">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function filterDokumenter() {
+            const filter = document.getElementById('filterType').value;
+            const container = document.getElementById('dokumentListe');
+
+            let filtered = alleDokumenter;
+            if (filter) {
+                filtered = alleDokumenter.filter(d => d.dokument_type === filter);
+            }
+
+            container.innerHTML = filtered.map(dok => renderDokumentRow(dok)).join('');
+        }
+
+        function openUploadModal() {
+            document.getElementById('uploadModal').classList.remove('hidden');
+        }
+
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.add('hidden');
+            document.getElementById('uploadTittel').value = '';
+            document.getElementById('uploadBeskrivelse').value = '';
+        }
+
+        async function saveDocument() {
+            const tittel = document.getElementById('uploadTittel').value.trim();
+            const type = document.getElementById('uploadType').value;
+            const beskrivelse = document.getElementById('uploadBeskrivelse').value.trim();
+
+            if (!tittel) {
+                alert('Vennligst fyll inn en tittel.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/klubber/${currentKlubbId}/dokumenter`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dokument_type: type,
+                        tittel: tittel,
+                        beskrivelse: beskrivelse,
+                        opprettet_av: localStorage.getItem('userPhone') || null
+                    })
+                });
+
+                if (res.ok) {
+                    closeUploadModal();
+                    await loadData();
+                    switchTab(currentTab);
+                    showToast('Dokument lagret!');
+                } else {
+                    const err = await res.json();
+                    alert('Feil: ' + (err.error || 'Kunne ikke lagre'));
+                }
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                alert('Nettverksfeil ved lagring');
+            }
+        }
+
+        async function deleteDokument(id, kilde) {
+            if (!confirm('Er du sikker på at du vil slette dette dokumentet?')) return;
+
+            try {
+                const res = await fetch(`/api/klubber/${currentKlubbId}/dokumenter/${id}?kilde=${kilde}`, {
+                    method: 'DELETE'
+                });
+
+                if (res.ok) {
+                    await loadData();
+                    switchTab(currentTab);
+                    showToast('Dokument slettet');
+                } else {
+                    const err = await res.json();
+                    alert('Feil: ' + (err.error || 'Kunne ikke slette'));
+                }
+            } catch (err) {
+                console.error('Feil ved sletting:', err);
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('tabContent').innerHTML = `
+                <div class="text-center py-12 text-red-500">
+                    <p class="text-lg font-medium">${message}</p>
+                </div>
+            `;
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-xl shadow-lg z-50';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+    </script>
+</body>
+</html>

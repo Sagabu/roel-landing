@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DVK - Kontrolljournal</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        forest: { 50: '#f6f7f4', 100: '#e3e7dc', 200: '#c7d0ba', 300: '#a4b391', 400: '#839770', 500: '#657a53', 600: '#4f6040', 700: '#3f4c34', 800: '#343e2d', 900: '#2c3526', 950: '#151a12' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+            .print-break { page-break-before: always; }
+        }
+        .collapsed .avvik-content,
+        .collapsed .vet-content { display: none; }
+        .collapsed .expand-icon { transform: rotate(0deg); }
+        .expanded .expand-icon { transform: rotate(180deg); }
+        .sync-indicator { position: fixed; bottom: 1rem; left: 1rem; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+
+    <!-- Header -->
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg no-print">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="index.html" class="flex items-center gap-2 hover:opacity-80 transition">
+                        <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                        <span class="font-serif font-bold">Fuglehundprøver</span>
+                    </a>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-sm text-bark-400" id="trialNameDisplay">Laster...</p>
+                        <p class="font-semibold" id="headerDvkName">-</p>
+                    </div>
+                    <button onclick="window.print()" class="bg-bark-800 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                        </svg>
+                        Skriv ut
+                    </button>
+                    <button onclick="logout()" class="bg-bark-800 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
+                        Logg ut
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sync indicator -->
+    <div class="sync-indicator no-print" id="syncIndicator">
+        <span class="inline-flex items-center gap-2 px-3 py-1.5 bg-white rounded-full shadow-md text-sm">
+            <span class="w-2 h-2 rounded-full bg-green-500" id="syncDot"></span>
+            <span id="syncText">Tilkoblet</span>
+        </span>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8">
+
+        <!-- Prøveinformasjon -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Prøveinformasjon
+            </h2>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-bark-500 mb-1">Prøve</label>
+                    <input type="text" id="proveName" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none bg-bark-50" placeholder="F.eks. Høgkjølprøven 2026" readonly>
+                </div>
+                <div>
+                    <label class="block text-sm text-bark-500 mb-1">Arrangør og sted</label>
+                    <input type="text" id="arrangorSted" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none bg-bark-50" placeholder="F.eks. Trøndelag FK, Meråker" readonly>
+                </div>
+                <div>
+                    <label class="block text-sm text-bark-500 mb-1">Dato</label>
+                    <input type="date" id="proveDato" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none bg-bark-50" readonly>
+                </div>
+                <div>
+                    <label class="block text-sm text-bark-500 mb-1">Dyrevelferdskontrollør (DVK)</label>
+                    <input type="text" id="dvkNavn" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none bg-bark-50" placeholder="Ditt fulle navn" oninput="oppdaterDvkInitialer()" readonly>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-bark-500 mb-1">Evt. DVK-assistent</label>
+                    <input type="text" id="dvkAssistent" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-forest-500 outline-none" placeholder="Navn på assistent (valgfritt)" onchange="autoSave()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Kontrollpunkter -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 mb-6">
+            <div class="px-6 py-4 border-b border-bark-100">
+                <h2 class="text-lg font-bold font-serif text-bark-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                    </svg>
+                    Kontrollpunkter
+                </h2>
+                <p class="text-sm text-bark-500 mt-1">Registrer antall kontrollerte, hvem som kontrollerte (initialer), og om det var OK eller avvik.</p>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-bark-50">
+                        <tr>
+                            <th class="text-left px-4 py-3 font-semibold text-bark-700">Kontroll av:</th>
+                            <th class="text-center px-4 py-3 font-semibold text-bark-700 w-28">Antall</th>
+                            <th class="text-center px-4 py-3 font-semibold text-bark-700 w-36">Kontrollert av (init.)</th>
+                            <th class="text-center px-4 py-3 font-semibold text-bark-700 w-32">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-bark-100" id="kontrollTabell">
+                        <!-- Fylles dynamisk -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Brudd på forskrift -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 mb-6">
+            <div class="px-6 py-4 border-b border-bark-100">
+                <h2 class="text-lg font-bold font-serif text-bark-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    Brudd på forskrift / Avvik
+                </h2>
+                <p class="text-sm text-bark-500 mt-1">Dokumenter eventuelle brudd på Konkurransedyrforskriften.</p>
+            </div>
+
+            <div class="p-6">
+                <div id="avvikListe" class="space-y-3 mb-4">
+                    <!-- Lagrede avvik vises her (minimert) -->
+                </div>
+
+                <!-- Aktivt avvik-skjema -->
+                <div id="aktivtAvvikSkjema" class="hidden">
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                        <div class="flex justify-between items-start mb-3">
+                            <h4 class="font-semibold text-red-800">Nytt avvik</h4>
+                        </div>
+                        <div class="grid md:grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Hundeeier/fører</label>
+                                <input type="text" id="nyAvvik_eier" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="Navn og kontaktinfo">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Hund (navn og chipnr)</label>
+                                <input type="text" id="nyAvvik_hund" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="Hundens navn, reg.nr/chip">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Sted og tid</label>
+                                <input type="text" id="nyAvvik_stedtid" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="F.eks. Parti 3, kl 10:30">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-red-700 mb-1">Vitner</label>
+                                <input type="text" id="nyAvvik_vitner" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" placeholder="Navn på vitner">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-xs text-red-700 mb-1">Beskrivelse av hendelsen</label>
+                            <textarea id="nyAvvik_beskrivelse" class="w-full px-3 py-2 rounded-lg border border-red-200 text-sm bg-white" rows="3" placeholder="Detaljert beskrivelse av hendelsen og eventuelle tiltak iverksatt..."></textarea>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="lagreAvvik()" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Lagre avvik
+                            </button>
+                            <button onclick="avbrytAvvik()" class="px-4 py-2 border border-bark-200 rounded-lg text-bark-600 hover:bg-bark-50 transition">
+                                Avbryt
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="leggTilAvvikBtn" onclick="visAvvikSkjema()" class="w-full border-2 border-dashed border-bark-200 rounded-xl py-4 text-bark-500 hover:border-red-400 hover:text-red-600 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Legg til avvik / hendelse
+                </button>
+            </div>
+        </div>
+
+        <!-- Henvisning til veterinær -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 mb-6">
+            <div class="px-6 py-4 border-b border-bark-100">
+                <h2 class="text-lg font-bold font-serif text-bark-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                    </svg>
+                    Henvisning til veterinær
+                </h2>
+                <p class="text-sm text-bark-500 mt-1">Registrer hunder som ble henvist til veterinær for oppfølging.</p>
+            </div>
+
+            <div class="p-6">
+                <div id="vetHenvisninger" class="space-y-3 mb-4">
+                    <!-- Lagrede henvisninger vises her (minimert) -->
+                </div>
+
+                <!-- Aktivt vet-skjema -->
+                <div id="aktivtVetSkjema" class="hidden">
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                        <div class="flex justify-between items-start mb-3">
+                            <h4 class="font-semibold text-amber-800">Ny henvisning</h4>
+                        </div>
+                        <div class="grid md:grid-cols-3 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs text-amber-700 mb-1">Eiers navn</label>
+                                <input type="text" id="nyVet_eier" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="Hundeeiers navn">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-amber-700 mb-1">Hundens navn</label>
+                                <input type="text" id="nyVet_hund" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="Hundens navn">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-amber-700 mb-1">Reg.nr</label>
+                                <input type="text" id="nyVet_regnr" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="NO12345/24">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-xs text-amber-700 mb-1">Årsak til henvisning</label>
+                            <input type="text" id="nyVet_arsak" class="w-full px-3 py-2 rounded-lg border border-amber-200 text-sm bg-white" placeholder="Beskriv årsaken til henvisningen">
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="lagreVetHenvisning()" class="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg font-medium transition flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Lagre henvisning
+                            </button>
+                            <button onclick="avbrytVet()" class="px-4 py-2 border border-bark-200 rounded-lg text-bark-600 hover:bg-bark-50 transition">
+                                Avbryt
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="leggTilVetBtn" onclick="visVetSkjema()" class="w-full border-2 border-dashed border-bark-200 rounded-xl py-4 text-bark-500 hover:border-amber-400 hover:text-amber-600 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Legg til veterinærhenvisning
+                </button>
+            </div>
+        </div>
+
+        <!-- Oppsummering og signatur -->
+        <div class="bg-forest-50 rounded-xl p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-forest-800 mb-4">Oppsummering</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-forest-700" id="statKontrollert">0</p>
+                    <p class="text-sm text-bark-500">Totalt kontrollert</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-green-600" id="statOK">0</p>
+                    <p class="text-sm text-bark-500">OK</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-red-600" id="statAvvik">0</p>
+                    <p class="text-sm text-bark-500">Avvik</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center">
+                    <p class="text-2xl font-bold text-amber-600" id="statVet">0</p>
+                    <p class="text-sm text-bark-500">Vet.henvisning</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Aversjonsbevis-kontroll -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                </svg>
+                Aversjonsbevis (stikkprøvekontroll)
+            </h2>
+            <p class="text-sm text-bark-500 mb-4">Oversikt over deltakernes aversjonsbevis. Klikk på en hund for å se beviset.</p>
+
+            <!-- Statistikk -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-bark-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-bark-700" id="avStatTotal">-</p>
+                    <p class="text-xs text-bark-500">Deltakere</p>
+                </div>
+                <div class="bg-green-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-green-600" id="avStatMedBevis">-</p>
+                    <p class="text-xs text-bark-500">Med bevis</p>
+                </div>
+                <div class="bg-amber-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-amber-600" id="avStatUtenBevis">-</p>
+                    <p class="text-xs text-bark-500">Mangler</p>
+                </div>
+                <div class="bg-blue-50 rounded-lg p-3 text-center">
+                    <p class="text-xl font-bold text-blue-600" id="avStatBekreftet">-</p>
+                    <p class="text-xs text-bark-500">Bekreftet</p>
+                </div>
+            </div>
+
+            <!-- Filter -->
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button onclick="filterAversjonsbevis('alle')" class="av-filter-btn active px-3 py-1.5 text-sm rounded-lg bg-forest-600 text-white transition" data-filter="alle">Alle</button>
+                <button onclick="filterAversjonsbevis('mangler')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="mangler">Mangler bevis</button>
+                <button onclick="filterAversjonsbevis('gammelt')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="gammelt">Eldre enn 2 år</button>
+                <button onclick="filterAversjonsbevis('sau')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="sau">Sau</button>
+                <button onclick="filterAversjonsbevis('rein')" class="av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition" data-filter="rein">Rein</button>
+            </div>
+
+            <!-- Liste over hunder -->
+            <div id="aversjonsbevisListe" class="space-y-2 max-h-96 overflow-y-auto">
+                <p class="text-center text-bark-400 py-8">Laster aversjonsbevis-data...</p>
+            </div>
+
+            <!-- Last opp på vegne av deltaker -->
+            <div class="mt-4 pt-4 border-t border-bark-100">
+                <button onclick="openUploadForDeltaker()" class="text-sm text-forest-600 hover:text-forest-700 font-medium flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Last opp aversjonsbevis på vegne av deltaker
+                </button>
+            </div>
+        </div>
+
+        <!-- Digital signatur -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-forest-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                Digital signatur
+            </h2>
+            <p class="text-sm text-bark-600 mb-4">Signer kontrolljournalen digitalt når prøven er avsluttet. Journalen sendes automatisk til FKF-rapporten.</p>
+
+            <div id="signaturBox" class="flex items-center justify-between bg-bark-50 rounded-xl p-4">
+                <div>
+                    <p class="text-sm text-bark-500">Signaturstatus</p>
+                    <p id="dvkSignStatus" class="font-medium text-bark-700">Ikke signert</p>
+                </div>
+                <button id="signerBtn" onclick="signerJournal()" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Signer og send til FKF
+                </button>
+            </div>
+        </div>
+
+        <!-- Info om FKF-innsending -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 no-print">
+            <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div>
+                    <p class="font-semibold">Innsending til FKF</p>
+                    <p class="mt-1">Kontrolljournalen sendes automatisk til FKF når du signerer. Den blir også inkludert i prøvens FKF-rapport som prøveleder sender inn.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Auth helper - sjekker innlogging og returnerer brukerinfo
+        async function checkAuth() {
+            // Sjekk FuglehundAuth først (fra auth.js)
+            if (typeof FuglehundAuth !== 'undefined' && FuglehundAuth.isLoggedIn()) {
+                const user = FuglehundAuth.getUser();
+                const phone = FuglehundAuth.getSessionPhone();
+                if (user || phone) {
+                    // Hent rolle fra brukerdata
+                    const rolle = user?.rolle || '';
+                    let role = 'deltaker';
+                    if (rolle.includes('admin') || rolle.includes('superadmin')) role = 'admin';
+                    else if (rolle.includes('dvk')) role = 'dvk';
+                    else if (rolle.includes('dommer')) role = 'dommer';
+                    else if (rolle.includes('proveleder')) role = 'admin';
+
+                    return {
+                        name: user ? `${user.fornavn || ''} ${user.etternavn || ''}`.trim() : '',
+                        telefon: phone || user?.telefon || '',
+                        role: role
+                    };
+                }
+            }
+
+            // Fallback: sjekk judgeSession
+            const judgeSession = localStorage.getItem('judgeSession');
+            if (judgeSession) {
+                try {
+                    const session = JSON.parse(judgeSession);
+                    return {
+                        name: session.name || '',
+                        telefon: session.phone || '',
+                        role: session.isDvk ? 'dvk' : (session.isNkkRep ? 'admin' : 'dommer')
+                    };
+                } catch {}
+            }
+
+            // Fallback: sjekk userProfile
+            const userProfile = localStorage.getItem('userProfile');
+            if (userProfile) {
+                try {
+                    const profile = JSON.parse(userProfile);
+                    return {
+                        name: profile.name || '',
+                        telefon: profile.phone || '',
+                        role: profile.role || 'deltaker'
+                    };
+                } catch {}
+            }
+
+            return null;
+        }
+
+        // Kontrollpunkter fra offisielt FKF-skjema
+        const kontrollpunkter = [
+            { id: 'id_vaksine', navn: 'ID og vaksinasjonsattest', kategori: 'basis' },
+            { id: 'lufttemp', navn: 'Lufttemperatur', kategori: 'basis' },
+            { id: 'transport', navn: 'Transport/oppstalling', kategori: 'basis' },
+            { id: 'hygiene', navn: 'Hygiene oppstalling', kategori: 'basis' },
+            { id: 'vann', navn: 'Tilgang til vann', kategori: 'basis' },
+            { id: 'utstyr', navn: 'Utstyr iht reglement', kategori: 'basis' },
+            { id: 'drektig', navn: 'Synlig drektige og ammende tisper', kategori: 'helse' },
+            { id: 'sykdom', navn: 'Tegn til sykdom', kategori: 'helse' },
+            { id: 'vekt', navn: 'Synlig avmagret/sterkt overvektig', kategori: 'helse' },
+            { id: 'atferd', navn: 'Atferd (ikke redd/aggressiv)', kategori: 'helse' },
+            { id: 'halthet', navn: 'Halthet', kategori: 'helse' },
+            { id: 'handtering', navn: 'Håndtering av hunder', kategori: 'handtering' }
+        ];
+
+        // Lagrede avvik og vet-henvisninger
+        let lagredeAvvik = [];
+        let lagredeVetHenvisninger = [];
+        let dvkInitialer = '';
+        let currentProveId = null;
+        let currentUser = null;
+        let journalSigned = false;
+        let saveTimeout = null;
+
+        // Initialiser siden
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Sjekk autentisering
+            const user = await checkAuth();
+            if (!user) {
+                window.location.href = 'dommer.html';
+                return;
+            }
+
+            // Sjekk at brukeren har DVK-rolle eller admin-tilgang
+            const allowedRoles = ['dvk', 'admin', 'superadmin', 'proveleder', 'dommer'];
+            if (!allowedRoles.includes(user.role)) {
+                alert('Du har ikke tilgang til denne siden. Kontakt prøveleder hvis du mener dette er feil.');
+                window.location.href = 'profil.html';
+                return;
+            }
+
+            currentUser = user;
+            document.body.classList.remove('auth-loading');
+
+            // Sett DVK-navn fra brukerprofil
+            const dvkNavn = user.name || user.telefon || '';
+            document.getElementById('dvkNavn').value = dvkNavn;
+            document.getElementById('headerDvkName').textContent = dvkNavn;
+            oppdaterDvkInitialer();
+
+            // Bygg kontrolltabell
+            byggKontrollTabell();
+
+            // Last prøveinfo fra server
+            await loadTrialInfo();
+
+            // Last lagret journal fra server
+            await loadJournalFromServer();
+
+            // Auto-lagre ved endringer
+            document.querySelectorAll('input, select, textarea').forEach(el => {
+                el.addEventListener('change', () => debouncedAutoSave());
+                el.addEventListener('input', () => debouncedAutoSave());
+            });
+        });
+
+        async function loadTrialInfo() {
+            try {
+                const res = await fetch('/api/trial');
+                if (res.ok) {
+                    const data = await res.json();
+                    const trialName = data.name || 'Fuglehundprøve';
+                    document.getElementById('trialNameDisplay').textContent = trialName;
+                    document.getElementById('proveName').value = trialName;
+                    document.getElementById('arrangorSted').value = (data.organizing_club || '') + (data.location ? ', ' + data.location : '');
+
+                    if (data.start_date) {
+                        document.getElementById('proveDato').value = data.start_date;
+                    } else {
+                        document.getElementById('proveDato').value = new Date().toISOString().slice(0, 10);
+                    }
+
+                    // Sett prøve-ID
+                    currentProveId = data.id || `${trialName.replace(/\s+/g, '_')}_${data.start_date || new Date().toISOString().slice(0,10)}`;
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av prøveinfo:', err);
+                currentProveId = 'default_prove';
+            }
+        }
+
+        async function loadJournalFromServer() {
+            if (!currentProveId) return;
+
+            try {
+                const res = await fetch(`/api/dvk-journal/${encodeURIComponent(currentProveId)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.exists && data.journal) {
+                        const j = data.journal;
+
+                        // Last kontroller
+                        if (j.kontroller_json) {
+                            const kontroller = JSON.parse(j.kontroller_json);
+                            Object.keys(kontroller).forEach(key => {
+                                const kp = kontroller[key];
+                                const antallEl = document.getElementById(`antall_${key}`);
+                                const avEl = document.getElementById(`kontrollertAv_${key}`);
+                                const statusEl = document.getElementById(`status_${key}`);
+                                if (antallEl && kp.antall) antallEl.value = kp.antall;
+                                if (avEl && kp.kontrollertAv) avEl.value = kp.kontrollertAv;
+                                if (statusEl && kp.status) statusEl.value = kp.status;
+                            });
+                        }
+
+                        // Last avvik
+                        if (j.avvik_json) {
+                            lagredeAvvik = JSON.parse(j.avvik_json);
+                            visLagredeAvvik();
+                        }
+
+                        // Last vet-henvisninger
+                        if (j.vet_henvisninger_json) {
+                            lagredeVetHenvisninger = JSON.parse(j.vet_henvisninger_json);
+                            visLagredeVetHenvisninger();
+                        }
+
+                        // Last assistent
+                        if (j.dvk_assistent) {
+                            document.getElementById('dvkAssistent').value = j.dvk_assistent;
+                        }
+
+                        // Sjekk signaturstatus
+                        if (j.status === 'signed' || j.status === 'submitted') {
+                            journalSigned = true;
+                            if (j.signatur_json) {
+                                const sig = JSON.parse(j.signatur_json);
+                                document.getElementById('dvkSignStatus').innerHTML = `<span class="text-green-600">Signert: ${sig.fullSignatur}</span>`;
+                            }
+                            disableEditing();
+                        }
+
+                        oppdaterStatistikk();
+                        updateSyncStatus('success', 'Synkronisert');
+                    }
+                }
+            } catch (err) {
+                console.error('Feil ved lasting av journal:', err);
+                updateSyncStatus('error', 'Frakoblet');
+            }
+        }
+
+        function disableEditing() {
+            // Deaktiver alle input-felt når signert
+            document.querySelectorAll('input:not([readonly]), select, textarea').forEach(el => {
+                el.disabled = true;
+            });
+            document.getElementById('signerBtn').style.display = 'none';
+            document.getElementById('leggTilAvvikBtn').style.display = 'none';
+            document.getElementById('leggTilVetBtn').style.display = 'none';
+            document.getElementById('signaturBox').classList.add('bg-green-50', 'border', 'border-green-200');
+            document.getElementById('signaturBox').classList.remove('bg-bark-50');
+        }
+
+        function oppdaterDvkInitialer() {
+            const dvkNavn = document.getElementById('dvkNavn').value;
+            if (dvkNavn) {
+                dvkInitialer = dvkNavn.split(' ').map(n => n.charAt(0).toUpperCase()).join('');
+                // Oppdater alle kontrollert av-felter som er tomme
+                kontrollpunkter.forEach(kp => {
+                    const el = document.getElementById(`kontrollertAv_${kp.id}`);
+                    if (el && !el.value) {
+                        el.value = dvkInitialer;
+                    }
+                });
+            }
+        }
+
+        function byggKontrollTabell() {
+            const tbody = document.getElementById('kontrollTabell');
+            tbody.innerHTML = kontrollpunkter.map(kp => `
+                <tr class="hover:bg-bark-50">
+                    <td class="px-4 py-3 text-bark-800">${kp.navn}</td>
+                    <td class="px-4 py-3 text-center">
+                        <input type="number" min="0" id="antall_${kp.id}"
+                            class="w-20 px-2 py-1 text-center rounded-lg border border-bark-200 focus:border-forest-500 outline-none"
+                            placeholder="0" onchange="oppdaterStatistikk()">
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <input type="text" id="kontrollertAv_${kp.id}"
+                            class="w-24 px-2 py-1 text-center rounded-lg border border-bark-200 focus:border-forest-500 outline-none"
+                            placeholder="Init." value="${dvkInitialer}">
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <select id="status_${kp.id}"
+                            class="px-3 py-1 rounded-lg border border-bark-200 focus:border-forest-500 outline-none"
+                            onchange="oppdaterStatistikk()">
+                            <option value="">-</option>
+                            <option value="ok">OK</option>
+                            <option value="avvik">AVVIK</option>
+                        </select>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ===== AVVIK-FUNKSJONER =====
+        function visAvvikSkjema() {
+            document.getElementById('aktivtAvvikSkjema').classList.remove('hidden');
+            document.getElementById('leggTilAvvikBtn').classList.add('hidden');
+            document.getElementById('nyAvvik_eier').focus();
+        }
+
+        function avbrytAvvik() {
+            document.getElementById('aktivtAvvikSkjema').classList.add('hidden');
+            document.getElementById('leggTilAvvikBtn').classList.remove('hidden');
+            // Tøm skjemaet
+            document.getElementById('nyAvvik_eier').value = '';
+            document.getElementById('nyAvvik_hund').value = '';
+            document.getElementById('nyAvvik_stedtid').value = '';
+            document.getElementById('nyAvvik_vitner').value = '';
+            document.getElementById('nyAvvik_beskrivelse').value = '';
+        }
+
+        function lagreAvvik() {
+            const avvik = {
+                id: Date.now(),
+                eier: document.getElementById('nyAvvik_eier').value,
+                hund: document.getElementById('nyAvvik_hund').value,
+                stedTid: document.getElementById('nyAvvik_stedtid').value,
+                vitner: document.getElementById('nyAvvik_vitner').value,
+                beskrivelse: document.getElementById('nyAvvik_beskrivelse').value
+            };
+
+            if (!avvik.eier && !avvik.hund && !avvik.beskrivelse) {
+                alert('Vennligst fyll inn minst ett felt.');
+                return;
+            }
+
+            lagredeAvvik.push(avvik);
+            visLagredeAvvik();
+            avbrytAvvik();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        function visLagredeAvvik() {
+            const container = document.getElementById('avvikListe');
+            if (lagredeAvvik.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = lagredeAvvik.map((avvik, index) => `
+                <div class="bg-red-50 border border-red-200 rounded-xl overflow-hidden" id="lagretAvvik_${avvik.id}">
+                    <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-red-100 transition" onclick="toggleAvvik(${avvik.id})">
+                        <div class="flex items-center gap-3">
+                            <span class="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded">#${index + 1}</span>
+                            <div>
+                                <span class="font-medium text-red-800">${avvik.hund || 'Ukjent hund'}</span>
+                                <span class="text-red-600 text-sm ml-2">${avvik.stedTid || ''}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${!journalSigned ? `<button onclick="event.stopPropagation(); slettAvvik(${avvik.id})" class="text-red-400 hover:text-red-600 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>` : ''}
+                            <svg class="w-5 h-5 text-red-400 expand-icon transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="avvik-content hidden px-4 pb-4 border-t border-red-200 pt-3">
+                        <div class="grid md:grid-cols-2 gap-2 text-sm">
+                            <div><span class="text-red-600">Eier/fører:</span> ${avvik.eier || '-'}</div>
+                            <div><span class="text-red-600">Hund:</span> ${avvik.hund || '-'}</div>
+                            <div><span class="text-red-600">Sted/tid:</span> ${avvik.stedTid || '-'}</div>
+                            <div><span class="text-red-600">Vitner:</span> ${avvik.vitner || '-'}</div>
+                        </div>
+                        ${avvik.beskrivelse ? `<div class="mt-2 text-sm"><span class="text-red-600">Beskrivelse:</span> ${avvik.beskrivelse}</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleAvvik(id) {
+            const el = document.getElementById(`lagretAvvik_${id}`);
+            const content = el.querySelector('.avvik-content');
+            const icon = el.querySelector('.expand-icon');
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function slettAvvik(id) {
+            if (!confirm('Er du sikker på at du vil slette dette avviket?')) return;
+            lagredeAvvik = lagredeAvvik.filter(a => a.id !== id);
+            visLagredeAvvik();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        // ===== VET-HENVISNING FUNKSJONER =====
+        function visVetSkjema() {
+            document.getElementById('aktivtVetSkjema').classList.remove('hidden');
+            document.getElementById('leggTilVetBtn').classList.add('hidden');
+            document.getElementById('nyVet_eier').focus();
+        }
+
+        function avbrytVet() {
+            document.getElementById('aktivtVetSkjema').classList.add('hidden');
+            document.getElementById('leggTilVetBtn').classList.remove('hidden');
+            // Tøm skjemaet
+            document.getElementById('nyVet_eier').value = '';
+            document.getElementById('nyVet_hund').value = '';
+            document.getElementById('nyVet_regnr').value = '';
+            document.getElementById('nyVet_arsak').value = '';
+        }
+
+        function lagreVetHenvisning() {
+            const henvisning = {
+                id: Date.now(),
+                eier: document.getElementById('nyVet_eier').value,
+                hund: document.getElementById('nyVet_hund').value,
+                regnr: document.getElementById('nyVet_regnr').value,
+                arsak: document.getElementById('nyVet_arsak').value
+            };
+
+            if (!henvisning.eier && !henvisning.hund) {
+                alert('Vennligst fyll inn minst eier eller hundens navn.');
+                return;
+            }
+
+            lagredeVetHenvisninger.push(henvisning);
+            visLagredeVetHenvisninger();
+            avbrytVet();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        function visLagredeVetHenvisninger() {
+            const container = document.getElementById('vetHenvisninger');
+            if (lagredeVetHenvisninger.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = lagredeVetHenvisninger.map((h, index) => `
+                <div class="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden" id="lagretVet_${h.id}">
+                    <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-amber-100 transition" onclick="toggleVet(${h.id})">
+                        <div class="flex items-center gap-3">
+                            <span class="bg-amber-600 text-white text-xs font-bold px-2 py-1 rounded">#${index + 1}</span>
+                            <div>
+                                <span class="font-medium text-amber-800">${h.hund || 'Ukjent hund'}</span>
+                                <span class="text-amber-600 text-sm ml-2">${h.regnr || ''}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${!journalSigned ? `<button onclick="event.stopPropagation(); slettVet(${h.id})" class="text-amber-400 hover:text-amber-600 p-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>` : ''}
+                            <svg class="w-5 h-5 text-amber-400 expand-icon transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="vet-content hidden px-4 pb-4 border-t border-amber-200 pt-3">
+                        <div class="grid md:grid-cols-2 gap-2 text-sm">
+                            <div><span class="text-amber-600">Eier:</span> ${h.eier || '-'}</div>
+                            <div><span class="text-amber-600">Hund:</span> ${h.hund || '-'}</div>
+                            <div><span class="text-amber-600">Reg.nr:</span> ${h.regnr || '-'}</div>
+                            <div><span class="text-amber-600">Årsak:</span> ${h.arsak || '-'}</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleVet(id) {
+            const el = document.getElementById(`lagretVet_${id}`);
+            const content = el.querySelector('.vet-content');
+            const icon = el.querySelector('.expand-icon');
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function slettVet(id) {
+            if (!confirm('Er du sikker på at du vil slette denne henvisningen?')) return;
+            lagredeVetHenvisninger = lagredeVetHenvisninger.filter(h => h.id !== id);
+            visLagredeVetHenvisninger();
+            oppdaterStatistikk();
+            autoSave();
+        }
+
+        // ===== STATISTIKK OG LAGRING =====
+        function oppdaterStatistikk() {
+            let totalt = 0;
+            let ok = 0;
+            let avvik = 0;
+
+            kontrollpunkter.forEach(kp => {
+                const antall = parseInt(document.getElementById(`antall_${kp.id}`)?.value) || 0;
+                const status = document.getElementById(`status_${kp.id}`)?.value;
+
+                totalt += antall;
+                if (status === 'ok') ok++;
+                if (status === 'avvik') avvik++;
+            });
+
+            // Legg til avvik fra avvikslisten
+            avvik += lagredeAvvik.length;
+
+            document.getElementById('statKontrollert').textContent = totalt;
+            document.getElementById('statOK').textContent = ok;
+            document.getElementById('statAvvik').textContent = avvik;
+            document.getElementById('statVet').textContent = lagredeVetHenvisninger.length;
+        }
+
+        function debouncedAutoSave() {
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => autoSave(), 1000);
+        }
+
+        async function autoSave() {
+            if (journalSigned || !currentProveId) return;
+
+            updateSyncStatus('saving', 'Lagrer...');
+
+            const data = samleInnData();
+
+            try {
+                const res = await fetch('/api/dvk-journal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prove_id: currentProveId,
+                        prove_navn: data.proveName,
+                        arrangor_sted: data.arrangorSted,
+                        prove_dato: data.proveDato,
+                        dvk_navn: data.dvkNavn,
+                        dvk_telefon: currentUser?.telefon || null,
+                        dvk_assistent: data.dvkAssistent,
+                        kontroller_json: JSON.stringify(data.kontroller),
+                        avvik_json: JSON.stringify(data.avvik),
+                        vet_henvisninger_json: JSON.stringify(data.vetHenvisninger)
+                    })
+                });
+
+                if (res.ok) {
+                    updateSyncStatus('success', 'Lagret');
+                } else {
+                    throw new Error('Server error');
+                }
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                updateSyncStatus('error', 'Lagringsfeil');
+            }
+        }
+
+        function samleInnData() {
+            const kontroller = {};
+            kontrollpunkter.forEach(kp => {
+                kontroller[kp.id] = {
+                    antall: document.getElementById(`antall_${kp.id}`)?.value || '',
+                    kontrollertAv: document.getElementById(`kontrollertAv_${kp.id}`)?.value || '',
+                    status: document.getElementById(`status_${kp.id}`)?.value || ''
+                };
+            });
+
+            return {
+                proveName: document.getElementById('proveName').value,
+                arrangorSted: document.getElementById('arrangorSted').value,
+                proveDato: document.getElementById('proveDato').value,
+                dvkNavn: document.getElementById('dvkNavn').value,
+                dvkAssistent: document.getElementById('dvkAssistent').value,
+                kontroller: kontroller,
+                avvik: lagredeAvvik,
+                vetHenvisninger: lagredeVetHenvisninger
+            };
+        }
+
+        async function signerJournal() {
+            const dvkNavn = document.getElementById('dvkNavn').value;
+            if (!dvkNavn) {
+                alert('Vennligst fyll inn DVK-navn før signering.');
+                document.getElementById('dvkNavn').focus();
+                return;
+            }
+
+            if (!confirm('Er du sikker på at du vil signere journalen? Etter signering kan den ikke endres.')) {
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('no-NO');
+            const timeStr = now.toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' });
+            const initialer = dvkNavn.split(' ').map(n => n.charAt(0).toUpperCase()).join('');
+            const signaturTekst = `${dvkNavn} (${initialer}) — ${dateStr} kl ${timeStr}`;
+
+            // Samle all data
+            const journalData = samleInnData();
+            const signatur = {
+                navn: dvkNavn,
+                initialer: initialer,
+                dato: dateStr,
+                tid: timeStr,
+                fullSignatur: signaturTekst
+            };
+
+            try {
+                const res = await fetch(`/api/dvk-journal/${encodeURIComponent(currentProveId)}/sign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prove_navn: journalData.proveName,
+                        arrangor_sted: journalData.arrangorSted,
+                        prove_dato: journalData.proveDato,
+                        dvk_navn: journalData.dvkNavn,
+                        dvk_telefon: currentUser?.telefon || null,
+                        dvk_assistent: journalData.dvkAssistent,
+                        kontroller_json: JSON.stringify(journalData.kontroller),
+                        avvik_json: JSON.stringify(journalData.avvik),
+                        vet_henvisninger_json: JSON.stringify(journalData.vetHenvisninger),
+                        signatur_json: JSON.stringify(signatur)
+                    })
+                });
+
+                if (!res.ok) throw new Error('Kunne ikke signere journal');
+
+                journalSigned = true;
+                document.getElementById('dvkSignStatus').innerHTML = `<span class="text-green-600">Signert: ${signaturTekst}</span>`;
+                disableEditing();
+
+                showToast('Kontrolljournal signert og sendt til FKF!', 'success');
+            } catch (err) {
+                console.error('Feil ved signering:', err);
+                showToast('Feil ved signering: ' + err.message, 'error');
+            }
+        }
+
+        function updateSyncStatus(status, text) {
+            const dot = document.getElementById('syncDot');
+            const textEl = document.getElementById('syncText');
+
+            textEl.textContent = text;
+
+            switch (status) {
+                case 'success':
+                    dot.className = 'w-2 h-2 rounded-full bg-green-500';
+                    break;
+                case 'saving':
+                    dot.className = 'w-2 h-2 rounded-full bg-yellow-500 animate-pulse';
+                    break;
+                case 'error':
+                    dot.className = 'w-2 h-2 rounded-full bg-red-500';
+                    break;
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-xl shadow-lg z-50 transition transform ${
+                type === 'success' ? 'bg-green-600 text-white' :
+                type === 'error' ? 'bg-red-600 text-white' :
+                'bg-bark-700 text-white'
+            }`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
+            window.location.href = 'index.html';
+        }
+
+        // ========================================
+        // AVERSJONSBEVIS-KONTROLL
+        // ========================================
+
+        let aversjonsbevisData = [];
+        let currentAvFilter = 'alle';
+
+        async function lastAversjonsbevisOversikt() {
+            if (!currentProveId) return;
+
+            try {
+                const res = await fetch(`/api/prover/${encodeURIComponent(currentProveId)}/aversjonsbevis-oversikt`);
+                if (!res.ok) throw new Error('Kunne ikke hente aversjonsbevis');
+
+                const data = await res.json();
+                aversjonsbevisData = data.deltakere || [];
+
+                // Oppdater statistikk
+                document.getElementById('avStatTotal').textContent = data.statistikk?.total || 0;
+                document.getElementById('avStatMedBevis').textContent = data.statistikk?.medBevis || 0;
+                document.getElementById('avStatUtenBevis').textContent = data.statistikk?.utenBevis || 0;
+                document.getElementById('avStatBekreftet').textContent = data.statistikk?.bekreftet || 0;
+
+                visAversjonsbevisListe();
+            } catch (err) {
+                console.error('Feil ved lasting av aversjonsbevis:', err);
+                document.getElementById('aversjonsbevisListe').innerHTML =
+                    '<p class="text-center text-red-500 py-4">Kunne ikke laste aversjonsbevis-data</p>';
+            }
+        }
+
+        function filterAversjonsbevis(filter) {
+            currentAvFilter = filter;
+
+            // Oppdater filter-knapper
+            document.querySelectorAll('.av-filter-btn').forEach(btn => {
+                if (btn.dataset.filter === filter) {
+                    btn.className = 'av-filter-btn active px-3 py-1.5 text-sm rounded-lg bg-forest-600 text-white transition';
+                } else {
+                    btn.className = 'av-filter-btn px-3 py-1.5 text-sm rounded-lg bg-bark-100 text-bark-700 hover:bg-bark-200 transition';
+                }
+            });
+
+            visAversjonsbevisListe();
+        }
+
+        function visAversjonsbevisListe() {
+            const container = document.getElementById('aversjonsbevisListe');
+
+            // Filtrer data
+            let filtrert = aversjonsbevisData;
+            const toAarSiden = new Date();
+            toAarSiden.setFullYear(toAarSiden.getFullYear() - 2);
+
+            if (currentAvFilter === 'mangler') {
+                filtrert = aversjonsbevisData.filter(d => !d.har_bevis);
+            } else if (currentAvFilter === 'gammelt') {
+                filtrert = aversjonsbevisData.filter(d => {
+                    if (!d.aversjon_dato) return false;
+                    return new Date(d.aversjon_dato) < toAarSiden;
+                });
+            } else if (currentAvFilter === 'sau') {
+                filtrert = aversjonsbevisData.filter(d => d.dyretype?.toLowerCase().includes('sau'));
+            } else if (currentAvFilter === 'rein') {
+                filtrert = aversjonsbevisData.filter(d => d.dyretype?.toLowerCase().includes('rein'));
+            }
+
+            if (filtrert.length === 0) {
+                container.innerHTML = `
+                    <p class="text-center text-bark-400 py-8">
+                        ${currentAvFilter === 'alle' ? 'Ingen deltakere funnet' : 'Ingen treff på filteret'}
+                    </p>
+                `;
+                return;
+            }
+
+            container.innerHTML = filtrert.map(d => {
+                // Beregn alder på beviset
+                let alderTag = '';
+                if (d.aversjon_dato) {
+                    const datoObj = new Date(d.aversjon_dato);
+                    const erGammelt = datoObj < toAarSiden;
+                    const aarGammelt = Math.floor((new Date() - datoObj) / (365.25 * 24 * 60 * 60 * 1000));
+
+                    if (erGammelt) {
+                        alderTag = `<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">${aarGammelt} år</span>`;
+                    }
+                }
+
+                // Status-ikon og farge
+                let statusClass, statusIcon;
+                if (!d.har_bevis) {
+                    statusClass = 'bg-red-50 border-red-200';
+                    statusIcon = '<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+                } else if (d.bekreftet || d.godkjent) {
+                    statusClass = 'bg-green-50 border-green-200';
+                    statusIcon = '<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+                } else {
+                    statusClass = 'bg-yellow-50 border-yellow-200';
+                    statusIcon = '<svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>';
+                }
+
+                return `
+                    <div class="flex items-center gap-3 p-3 rounded-xl border ${statusClass} cursor-pointer hover:shadow-sm transition" onclick="visAversjonsbevisDetaljer('${d.id}')">
+                        <div class="flex-shrink-0">${statusIcon}</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-bark-800 truncate">${d.navn || 'Ukjent'}</p>
+                            <p class="text-xs text-bark-500">${d.regnr || ''} · ${d.rase || ''}</p>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            ${d.har_bevis ? `
+                                <span class="text-xs font-medium ${d.dyretype?.includes('Sau') ? 'text-forest-600' : d.dyretype?.includes('Rein') ? 'text-blue-600' : 'text-bark-600'}">
+                                    ${d.dyretype || 'Ukjent type'}
+                                </span>
+                                <p class="text-xs text-bark-400">${d.aversjon_dato || ''}</p>
+                                ${alderTag}
+                            ` : `
+                                <span class="text-xs text-red-600 font-medium">Mangler bevis</span>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function visAversjonsbevisDetaljer(hundId) {
+            try {
+                const res = await fetch(`/api/hunder/${hundId}/aversjonsbevis/detaljer`);
+                if (!res.ok) throw new Error('Kunne ikke hente detaljer');
+
+                const data = await res.json();
+
+                if (data.harBevis && data.bilde) {
+                    // Vis bildet i ny fane
+                    const win = window.open('', '_blank');
+                    win.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head><title>Aversjonsbevis - ${data.registrert?.navn || 'Hund'}</title>
+                        <style>body{margin:0;display:flex;flex-direction:column;align-items:center;min-height:100vh;background:#f0f0f0;font-family:system-ui,sans-serif;}
+                        .info{padding:1rem;background:white;width:100%;max-width:600px;margin-bottom:1rem;box-shadow:0 2px 4px rgba(0,0,0,0.1);}
+                        img{max-width:100%;max-height:80vh;object-fit:contain;}</style></head>
+                        <body>
+                            <div class="info">
+                                <h2 style="margin:0 0 0.5rem 0;">Aversjonsbevis</h2>
+                                <p><strong>Hund:</strong> ${data.registrert?.navn || '-'} (${data.registrert?.regnr || '-'})</p>
+                                <p><strong>Type:</strong> ${data.dyretype || 'Ikke angitt'}</p>
+                                <p><strong>Godkjent dato:</strong> ${data.datoGodkjent || 'Ikke angitt'}</p>
+                                <p><strong>Chip-ID:</strong> ${data.chipId || 'Ikke angitt'}</p>
+                                <p><strong>Status:</strong> ${data.godkjent ? '✅ Godkjent av DVK' : data.bekreftet ? '✓ Bekreftet av eier' : '⏳ Venter bekreftelse'}</p>
+                            </div>
+                            <img src="${data.bilde}" alt="Aversjonsbevis">
+                        </body>
+                        </html>
+                    `);
+                } else {
+                    alert('Hunden har ikke lastet opp aversjonsbevis ennå.');
+                }
+            } catch (err) {
+                alert('Kunne ikke vise aversjonsbevis: ' + err.message);
+            }
+        }
+
+        // Modal for opplasting på vegne av deltaker
+        let selectedDeltakerForUpload = null;
+
+        function openUploadForDeltaker() {
+            // Vis liste over deltakere uten bevis
+            const utenBevis = aversjonsbevisData.filter(d => !d.har_bevis);
+
+            if (utenBevis.length === 0) {
+                alert('Alle deltakere har allerede lastet opp aversjonsbevis!');
+                return;
+            }
+
+            const valg = utenBevis.map((d, i) => `${i + 1}. ${d.navn} (${d.regnr})`).join('\n');
+            const valgt = prompt(`Velg deltaker å laste opp for (skriv nummer):\n\n${valg}`);
+
+            if (valgt) {
+                const idx = parseInt(valgt) - 1;
+                if (idx >= 0 && idx < utenBevis.length) {
+                    selectedDeltakerForUpload = utenBevis[idx];
+                    // Åpne filopplasting
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*,application/pdf';
+                    input.onchange = (e) => uploadForDeltaker(e.target.files[0]);
+                    input.click();
+                }
+            }
+        }
+
+        async function uploadForDeltaker(file) {
+            if (!file || !selectedDeltakerForUpload) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64 = e.target.result;
+
+                try {
+                    const res = await fetch(`/api/hunder/${selectedDeltakerForUpload.id}/aversjonsbevis/analyser`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bilde: base64 })
+                    });
+
+                    const data = await res.json();
+                    if (res.ok) {
+                        alert(`Aversjonsbevis lastet opp for ${selectedDeltakerForUpload.navn}!\n\n${data.melding || ''}`);
+                        // Oppdater listen
+                        lastAversjonsbevisOversikt();
+                    } else {
+                        alert('Feil: ' + (data.error || 'Kunne ikke laste opp'));
+                    }
+                } catch (err) {
+                    alert('Nettverksfeil ved opplasting');
+                }
+
+                selectedDeltakerForUpload = null;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Last aversjonsbevis ved sideinnlasting (etter journal)
+        setTimeout(() => {
+            if (currentProveId) {
+                lastAversjonsbevisOversikt();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

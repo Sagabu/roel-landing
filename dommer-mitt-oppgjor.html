@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mitt oppgjør - Fuglehundprøve</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
+                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
+                        forest: { 50: '#f6f7f4', 100: '#e3e7dc', 200: '#c7d0ba', 300: '#a4b391', 400: '#839770', 500: '#657a53', 600: '#4f6040', 700: '#3f4c34', 800: '#343e2d', 900: '#2c3526', 950: '#151a12' },
+                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
+                    },
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'Georgia', 'serif'],
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="auth.js"></script>
+    <style>
+        .auth-loading header, .auth-loading main { visibility: hidden; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="bg-cream min-h-screen font-sans auth-loading">
+
+    <!-- Header -->
+    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg no-print">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <a href="dommer-hjem.html" class="flex items-center gap-2 hover:opacity-80 transition">
+                        <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
+                        <span class="font-serif font-bold">Mitt oppgjør</span>
+                    </a>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="window.print()" class="text-bark-200 hover:text-white text-sm font-medium transition flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+                        </svg>
+                        Skriv ut
+                    </button>
+                    <a href="dommer-hjem.html" class="text-bark-200 hover:text-white text-sm font-medium transition">← Tilbake</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Prøve-info -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-bold font-serif text-bark-800" id="proveNavnDisplay">-</h2>
+                    <p class="text-bark-500" id="proveDatoDisplay">-</p>
+                </div>
+                <div id="statusBadge" class="text-sm px-3 py-1 rounded-full bg-bark-100 text-bark-600">
+                    Ikke utfylt
+                </div>
+            </div>
+        </div>
+
+        <!-- Status-varsel ved innsendt/godkjent -->
+        <div id="statusAlert" class="hidden mb-6"></div>
+
+        <!-- Oppgjørsskjema -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6 mb-6">
+            <h2 class="text-lg font-bold font-serif text-bark-800 mb-2">Kjøregodtgjørelse og diett</h2>
+            <p class="text-bark-500 text-sm mb-6">Fyll ut dine reisekostnader, diett og dommergodtgjørelse</p>
+
+            <!-- Reisens varighet -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Reisens varighet
+                </h3>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Fra dato/klokkeslett</label>
+                        <input type="datetime-local" id="reiseFra" onchange="beregnReisevarighet()"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Til dato/klokkeslett</label>
+                        <input type="datetime-local" id="reiseTil" onchange="beregnReisevarighet()"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                </div>
+                <div class="mt-3 grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Beregnet reisetid</label>
+                        <input type="text" id="reisevarighetDisplay" readonly value="-"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-bark-50 text-bark-700">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Reisedekning</label>
+                        <select id="reisedekning" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                            <option value="tur_retur">Tur/retur (alle dager / NKK-rep)</option>
+                            <option value="en_vei">Én vei (deltar 1 dag)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kjøregodtgjørelse (bil) -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-warm-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                    Kjøregodtgjørelse (bil)
+                </h3>
+                <p class="text-xs text-bark-500 mb-3">Bil: kr 3,50 per km. Passasjertillegg: kr 1,- per km per person.</p>
+                <div class="grid md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Kilometer</label>
+                        <input type="number" id="reiseKm" value="0" min="0" oninput="beregnTotalt()"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Sats per km</label>
+                        <input type="text" id="reiseKmSats" value="3,50" readonly
+                            class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-bark-50 text-bark-700">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Passasjerer</label>
+                        <input type="number" id="reisePassasjerer" value="0" min="0" oninput="beregnTotalt()"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">= Kjøregodtgjørelse</label>
+                        <input type="text" id="reiseKmBelop" readonly
+                            class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-forest-50 text-forest-700 font-medium">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bompenger -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3">Bompenger</h3>
+                <div id="bompengeListe"></div>
+                <button type="button" onclick="leggTilBompenge()" class="mt-2 text-sm text-warm-600 hover:text-warm-700 font-medium flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Legg til bompenger
+                </button>
+            </div>
+
+            <!-- Parkering -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3">Parkering</h3>
+                <div id="parkeringListe"></div>
+                <button type="button" onclick="leggTilParkering()" class="mt-2 text-sm text-warm-600 hover:text-warm-700 font-medium flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Legg til parkering
+                </button>
+            </div>
+
+            <!-- Kollektivtransport -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3">Kollektivtransport (tog, buss, fly, båt)</h3>
+                <p class="text-xs text-bark-500 mb-3">Kvittering må vedlegges.</p>
+                <div id="kollektivListe"></div>
+                <button type="button" onclick="leggTilKollektiv()" class="mt-2 text-sm text-warm-600 hover:text-warm-700 font-medium flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Legg til reise
+                </button>
+            </div>
+
+            <!-- Diett/Overnatting -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3">Diett/Overnatting</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-bark-200">
+                                <th class="text-left py-2 text-bark-600 font-medium">Type</th>
+                                <th class="text-center py-2 text-bark-600 font-medium w-24">Antall</th>
+                                <th class="text-right py-2 text-bark-600 font-medium w-24">Sats</th>
+                                <th class="text-right py-2 text-bark-600 font-medium w-28">Beløp</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-bark-100">
+                                <td class="py-2 text-bark-700">Reise 3-6 timer</td>
+                                <td class="py-2 text-center">
+                                    <input type="number" id="diett3_6Antall" value="0" min="0" oninput="beregnTotalt()"
+                                        class="w-16 px-2 py-1 rounded border border-bark-200 text-center">
+                                </td>
+                                <td class="py-2 text-right text-bark-600">kr 150,-</td>
+                                <td class="py-2 text-right font-medium text-forest-700" id="diett3_6Belop">kr 0,-</td>
+                            </tr>
+                            <tr class="border-b border-bark-100">
+                                <td class="py-2 text-bark-700">Reise 6-12 timer</td>
+                                <td class="py-2 text-center">
+                                    <input type="number" id="diett6_12Antall" value="0" min="0" oninput="beregnTotalt()"
+                                        class="w-16 px-2 py-1 rounded border border-bark-200 text-center">
+                                </td>
+                                <td class="py-2 text-right text-bark-600">kr 200,-</td>
+                                <td class="py-2 text-right font-medium text-forest-700" id="diett6_12Belop">kr 0,-</td>
+                            </tr>
+                            <tr class="border-b border-bark-100">
+                                <td class="py-2 text-bark-700">Reise over 12 timer</td>
+                                <td class="py-2 text-center">
+                                    <input type="number" id="diettOver12Antall" value="0" min="0" oninput="beregnTotalt()"
+                                        class="w-16 px-2 py-1 rounded border border-bark-200 text-center">
+                                </td>
+                                <td class="py-2 text-right text-bark-600">kr 400,-</td>
+                                <td class="py-2 text-right font-medium text-forest-700" id="diettOver12Belop">kr 0,-</td>
+                            </tr>
+                            <tr class="border-b border-bark-100">
+                                <td class="py-2 text-bark-700">Bor utenfor hovedkvarter</td>
+                                <td class="py-2 text-center">
+                                    <input type="number" id="borUtenforHKAntall" value="0" min="0" oninput="beregnTotalt()"
+                                        class="w-16 px-2 py-1 rounded border border-bark-200 text-center">
+                                </td>
+                                <td class="py-2 text-right text-bark-600">kr 500,-</td>
+                                <td class="py-2 text-right font-medium text-forest-700" id="borUtenforHKBelop">kr 0,-</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr class="border-t-2 border-bark-300">
+                                <td colspan="3" class="py-2 text-right font-semibold text-bark-700">Sum diett/overnatting:</td>
+                                <td class="py-2 text-right font-bold text-forest-700" id="diettSum">kr 0,-</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Dommergodtgjørelse -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3">Dommergodtgjørelse</h3>
+                <p class="text-xs text-bark-500 mb-3">kr 500,- per dag, samme uansett bopel.</p>
+                <div class="grid md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Antall dager</label>
+                        <input type="number" id="dommerDager" value="0" min="0" oninput="beregnTotalt()"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Sats per dag</label>
+                        <input type="text" value="kr 500,-" readonly
+                            class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-bark-50 text-bark-700">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">= Dommergodtgjørelse</label>
+                        <input type="text" id="dommerBelop" readonly
+                            class="w-full px-3 py-2 rounded-lg border border-bark-100 bg-forest-50 text-forest-700 font-medium">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fradrag -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3 text-red-700">Fradrag</h3>
+                <p class="text-xs text-bark-500 mb-3">F.eks. påmelding egen hund, måltider dekket av arrangør.</p>
+                <div id="fradragListe"></div>
+                <button type="button" onclick="leggTilFradrag()" class="mt-2 text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Legg til fradrag
+                </button>
+            </div>
+
+            <!-- Summering -->
+            <div class="bg-forest-50 rounded-xl p-4 mb-6">
+                <h3 class="font-semibold text-forest-800 mb-3">Summering</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between"><span class="text-forest-700">Kjøregodtgjørelse:</span><span id="sumKjore" class="font-medium text-forest-800">kr 0,-</span></div>
+                    <div class="flex justify-between"><span class="text-forest-700">Bompenger:</span><span id="sumBom" class="font-medium text-forest-800">kr 0,-</span></div>
+                    <div class="flex justify-between"><span class="text-forest-700">Parkering:</span><span id="sumParkering" class="font-medium text-forest-800">kr 0,-</span></div>
+                    <div class="flex justify-between"><span class="text-forest-700">Kollektivtransport:</span><span id="sumKollektiv" class="font-medium text-forest-800">kr 0,-</span></div>
+                    <div class="flex justify-between"><span class="text-forest-700">Diett/Overnatting:</span><span id="sumDiett" class="font-medium text-forest-800">kr 0,-</span></div>
+                    <div class="flex justify-between"><span class="text-forest-700">Dommergodtgjørelse:</span><span id="sumDommer" class="font-medium text-forest-800">kr 0,-</span></div>
+                    <div class="flex justify-between text-red-700"><span>Fradrag:</span><span id="sumFradrag" class="font-medium">- kr 0,-</span></div>
+                    <div class="border-t-2 border-forest-300 pt-2 mt-2 flex justify-between">
+                        <span class="font-bold text-forest-800">TOTALT TIL UTBETALING:</span>
+                        <span id="totalBelop" class="text-xl font-bold text-forest-700">kr 0,-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Signatur og kontonummer -->
+            <div class="mb-6">
+                <h3 class="font-semibold text-bark-800 mb-3">Signatur og betalingsinformasjon</h3>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Dato</label>
+                        <input type="date" id="signaturDato"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Sted</label>
+                        <input type="text" id="signaturSted" placeholder="F.eks. Trondheim"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                </div>
+                <div class="grid md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Kontonummer</label>
+                        <input type="text" id="kontonummer" placeholder="1234.56.78901"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-bark-600 mb-1">Signatur (skriv fullt navn)</label>
+                        <input type="text" id="signatur" placeholder="Ola Nordmann"
+                            class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none italic">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kommentar -->
+            <div class="mb-6">
+                <label class="block text-sm text-bark-600 mb-1">Kommentar</label>
+                <textarea id="kommentar" rows="2" placeholder="Eventuelle merknader..."
+                    class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none resize-none"></textarea>
+            </div>
+
+            <!-- Handlinger -->
+            <div class="flex flex-wrap gap-3 no-print">
+                <button onclick="lagreOppgjor('utkast')" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-6 py-3 rounded-xl font-medium transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                    Lagre utkast
+                </button>
+                <button onclick="lagreOppgjor('innsendt')" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-xl font-medium transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    Send til prøveleder
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let proveId = null;
+        let dommerTelefon = null;
+        let dommerNavn = null;
+        let eksisterendeOppgjor = null;
+
+        // Dynamiske lister
+        let bompenger = [];
+        let parkeringer = [];
+        let kollektivreiser = [];
+        let fradrag = [];
+
+        // Satser
+        const SATSER = {
+            km: 3.50,
+            passasjer: 1.00,
+            diett3_6: 150,
+            diett6_12: 200,
+            diettOver12: 400,
+            borUtenforHK: 500,
+            dommer: 500
+        };
+
+        async function init() {
+            // Hent prøve-ID fra URL
+            const params = new URLSearchParams(window.location.search);
+            proveId = params.get('prove');
+
+            if (!proveId) {
+                alert('Ingen prøve valgt');
+                window.location.href = 'dommer-hjem.html';
+                return;
+            }
+
+            // Hent dommer-info fra session
+            const session = JSON.parse(localStorage.getItem('judgeSession') || '{}');
+            dommerTelefon = session.phone;
+            dommerNavn = session.name;
+
+            if (!dommerTelefon) {
+                alert('Du må være logget inn som dommer');
+                window.location.href = 'dommer.html';
+                return;
+            }
+
+            // Sett default dato
+            document.getElementById('signaturDato').valueAsDate = new Date();
+
+            // Last prøve-info
+            await loadProveInfo();
+
+            // Last eksisterende oppgjør
+            await loadOppgjor();
+
+            document.body.classList.remove('auth-loading');
+        }
+
+        async function loadProveInfo() {
+            try {
+                const resp = await fetch(`/api/prover/${proveId}`);
+                if (resp.ok) {
+                    const prove = await resp.json();
+                    document.getElementById('proveNavnDisplay').textContent = prove.navn || 'Ukjent prøve';
+                    document.getElementById('proveDatoDisplay').textContent = prove.start_dato || '-';
+                }
+            } catch (err) {
+                console.error('Kunne ikke laste prøve-info:', err);
+            }
+        }
+
+        async function loadOppgjor() {
+            try {
+                const resp = await fetch(`/api/prover/${proveId}/dommer-oppgjor`);
+                if (!resp.ok) return;
+
+                const oppgjorListe = await resp.json();
+                eksisterendeOppgjor = oppgjorListe.find(o => o.dommer_telefon === dommerTelefon);
+
+                if (eksisterendeOppgjor) {
+                    fyllInnOppgjor(eksisterendeOppgjor);
+                    oppdaterStatusVisning(eksisterendeOppgjor.status);
+                }
+            } catch (err) {
+                console.error('Kunne ikke laste oppgjør:', err);
+            }
+        }
+
+        function oppdaterStatusVisning(status) {
+            const badge = document.getElementById('statusBadge');
+            const alert = document.getElementById('statusAlert');
+
+            const statusConfig = {
+                'utkast': { text: 'Utkast', classes: 'bg-yellow-100 text-yellow-700', alert: null },
+                'innsendt': {
+                    text: 'Innsendt',
+                    classes: 'bg-blue-100 text-blue-700',
+                    alert: {
+                        classes: 'bg-blue-50 border border-blue-200 text-blue-700',
+                        icon: '📨',
+                        text: 'Oppgjøret er sendt til prøveleder for godkjenning. Du vil få beskjed når det er behandlet.'
+                    }
+                },
+                'godkjent': {
+                    text: 'Godkjent',
+                    classes: 'bg-green-100 text-green-700',
+                    alert: {
+                        classes: 'bg-green-50 border border-green-200 text-green-700',
+                        icon: '✅',
+                        text: 'Oppgjøret er godkjent av prøveleder og venter på utbetaling.'
+                    }
+                },
+                'utbetalt': {
+                    text: 'Utbetalt',
+                    classes: 'bg-forest-100 text-forest-700',
+                    alert: {
+                        classes: 'bg-forest-50 border border-forest-200 text-forest-700',
+                        icon: '💰',
+                        text: 'Oppgjøret er utbetalt!'
+                    }
+                },
+                'avvist': {
+                    text: 'Avvist',
+                    classes: 'bg-red-100 text-red-700',
+                    alert: {
+                        classes: 'bg-red-50 border border-red-200 text-red-700',
+                        icon: '⚠️',
+                        text: 'Oppgjøret er avvist. Se kommentarfeltet for begrunnelse, og send inn på nytt.'
+                    }
+                }
+            };
+
+            const config = statusConfig[status] || statusConfig['utkast'];
+            badge.textContent = config.text;
+            badge.className = `text-sm px-3 py-1 rounded-full ${config.classes}`;
+
+            if (config.alert) {
+                alert.className = `p-4 rounded-xl mb-6 ${config.alert.classes}`;
+                alert.innerHTML = `<span class="mr-2">${config.alert.icon}</span> ${config.alert.text}`;
+                alert.classList.remove('hidden');
+            } else {
+                alert.classList.add('hidden');
+            }
+
+            // Deaktiver innsending hvis allerede godkjent/utbetalt
+            if (status === 'godkjent' || status === 'utbetalt') {
+                document.querySelectorAll('input, select, textarea, button').forEach(el => {
+                    if (!el.closest('.no-print')) el.disabled = true;
+                });
+            }
+        }
+
+        function fyllInnOppgjor(o) {
+            document.getElementById('reiseFra').value = o.reise_fra || '';
+            document.getElementById('reiseTil').value = o.reise_til || '';
+            document.getElementById('reisedekning').value = o.reisedekning || 'tur_retur';
+            document.getElementById('reiseKm').value = o.reise_km || 0;
+            document.getElementById('reisePassasjerer').value = o.reise_passasjerer || 0;
+
+            bompenger = JSON.parse(o.bompenger || '[]');
+            parkeringer = JSON.parse(o.parkeringer || '[]');
+            kollektivreiser = JSON.parse(o.kollektivreiser || '[]');
+            fradrag = JSON.parse(o.fradrag || '[]');
+
+            renderBompenger();
+            renderParkeringer();
+            renderKollektiv();
+            renderFradrag();
+
+            document.getElementById('diett3_6Antall').value = o.diett3_6_antall || 0;
+            document.getElementById('diett6_12Antall').value = o.diett6_12_antall || 0;
+            document.getElementById('diettOver12Antall').value = o.diett_over12_antall || 0;
+            document.getElementById('borUtenforHKAntall').value = o.bor_utenfor_hk_antall || 0;
+            document.getElementById('dommerDager').value = o.dommer_dager || 0;
+
+            document.getElementById('signaturDato').value = o.signatur_dato || '';
+            document.getElementById('signaturSted').value = o.signatur_sted || '';
+            document.getElementById('kontonummer').value = o.kontonummer || '';
+            document.getElementById('signatur').value = o.signatur || '';
+            document.getElementById('kommentar').value = o.kommentar || '';
+
+            beregnReisevarighet();
+            beregnTotalt();
+        }
+
+        function beregnReisevarighet() {
+            const fra = document.getElementById('reiseFra').value;
+            const til = document.getElementById('reiseTil').value;
+
+            if (fra && til) {
+                const fraDate = new Date(fra);
+                const tilDate = new Date(til);
+                const diffMs = tilDate - fraDate;
+                const diffTimer = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffMin = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                document.getElementById('reisevarighetDisplay').value = `${diffTimer} timer, ${diffMin} min`;
+            } else {
+                document.getElementById('reisevarighetDisplay').value = '-';
+            }
+        }
+
+        // Bompenger
+        function leggTilBompenge() {
+            bompenger.push({ sted: '', belop: 0 });
+            renderBompenger();
+        }
+
+        function fjernBompenge(i) {
+            bompenger.splice(i, 1);
+            renderBompenger();
+            beregnTotalt();
+        }
+
+        function renderBompenger() {
+            document.getElementById('bompengeListe').innerHTML = bompenger.map((b, i) => `
+                <div class="grid grid-cols-12 gap-2 mb-2">
+                    <input type="text" placeholder="Sted/bomstasjon" value="${b.sted}" onchange="bompenger[${i}].sted = this.value"
+                        class="col-span-7 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <input type="number" placeholder="Beløp" value="${b.belop}" min="0"
+                        onchange="bompenger[${i}].belop = parseFloat(this.value) || 0; beregnTotalt()"
+                        class="col-span-4 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <button type="button" onclick="fjernBompenge(${i})" class="col-span-1 text-red-500 hover:text-red-700">✕</button>
+                </div>
+            `).join('');
+        }
+
+        // Parkering
+        function leggTilParkering() {
+            parkeringer.push({ sted: '', belop: 0 });
+            renderParkeringer();
+        }
+
+        function fjernParkering(i) {
+            parkeringer.splice(i, 1);
+            renderParkeringer();
+            beregnTotalt();
+        }
+
+        function renderParkeringer() {
+            document.getElementById('parkeringListe').innerHTML = parkeringer.map((p, i) => `
+                <div class="grid grid-cols-12 gap-2 mb-2">
+                    <input type="text" placeholder="Sted" value="${p.sted}" onchange="parkeringer[${i}].sted = this.value"
+                        class="col-span-7 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <input type="number" placeholder="Beløp" value="${p.belop}" min="0"
+                        onchange="parkeringer[${i}].belop = parseFloat(this.value) || 0; beregnTotalt()"
+                        class="col-span-4 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <button type="button" onclick="fjernParkering(${i})" class="col-span-1 text-red-500 hover:text-red-700">✕</button>
+                </div>
+            `).join('');
+        }
+
+        // Kollektivtransport
+        function leggTilKollektiv() {
+            kollektivreiser.push({ type: 'tog', fra: '', til: '', belop: 0 });
+            renderKollektiv();
+        }
+
+        function fjernKollektiv(i) {
+            kollektivreiser.splice(i, 1);
+            renderKollektiv();
+            beregnTotalt();
+        }
+
+        function renderKollektiv() {
+            document.getElementById('kollektivListe').innerHTML = kollektivreiser.map((k, i) => `
+                <div class="grid grid-cols-12 gap-2 mb-2">
+                    <select onchange="kollektivreiser[${i}].type = this.value" class="col-span-2 px-2 py-2 rounded-lg border border-bark-200 text-sm">
+                        <option value="tog" ${k.type === 'tog' ? 'selected' : ''}>Tog</option>
+                        <option value="buss" ${k.type === 'buss' ? 'selected' : ''}>Buss</option>
+                        <option value="fly" ${k.type === 'fly' ? 'selected' : ''}>Fly</option>
+                        <option value="bat" ${k.type === 'bat' ? 'selected' : ''}>Båt</option>
+                    </select>
+                    <input type="text" placeholder="Fra" value="${k.fra}" onchange="kollektivreiser[${i}].fra = this.value"
+                        class="col-span-3 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <input type="text" placeholder="Til" value="${k.til}" onchange="kollektivreiser[${i}].til = this.value"
+                        class="col-span-3 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <input type="number" placeholder="Beløp" value="${k.belop}" min="0"
+                        onchange="kollektivreiser[${i}].belop = parseFloat(this.value) || 0; beregnTotalt()"
+                        class="col-span-3 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <button type="button" onclick="fjernKollektiv(${i})" class="col-span-1 text-red-500 hover:text-red-700">✕</button>
+                </div>
+            `).join('');
+        }
+
+        // Fradrag
+        function leggTilFradrag() {
+            fradrag.push({ beskrivelse: '', belop: 0 });
+            renderFradrag();
+        }
+
+        function fjernFradrag(i) {
+            fradrag.splice(i, 1);
+            renderFradrag();
+            beregnTotalt();
+        }
+
+        function renderFradrag() {
+            document.getElementById('fradragListe').innerHTML = fradrag.map((f, i) => `
+                <div class="grid grid-cols-12 gap-2 mb-2">
+                    <input type="text" placeholder="Beskrivelse" value="${f.beskrivelse}" onchange="fradrag[${i}].beskrivelse = this.value"
+                        class="col-span-7 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <input type="number" placeholder="Beløp" value="${f.belop}" min="0"
+                        onchange="fradrag[${i}].belop = parseFloat(this.value) || 0; beregnTotalt()"
+                        class="col-span-4 px-3 py-2 rounded-lg border border-bark-200 text-sm">
+                    <button type="button" onclick="fjernFradrag(${i})" class="col-span-1 text-red-500 hover:text-red-700">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function formatKr(belop) {
+            return `kr ${belop.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')},-`;
+        }
+
+        function beregnTotalt() {
+            const km = parseFloat(document.getElementById('reiseKm').value) || 0;
+            const passasjerer = parseFloat(document.getElementById('reisePassasjerer').value) || 0;
+            const kmBelop = (km * SATSER.km) + (km * passasjerer * SATSER.passasjer);
+            document.getElementById('reiseKmBelop').value = formatKr(kmBelop);
+            document.getElementById('sumKjore').textContent = formatKr(kmBelop);
+
+            const bomSum = bompenger.reduce((sum, b) => sum + (parseFloat(b.belop) || 0), 0);
+            document.getElementById('sumBom').textContent = formatKr(bomSum);
+
+            const parkSum = parkeringer.reduce((sum, p) => sum + (parseFloat(p.belop) || 0), 0);
+            document.getElementById('sumParkering').textContent = formatKr(parkSum);
+
+            const kollektivSum = kollektivreiser.reduce((sum, k) => sum + (parseFloat(k.belop) || 0), 0);
+            document.getElementById('sumKollektiv').textContent = formatKr(kollektivSum);
+
+            const diett3_6 = (parseInt(document.getElementById('diett3_6Antall').value) || 0) * SATSER.diett3_6;
+            const diett6_12 = (parseInt(document.getElementById('diett6_12Antall').value) || 0) * SATSER.diett6_12;
+            const diettOver12 = (parseInt(document.getElementById('diettOver12Antall').value) || 0) * SATSER.diettOver12;
+            const borUtenforHK = (parseInt(document.getElementById('borUtenforHKAntall').value) || 0) * SATSER.borUtenforHK;
+
+            document.getElementById('diett3_6Belop').textContent = formatKr(diett3_6);
+            document.getElementById('diett6_12Belop').textContent = formatKr(diett6_12);
+            document.getElementById('diettOver12Belop').textContent = formatKr(diettOver12);
+            document.getElementById('borUtenforHKBelop').textContent = formatKr(borUtenforHK);
+
+            const diettSum = diett3_6 + diett6_12 + diettOver12 + borUtenforHK;
+            document.getElementById('diettSum').textContent = formatKr(diettSum);
+            document.getElementById('sumDiett').textContent = formatKr(diettSum);
+
+            const dommerDager = parseInt(document.getElementById('dommerDager').value) || 0;
+            const dommerBelop = dommerDager * SATSER.dommer;
+            document.getElementById('dommerBelop').value = formatKr(dommerBelop);
+            document.getElementById('sumDommer').textContent = formatKr(dommerBelop);
+
+            const fradragSum = fradrag.reduce((sum, f) => sum + (parseFloat(f.belop) || 0), 0);
+            document.getElementById('sumFradrag').textContent = `- ${formatKr(fradragSum)}`;
+
+            const total = kmBelop + bomSum + parkSum + kollektivSum + diettSum + dommerBelop - fradragSum;
+            document.getElementById('totalBelop').textContent = formatKr(total);
+        }
+
+        async function lagreOppgjor(status) {
+            // Valider før innsending
+            if (status === 'innsendt') {
+                const kontonummer = document.getElementById('kontonummer').value.trim();
+                const signatur = document.getElementById('signatur').value.trim();
+
+                if (!kontonummer) {
+                    alert('Du må fylle inn kontonummer før du kan sende inn');
+                    document.getElementById('kontonummer').focus();
+                    return;
+                }
+                if (!signatur) {
+                    alert('Du må signere (skrive fullt navn) før du kan sende inn');
+                    document.getElementById('signatur').focus();
+                    return;
+                }
+
+                if (!confirm('Er du sikker på at du vil sende inn oppgjøret til prøveleder for godkjenning?')) {
+                    return;
+                }
+            }
+
+            const data = {
+                dommer_telefon: dommerTelefon,
+                dommer_navn: dommerNavn,
+                reise_fra: document.getElementById('reiseFra').value,
+                reise_til: document.getElementById('reiseTil').value,
+                reisedekning: document.getElementById('reisedekning').value,
+                reise_km: parseFloat(document.getElementById('reiseKm').value) || 0,
+                reise_passasjerer: parseFloat(document.getElementById('reisePassasjerer').value) || 0,
+                bompenger: JSON.stringify(bompenger),
+                parkeringer: JSON.stringify(parkeringer),
+                kollektivreiser: JSON.stringify(kollektivreiser),
+                diett3_6_antall: parseInt(document.getElementById('diett3_6Antall').value) || 0,
+                diett6_12_antall: parseInt(document.getElementById('diett6_12Antall').value) || 0,
+                diett_over12_antall: parseInt(document.getElementById('diettOver12Antall').value) || 0,
+                bor_utenfor_hk_antall: parseInt(document.getElementById('borUtenforHKAntall').value) || 0,
+                dommer_dager: parseInt(document.getElementById('dommerDager').value) || 0,
+                fradrag: JSON.stringify(fradrag),
+                signatur_dato: document.getElementById('signaturDato').value,
+                signatur_sted: document.getElementById('signaturSted').value,
+                kontonummer: document.getElementById('kontonummer').value,
+                signatur: document.getElementById('signatur').value,
+                kommentar: document.getElementById('kommentar').value,
+                status: status
+            };
+
+            try {
+                const resp = await fetch(`/api/prover/${proveId}/dommer-oppgjor`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await resp.json();
+                if (result.error) {
+                    alert('Feil: ' + result.error);
+                    return;
+                }
+
+                if (status === 'innsendt') {
+                    alert('Oppgjøret er sendt til prøveleder for godkjenning!');
+                } else {
+                    alert('Utkast lagret');
+                }
+
+                oppdaterStatusVisning(status);
+
+            } catch (err) {
+                console.error('Feil ved lagring:', err);
+                alert('Kunne ikke lagre oppgjør');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

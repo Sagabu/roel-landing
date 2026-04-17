@@ -38,11 +38,24 @@
         'dommer-hjem.html',
         'dommer-vk.html',
         'dommer-kritikk.html',
+        'dommer-oppgjor.html',
+        'dommer-foresporsler.html',
+        'dommer-mitt-oppgjor.html',
+        'klubb-dokumenter.html',
         'nkk-godkjenning.html',
         'kritikk-visning.html',
         'upload-logo.html',
         'undersokelse.html',
-        'dommertest.html'
+        'dommertest.html',
+        'dvk-kontroll.html',
+        'dommer-kritikker.html',
+        'dommer-ukak.html',
+        'dommer-vk.html',
+        'dommer-vk-test.html',
+        'dommertestvk',
+        'dommer-ukak-dual.html',
+        'prove-arkiv.html',
+        'superadmin.html'
     ];
     if (EXCLUDED_PAGES.includes(currentPage)) {
         return; // Ikke injiser navbar på disse sidene

@@ -329,18 +329,34 @@
                     return kritikker.map(k => ({
                         id: `db_${k.id}`,
                         trial: k.prove_navn || 'Ukjent prøve',
-                        date: k.approved_at ? k.approved_at.split('T')[0] : k.start_dato || '',
-                        location: k.prove_sted || '',
+                        date: k.dato || k.approved_at?.split('T')[0] || '',
+                        location: k.prove_sted || k.sted || '',
                         class: k.klasse || 'AK',
-                        party: k.parti,
+                        party: k.parti || '',
                         judge: k.dommer_navn || 'Dommer',
                         prize: k.premie || '',
                         cacit: k.cacit || '',
-                        scores: k.scores || {},
-                        critique: k.tekst || '',
+                        scores: {
+                            JAKTLYST: k.jaktlyst,
+                            FART: k.fart,
+                            SELVSTENDIGHET: k.selvstendighet,
+                            SOKSBREDDE: k.soksbredde,
+                            REVIERING: k.reviering,
+                            SAMARBEID: k.samarbeid,
+                            PRESISJON: k.presisjon,
+                            REISING: k.reising,
+                            GODKJENT_REISING: k.godkjent_reising,
+                            STAND_M: k.stand_m,
+                            STAND_U: k.stand_u,
+                            TOMSTAND: k.tomstand,
+                            MAKKER_STAND: k.makker_stand,
+                            SJANSE: k.sjanse,
+                            SLIPPTID: k.slipptid
+                        },
+                        critique: k.kritikk_tekst || '',
                         approvedAt: k.approved_at,
                         approvedBy: k.approved_by || 'NKK-rep',
-                        isApproved: true
+                        isApproved: k.status === 'approved'
                     }));
                 }
             } catch (e) {
@@ -441,10 +457,13 @@
         }
 
         async function init() {
+          try {
+            console.log('[hund.html] init() starter');
             const urlParams = new URLSearchParams(window.location.search);
             const dogId = urlParams.get('id');
             const regnr = urlParams.get('regnr');
             const partyId = urlParams.get('party');
+            console.log('[hund.html] URL params - dogId:', dogId, 'regnr:', regnr, 'partyId:', partyId);
 
             // Prøv å finne hunden
             let dog = null;
@@ -559,10 +578,13 @@
             // 3. Fallback: Sjekk gammel id-parameter (uten party)
             if (!dog && dogId && !partyId) {
                 // Prøv API med ID FØRST (demo-database kun som fallback)
+                console.log('[hund.html] Henter hund fra API med id:', dogId);
                 try {
                     const resp = await fetch(`/api/hunder/${dogId}`);
+                    console.log('[hund.html] API response status:', resp.status);
                     if (resp.ok) {
                         const apiDog = await resp.json();
+                        console.log('[hund.html] API returnerte hund:', apiDog.navn || apiDog);
                         // Hent kritikker fra API
                         const kritikkerResp = await fetch(`/api/hunder/${dogId}/kritikker`);
                         const kritikker = kritikkerResp.ok ? await kritikkerResp.json() : [];
@@ -620,8 +642,10 @@
                 }
             }
 
+            console.log('[hund.html] Ferdig med søk, dog funnet:', !!dog, dog?.name || dog?.navn);
             if (dog) {
                 currentDog = dog;
+                console.log('[hund.html] Rendrer profil for:', currentDog.name);
                 renderDogProfile();
                 renderCritiques();
 
@@ -656,6 +680,20 @@
                     </div>
                 `;
             }
+          } catch (err) {
+            console.error('[hund.html] FEIL i init():', err);
+            document.getElementById('dogProfile').innerHTML = `
+                <div class="p-8 text-center">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-red-700 mb-2">Feil ved lasting</h3>
+                    <p class="text-bark-500">${err.message}</p>
+                </div>
+            `;
+          }
         }
 
         function renderDogProfile() {
@@ -759,18 +797,18 @@
                                     <div class="px-4 py-2 font-medium text-right"></div>
                                 </div>
                                 <div class="divide-y divide-bark-100 text-sm">
-                                    ${yearCritiques.map(c => \`
-                                        <div class="grid grid-cols-5 gap-0 hover:bg-warm-50 cursor-pointer transition" onclick="viewCritique('\${c.id}')">
+                                    ${yearCritiques.map(c => `
+                                        <div class="grid grid-cols-5 gap-0 hover:bg-warm-50 cursor-pointer transition" onclick="viewCritique('${c.id}')">
                                             <div class="px-4 py-3">
-                                                <span class="text-bark-700">\${formatShortDate(c.date)}</span>
-                                                <span class="sm:hidden block text-xs text-bark-500 truncate max-w-[120px]">\${c.trial}</span>
+                                                <span class="text-bark-700">${formatShortDate(c.date)}</span>
+                                                <span class="sm:hidden block text-xs text-bark-500 truncate max-w-[120px]">${c.trial}</span>
                                             </div>
                                             <div class="px-4 py-3 hidden sm:block">
-                                                <span class="text-bark-700 truncate block max-w-[180px]">\${c.trial}</span>
+                                                <span class="text-bark-700 truncate block max-w-[180px]">${c.trial}</span>
                                             </div>
-                                            <div class="px-4 py-3 text-bark-600">\${c.class}</div>
+                                            <div class="px-4 py-3 text-bark-600">${c.class}</div>
                                             <div class="px-4 py-3 text-center">
-                                                <span class="px-2 py-0.5 rounded-full text-xs font-bold \${getPrizeClass(c.prize)}">\${c.prize}</span>
+                                                <span class="px-2 py-0.5 rounded-full text-xs font-bold ${getPrizeClass(c.prize)}">${c.prize}</span>
                                             </div>
                                             <div class="px-4 py-3 text-right">
                                                 <svg class="w-4 h-4 text-warm-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -778,7 +816,7 @@
                                                 </svg>
                                             </div>
                                         </div>
-                                    \`).join('')}
+                                    `).join('')}
                                 </div>
                             </div>
                         </div>
@@ -973,13 +1011,7 @@
                         </div>
                     </div>
 
-                    ${s.ADFERD ? `
-                    <!-- ADFERD Section -->
-                    <div class="p-5 bg-red-50 border-b border-bark-200">
-                        <h3 class="text-xs font-bold text-red-700 uppercase mb-2">Adferd (uønsket)</h3>
-                        <p class="text-bark-700">${s.ADFERD}</p>
-                    </div>
-                    ` : ''}
+                    <!-- ADFERD Section - SKJULT: Uønsket adferd vises ikke offentlig. Sendes kun til NKK-rep og raseklubb. -->
 
                     <!-- Prize -->
                     <div class="p-5 bg-gradient-to-r ${prizeColor === 'amber' ? 'from-amber-50 to-amber-100' : prizeColor === 'green' ? 'from-green-50 to-green-100' : 'from-earth-50 to-earth-100'} border-b border-bark-200">
@@ -1803,18 +1835,18 @@
                             <div class="px-3 py-2 text-center">VF</div>
                         </div>
                         <div class="divide-y divide-bark-100 text-sm">
-                            ${avkom.slice(0, 10).map(a => \`
+                            ${avkom.slice(0, 10).map(a => `
                                 <div class="grid grid-cols-4 gap-0 hover:bg-bark-50">
                                     <div class="px-3 py-2">
-                                        <a href="hund.html?regnr=\${encodeURIComponent(a.regnr)}" class="text-warm-800 hover:underline">\${a.navn}</a>
+                                        <a href="hund.html?regnr=${encodeURIComponent(a.regnr)}" class="text-warm-800 hover:underline">${a.navn}</a>
                                     </div>
-                                    <div class="px-3 py-2 text-bark-500">\${a.regnr}</div>
-                                    <div class="px-3 py-2 text-center">\${a.starter || 0}</div>
-                                    <div class="px-3 py-2 text-center">\${a.viltfinnerevne?.toFixed(2) || '-'}</div>
+                                    <div class="px-3 py-2 text-bark-500">${a.regnr}</div>
+                                    <div class="px-3 py-2 text-center">${a.starter || 0}</div>
+                                    <div class="px-3 py-2 text-center">${a.viltfinnerevne?.toFixed(2) || '-'}</div>
                                 </div>
-                            \`).join('')}
+                            `).join('')}
                         </div>
-                        ${avkom.length > 10 ? \`<p class="text-xs text-bark-400 mt-2 text-center">Viser 10 av \${avkom.length} avkom</p>\` : ''}
+                        ${avkom.length > 10 ? `<p class="text-xs text-bark-400 mt-2 text-center">Viser 10 av ${avkom.length} avkom</p>` : ''}
                     </div>
                 </div>
             `;
@@ -1832,9 +1864,18 @@
             }
         }
 
-        // Initialize
-        populateYearFilters();
-        init();
+        // Initialize - wrap in DOMContentLoaded for safety
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('[hund.html] DOMContentLoaded, starter init');
+                populateYearFilters();
+                init();
+            });
+        } else {
+            console.log('[hund.html] DOM allerede lastet, starter init direkte');
+            populateYearFilters();
+            init();
+        }
     </script>
 </body>
 </html>

@@ -32,7 +32,7 @@
         /* Skjul innhold til auth-sjekk er ferdig */
         .auth-loading header, .auth-loading nav, .auth-loading main { visibility: hidden; }
     </style>
-    <script src="auth.js"></script>
+    <!-- auth.js injiseres automatisk av serveren -->
 </head>
 <body class="bg-cream font-sans min-h-screen auth-loading">
 
@@ -48,6 +48,10 @@
                 </div>
                 <div class="flex items-center gap-3">
                     <!-- Search button injected by dog-search.js -->
+                    <!-- Superadmin-knapp (vises kun for superadmin) -->
+                    <a id="adminHeaderBtn" href="admin-panel.html" class="hidden bg-warm-500 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
+                        Superadmin
+                    </a>
                     <button onclick="logout()" class="bg-bark-800 hover:bg-warm-600 px-4 py-2 rounded-xl text-sm font-medium transition">
                         Logg ut
                     </button>
@@ -63,7 +67,7 @@
                 <a href="min-side.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Min side</a>
                 <a href="profil.html" class="tab-active px-5 py-4 text-sm font-medium whitespace-nowrap border-b-2 border-warm-500 text-warm-800">Min profil</a>
                 <a href="mine-hunder.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Mine hunder</a>
-                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Jaktprover</a>
+                <a href="jaktprover.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Jaktprøver</a>
                 <a href="fullmakter.html" class="px-5 py-4 text-sm font-medium text-bark-500 hover:text-bark-700 whitespace-nowrap border-b-2 border-transparent hover:border-bark-300 transition">Fullmakter</a>
             </div>
         </div>
@@ -377,7 +381,8 @@
                         memberSince: data.medlem_siden || new Date().getFullYear().toString(),
                         profileImage: data.profilbilde || null,
                         klubbAdmin: data.klubbAdmin || null,
-                        samtykkeGitt: data.samtykke_gitt || null
+                        klubbAdmins: data.klubbAdmins || [],
+                        samtykkeGitt: data.sms_samtykke_tidspunkt || data.samtykke_gitt || null
                     };
                     // Parse roller fra komma-separert streng
                     userRoles = (data.rolle || '').split(',').map(r => r.trim()).filter(r => r);
@@ -394,6 +399,7 @@
                         memberSince: new Date().getFullYear().toString(),
                         profileImage: null,
                         klubbAdmin: null,
+                        klubbAdmins: [],
                         samtykkeGitt: null
                     };
                     userRoles = [];
@@ -411,6 +417,7 @@
                     memberSince: new Date().getFullYear().toString(),
                     profileImage: null,
                     klubbAdmin: null,
+                    klubbAdmins: [],
                     samtykkeGitt: null
                 };
                 userRoles = [];
@@ -419,6 +426,12 @@
             loadProfile();
             renderRoles();
             renderSamtykkeStatus();
+
+            // Vis superadmin-knapp hvis bruker har superadmin-rolle
+            if (userRoles.includes('superadmin')) {
+                const adminBtn = document.getElementById('adminHeaderBtn');
+                if (adminBtn) adminBtn.classList.remove('hidden');
+            }
         }
 
         function loadProfile() {
@@ -611,18 +624,27 @@
                 `;
             }).join('');
 
-            // Vis klubbinfo hvis klubbleder
-            if (userProfile.klubbAdmin) {
-                const klubbId = userProfile.klubbAdmin.klubb_id;
-                const klubbLink = klubbId ? `klubb.html?klubbId=${klubbId}` : 'klubb.html';
-                container.innerHTML += `
-                    <div class="w-full mt-3 pt-3 border-t border-bark-200">
-                        <a href="${klubbLink}" class="text-sm text-warm-800 hover:text-warm-800 flex items-center gap-1">
-                            <span class="font-medium">Klubb:</span> ${userProfile.klubbAdmin.klubb_navn}
+            // Vis klubbinfo hvis bruker er admin for en eller flere klubber
+            const klubber = userProfile.klubbAdmins || (userProfile.klubbAdmin ? [userProfile.klubbAdmin] : []);
+            if (klubber.length > 0) {
+                const klubbLinker = klubber.map(k => {
+                    const klubbLink = k.klubb_id ? `klubb.html?klubbId=${k.klubb_id}` : 'klubb.html';
+                    return `
+                        <a href="${klubbLink}" class="text-sm text-warm-800 hover:text-forest-700 flex items-center gap-1">
+                            <span class="font-medium">${k.klubb_navn}</span>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                             </svg>
                         </a>
+                    `;
+                }).join('');
+
+                container.innerHTML += `
+                    <div class="w-full mt-3 pt-3 border-t border-bark-200">
+                        <span class="text-sm font-medium text-bark-600">${klubber.length === 1 ? 'Min klubb:' : 'Mine klubber:'}</span>
+                        <div class="flex flex-col gap-1 mt-1">
+                            ${klubbLinker}
+                        </div>
                     </div>
                 `;
             }

@@ -1,171 +1,236 @@
 # Fuglehundprøve
 
-Event management platform for Norwegian bird dog field trials.
+Event management-plattform for norske fuglehundprøver (fuglehundprove.no).
 
-## ⚠️ KRITISK: Deploy-rutine
+## ⚠️ KRITISKE regler — les FØRST
 
-**ALDRI bruk vanlig rsync for deploy!** Bruk ALLTID denne kommandoen:
-
-```bash
-./deploy.sh
-```
-
-Eller hvis du MÅ bruke rsync manuelt, ALLTID inkluder:
-```bash
-rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '*.db' --exclude '*.db-wal' --exclude '*.db-shm' --exclude 'fuglehund.db*' --exclude 'backups/' ./ root@135.181.28.134:/var/www/fuglehundprove/
-```
-
-**HVORFOR:** Databasen `fuglehund.db` inneholder alle brukere, hunder, prøver, etc. Hvis den overskrives med en lokal tom fil, mistes ALL data.
-
-**Server:** root@135.181.28.134
-**Remote dir:** /var/www/fuglehundprove/
-**PM2 restart:** `ssh root@135.181.28.134 "cd /var/www/fuglehundprove && pm2 restart fuglehund"`
-
-## ⚠️ VIKTIG: Les reglene først!
-
-**Før du gjør NOEN endringer på kritikker, premieberegning, eller avlsstatistikk:**
-
-Les `REGLER_FUGLEHUNDPROVER.md` - den inneholder alle offisielle regler som MÅ følges.
-
-### Kritiske regler (kortversjon):
-
-1. **Klasser:**
-   - UK = 9 mnd til 2 år
-   - AK = fra fylte 2 år
-   - VK = etter oppnådd 1. AK
-   - **Man kan ALDRI gå tilbake til lavere klasse**
-
-2. **1. premie krever:**
-   - Minimum 60 min slipptid (men garanterer ikke 1. premie alene)
-
-3. **1. AK krever (hunden må være "ren"):**
-   - Fuglearbeid med godkjent reis
-   - **makker_stand = 0** (ingen makkerstand)
-   - **sjanse = 0** (ingen sjanser på fugl)
-   - tomstand = 0
-   - slipptid ≥ 60 min
-
-4. **Avlsindekser (NISK-modell):**
-   - 100 = rasesnitt
-   - Kun jaktlyst og viltfinnerevne brukes
-   - Minimum 5 starter for pålitelig indeks
-   - Skogsprøver ekskluderes
-
-## Architecture
-
-**Frontend**: 13 HTML pages (Tailwind CDN, vanilla JS) — already built, fully functional.
-**Backend**: Node.js + Hono + SQLite via `better-sqlite3`.
-**Data bridge**: `storage-shim.js` intercepts localStorage calls and syncs to SQLite via REST API. Pages work identically to before, but data now persists in a real database.
-
-### How the shim works
-
-Every HTML page gets `<script src="/storage-shim.js">` injected automatically by the server. The shim:
-1. Overrides `localStorage.setItem` → writes local AND fires PUT to `/api/storage/:key`
-2. Overrides `localStorage.removeItem` → removes local AND fires DELETE
-3. On page load, hydrates localStorage from server state (pull down)
-4. Shows a "Tilkoblet — SQLite" badge when connected
-
-**You don't need to change any existing page code.** The shim handles everything transparently.
-
-### Synced localStorage keys
-
-These keys are automatically persisted to SQLite:
-- `userProfile`, `userDogs`, `userTrials`, `userMandates`
-- `judgeSession`, `clubLogo`
-- `judgeData_*` (per-party judge scoring, dynamic keys)
-
-To add a new synced key, add it to the `SYNCED_KEYS` array in `storage-shim.js`.
-
-## Running
-
-```bash
-npm install          # first time only
-npm start            # serves on http://localhost:8889
-npm run dev          # with --watch for auto-restart
-```
-
-Pages: `http://localhost:8889/` (index), `/admin.html`, `/deltaker.html`, `/dommer.html`, etc.
-Admin panel: `http://localhost:8889/admin-panel.html`
-Database backup: `http://localhost:8889/api/backup` (downloads .db file)
-
-## API Routes
-
-| Method | Route | Purpose |
-|--------|-------|---------|
-| GET | `/api/storage` | List all stored keys |
-| GET | `/api/storage/:key` | Get value for key |
-| PUT | `/api/storage/:key` | Set value `{ "value": ... }` |
-| DELETE | `/api/storage/:key` | Remove key |
-| GET | `/api/trial` | Get trial configuration |
-| PUT | `/api/trial` | Update trial config fields |
-| GET | `/api/admin/log` | Admin change history |
-| GET | `/api/stats` | Dashboard stats |
-| GET | `/api/backup` | Download SQLite database file |
-
-## Task: Wire remaining pages to use backend data
-
-The backend is running and the shim bridges localStorage to SQLite. The next step is making the pages load real data and function as a complete application.
-
-### What's done
-- Server serves all 13 pages with shim injection
-- localStorage writes sync to SQLite automatically
-- Admin panel for trial configuration (name, dates, location, club, publish status)
-- Database backup endpoint
-- Design system preserved (forest/earth/bark colors, Rockwell font)
-
-### What to do next
-
-**Priority 1 — Navigation**: Wire all pages together with consistent nav. Every page should have working links to the others. The nav structure:
-- Public: index.html, partilister.html, hund.html
-- Participant (logged in): deltaker.html, profil.html, mine-hunder.html, jaktprover.html, fullmakter.html
-- Judge (logged in): dommer.html → dommer-hjem.html → dommer-vk.html
-- Admin: admin.html, klubb.html
-- Backend admin: admin-panel.html
-
-**Priority 2 — Auth flow**: The SMS login in `dommer.html` is UI-only. For now, make it work with a simple localStorage session (phone number → stored as logged in). Real SMS auth can come later.
-
-**Priority 3 — Trial config from backend**: The admin panel stores trial config in SQLite. Update `admin.html` and `index.html` to fetch trial name/dates/location from `/api/trial` instead of hardcoding "Høgkjølprøven 2026".
-
-**Priority 4 — Dog search**: `dog-search.js` is a standalone module. Make sure it's loaded on all pages that need it (index, hund, mine-hunder).
-
-### File overview
-
-| File | Lines | Role |
-|------|-------|------|
-| server.js | ~130 | Hono server, API routes, shim injection |
-| storage-shim.js | ~80 | localStorage → SQLite bridge |
-| admin-panel.html | ~200 | Backend admin (trial config, data explorer, log) |
-| admin.html | 2058 | Trial administration dashboard |
-| deltaker.html | 994 | Participant registration and overview |
-| dommer-vk.html | 1864 | Judge scoring interface (mobile-first) |
-| mine-hunder.html | 890 | Dog registry CRUD |
-| partilister.html | 690 | Public party lists |
-| hund.html | 625 | Individual dog profile |
-| fullmakter.html | 533 | Mandate/authorization management |
-| index.html | 466 | Landing page + search |
-| jaktprover.html | 448 | Trial results history |
-| profil.html | 420 | User profile |
-| klubb.html | 379 | Club management |
-| dommer.html | 367 | Judge SMS login |
-| dommer-hjem.html | 361 | Judge home (party selection) |
-| dog-search.js | 246 | Reusable dog search module |
-
-### Design system
-
-Colors (already in every page's tailwind config):
-- `forest-*`: Green primary (nav, buttons, accents)
-- `earth-*`: Brown secondary (links, hover states)
-- `bark-*`: Neutral (text, backgrounds, borders)
-
-Font: Rockwell for headings, system sans for body. Class: `font-rockwell`.
+### Deploy
+**ALDRI kjør `rsync` direkte mot produksjon.** Bruk `./deploy.sh`. Scripten har nå en sikkerhetssjekk som nekter deploy ved uncommittet eller upushet arbeid — la den gjøre jobben sin. `DEPLOY_FORCE=1 ./deploy.sh` overstyrer kun i ekte nødstilfeller.
 
 ### Database
+`fuglehund.db` på server inneholder all produksjonsdata (brukere, hunder, prøver, kritikker, klubber). `deploy.sh` ekskluderer `*.db` og `backups/` fra rsync. Hvis du noen gang må jobbe mot produksjons-DB, ta backup først (auto-backups ligger i `/var/www/fuglehundprove/backups/` hvert 30. min).
 
-SQLite file: `fuglehund.db` (created automatically on first run). Back it up anytime via `/api/backup` or just copy the file.
+### Forretningsregler
+**Les `REGLER_FUGLEHUNDPROVER.md` før du rører kritikk-skjema, premie-logikk eller avlsstatistikk.** Reglene er offisielle FKF/NKK-regler. Backend håndhever dem **ikke** automatisk i dag (se seksjon "Business rules" nederst) — det er frontend-ansvar. Ikke lag tilfeldige validerings-endringer uten å konsultere reglene.
 
-Tables:
-- `kv_store`: key-value bridge from localStorage (all page data lives here)
-- `trial_config`: editable trial settings (1 row)
-- `admin_log`: change history
+## Produksjon
+- **Server:** root@135.181.28.134
+- **Remote dir:** `/var/www/fuglehundprove/`
+- **Process:** PM2 `fuglehund` (restart: `ssh root@135.181.28.134 "cd /var/www/fuglehundprove && pm2 restart fuglehund"`)
+- **Auto-backup:** hvert 30. min via `backup-cron.sh` + cron, lagres i `backups/`
+- **SSL/proxy:** Caddy (se `Caddyfile`)
 
-When you need proper relational tables (e.g., a `dogs` table with columns instead of a JSON blob), create a migration in server.js and add API routes. The kv_store bridge is a stepping stone — graduate keys to proper tables as the domain solidifies.
+## Stack
+
+| Lag | Teknologi |
+|---|---|
+| Backend | Node.js + Hono + `better-sqlite3` |
+| Frontend | ~60 HTML-sider, Tailwind CDN, vanilla JS (ingen framework) |
+| Auth | JWT (12t TTL) + bcrypt + SMS-OTP |
+| SMS | Sveve (primær) + Twilio (fallback) |
+| Betaling | Vipps ePayment API (per-klubb konfigurasjon, API-nøkler AES-256 kryptert i DB) |
+| Deploy | rsync + PM2 |
+
+## Kjøre lokalt
+```bash
+npm install              # første gang
+npm start                # http://localhost:8889
+npm run dev              # --watch for auto-restart
+```
+
+## server.js — struktur (~14 000 linjer, monolittisk)
+
+Linjetallene er omtrentlige. server.js er bevisst ett-filet for enkel deploy.
+
+| Område | Linjer (ca) | Innhold |
+|---|---|---|
+| Imports, config, kryptering | 1–120 | Hono, JWT, AES-256-GCM for Vipps-nøkler |
+| DB setup + schema | 122–1260 | 39 `CREATE TABLE`, migrations, indexes |
+| Seed-data | 1269–1603 | Demo-data (dev-mode) |
+| App init + middleware | 1605–1732 | `requireAuth`, `requireAdmin`, `requireDommer` |
+| Passord, sesjon, re-verifisering | 1735–1840 | bcrypt + SHA256-legacy upgrade |
+| SMS-system | 1841–2480 | Sveve/Twilio, køsystem, retry |
+| OTP + login-endepunkter | 2480–3680 | SMS-login, passord-login, klubb-login, forgot-password |
+| Site-lock + admin-lock | 3680–3736 | PIN-basert access |
+| Storage-shim + trial-config | 3736–3795 | `/api/storage/:key` + `/api/trial` |
+| Brukere | 4107–4310 | CRUD, GDPR-export |
+| Hunder | 4360–4705 | CRUD, NKK-lookup, aversjons-/eierbevis |
+| Klubber | 4710–5016 | CRUD, logo, medlemsimport |
+| Klubb-forespørsler | 5016–5342 | Nye klubber venter på godkjenning |
+| Superadmin | 5342–5870 | Brukerlisting, GDPR, SMS-stats, testkontoer |
+| Vipps | 5870–6580 | Forespørsler, mottakere, webhook |
+| Dommer-tildelinger + forespørsler + oppgjør | 6572–7280 | Judge workflow |
+| Prøver (CRUD + config) | 7280–7775 | Trial creation, config, partier |
+| Påmeldinger + avmeldinger | 7775–8437 | Trial registrations, waitlist |
+| Partifordeling, trekning | 9158–9490 | Random draw, party assignment |
+| Avlsindekser + statistikk | 9849–9935 | Hund-stats, avkom |
+| Sertifikater | 9973–10500 | Aversjons-/eierbevis, signing |
+| Kritikk-workflow | 10677–11003 | Opprett → submit → NKK-godkjenn |
+| Rapporter + versjonering | 10892–11351 | Signerte PDF-rapporter |
+| Meldinger | 11948–12296 | Bruker ↔ admin-meldinger |
+| DVK + dokumenter | 12645–13441 | Journal, kontrollsignering |
+| VK-bedømmelse | 13469–13980 | Live-rangering, dommer-notater |
+| Statiske filer + catch-all | slutt | Auto-injiserer `/auth.js`, `/storage-shim.js` i HTML |
+
+## Database — 39 tabeller
+
+### Kjerne-entiteter
+| Tabell | Hva |
+|---|---|
+| `brukere` | Brukerprofiler. PK = `telefon`. Kolonner: fornavn, etternavn, rolle (komma-sep: admin, proveleder, klubbleder, dommer, nkkrep, superadmin), passord_hash, sms_samtykke, verifisert |
+| `klubber` | Klubbinfo. PK = `id`. Inkluderer `vipps_client_id/secret/subscription_key/merchant_serial` (krypterte) og `vipps_api_modus` |
+| `hunder` | Hunde-register. PK = `id`, `regnr` UNIQUE. FK til eier + klubb + far/mor |
+| `prover` | Prøver. Inkluderer `proveleder_telefon`, `nkkrep_telefon`, `nkkvara_telefon`, `dvk_telefon`, `klasser` (JSON), `partier` (JSON) |
+| `partier` | Parti-gruppering (ukak/vk per dato/klasse) |
+
+### Påmelding/avmelding
+`pameldinger`, `avmeldinger` (med `lopetid_egenerklaring` JSON), `ventende_fullmakter`, `fullmakter`, `jegermiddag_pameldinger`
+
+### Dommer-system
+`dommer_tildelinger`, `dommer_foresporsler`, `dommer_oppgjor` (reise, diett, passasjerer, fradrag)
+
+### Kritikk + VK
+`kritikker` (fulle 1–6 egenskapsskalaer, slipptid, premie, status, `meddommer_telefon`), `resultater`, `vk_bedomming`, `dommer_notater`, `parti_signaturer`, `fratatte_aversjonsbevis`
+
+### Klubb-relatert
+`klub_admins`, `klub_medlemmer` (med matching mot `brukere.telefon`), `klub_foresporsel`, `klub_dokumenter`, `fkf_godkjente_dommere`
+
+### SMS + Vipps
+`sms_queue` (priority, retry), `sms_log`, `otp_codes`, `vipps_foresporsler`, `vipps_mottakere` (matches på `vipps_reference` i webhook), `rolle_sms_sendt`
+
+### Rapporter + dokumenter
+`rapport_versjoner` (signert med `signed_at`/`signed_by`), `rapport_logg`, `prove_dokumenter`, `dvk_kontroller`, `dvk_signaturer`, `dvk_journaler`
+
+### Konfig + audit
+`trial_config` (én rad), `prove_config` (per-prøve: max_deltakere_*, pris_*, jegermiddag_*, vk_type 1/2/3-dag), `partifordeling_regler`, `admin_log`, `meldinger`, `undersokelser`, `kv_store` (legacy localStorage-bridge)
+
+## API-routes — ~150 endepunkter
+
+Grupperte områder (ikke uttømmende, se server.js for full liste):
+
+- **Auth** (~20): `/api/auth/{send-code,verify-code,login,login-password,register/*,klubb/*,reverify/*,forgot-password/*,me,refresh,logout,consent}`
+- **Site-lock + admin-lock** (4): `/api/site-lock/*`, `/api/admin-lock/*`
+- **Storage bridge** (4): `/api/storage/:key`
+- **Trial config** (2): `/api/trial`
+- **Brukere** (7): `/api/brukere/:telefon/*`
+- **Hunder** (10): `/api/hunder/*`, `/api/hunder/:id/{statistikk,avkom,aversjonsbevis,eierbevis}`
+- **Klubber** (12): `/api/klubber/:id/*`, `/api/klubber/:id/{logo,admins,medlemmer,dokumenter}`
+- **Klubb-forespørsler** (3): `/api/klubb-foresporsel/*`
+- **Prøver** (25+): `/api/prover/:id/{config,partier,partilister,venteliste,trekning,jegermiddag,fratatte-aversjonsbevis,rapport-logg,sms-historikk,rolle-sms,...}`
+- **Påmeldinger** (5): `/api/prover/:id/pameldinger`, `/api/mine-pameldinger`, `/api/prover/:id/avmeldinger`
+- **Dommer-system** (12): `/api/dommere`, `/api/prover/:id/dommer-tildelinger`, `/api/dommer-foresporsler/*`, `/api/dommer-oppgjor/*`
+- **Kritikker** (10): `/api/kritikker/*` inkl. `/{submit,godkjenn,returner,send-til-meddommer,bekreft-meddommer}`
+- **VK-bedømmelse** (8): `/api/vk-bedomming/:proveId/:parti/*`, `/api/vk-rangering`, `/api/dommer-notater`
+- **Vipps** (3): `/api/prover/:id/vipps-foresporsler`, `/api/vipps/webhook` (no auth)
+- **SMS** (5): `/api/sms/*`, `/api/superadmin/sms-queue/*`
+- **Superadmin** (15): `/api/superadmin/*`
+- **Dokumenter + rapporter** (10): `/api/prove-dokumenter/*`, `/api/rapport-versjoner/*`
+- **Fullmakter** (3): `/api/brukere/:telefon/fullmakter`
+- **DVK + journaler** (5): `/api/dvk-kontroller/*`, `/api/dvk-journal/*`
+- **Meldinger** (6): `/api/meldinger/*`
+- **Misc** (8): `/api/stats/*`, `/api/system/health`, `/api/backups/*`, `/api/parse-participants`, `/api/import-participants`, `/api/gdpr/analyser-bilde`, `/api/undersokelse`
+
+## Auth-flyt
+
+1. **SMS-login (primær)**: `/api/auth/send-code` → SMS-OTP (15 min TTL) → `/api/auth/verify-code` → JWT (12t) → lagres i `localStorage['fuglehund_token']` + `localStorage['fuglehund_user']`
+2. **Passord-login**: `/api/auth/login-password` (bcrypt)
+3. **Klubb-login**: `/api/auth/klubb/login` (org.nr + passord, JWT inneholder klubb_id)
+4. **Re-verifisering**: >60 dager siden sist → `/api/auth/reverify/*`
+
+**Frontend:** `auto.js` auto-injiseres i alle HTML-sider. Eksponerer `FuglehundAuth.{isLoggedIn, hasRole, authFetch, logout}`. 60 min inaktivitet = client-side auto-logout. 401 → redirect til `/min-side.html`.
+
+**Sidebeskyttelse:** `PROTECTED_PAGES`-map i `auth.js` (f.eks. `admin.html → 'admin'`, `dommer-hjem.html → 'dommer'`).
+
+**Site-lock + admin-lock:** PIN via env `SITE_PIN` og `ADMIN_PIN`.
+
+## HTML-sider
+
+### Offentlig (ingen innlogging)
+`index.html`, `slik-fungerer-det.html`, `personvern.html`, `veiledning.html`, `undersokelse.html`, `dommer-undersokelse.html`, `opprett-bruker.html`, `opprett-klubb.html`, `terminliste.html`
+
+### Deltaker (innlogget)
+`min-side.html` (login-hub), `profil.html`, `mine-hunder.html`, `jaktprover.html`, `fullmakter.html`, `pamelding.html`, `partilister.html`, `hund.html`, `avlssok.html`, `prove-arkiv.html`, `klubb-login.html`, `upload-logo.html`
+
+### Dommer (role=dommer)
+`dommer.html`, `dommer-hjem.html`, `dommer-kritikk.html`, `dommer-kritikker.html`, `dommer-vk.html`, `dommer-vk-test.html`, `dommer-ukak.html`, `dommer-ukak-test.html`, `dommer-ukak-dual.html`, `dommer-foresporsler.html`, `dommer-mitt-oppgjor.html`, `dommer-oppgjor.html`, `kritikk-visning.html`, diverse `dommertest*.html`
+
+### Admin / klubb-admin
+`admin.html` (hoved-hub for prøveadmin), `opprett-prove.html`, `klubb.html`, `klubb-dokumenter.html`, `flytskjema-klubb.html`, `nkk-godkjenning.html`, `dvk-kontroll.html`, `dvktest.html`
+
+### Superadmin
+`superadmin.html`, `admin-panel.html` (backend data-explorer, audit-log, backups), `vipps-callback.html`
+
+## Storage-shim — status
+
+`storage-shim.js` bygger bro fra `localStorage` → SQLite via `/api/storage/:key`. Fortsatt aktiv for legacy-nøkler:
+`userProfile`, `userDogs`, `userTrials`, `userMandates`, `judgeSession`, `clubLogo`, dynamiske `judgeData_*`/`trialParties_*`.
+
+**Nye features bruker direkte API-kall** (ikke shim) — f.eks. `/api/hunder`, `/api/kritikker`, `/api/prover/:id/pameldinger`. Migrerer gradvis vekk fra shim-modellen.
+
+## SMS
+
+**Providere** (i prioritetsrekkefølge):
+1. **Sveve** — env `SVEVE_USER`, `SVEVE_PASS`, `SVEVE_FROM`. GET `https://sveve.no/SMS/SendMessage?...&f=json`
+2. **Twilio** — env `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (eller `TWILIO_MESSAGING_SERVICE_SID` for alfa-avsender)
+3. **Dev mode** — logger til console hvis ingen provider er konfigurert
+
+**Køsystem:** `sms_queue`-tabell med `priority` (1–10, lavere = tidligere), `status` (pending/processing/sent/failed/cancelled), `attempts` (max 3). Processor kjører hvert 5. sekund, sender maks 10 per batch, 1s forsinkelse mellom hver.
+
+**Rate-limit:** Masse-SMS per prøve: maks 3 ganger per time, 5 min cooldown mellom.
+
+**Kjente endpoints:** `/api/auth/send-code`, `/api/prover/:id/sms/masse` (requireAdmin), `/api/prover/:id/rolle-sms` (roll-spesifikk melding).
+
+## Vipps
+
+Hver klubb har egne API-nøkler (ePayment API) kryptert i `klubber.vipps_*`-kolonner.
+
+Flyt:
+1. `POST /api/prover/:id/vipps-foresporsler` → oppretter `vipps_foresporsler` + én `vipps_mottakere` per mottaker (med unik `vipps_reference`)
+2. Bruker betaler i Vipps-appen → returnerer til `vipps-callback.html`
+3. Vipps sender webhook: `POST /api/vipps/webhook` med `{reference, state}` → matcher mot `vipps_mottakere.vipps_reference`, setter status=betalt hvis state ∈ {AUTHORIZED, CAPTURED, SALE}
+
+Webhook-registrering skjer i Vipps Merchant Portal per klubb (se `.env.example` for instruks).
+
+## Klubb-modell
+
+Hver klubb eier sine egne:
+- Prøver (`prover.klubb_id`)
+- Dommer-admins (`klubb_admins`)
+- Medlemsliste (`klub_medlemmer`, med matching mot eksisterende `brukere`)
+- Dokumenter (`klub_dokumenter`)
+- Vipps-integrasjon (egen merchant/subscription)
+
+Klubb-opprettelse er en todelt flyt: request i `klub_foresporsel` → superadmin godkjenner → klubb opprettes i `klubber`.
+
+## Forretningsregler — håndhevelsesstatus
+
+`REGLER_FUGLEHUNDPROVER.md` inneholder alle offisielle regler. Viktig å vite **hvor reglene faktisk håndheves**:
+
+| Regel | Status | Hvor |
+|---|---|---|
+| Klassekrav (UK/AK/VK) + "aldri tilbake" | ✅ Håndhevet | `klasse-validator.js` ved påmelding |
+| Kritikk-duplikatsjekk (per dag/hund) | ✅ Håndhevet | `POST /api/kritikker` |
+| Premiekrav (60 min slipptid, godkjent reis osv.) | ⚠️ IKKE håndhevet i backend | Frontend bør vise advarsel, men `POST /api/kritikker` aksepterer hva som helst |
+| 1. AK "ren"-krav (makker_stand=0, sjanse=0, tomstand=0) | ⚠️ IKKE håndhevet | Dommer må manuelt sette |
+| Obligatoriske egenskaper 1–6 | ⚠️ IKKE håndhevet | Lagres, men ingen NOT NULL-sjekk |
+| Avlsindekser NISK-modell (100=snitt, min 5 starter, eksl. skogsprøver) | ❌ Ikke implementert | `/api/hunder/:id/avkom-statistikk` beregner kun rå snitt |
+
+**Før du endrer kritikk-/premielogikk:** bekreft med bruker om det er en ren UI-endring eller om backend-validering også skal legges til.
+
+## Vanlige arbeidsoppgaver
+
+- **Legge til ny API-route:** åpne relevant seksjon i `server.js`, følg mønsteret (Hono `app.<verb>(path, middleware, handler)`). Bruk `requireAuth`/`requireAdmin`/`requireDommer` der det trengs.
+- **Legge til ny DB-kolonne:** `ALTER TABLE` i migrations-seksjonen (rundt linje 1070), oppdater INSERT/UPDATE-queries. Ingen formell migrations-framework — bare idempotente `ALTER` med `try/catch`.
+- **Endre HTML-side:** finn filen, bruk Tailwind-klasser. Husk at `auth.js` og `storage-shim.js` auto-injiseres av server.
+- **Legge til SMS-type:** queue med `queueSMS(telefon, melding, {type, priority})`. Velg priority: OTP=1, admin-handling=3, massesending=8.
+- **Debug produksjon:** `pm2 logs fuglehund --lines 100` på server.
+
+## Design system
+
+Farger (Tailwind-config er i hver HTML-side):
+- `forest-*` — grønn (nav, primære knapper)
+- `earth-*` — brun (sekundær, lenker, hover)
+- `bark-*` — nøytral (tekst, bakgrunner)
+- `warm-*` — oransje-gul aksent (ny, fra vk/91c6-økten)
+
+Font: **Rockwell** for overskrifter (`font-rockwell`), system sans for brødtekst.

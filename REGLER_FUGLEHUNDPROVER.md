@@ -8,15 +8,28 @@ Dette dokumentet inneholder offisielle regler som MÅ følges i all kode og seed
 
 | Klasse | Alder | Beskrivelse |
 |--------|-------|-------------|
-| **UK** | 9 mnd – 2 år | Unghundklasse |
-| **AK** | Fra fylte 2 år | Åpen klasse |
-| **VK** | Etter 1. AK | Vinnerklasse (krever 1. AK-premie) |
+| **UK** | 9 mnd – og til **dagen hunden fyller 2 år** | Unghundklasse |
+| **AK** | Fra og med **dagen hunden fyller 2 år** | Åpen klasse |
+| **VK** | Etter 1. AK (se VK-billett nedenfor) | Vinnerklasse |
 
 ### Progresjon
+
 - Hunden starter i UK (fra 9 mnd)
-- Ved fylte 2 år → AK
-- Etter oppnådd 1. AK → kan delta i VK
-- **Man kan ALDRI gå tilbake til lavere klasse**
+- **Siste UK-start er dagen før hunden fyller 2 år.** Fra og med toårsdagen MÅ hunden stilles i AK — kan ikke stilles i UK lenger.
+- Etter oppnådd 1. AK → hunden kan stilles i VK (men kan fortsatt velge AK om ønskelig)
+- **Man kan ALDRI gå tilbake til lavere klasse** (unntak: VK → AK er tillatt)
+
+### VK-billett (kvalifikasjon til vinnerklasse)
+
+VK-retten er **tidsbegrenset**. Den beregnes slik:
+
+- **Ved 1. AK:** VK-billetten gjelder ut kalenderåret 1. AK ble oppnådd + 2 påfølgende år
+  - Eksempel: 1. AK den **1. mars 2024** → VK-billett ut **31. desember 2026**
+- **Ved VK-premie (uansett valør 1.–6.):** Billetten forlenges ut året VK-premien ble oppnådd + 2 påfølgende år
+  - Eksempel: Hund fikk 1. AK i 2024 (VK-billett t.o.m. 2026). Får 3. VK i **oktober 2025** → ny billett gjelder ut **31. desember 2027**.
+- **Ved utløp uten VK-premie:** Hunden må stilles i AK og oppnå ny 1. AK for å kvalifisere seg til VK igjen.
+
+**Implementasjon:** Ikke fullført ennå. `klasse-validator.js` tar i dag bare inn `har1AK: bool` og sjekker ikke utløp. Dette skal utvides til å lese hundens prøvehistorikk (`resultater`-tabellen + `kritikker`-tabellen) og beregne aktiv VK-billett pr. prøvedato.
 
 ---
 
@@ -34,17 +47,21 @@ Dette dokumentet inneholder offisielle regler som MÅ følges i all kode og seed
 
 | Premie | Slipptid | Stand | Godkjent reis |
 |--------|----------|-------|---------------|
-| 1. premie (UK/AK/VK) | Min. 60 min | Ja | Ja |
+| **1. premie UK/AK** | Min. 60 min | Ja | Ja |
+| **1. premie VK** | Ikke krav | Ja | Ikke krav |
 | 2.-3. premie (UK/AK) | Ikke krav | Ja | Ikke krav |
 | 2.-6. premie (VK) | Ikke krav | Ja | Ikke krav |
 
-### 1. premie krav (UK/AK/VK)
-For å få tildelt 1. premie MÅ hunden ha:
+### 1. premie krav i UK og AK
+For å få tildelt 1. premie i UK eller AK MÅ hunden ha:
 - ✓ **Minimum 60 minutter slipptid** fordelt på slippene
 - ✓ **Stand** (stand_m > 0 eller stand_u > 0)
 - ✓ **Godkjent reis** (godkjent_reising = true)
 
-**Viktig:** Disse kriteriene er minimumskrav, ikke automatisk kvalifisering.
+### 1. premie krav i VK
+For 1. VK er det **ingen** krav om 60 min slipptid eller godkjent reis — kun stand kreves.
+
+**Viktig:** Disse kriteriene er minimumskrav, ikke automatisk kvalifisering — dommer vurderer helheten.
 
 ### 2. og 3. premie krav (UK/AK)
 For å få tildelt 2. eller 3. premie MÅ hunden ha:
@@ -60,9 +77,10 @@ Slipptid er ikke et krav for 2.-6. premie.
 
 ### Validering i kritikkskjemaet
 Systemet validerer automatisk premiekravene når dommer velger premie:
-- Ved valgt 1. premie: Sjekker slipptid ≥ 60 min OG stand OG godkjent_reising = true
+- Ved valgt **1. UK eller 1. AK**: Sjekker slipptid ≥ 60 min OG stand OG godkjent_reising = true
+- Ved valgt **1. VK**: Sjekker kun stand (ingen slipptid-/reis-krav)
 - Ved valgt 2.-6. premie: Sjekker stand_m > 0 ELLER stand_u > 0
-- Advarsel vises hvis krav ikke er oppfylt, men dommer kan fortsatt sende kritikken
+- Advarsel vises hvis krav ikke er oppfylt, men dommer kan fortsatt sende kritikken (dommers skjønn er endelig)
 
 ---
 
@@ -167,8 +185,8 @@ Basert på NISK-dokumentasjon "Avlsindekser på irsksetter" (Avlsrådet NISK 200
 - **Reis** – registreres ikke ved hvert fuglearbeid, styres ikke av hunden selv
 
 ### Prøveformer
-- Høyfjell og lavland inkluderes
-- **Skogsfuglprøver ekskluderes** (mangler makkerkonkurranse)
+- Høyfjell, lavland **og skogsfugl** inkluderes i avlsstatistikk
+- Skogsfuglprøver har eget regelverk (makkerkonkurranse og bedømmelse) — **regelverk for skogsfuglprøver er ikke lagt inn i systemet ennå**. Når det legges inn, skal programmet også kunne arrangere og bedømme skogsfuglprøver.
 
 ---
 

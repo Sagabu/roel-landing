@@ -913,6 +913,8 @@
         function showCritiqueModal(dog) {
             console.log('showCritiqueModal called with dog:', dog);
             state.currentDogId = dog.id || dog.nr;
+            // Nullstill auto-huk-flagget når ny kritikk åpnes
+            godkjentReisManueltEndret = false;
 
             // Fill modal
             document.getElementById('modalDogName').textContent = dog.name;
@@ -1139,6 +1141,28 @@
             }
         }
 
+        // Auto-huk "godkjent reis" når hunden har fuglearbeid (stand) + reis.
+        // Jf. REGLER_FUGLEHUNDPROVER.md: stand + reis > 0 => godkjent_reising MÅ være = 1.
+        // Dommer kan overstyre ved å huke av manuelt; da respekterer vi dommerens valg
+        // for resten av kritikk-økten.
+        let godkjentReisManueltEndret = false;
+        function autoHukGodkjentReis() {
+            if (godkjentReisManueltEndret) return;
+            const getVal = (id) => {
+                const el = document.getElementById(id);
+                if (!el) return 0;
+                const v = el.value.trim();
+                return v === '' ? 0 : parseInt(v);
+            };
+            const checkbox = document.getElementById('edit_GODKJENT_REISING');
+            if (!checkbox) return;
+            const hasStand = getVal('edit_STAND_M') > 0 || getVal('edit_STAND_U') > 0;
+            const hasReis = getVal('edit_REISING') > 0;
+            if (hasStand && hasReis && !checkbox.checked) {
+                checkbox.checked = true;
+            }
+        }
+
         // Validate premie requirements
         function validatePremie() {
             const premie = document.getElementById('premieSelect').value;
@@ -1258,12 +1282,17 @@
 
         // Also validate when relevant score fields change
         document.addEventListener('input', function(e) {
-            if (['edit_SLIPPTID', 'edit_GODKJENT_REISING', 'edit_STAND_M', 'edit_STAND_U', 'edit_MAKKER_STAND', 'edit_SJANSE', 'edit_TOMSTAND'].includes(e.target.id)) {
+            if (['edit_SLIPPTID', 'edit_GODKJENT_REISING', 'edit_STAND_M', 'edit_STAND_U', 'edit_MAKKER_STAND', 'edit_SJANSE', 'edit_TOMSTAND', 'edit_REISING'].includes(e.target.id)) {
+                if (['edit_STAND_M', 'edit_STAND_U', 'edit_REISING'].includes(e.target.id)) {
+                    autoHukGodkjentReis();
+                }
                 validatePremie();
             }
         });
         document.addEventListener('change', function(e) {
             if (e.target.id === 'edit_GODKJENT_REISING') {
+                // Dommers manuelle klikk (isTrusted) = respekter valget videre
+                if (e.isTrusted) godkjentReisManueltEndret = true;
                 validatePremie();
             }
         });

@@ -5452,16 +5452,76 @@
             updateDayInputs();
         }
 
+        // Persistens av dagfordelings-config (UK/AK partier per dag + VK-oppsett)
+        // Ellers nullstilles disse input-feltene på hard refresh og admin må
+        // konfigurere dagfordeling på nytt — med risiko for å ødelegge eksisterende partier.
+        const DAGFORDELING_VK_INPUTS = [
+            'vkTypeSelect', 'vkFinaleDag1day', 'vkKvalDag', 'vkKvalPartier',
+            'vkMaksTilFinale', 'vkMaksTilSemi', 'vkMaksTilFinaleFraSemi'
+        ];
+        function getDagfordelingConfig() {
+            const id = getCurrentTrialId();
+            if (!id) return null;
+            try {
+                const raw = localStorage.getItem(`dagfordelingConfig_${id}`);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+        function saveDagfordelingConfig() {
+            const id = getCurrentTrialId();
+            if (!id) return;
+            const config = { ukakPartier: {}, vk: {} };
+            for (let i = 1; i <= 4; i++) {
+                const input = document.getElementById(`ukakPartierDag${i}`);
+                if (input) config.ukakPartier[i] = parseInt(input.value) || 0;
+            }
+            DAGFORDELING_VK_INPUTS.forEach(inputId => {
+                const el = document.getElementById(inputId);
+                if (el) config.vk[inputId] = el.value;
+            });
+            localStorage.setItem(`dagfordelingConfig_${id}`, JSON.stringify(config));
+        }
+        function restoreVkConfigFromPersistence() {
+            const cfg = getDagfordelingConfig();
+            if (!cfg || !cfg.vk) return;
+            DAGFORDELING_VK_INPUTS.forEach(inputId => {
+                const el = document.getElementById(inputId);
+                if (el && cfg.vk[inputId] !== undefined && cfg.vk[inputId] !== '') {
+                    el.value = cfg.vk[inputId];
+                }
+            });
+            // Trigger UI-update så summary og dag-valg reflekterer gjeldende VK-type
+            if (typeof updateVKDayOptions === 'function') updateVKDayOptions();
+            if (typeof updateDayScheduleSummary === 'function') updateDayScheduleSummary();
+        }
+        // Kalles fra input-onchange
+        function onUkakPartierChange() {
+            saveDagfordelingConfig();
+            updateDayScheduleSummary();
+        }
+        // Lagre VK-config ved endring (listener satt opp nederst i script)
+        function onVkConfigChange() {
+            saveDagfordelingConfig();
+        }
+
         // Update UK/AK day inputs based on number of trial days
         function updateDayInputs() {
             const antallDager = parseInt(document.getElementById('antallProvedager').value) || 2;
             const container = document.getElementById('ukakDagerContainer');
 
-            // Lagre eksisterende verdier
+            // Lagre eksisterende verdier — DOM først, deretter localStorage hvis DOM er tom (f.eks. etter refresh)
             const existingValues = {};
             for (let i = 1; i <= 4; i++) {
                 const input = document.getElementById(`ukakPartierDag${i}`);
                 if (input) existingValues[i] = input.value;
+            }
+            const persisted = getDagfordelingConfig();
+            if (persisted && persisted.ukakPartier) {
+                for (let i = 1; i <= 4; i++) {
+                    if (!(i in existingValues) && (i in persisted.ukakPartier)) {
+                        existingValues[i] = String(persisted.ukakPartier[i]);
+                    }
+                }
             }
 
             // Generer nye inputs
@@ -5475,7 +5535,7 @@
                         <div class="flex items-center gap-2">
                             <input type="number" id="ukakPartierDag${dag}" value="${prevValue}" min="0" max="5"
                                    class="w-16 px-3 py-2 border border-bark-300 rounded-xl text-center text-sm focus:ring-2 focus:ring-warm-500"
-                                   onchange="updateDayScheduleSummary()">
+                                   onchange="onUkakPartierChange()">
                             <span class="text-sm text-bark-600">UK/AK-parti(er)</span>
                         </div>
                     </div>
@@ -5622,6 +5682,18 @@
         updateDayInputs();
         updateVKDayOptions();
         updateDayScheduleSummary();
+
+        // Gjenopprett VK-config fra localStorage etter initial render
+        // (input-feltene eksisterer nå, så vi kan overstyre default-verdiene)
+        restoreVkConfigFromPersistence();
+
+        // Lagre dagfordelings-config automatisk når noen av VK-inputene endres.
+        // Dette er i tillegg til de inline onchange-handlerene som oppdaterer summary.
+        document.addEventListener('change', function(e) {
+            if (e.target && DAGFORDELING_VK_INPUTS.includes(e.target.id)) {
+                saveDagfordelingConfig();
+            }
+        });
 
         // File upload
         const dropZone = document.getElementById('dropZone');
@@ -6346,13 +6418,16 @@
         // Åpne dialog for å legge til hund manuelt
         function openAddDogDialog() {
             const parties = getTrialParties();
+            const antallDager = parseInt(document.getElementById('antallProvedager')?.value) || 2;
 
-            // Samle unike dager fra UK/AK-partier (for venteliste-alternativer)
-            const ukakDager = [...new Set(
-                parties.filter(p => p.type !== 'vk').map(p => p.day || 1)
-            )].sort((a, b) => a - b);
-
-            const harVk = parties.some(p => p.type === 'vk');
+            // Klasser: UK1, UK2, ..., AK1, AK2, ..., VK — som NKK-formatet
+            const klasseOptions = [];
+            for (let d = 1; d <= antallDager; d++) klasseOptions.push('UK' + d);
+            for (let d = 1; d <= antallDager; d++) klasseOptions.push('AK' + d);
+            klasseOptions.push('VK');
+            const klasseOptionsHtml = klasseOptions
+                .map(k => '<option value="' + k + '">' + k + '</option>')
+                .join('');
 
             // Parti-alternativer med dag + dato
             const partyOptions = parties.map(p => {
@@ -6361,17 +6436,6 @@
                 return '<option value="parti|' + p.name + '">' +
                     (p.displayName || p.name) + dagTxt + ' (' + p.dogs.length + ' hunder)</option>';
             }).join('');
-
-            // Venteliste per dag + felles VK
-            const ventelisteDagOptions = ukakDager.map(d => {
-                const dagParti = parties.find(p => p.type !== 'vk' && (p.day || 1) === d);
-                const dato = dagParti ? formatDagDato(dagParti.date) : '';
-                return '<option value="venteliste|' + d + '">Venteliste dag ' + d +
-                    (dato ? ' — ' + dato : '') + '</option>';
-            }).join('');
-            const ventelisteVkOption = harVk
-                ? '<option value="venteliste|vk">Venteliste VK</option>'
-                : '';
 
             const dialogHtml = '<div id="addDogDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">' +
                 '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">' +
@@ -6397,19 +6461,15 @@
                         '<div>' +
                             '<label class="block text-sm font-medium text-bark-700 mb-1">Klasse *</label>' +
                             '<select id="addDogKlasse" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">' +
-                                '<option value="UK">UK - Unghundklasse</option>' +
-                                '<option value="AK">AK - Åpen klasse</option>' +
-                                '<option value="VK">VK - Vinnerklasse</option>' +
+                                klasseOptionsHtml +
                             '</select>' +
+                            '<p class="text-xs text-bark-500 mt-1">Klassen viser også hvilken dag hunden er meldt på (UK1 = dag 1, AK2 = dag 2, osv.)</p>' +
                         '</div>' +
                         '<div>' +
                             '<label class="block text-sm font-medium text-bark-700 mb-1">Plasser i *</label>' +
                             '<select id="addDogParty" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">' +
                                 (partyOptions ? '<optgroup label="Partier">' + partyOptions + '</optgroup>' : '') +
-                                '<optgroup label="Venteliste">' +
-                                    ventelisteDagOptions +
-                                    ventelisteVkOption +
-                                '</optgroup>' +
+                                '<option value="venteliste">Venteliste (velger dag automatisk ut fra klasse)</option>' +
                             '</select>' +
                         '</div>' +
                     '</div>' +
@@ -6434,9 +6494,8 @@
             const hundenavn = document.getElementById('addDogName').value.trim();
             const rase = document.getElementById('addDogRase').value.trim();
             const forer = document.getElementById('addDogForer').value.trim();
-            const klasse = document.getElementById('addDogKlasse').value;
-            const destRaw = document.getElementById('addDogParty').value;
-            const [destType, destId] = destRaw.split('|');  // "parti|Parti 1" eller "venteliste|2" / "venteliste|vk"
+            const klasseRaw = document.getElementById('addDogKlasse').value;  // F.eks. "UK2", "AK1", "VK"
+            const destRaw = document.getElementById('addDogParty').value;      // "parti|Parti 1" eller "venteliste"
 
             // Valider påkrevde felt
             if (!regnr || !hundenavn || !forer) {
@@ -6444,41 +6503,42 @@
                 return;
             }
 
+            // Parse klasse + dag fra klasseRaw (matcher parseClass() på server)
+            const match = klasseRaw.match(/^(UK|AK|VK)(\d)?$/);
+            if (!match) { alert('Ugyldig klasse: ' + klasseRaw); return; }
+            const klasseKort = match[1];                            // "UK" | "AK" | "VK"
+            const klasseDag = match[2] ? parseInt(match[2], 10) : null;  // 1, 2, 3, 4 eller null (VK)
+            const isVK = klasseKort === 'VK';
+
             const parties = getTrialParties();
             const venteliste = getTrialVenteliste();
 
-            // Finn hvilken dag hunden skal på (VK = felles, ikke dag-basert)
-            let targetDag = null;  // 1, 2, 3, 4, eller null for VK
-            let isVK = false;
+            // Resolver destinasjon
+            const [destType, destId] = destRaw.split('|');
+            let selectedParty = null;
+
             if (destType === 'parti') {
-                const party = parties.find(p => p.name === destId);
-                if (!party) { alert('Fant ikke det valgte partiet.'); return; }
-                if (party.type === 'vk') {
-                    isVK = true;
-                } else {
-                    targetDag = party.day || 1;
+                selectedParty = parties.find(p => p.name === destId);
+                if (!selectedParty) { alert('Fant ikke det valgte partiet.'); return; }
+
+                // Klassekompatibilitet: VK-hund → VK-parti, UK/AK-hund → UK/AK-parti
+                if (selectedParty.type === 'vk' && !isVK) {
+                    alert('Du har valgt klasse ' + klasseRaw + ', men partiet er et VK-parti. Velg VK hvis hunden er VK-påmeldt.');
+                    return;
                 }
-            } else if (destType === 'venteliste') {
-                if (destId === 'vk') {
-                    isVK = true;
-                } else {
-                    targetDag = parseInt(destId, 10);
+                if (selectedParty.type !== 'vk' && isVK) {
+                    alert('Du har valgt klasse VK, men partiet er ikke et VK-parti. Velg et VK-parti eller bytt klasse.');
+                    return;
+                }
+
+                // Dag-kompatibilitet: hund meldt på dag X kan ikke legges i parti på dag Y
+                if (!isVK && selectedParty.day && klasseDag && selectedParty.day !== klasseDag) {
+                    alert('Hunden er meldt på ' + klasseRaw + ' (dag ' + klasseDag + '), men partiet "' + (selectedParty.displayName || selectedParty.name) + '" er på dag ' + selectedParty.day + '. Velg et parti på dag ' + klasseDag + ' eller legg hunden på venteliste.');
+                    return;
                 }
             }
 
-            // Klassekompatibilitet mot valgt destinasjon
-            if (isVK && klasse !== 'VK') {
-                alert('VK-destinasjon krever at klasse er VK.');
-                return;
-            }
-            if (!isVK && klasse === 'VK') {
-                alert('VK-hunder må legges på VK-parti eller VK-venteliste.');
-                return;
-            }
-
-            // Dag-basert duplikatsjekk
-            // VK: samme hund kan ikke være på to VK-partier eller VK-venteliste (hele serien er én konkurranse)
-            // UK/AK: samme hund kan ikke være påmeldt samme DAG, men kan være på flere dager
+            // Dag-basert duplikatsjekk (samme som før, men bruker klasseDag)
             if (isVK) {
                 for (const party of parties) {
                     if (party.type === 'vk' && party.dogs.find(d => d.regnr === regnr)) {
@@ -6493,16 +6553,16 @@
             } else {
                 for (const party of parties) {
                     if (party.type === 'vk') continue;
-                    if ((party.day || 1) === targetDag && party.dogs.find(d => d.regnr === regnr)) {
-                        alert('Hunden er allerede påmeldt "' + (party.displayName || party.name) + '" samme dag (dag ' + targetDag + ').');
+                    if ((party.day || 1) === klasseDag && party.dogs.find(d => d.regnr === regnr)) {
+                        alert('Hunden er allerede påmeldt "' + (party.displayName || party.name) + '" samme dag (dag ' + klasseDag + ').');
                         return;
                     }
                 }
-                const dagKey = 'dag' + targetDag;
+                const dagKey = 'dag' + klasseDag;
                 const dagVL = venteliste[dagKey] || {};
                 for (const kl of ['uk', 'ak']) {
                     if ((dagVL[kl] || []).find(d => d.regnr === regnr)) {
-                        alert('Hunden står allerede på venteliste dag ' + targetDag + '.');
+                        alert('Hunden står allerede på venteliste dag ' + klasseDag + '.');
                         return;
                     }
                 }
@@ -6513,9 +6573,9 @@
                 hundenavn: hundenavn,
                 rase: rase,
                 forer: forer,
-                klasse: klasse,
-                klasseRaw: klasse + (targetDag ? targetDag : ''),  // bevar dag-info (f.eks. "AK2")
-                dag: isVK ? null : targetDag
+                klasse: klasseKort,
+                klasseRaw: klasseRaw,
+                dag: isVK ? null : klasseDag
             };
 
             if (destType === 'venteliste') {
@@ -6523,8 +6583,8 @@
                     venteliste.vk = venteliste.vk || [];
                     venteliste.vk.push(newDog);
                 } else {
-                    const kl = klasse.toLowerCase();
-                    const dagKey = 'dag' + targetDag;
+                    const kl = klasseKort.toLowerCase();
+                    const dagKey = 'dag' + klasseDag;
                     if (!venteliste[dagKey]) venteliste[dagKey] = { uk: [], ak: [] };
                     venteliste[dagKey][kl] = venteliste[dagKey][kl] || [];
                     venteliste[dagKey][kl].push(newDog);
@@ -6533,15 +6593,14 @@
                 renderVenteliste(venteliste);
             } else {
                 // Legg til parti
-                const party = parties.find(p => p.name === destId);
-                if (party.type !== 'vk' && party.dogs.length >= 14) {
+                if (selectedParty.type !== 'vk' && selectedParty.dogs.length >= 14) {
                     alert('Partiet er fullt (maks 14 hunder). Fjern en hund først eller velg et annet parti.');
                     return;
                 }
 
-                party.dogs.push(newDog);
-                if (klasse === 'UK') party.ukCount = (party.ukCount || 0) + 1;
-                else if (klasse === 'AK') party.akCount = (party.akCount || 0) + 1;
+                selectedParty.dogs.push(newDog);
+                if (klasseKort === 'UK') selectedParty.ukCount = (selectedParty.ukCount || 0) + 1;
+                else if (klasseKort === 'AK') selectedParty.akCount = (selectedParty.akCount || 0) + 1;
 
                 setTrialParties(parties);
                 renderAllParties(parties);

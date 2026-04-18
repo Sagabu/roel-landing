@@ -1403,7 +1403,7 @@
                                 description: `Parti: ${prove.dommerInfo.parti?.toUpperCase() || 'Ikke tildelt'}`,
                                 icon: 'clipboard',
                                 color: 'earth',
-                                link: 'dommer-hjem.html'
+                                link: buildDommerLink(prove.dommerInfo.parti, prove.id)
                             });
                             cachedDommerInfo = {
                                 name: name,
@@ -1495,7 +1495,7 @@
                                         description: `Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
                                         icon: 'clipboard',
                                         color: 'earth',
-                                        link: 'dommer-hjem.html'
+                                        link: buildDommerLink(tildeling.parti, tildeling.proveId)
                                     }],
                                     pendingTasks: []
                                 });
@@ -1514,6 +1514,21 @@
             }
 
             return { name, trials, isTrialAdmin, clubId, clubName, clubRole };
+        }
+
+        // Bygg URL rett til riktig bedømmingsside basert på partinavn.
+        // VK-partier ("VK Parti 1", "VK Kval 2", "VK Finale", eller legacy
+        // "vk1"/"vkfinale") går til dommer-vk.html; alt annet til dommer-ukak.html.
+        function buildDommerLink(parti, proveId) {
+            if (!parti) return 'dommer-hjem.html';
+            const partiParam = encodeURIComponent(parti);
+            const proveParam = proveId ? encodeURIComponent(proveId) : '';
+            const lower = String(parti).toLowerCase();
+            const erVK = lower.startsWith('vk') || lower.includes('vk finale') || lower.includes('vk parti') || lower.includes('vk kval');
+            if (erVK) {
+                return `dommer-vk.html?prove=${proveParam || 'demo'}&parti=${partiParam}`;
+            }
+            return `dommer-ukak.html?party=${partiParam}${proveParam ? '&prove=' + proveParam : ''}`;
         }
 
         // Synkron wrapper for bakoverkompatibilitet
@@ -1897,27 +1912,18 @@
                     const tildeling = data.tildelinger[0];
                     const isVK = tildeling.parti?.toLowerCase().includes('vk');
 
-                    // Sett opp judgeSession for dommer-hjem.html
+                    // Sett opp judgeSession som fallback (brukes av dommer-hjem.html
+                    // hvis brukeren velger å gå dit via gammel flyt)
                     const judgeSession = {
                         name: currentUser.name,
                         phone: currentUser.phone,
                         isJudge: true,
                         assignedParty: tildeling.parti,
-                        assignedProve: tildeling.prove_id,
+                        assignedProve: tildeling.proveId,
                         judgeRole: tildeling.dommerRolle,
                         loggedInAt: new Date().toISOString()
                     };
                     localStorage.setItem('judgeSession', JSON.stringify(judgeSession));
-
-                    // Bygg riktig link basert på parti-type
-                    let assessmentLink;
-                    if (isVK) {
-                        const proveParam = tildeling.prove_id || 'demo';
-                        const partiParam = encodeURIComponent(tildeling.parti);
-                        assessmentLink = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}`;
-                    } else {
-                        assessmentLink = `dommer-ukak.html?party=${encodeURIComponent(tildeling.parti)}`;
-                    }
 
                     roles.push({
                         type: 'dommer',
@@ -1925,7 +1931,7 @@
                         description: `${tildeling.proveNavn} - Parti: ${tildeling.parti?.toUpperCase() || 'Ikke tildelt'}`,
                         icon: 'clipboard',
                         bgColor: isVK ? 'bg-amber-600' : 'bg-warm-500',
-                        link: assessmentLink,
+                        link: buildDommerLink(tildeling.parti, tildeling.proveId),
                         showStartButton: true,
                         partyType: isVK ? 'VK' : 'UK/AK'
                     });

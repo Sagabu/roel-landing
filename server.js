@@ -10810,37 +10810,67 @@ app.get("/api/partiliste/:partyId", (c) => {
     return c.json({ error: "Ingen aktiv prøve funnet" }, 404);
   }
 
-  // Hent påmeldinger for dette partiet
-  const pameldinger = db.prepare(`
+  // Primærkilde: parti_deltakere (NKK-fil-basert, authoritativ for partirekkefølge).
+  // Joiner pameldinger for påmelding-felter (pamelding_id, status) og hunder for hund_id/kjønn/fodt.
+  // ORDER BY pd.startnummer sikrer UK-øverst/AK-under-rekkefølgen som er normalisert der.
+  let hunder = db.prepare(`
     SELECT
-      p.id as pamelding_id,
-      p.klasse,
-      p.parti,
-      p.forer_telefon,
+      pm.id as pamelding_id,
+      pd.klasse,
+      pt.navn as parti,
+      pm.forer_telefon,
       h.id as hund_id,
-      h.navn,
-      h.regnr,
-      h.rase,
-      h.kjonn,
+      COALESCE(h.navn, pd.hund_navn) as navn,
+      pd.hund_regnr as regnr,
+      COALESCE(h.rase, pd.rase) as rase,
+      COALESCE(h.kjonn, pd.kjonn) as kjonn,
       h.fodt,
-      b_eier.fornavn || ' ' || b_eier.etternavn as eier_navn,
-      b_forer.fornavn || ' ' || b_forer.etternavn as forer_navn
-    FROM pameldinger p
-    JOIN hunder h ON p.hund_id = h.id
-    LEFT JOIN brukere b_eier ON h.eier_telefon = b_eier.telefon
-    LEFT JOIN brukere b_forer ON p.forer_telefon = b_forer.telefon
-    WHERE p.prove_id = ? AND p.parti = ? AND p.status = 'bekreftet'
-    ORDER BY
-      CASE p.klasse WHEN 'UK' THEN 1 WHEN 'AK' THEN 2 WHEN 'VK' THEN 3 ELSE 4 END,
-      p.id
+      pd.eier_navn,
+      pd.forer_navn,
+      pd.startnummer
+    FROM parti_deltakere pd
+    JOIN partier pt ON pt.id = pd.parti_id
+    LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
+    LEFT JOIN pameldinger pm ON pm.prove_id = pd.prove_id AND pm.hund_id = h.id
+    WHERE pd.prove_id = ? AND pt.navn = ? AND COALESCE(pd.status, 'aktiv') != 'trukket'
+    ORDER BY pd.startnummer
   `).all(prove.id, partyId);
+
+  // Fallback: hvis parti_deltakere er tom (prøve som kun bruker digital pamelding-flyt),
+  // les direkte fra pameldinger. Beholder bakoverkompatibilitet med legacy-flyten.
+  if (hunder.length === 0) {
+    hunder = db.prepare(`
+      SELECT
+        p.id as pamelding_id,
+        p.klasse,
+        p.parti,
+        p.forer_telefon,
+        h.id as hund_id,
+        h.navn,
+        h.regnr,
+        h.rase,
+        h.kjonn,
+        h.fodt,
+        b_eier.fornavn || ' ' || b_eier.etternavn as eier_navn,
+        b_forer.fornavn || ' ' || b_forer.etternavn as forer_navn,
+        p.startnummer
+      FROM pameldinger p
+      JOIN hunder h ON p.hund_id = h.id
+      LEFT JOIN brukere b_eier ON h.eier_telefon = b_eier.telefon
+      LEFT JOIN brukere b_forer ON p.forer_telefon = b_forer.telefon
+      WHERE p.prove_id = ? AND p.parti = ? AND p.status = 'bekreftet'
+      ORDER BY
+        CASE p.klasse WHEN 'UK' THEN 1 WHEN 'AK' THEN 2 WHEN 'VK' THEN 3 ELSE 4 END,
+        p.startnummer, p.id
+    `).all(prove.id, partyId);
+  }
 
   return c.json({
     prove_id: prove.id,
     prove_navn: prove.navn,
     parti: partyId,
     parti_navn: partyId.toUpperCase().replace('UKAK', 'UK/AK Parti ').replace('VK', 'VK Parti '),
-    hunder: pameldinger
+    hunder
   });
 });
 

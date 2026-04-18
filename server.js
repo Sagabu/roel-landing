@@ -1260,6 +1260,17 @@ for (const sql of performanceIndexes) {
   try { db.exec(sql); } catch (e) { /* index already exists */ }
 }
 
+// System-bruker for NKK-importerte påmeldinger. Brukes som forer_telefon-sentinel
+// på pameldinger-rader som er projisert fra parti_deltakere (NKK-fil-flyten).
+// pameldinger.forer_telefon er NOT NULL, og inntil digital påmelding er aktivert
+// har vi ikke deltakerens faktiske telefonnummer. Denne raden skal aldri slettes.
+try {
+  db.prepare(`
+    INSERT OR IGNORE INTO brukere (telefon, fornavn, etternavn, rolle, verifisert)
+    VALUES ('NKK_IMPORT', 'NKK', 'Import', '', 0)
+  `).run();
+} catch (e) { console.warn('Kunne ikke opprette NKK_IMPORT-bruker:', e); }
+
 // Fix regnr NOT NULL constraint on existing databases (allow dogs without registration number)
 try {
   const tableInfo = db.prepare("PRAGMA table_info(hunder)").all();
@@ -9305,6 +9316,129 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
   return c.json(result);
 });
 
+// Bro fra Bok B (parti_deltakere) til Bok A (pameldinger).
+// Motivasjon: NKK er kilden til påmeldinger. Admin laster opp NKK-fila og lagrer
+// parti_deltakere. Dommer-sidene og kritikk-flyten er bygd på pameldinger. Denne
+// funksjonen projiserer B → A slik at dommere/kritikk får data uten at den
+// eksisterende admin-flyten endres.
+//
+// Regler:
+// - Én pameldinger-rad per (prove_id, hund_id) — aggregerer dager hvis en hund står
+//   i partier på flere dager
+// - forer_telefon faller tilbake til NKK_IMPORT-sentinel når NKK-fila ikke har tlf
+// - betalt/sauebevis/vaksinasjon/rabies antas OK (NKK-håndhevelse utenfor systemet)
+// - status = 'bekreftet' for aktive hunder, 'avmeldt' hvis alle parti-rader er trukket
+// - En hund som forsvinner fra parti_deltakere (admin sletter/trekker) får status='avmeldt'
+//   i pameldinger — vi sletter aldri rader, slik at FK fra kritikker/avmeldinger holder
+function syncPameldingerForProve(proveId) {
+  const rows = db.prepare(`
+    SELECT pd.hund_regnr, pd.hund_navn, pd.rase, pd.kjonn, pd.klasse,
+           pd.eier_navn, pd.eier_telefon, pd.forer_navn, pd.forer_telefon,
+           pd.status AS pd_status,
+           p.dato AS parti_dato, p.navn AS parti_navn
+    FROM parti_deltakere pd
+    JOIN partier p ON p.id = pd.parti_id
+    WHERE pd.prove_id = ?
+  `).all(proveId);
+
+  const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+  const startDato = prove?.start_dato || null;
+
+  const byHund = new Map();
+  for (const r of rows) {
+    if (!r.hund_regnr) continue;
+    if (!byHund.has(r.hund_regnr)) {
+      byHund.set(r.hund_regnr, {
+        regnr: r.hund_regnr,
+        navn: r.hund_navn,
+        rase: r.rase,
+        kjonn: r.kjonn,
+        klasse: r.klasse,
+        eier_navn: r.eier_navn,
+        eier_telefon: r.eier_telefon,
+        forer_navn: r.forer_navn,
+        forer_telefon: r.forer_telefon,
+        partier: [],
+        dags: new Set(),
+        alleTrukket: true
+      });
+    }
+    const agg = byHund.get(r.hund_regnr);
+    agg.partier.push(r.parti_navn);
+    if (r.parti_dato && startDato) {
+      const diff = Math.round((new Date(r.parti_dato) - new Date(startDato)) / 86400000) + 1;
+      if (diff >= 1) agg.dags.add(diff);
+    }
+    if (r.pd_status !== 'trukket') agg.alleTrukket = false;
+  }
+
+  const upsert = db.prepare(`
+    INSERT INTO pameldinger (
+      prove_id, hund_id, forer_telefon, klasse, dag, status,
+      betalt, sauebevis, vaksinasjon_ok, rabies_ok, parti, pameldt_av_telefon
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, 1, 1, 1, ?, 'NKK_IMPORT')
+    ON CONFLICT(prove_id, hund_id) DO UPDATE SET
+      klasse = excluded.klasse,
+      dag = excluded.dag,
+      status = excluded.status,
+      parti = excluded.parti,
+      updated_at = datetime('now')
+  `);
+
+  const activeHundIds = [];
+  let synkronisert = 0;
+
+  for (const [regnr, agg] of byHund) {
+    let hund = db.prepare("SELECT id FROM hunder WHERE regnr = ?").get(regnr);
+    if (!hund) {
+      try {
+        const res = db.prepare(`
+          INSERT INTO hunder (regnr, navn, rase, kjonn) VALUES (?, ?, ?, ?)
+        `).run(regnr, agg.navn || '', agg.rase || '', agg.kjonn || 'male');
+        hund = { id: res.lastInsertRowid };
+      } catch (e) { console.warn(`[bro] Kunne ikke opprette hund ${regnr}:`, e.message); continue; }
+    }
+
+    const forerTlfKandidat = agg.forer_telefon || agg.eier_telefon || '';
+    const brukerFinnes = forerTlfKandidat
+      ? db.prepare("SELECT 1 FROM brukere WHERE telefon = ?").get(forerTlfKandidat)
+      : null;
+    const forerTlf = brukerFinnes ? forerTlfKandidat : 'NKK_IMPORT';
+
+    const klasseRaw = (agg.klasse || 'AK').toUpperCase();
+    const klasse = ['UK', 'AK', 'VK'].includes(klasseRaw) ? klasseRaw : 'AK';
+    const dagJson = JSON.stringify([...agg.dags].sort((a, b) => a - b));
+    const status = agg.alleTrukket ? 'avmeldt' : 'bekreftet';
+    const parti = agg.partier[0] || null;
+
+    try {
+      upsert.run(proveId, hund.id, forerTlf, klasse, dagJson, status, parti);
+      activeHundIds.push(hund.id);
+      synkronisert++;
+    } catch (e) { console.warn(`[bro] Upsert feilet for hund ${regnr}:`, e.message); }
+  }
+
+  // Hunder som var i pameldinger tidligere men ikke lenger i parti_deltakere:
+  // marker som avmeldt (ikke slett — FK fra kritikker/avmeldinger kan peke hit)
+  let avmeldt = 0;
+  if (activeHundIds.length > 0) {
+    const placeholders = activeHundIds.map(() => '?').join(',');
+    const r = db.prepare(`
+      UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
+      WHERE prove_id = ? AND hund_id NOT IN (${placeholders}) AND status != 'avmeldt'
+    `).run(proveId, ...activeHundIds);
+    avmeldt = r.changes;
+  } else {
+    const r = db.prepare(`
+      UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
+      WHERE prove_id = ? AND status != 'avmeldt'
+    `).run(proveId);
+    avmeldt = r.changes;
+  }
+
+  return { synkronisert, avmeldt };
+}
+
 // Lagre partilister (erstatter alle eksisterende for prøven)
 app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
@@ -9384,15 +9518,25 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
 
     db.exec("COMMIT");
 
+    // Bro fra Bok B → Bok A: projiser parti_deltakere til pameldinger slik at
+    // dommer-sidene/kritikk-flyten får data. Kjøres utenfor hovedtransaksjonen
+    // så en bro-feil ikke ruller tilbake parti-lagringen.
+    let broResultat = null;
+    try {
+      broResultat = syncPameldingerForProve(proveId);
+    } catch (e) { console.error('[bro] syncPameldingerForProve feilet:', e); }
+
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "partilister_lagret",
-      `Lagret ${partier.length} partier med totalt ${partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)} deltakere for prøve ${proveId}`
+      `Lagret ${partier.length} partier med totalt ${partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)} deltakere for prøve ${proveId}` +
+      (broResultat ? ` (bro: ${broResultat.synkronisert} synk, ${broResultat.avmeldt} avmeldt)` : '')
     );
 
     return c.json({
       success: true,
       partier: partier.length,
-      deltakere: partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0)
+      deltakere: partier.reduce((sum, p) => sum + (p.dogs?.length || 0), 0),
+      bro: broResultat
     });
 
   } catch (err) {

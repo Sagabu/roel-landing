@@ -216,6 +216,10 @@
         let assignedProveId = null;
         let judgeRole = null;
         let judgeData = {};
+        // Full tildelings-objekt fra /api/brukere/:tlf/dommer-info — inneholder
+        // parti-metadata (type, dato, antall hunder) når parti finnes i partier-tabellen.
+        // Brukes som fallback når PARTIES-map-en ikke har entry (NKK-fil-prøver).
+        let currentTildeling = null;
 
         // Initialize page
         async function initPage() {
@@ -278,8 +282,9 @@
                         const data = await resp.json();
                         if (data.isDommer && data.tildelinger?.length > 0) {
                             const tildeling = data.tildelinger[0];
+                            currentTildeling = tildeling;
                             assignedPartyId = tildeling.parti;
-                            assignedProveId = tildeling.prove_id;
+                            assignedProveId = tildeling.proveId;
                             judgeRole = tildeling.dommerRolle;
 
                             // Update session with party info
@@ -299,20 +304,52 @@
             await renderAssignedParty();
         }
 
+        // Bygg et parti-objekt fra tildelings-data når partiet ikke finnes i PARTIES-map-en.
+        // Brukes for NKK-fil-prøver der parti-navn er "UK/AK Parti 1" osv.
+        function buildDynamicParty(tildeling) {
+            if (!tildeling) return null;
+            const rawType = tildeling.partiType || 'ukak';
+            let type = 'ukak';
+            if (rawType === 'vk') type = 'vk';
+            else if (rawType === 'vkfinale' || rawType === 'vk_finale') type = 'vkfinale';
+            // Beregn ukedag direkte fra partiDato — slipper å være avhengig av cachedTrialConfig
+            let dayNum = 1, day = '';
+            const weekdays = ['Søndag', 'Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag'];
+            if (tildeling.partiDato && tildeling.startDato) {
+                const diff = Math.round((new Date(tildeling.partiDato) - new Date(tildeling.startDato)) / 86400000);
+                dayNum = diff + 1;
+            }
+            if (tildeling.partiDato) {
+                const d = new Date(tildeling.partiDato + 'T12:00:00');
+                day = weekdays[d.getDay()] || '';
+            }
+            return {
+                name: tildeling.parti,
+                type,
+                judges: type === 'vk' || type === 'vkfinale' ? 2 : 1,
+                dogs: tildeling.antallHunder || 0,
+                dayNum,
+                day
+            };
+        }
+
         // Render assigned party card
         async function renderAssignedParty() {
             const container = document.getElementById('assignedPartyCard');
-            console.log('DEBUG renderAssignedParty START:', { assignedPartyId, hasParty: !!PARTIES[assignedPartyId] });
 
-            if (!assignedPartyId || !PARTIES[assignedPartyId]) {
+            // Prøv hardcoded PARTIES først (legacy "ukak1"/"vkfinale"-format),
+            // fall tilbake til dynamisk objekt bygd fra API-tildelingsdata.
+            let party = assignedPartyId ? PARTIES[assignedPartyId] : null;
+            if (!party && currentTildeling) {
+                party = buildDynamicParty(currentTildeling);
+            }
+
+            if (!assignedPartyId || !party) {
                 // No party assigned
-                console.log('DEBUG: Returning early - no party');
                 container.classList.add('hidden');
                 document.getElementById('noPartyMessage').classList.remove('hidden');
                 return;
             }
-
-            const party = PARTIES[assignedPartyId];
             const isVK = party.type === 'vk' || party.type === 'vkfinale';
             const isFinale = party.type === 'vkfinale';
 
@@ -344,7 +381,8 @@
             // Prøv å hente faktisk antall hunder fra partiliste-API
             let gotTotalFromAPI = false;
             try {
-                const partyListResp = await fetch('/api/partiliste/' + assignedPartyId);
+                const proveParam = assignedProveId ? '?prove_id=' + encodeURIComponent(assignedProveId) : '';
+                const partyListResp = await fetch('/api/partiliste/' + encodeURIComponent(assignedPartyId) + proveParam);
                 if (partyListResp.ok) {
                     const partyListData = await partyListResp.json();
                     if (partyListData.hunder && partyListData.hunder.length > 0) {
@@ -462,7 +500,9 @@
             }
 
             // Party number for badge
-            let partyBadge = assignedPartyId.replace('ukak', '').replace('vk', 'K').replace('finale', '');
+            // Badge: siste tall i navnet ("UK/AK Parti 3" → "3", "ukak2" → "2", "VK Kval 1" → "1")
+            const numMatch = (assignedPartyId || '').match(/(\d+)(?!.*\d)/);
+            let partyBadge = numMatch ? numMatch[1] : '?';
             if (isFinale) partyBadge = 'F';
 
             container.innerHTML = `
@@ -552,7 +592,9 @@
         }
 
         function goToFinalCritique() {
-            window.location.href = 'dommer-kritikk.html?party=' + assignedPartyId;
+            const partiParam = encodeURIComponent(assignedPartyId);
+            const proveParam = assignedProveId || '';
+            window.location.href = `dommer-kritikk.html?party=${partiParam}${proveParam ? '&prove=' + proveParam : ''}`;
         }
 
         function goToAssessment() {
@@ -562,16 +604,17 @@
             sessionData.selectedProve = assignedProveId;
             localStorage.setItem('judgeSession', JSON.stringify(sessionData));
 
-            // Navigate to correct assessment page based on party type
-            const party = PARTIES[assignedPartyId];
+            // Navigate to correct assessment page based on party type.
+            // Finn type fra hardcoded PARTIES først, fall tilbake til API-tildeling.
+            const party = PARTIES[assignedPartyId] || (currentTildeling ? buildDynamicParty(currentTildeling) : null);
+            const partiParam = encodeURIComponent(assignedPartyId);
+            const proveParam = assignedProveId || 'demo';
             if (party && (party.type === 'vk' || party.type === 'vkfinale')) {
-                // VK-dommerkortet trenger prove og parti parametere for server-lagring
-                const proveParam = assignedProveId || 'demo';
-                const partiParam = encodeURIComponent(assignedPartyId);
                 window.location.href = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}`;
             } else {
-                // UK/AK parties use the new dommer-ukak.html
-                window.location.href = 'dommer-ukak.html?party=' + assignedPartyId;
+                // UK/AK parties use dommer-ukak.html — URL-encode så navn som
+                // "UK/AK Parti 1" går gjennom path-parameteren uten å brytes opp.
+                window.location.href = `dommer-ukak.html?party=${partiParam}&prove=${proveParam}`;
             }
         }
 

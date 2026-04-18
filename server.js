@@ -4256,11 +4256,18 @@ app.get("/api/brukere/:telefon/dommer-info", (c) => {
   const telefon = c.req.param("telefon");
   const proveId = c.req.query("prove_id");
 
+  // LEFT JOIN partier-tabellen så vi får parti.type/dato/id når tildelingens `parti`
+  // matcher partier.navn (typisk NKK-fil-format "UK/AK Parti 1"). Eldre tildelinger
+  // med digital-pamelding-format ("ukak1", "vkfinale") matcher ikke og får NULL.
   let query = `
-    SELECT dt.*, p.navn as prove_navn, p.sted as prove_sted, p.start_dato, p.slutt_dato, b.fornavn, b.etternavn
+    SELECT dt.*, p.navn as prove_navn, p.sted as prove_sted, p.start_dato, p.slutt_dato,
+           b.fornavn, b.etternavn,
+           pt.id as parti_id, pt.type as parti_type, pt.dato as parti_dato,
+           (SELECT COUNT(*) FROM parti_deltakere pd WHERE pd.parti_id = pt.id) as antall_hunder
     FROM dommer_tildelinger dt
     JOIN prover p ON dt.prove_id = p.id
     JOIN brukere b ON dt.dommer_telefon = b.telefon
+    LEFT JOIN partier pt ON pt.prove_id = dt.prove_id AND pt.navn = dt.parti
     WHERE dt.dommer_telefon = ?
   `;
   const params = [telefon];
@@ -4283,6 +4290,10 @@ app.get("/api/brukere/:telefon/dommer-info", (c) => {
       startDato: r.start_dato,
       sluttDato: r.slutt_dato,
       parti: r.parti,
+      partiId: r.parti_id,
+      partiType: r.parti_type,
+      partiDato: r.parti_dato,
+      antallHunder: r.antall_hunder || 0,
       dommerRolle: r.dommer_rolle,
       navn: `${r.fornavn} ${r.etternavn}`
     }))

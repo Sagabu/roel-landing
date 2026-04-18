@@ -9449,11 +9449,34 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
     return c.json({ error: "venteliste må være et objekt" }, 400);
   }
 
+  // Bygg set over (regnr, dag) og (regnr, 'VK') som allerede har plass i et parti —
+  // disse skal aldri stå på venteliste samtidig. Uten dette kan gammel/bugget klient-state
+  // sende en duplikat som har oppstått fra en tidligere feilklassifisering.
+  const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+  const startDato = prove?.start_dato || null;
+  const partiRader = db.prepare(`
+    SELECT pd.hund_regnr, p.dato, p.type
+    FROM parti_deltakere pd
+    JOIN partier p ON p.id = pd.parti_id
+    WHERE pd.prove_id = ? AND pd.status != 'trukket'
+  `).all(proveId);
+  const iParti = new Set();
+  for (const r of partiRader) {
+    if (r.type === 'vk') {
+      iParti.add(`${r.hund_regnr}|VK`);
+    } else if (r.dato && startDato) {
+      const dag = Math.round((new Date(r.dato) - new Date(startDato)) / 86400000) + 1;
+      if (dag >= 1) iParti.add(`${r.hund_regnr}|${dag}`);
+    }
+  }
+
   try {
     const insert = db.prepare(`
       INSERT INTO venteliste (prove_id, hund_regnr, hund_navn, rase, klasse, dag, eier_navn, forer_navn, prioritet)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    let skipped = 0;
 
     const saveAll = db.transaction(() => {
       db.prepare("DELETE FROM venteliste WHERE prove_id = ?").run(proveId);
@@ -9465,6 +9488,7 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
         if (Array.isArray(venteliste[dagKey]?.uk)) {
           let prio = 0;
           for (const v of venteliste[dagKey].uk) {
+            if (v.regnr && iParti.has(`${v.regnr}|${d}`)) { skipped++; continue; }
             insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'UK', d, v.eier || '', v.forer || '', prio++);
             total++;
           }
@@ -9472,6 +9496,7 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
         if (Array.isArray(venteliste[dagKey]?.ak)) {
           let prio = 0;
           for (const v of venteliste[dagKey].ak) {
+            if (v.regnr && iParti.has(`${v.regnr}|${d}`)) { skipped++; continue; }
             insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'AK', d, v.eier || '', v.forer || '', prio++);
             total++;
           }
@@ -9481,6 +9506,7 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
       if (Array.isArray(venteliste.vk)) {
         let prio = 0;
         for (const v of venteliste.vk) {
+          if (v.regnr && iParti.has(`${v.regnr}|VK`)) { skipped++; continue; }
           insert.run(proveId, v.regnr || '', v.hundenavn || '', v.rase || '', 'VK', null, v.eier || '', v.forer || '', prio++);
           total++;
         }
@@ -9493,10 +9519,10 @@ app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "venteliste_lagret",
-      `Lagret venteliste med ${total} hunder for prøve ${proveId}`
+      `Lagret venteliste med ${total} hunder for prøve ${proveId}${skipped > 0 ? ` (hoppet over ${skipped} som allerede står i parti)` : ''}`
     );
 
-    return c.json({ success: true, total });
+    return c.json({ success: true, total, skipped });
 
   } catch (err) {
     console.error("Feil ved lagring av venteliste:", err);

@@ -485,14 +485,6 @@
                             <span class="px-2 py-1 bg-sky-200 text-bark-900 rounded text-xs font-mono">Epost</span>
                         </div>
                         <p class="text-xs text-warm-800 mt-2">Klasse: UK, AK eller VK | Støttede formater: Excel (.xlsx, .xls), Numbers, CSV, TXT</p>
-                        <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                            <p class="text-xs text-blue-800 flex items-start gap-2">
-                                <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                <span><strong>Merk:</strong> Første kontakt går ut per e-post med lenke til hjemmesiden. Deltaker må logge inn med navn, e-post og telefonnummer, og deretter registrere sine hunder med Regnr for å bekrefte deltakelse.</span>
-                            </p>
-                        </div>
                     </div>
 
                     <!-- Dagfordeling av partier -->
@@ -683,9 +675,12 @@
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                                 </svg>
-                                Legg til nye (behold eksisterende)
+                                Smart merge (legg til nye + finn trukne)
                             </button>
                         </div>
+                        <p class="text-xs text-bark-500 mt-2">
+                            <strong>Smart merge</strong>: last opp enten en liste med kun nye hunder, eller hele deltakerlista på nytt med nye hunder lagt til — systemet finner selv ut hva som er nytt og legger bare disse på venteliste (per dag). Manuelle endringer i partier røres ikke.
+                        </p>
                     </div>
 
                     <!-- Handlingsknapper for eksisterende data -->
@@ -697,6 +692,9 @@
                             <div class="flex-1">
                                 <p class="font-medium text-amber-800">Det finnes allerede data i systemet</p>
                                 <p class="text-sm text-amber-700 mt-1" id="existingDataInfo">0 hunder fordelt på 0 partier</p>
+                                <p class="text-sm text-amber-700 mt-2">
+                                    For å legge til nye påmeldinger: last opp en ny deltakerliste ovenfor — enten kun med de nye hundene, eller hele lista på nytt. <strong>Smart merge</strong>-knappen dukker opp etter filopplasting og finner selv ut hvilke som er nye.
+                                </p>
                                 <div class="mt-3 flex flex-wrap gap-2">
                                     <button onclick="openAddDogDialog()" class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2770,6 +2768,27 @@
                     </div>
                 </section>
 
+                <!-- Trukket-liste (skjules fra offentlig partiliste-URL) -->
+                <section id="trukketSection" class="hidden space-y-4 w-full">
+                    <div class="bg-white rounded-2xl shadow-md border border-amber-200 overflow-hidden w-full">
+                        <div class="bg-gradient-to-r from-amber-50 to-amber-100 px-6 py-5 border-b border-amber-200 flex items-center justify-between">
+                            <div>
+                                <h2 class="text-xl font-bold font-serif text-amber-900">Trukne påmeldinger</h2>
+                                <p class="text-sm text-amber-700 mt-1" data-trukket-count>0 hunder trukket</p>
+                            </div>
+                        </div>
+                        <div class="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-start gap-3">
+                            <svg class="w-5 h-5 text-amber-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <p class="text-sm text-amber-800">
+                                Trukne påmeldinger vises <strong>kun for prøveledelsen</strong> og er skjult fra den offentlige partiliste-siden. Klikk «Flytt tilbake» for å angre.
+                            </p>
+                        </div>
+                        <div class="px-4 py-3" data-trukket-content></div>
+                    </div>
+                </section>
+
                 <!-- Meldinger - kombinert send og innboks -->
                 <section id="meldinger" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
                     <div class="section-bg-arrangor px-6 py-4 border-b border-bark-100">
@@ -4434,6 +4453,229 @@
             if (proveId) {
                 syncVentelisteToServer(venteliste, proveId);
             }
+        }
+
+        // ========================================
+        // TRUKKET (trukne påmeldinger) — egen liste, skjules fra offentlig visning
+        // ========================================
+        function getTrialTrukketKey() {
+            const trialId = getCurrentTrialId();
+            return trialId ? `trialTrukket_${trialId}` : null;
+        }
+        function getTrialTrukket() {
+            const key = getTrialTrukketKey();
+            if (!key) return { dag1: { uk: [], ak: [] }, dag2: { uk: [], ak: [] }, dag3: { uk: [], ak: [] }, dag4: { uk: [], ak: [] }, vk: [] };
+            const raw = localStorage.getItem(key);
+            const data = raw ? JSON.parse(raw) : {};
+            // Sikre komplett struktur
+            for (let d = 1; d <= 4; d++) {
+                const k = `dag${d}`;
+                if (!data[k]) data[k] = { uk: [], ak: [] };
+                if (!data[k].uk) data[k].uk = [];
+                if (!data[k].ak) data[k].ak = [];
+            }
+            if (!data.vk) data.vk = [];
+            return data;
+        }
+        function setTrialTrukket(trukket) {
+            const key = getTrialTrukketKey();
+            if (!key) return;
+            localStorage.setItem(key, JSON.stringify(trukket));
+        }
+
+        // Flytt hund til trukket-liste (fra parti eller venteliste)
+        function trekkHund(regnr) {
+            if (!regnr) return;
+            const bekreft = confirm('Trekk påmeldingen for denne hunden?\n\nHunden flyttes til trukket-lista og fjernes fra partier/venteliste. Den vises ikke på den offentlige partiliste-siden.\n\nDu kan angre senere ved å flytte hunden tilbake.');
+            if (!bekreft) return;
+            return _trekkHundInternal(regnr, true);
+        }
+        // Brukt av smart-merge: trekker uten å vise bekreftelses-dialog per hund
+        // (admin har allerede bekreftet batch-operasjonen)
+        function trekkHundUtenBekreftelse(regnr) {
+            return _trekkHundInternal(regnr, false);
+        }
+        function _trekkHundInternal(regnr, rerender) {
+            const parties = getTrialParties();
+            const venteliste = getTrialVenteliste();
+            const trukket = getTrialTrukket();
+            let fraKilde = null;  // "parti <navn>", "venteliste dag X UK/AK", "venteliste VK"
+            let dog = null;
+
+            // Søk i partier
+            for (const party of parties) {
+                const idx = party.dogs.findIndex(d => d.regnr === regnr);
+                if (idx >= 0) {
+                    dog = party.dogs[idx];
+                    party.dogs.splice(idx, 1);
+                    if (dog.klasse === 'UK' && party.ukCount > 0) party.ukCount--;
+                    else if (dog.klasse === 'AK' && party.akCount > 0) party.akCount--;
+                    fraKilde = 'parti ' + (party.displayName || party.name);
+                    break;
+                }
+            }
+
+            // Søk i venteliste hvis ikke funnet
+            if (!dog) {
+                for (let d = 1; d <= 4; d++) {
+                    for (const kl of ['uk', 'ak']) {
+                        const list = venteliste[`dag${d}`]?.[kl] || [];
+                        const idx = list.findIndex(x => x.regnr === regnr);
+                        if (idx >= 0) {
+                            dog = list[idx];
+                            list.splice(idx, 1);
+                            fraKilde = 'venteliste dag ' + d + ' ' + kl.toUpperCase();
+                            break;
+                        }
+                    }
+                    if (dog) break;
+                }
+            }
+            if (!dog) {
+                const vkList = venteliste.vk || [];
+                const idx = vkList.findIndex(x => x.regnr === regnr);
+                if (idx >= 0) {
+                    dog = vkList[idx];
+                    vkList.splice(idx, 1);
+                    fraKilde = 'venteliste VK';
+                }
+            }
+
+            if (!dog) {
+                alert('Fant ikke hunden i aktive partilister eller venteliste.');
+                return;
+            }
+
+            // Legg til trukket — bevar dag-info
+            const isVK = dog.klasse === 'VK';
+            const trukketEntry = Object.assign({}, dog, {
+                trukket_dato: new Date().toISOString(),
+                trukket_fra: fraKilde
+            });
+            if (isVK) {
+                trukket.vk.push(trukketEntry);
+            } else {
+                const dag = dog.dag || 1;
+                const dagKey = `dag${dag}`;
+                const klKey = (dog.klasse || 'AK').toLowerCase();
+                if (!trukket[dagKey]) trukket[dagKey] = { uk: [], ak: [] };
+                trukket[dagKey][klKey].push(trukketEntry);
+            }
+
+            setTrialParties(parties);
+            setTrialVenteliste(venteliste);
+            setTrialTrukket(trukket);
+            if (rerender !== false) {
+                renderAllParties(parties);
+                renderVenteliste(venteliste);
+                renderTrukketListe(trukket);
+                updateStatsFromStorage();
+            }
+        }
+
+        // Flytt hund tilbake fra trukket til venteliste (angre trekking)
+        function angreTrekking(regnr) {
+            if (!regnr) return;
+            const trukket = getTrialTrukket();
+            const venteliste = getTrialVenteliste();
+            let dog = null;
+
+            for (let d = 1; d <= 4; d++) {
+                for (const kl of ['uk', 'ak']) {
+                    const list = trukket[`dag${d}`]?.[kl] || [];
+                    const idx = list.findIndex(x => x.regnr === regnr);
+                    if (idx >= 0) {
+                        dog = list[idx];
+                        list.splice(idx, 1);
+                        // Legg tilbake på venteliste for samme dag+klasse
+                        if (!venteliste[`dag${d}`]) venteliste[`dag${d}`] = { uk: [], ak: [] };
+                        if (!venteliste[`dag${d}`][kl]) venteliste[`dag${d}`][kl] = [];
+                        delete dog.trukket_dato; delete dog.trukket_fra;
+                        venteliste[`dag${d}`][kl].push(dog);
+                        break;
+                    }
+                }
+                if (dog) break;
+            }
+            if (!dog) {
+                const vkList = trukket.vk || [];
+                const idx = vkList.findIndex(x => x.regnr === regnr);
+                if (idx >= 0) {
+                    dog = vkList[idx];
+                    vkList.splice(idx, 1);
+                    if (!venteliste.vk) venteliste.vk = [];
+                    delete dog.trukket_dato; delete dog.trukket_fra;
+                    venteliste.vk.push(dog);
+                }
+            }
+
+            if (!dog) {
+                alert('Fant ikke hunden i trukket-lista.');
+                return;
+            }
+
+            setTrialTrukket(trukket);
+            setTrialVenteliste(venteliste);
+            renderVenteliste(venteliste);
+            renderTrukketListe(trukket);
+            updateStatsFromStorage();
+            alert('Hunden er flyttet tilbake til ventelisten.');
+        }
+
+        // Render trukket-liste (vises kun for admin, aldri på offentlig partiliste)
+        function renderTrukketListe(trukket) {
+            const section = document.getElementById('trukketSection');
+            if (!section) return;
+            if (!trukket) trukket = getTrialTrukket();
+
+            // Samle alle trukne hunder i grupper
+            const grupper = [];
+            for (let d = 1; d <= 4; d++) {
+                ['uk', 'ak'].forEach(kl => {
+                    const list = trukket[`dag${d}`]?.[kl] || [];
+                    if (list.length > 0) {
+                        grupper.push({ dag: d, klasse: kl.toUpperCase(), hunder: list });
+                    }
+                });
+            }
+            if ((trukket.vk || []).length > 0) {
+                grupper.push({ dag: null, klasse: 'VK', hunder: trukket.vk });
+            }
+
+            const total = grupper.reduce((s, g) => s + g.hunder.length, 0);
+            if (total === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+            // Vis kun når Parti- og ventelister-fanen er aktiv (lik logikk som venteliste)
+            const partilisterSection = document.getElementById('partilister');
+            const isPartilisterActive = partilisterSection && !partilisterSection.classList.contains('hidden');
+            if (isPartilisterActive) {
+                section.classList.remove('hidden');
+            } else {
+                section.classList.add('hidden');
+            }
+
+            const rows = grupper.map(g => {
+                const tittel = g.dag ? 'Dag ' + g.dag + ' — ' + g.klasse : 'VK';
+                const hunder = g.hunder.map(dog => {
+                    const regnrEsc = (dog.regnr || '').replace(/'/g, "\\'");
+                    const fraKilde = dog.trukket_fra ? ' · trukket fra ' + dog.trukket_fra : '';
+                    return '<div class="flex items-center justify-between py-2 px-3 border-b border-bark-100 last:border-b-0 text-sm">' +
+                        '<div class="flex-1 min-w-0">' +
+                            '<div class="font-medium text-bark-900 truncate">' + (dog.hundenavn || '') + '</div>' +
+                            '<div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + ' · ' + (dog.forer || dog.eier || '–') + fraKilde + '</div>' +
+                        '</div>' +
+                        '<button onclick="angreTrekking(\'' + regnrEsc + '\')" class="ml-2 px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm whitespace-nowrap">Flytt tilbake</button>' +
+                    '</div>';
+                }).join('');
+                return '<div class="mb-3"><div class="px-3 py-2 bg-bark-100 font-semibold text-sm text-bark-700">' + tittel + ' (' + g.hunder.length + ')</div>' +
+                    '<div>' + hunder + '</div></div>';
+            }).join('');
+
+            section.querySelector('[data-trukket-content]').innerHTML = rows;
+            const teller = section.querySelector('[data-trukket-count]');
+            if (teller) teller.textContent = total + ' hunder trukket';
         }
 
         // Synkroniser venteliste til server
@@ -6650,8 +6892,9 @@
                 '<div class="px-3 py-3 text-sm text-bark-700 hidden lg:block truncate">' + (dog.eier || '–') + '</div>' +
                 '<div class="px-3 py-3 text-sm text-bark-700 truncate">' + (dog.forer || '–') + '</div>' +
                 '<div class="px-3 py-3 text-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
-                '<div class="px-3 py-3 text-center">' +
+                '<div class="px-3 py-3 text-center flex items-center justify-center gap-1">' +
                     '<button onclick="openMoveDialog(\'' + regnrEsc + '\', \'' + partyNameEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt</button>' +
+                    '<button onclick="trekkHund(\'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-700 border border-red-300 text-xs font-medium transition shadow-sm" title="Trekk påmeldingen">Trekk</button>' +
                 '</div>' +
             '</div>';
         }
@@ -6918,6 +7161,8 @@
                     if (harVenteliste) {
                         renderVenteliste(savedVenteliste);
                     }
+                    // Render trukket-liste uavhengig av venteliste (kan ha innhold selv om venteliste er tom)
+                    if (typeof renderTrukketListe === 'function') renderTrukketListe();
 
                     // Oppdater statistikk-kortene
                     updateStatsFromStorage();
@@ -10329,8 +10574,57 @@
             const newDogs = currentParticipants.filter(p => !existingKeys.has(keyFor(p.regnr, p.klasse, p.dag)));
             const duplicates = currentParticipants.length - newDogs.length;
 
-            if (newDogs.length === 0) {
-                alert('Alle ' + currentParticipants.length + ' rader i filen er allerede registrert i systemet.');
+            // Smart merge: finn hunder som finnes i systemet men MANGLER i den nye fila —
+            // sannsynligvis trukket av NKK.
+            const fileKeys = new Set(currentParticipants.map(p => keyFor(p.regnr, p.klasse, p.dag)));
+            const muligensTrukket = [];
+            existingParties.forEach(party => {
+                party.dogs.forEach(dog => {
+                    if (!dog.regnr) return;
+                    const key = party.type === 'vk' ? dog.regnr + '|VK' : dog.regnr + '|' + (party.day || 1);
+                    if (!fileKeys.has(key)) {
+                        muligensTrukket.push({
+                            regnr: dog.regnr,
+                            hundenavn: dog.hundenavn,
+                            klasse: dog.klasse,
+                            dag: party.type === 'vk' ? null : (party.day || 1),
+                            kilde: 'parti ' + (party.displayName || party.name)
+                        });
+                    }
+                });
+            });
+            [1, 2, 3, 4].forEach(d => {
+                const dagVL = existingVenteliste['dag' + d] || {};
+                ['uk', 'ak'].forEach(kl => {
+                    (dagVL[kl] || []).forEach(dog => {
+                        if (!dog.regnr) return;
+                        if (!fileKeys.has(dog.regnr + '|' + d)) {
+                            muligensTrukket.push({
+                                regnr: dog.regnr,
+                                hundenavn: dog.hundenavn,
+                                klasse: kl.toUpperCase(),
+                                dag: d,
+                                kilde: 'venteliste dag ' + d + ' ' + kl.toUpperCase()
+                            });
+                        }
+                    });
+                });
+            });
+            (existingVenteliste.vk || []).forEach(dog => {
+                if (!dog.regnr) return;
+                if (!fileKeys.has(dog.regnr + '|VK')) {
+                    muligensTrukket.push({
+                        regnr: dog.regnr,
+                        hundenavn: dog.hundenavn,
+                        klasse: 'VK',
+                        dag: null,
+                        kilde: 'venteliste VK'
+                    });
+                }
+            });
+
+            if (newDogs.length === 0 && muligensTrukket.length === 0) {
+                alert('Alle ' + currentParticipants.length + ' rader i filen er allerede registrert i systemet, og ingen eksisterende hunder mangler i fila.');
                 return;
             }
 
@@ -10346,13 +10640,21 @@
                 const dagSuffix = d.klasse === 'VK' ? '' : (d.dag ? ' dag ' + d.dag : '');
                 return '• ' + d.hundenavn + ' (' + d.klasse + dagSuffix + ')';
             };
+            const formatMissing = d => {
+                const dagSuffix = d.klasse === 'VK' ? '' : (d.dag ? ' dag ' + d.dag : '');
+                return '• ' + d.hundenavn + ' (' + d.klasse + dagSuffix + ') — ' + d.kilde;
+            };
 
             // Oppsummering som skiller tydelig
             const lines = [];
-            lines.push('Fant ' + newDogs.length + ' nye påmeldinger i filen:');
-            lines.push('• ' + helNye.length + ' helt nye hunder');
-            lines.push('• ' + nyDag.length + ' eksisterende hunder på ny dag');
-            if (duplicates > 0) lines.push('• ' + duplicates + ' rader finnes allerede (ignoreres)');
+            lines.push('Smart merge-oppsummering:');
+            lines.push('');
+            lines.push('Nye påmeldinger i fila: ' + newDogs.length);
+            lines.push('  • ' + helNye.length + ' helt nye hunder');
+            lines.push('  • ' + nyDag.length + ' eksisterende hunder på ny dag');
+            if (duplicates > 0) lines.push('  • ' + duplicates + ' rader finnes allerede (ignoreres)');
+            lines.push('');
+            lines.push('Mangler i fila (muligens trukket): ' + muligensTrukket.length);
             if (helNye.length > 0) {
                 lines.push('');
                 lines.push('Helt nye hunder:');
@@ -10365,8 +10667,17 @@
                 nyDag.slice(0, 8).forEach(d => lines.push(formatDog(d)));
                 if (nyDag.length > 8) lines.push('... og ' + (nyDag.length - 8) + ' til');
             }
+            if (muligensTrukket.length > 0) {
+                lines.push('');
+                lines.push('Muligens trukket (finnes i systemet, mangler i fila):');
+                muligensTrukket.slice(0, 8).forEach(d => lines.push(formatMissing(d)));
+                if (muligensTrukket.length > 8) lines.push('... og ' + (muligensTrukket.length - 8) + ' til');
+            }
             lines.push('');
-            lines.push('Alle legges på venteliste for den dagen de gjelder.');
+            lines.push('Trykk OK for å legge nye på venteliste. Partier og manuelle endringer røres ikke.');
+            if (muligensTrukket.length > 0) {
+                lines.push('Trukne hunder må du bekrefte separat etter merge (egen dialog).');
+            }
 
             if (!confirm(lines.join('\n'))) return;
 
@@ -10403,6 +10714,33 @@
                 '   • ' + helNye.length + ' helt nye hunder\n' +
                 '   • ' + nyDag.length + ' eksisterende hunder på ny dag\n\n' +
                 'Du kan nå flytte dem til partier manuelt.');
+
+            // Hvis noen hunder mangler i fila, tilby å markere dem som trukket
+            if (muligensTrukket.length > 0) {
+                const confirmLines = [
+                    muligensTrukket.length + ' hund(er) finnes i systemet men mangler i den nye fila.',
+                    'Disse er trolig trukket av NKK.',
+                    ''
+                ];
+                muligensTrukket.slice(0, 10).forEach(d => {
+                    const dagSuffix = d.klasse === 'VK' ? '' : (d.dag ? ' dag ' + d.dag : '');
+                    confirmLines.push('• ' + d.hundenavn + ' (' + d.klasse + dagSuffix + ')');
+                });
+                if (muligensTrukket.length > 10) confirmLines.push('... og ' + (muligensTrukket.length - 10) + ' til');
+                confirmLines.push('');
+                confirmLines.push('Marker alle som trukket nå?');
+                confirmLines.push('(Du kan angre per hund i trukket-lista etterpå.)');
+
+                if (confirm(confirmLines.join('\n'))) {
+                    muligensTrukket.forEach(m => trekkHundUtenBekreftelse(m.regnr));
+                    // Re-render etter batch-operasjonen
+                    renderAllParties(getTrialParties());
+                    renderVenteliste(getTrialVenteliste());
+                    renderTrukketListe(getTrialTrukket());
+                    updateStatsFromStorage();
+                    alert('✅ ' + muligensTrukket.length + ' hund(er) er markert som trukket. Se «Trukne påmeldinger» i Parti- og ventelister-fanen.');
+                }
+            }
 
             // Nullstill opplasting
             document.getElementById('dropZone').classList.remove('hidden');
@@ -11137,6 +11475,8 @@
 
             if (filtrertTotal === 0) {
                 ventelisteSection.classList.add('hidden');
+                // Trukket-liste kan fortsatt ha innhold selv om venteliste er tom
+                if (typeof renderTrukketListe === 'function') renderTrukketListe();
                 return;
             }
 
@@ -11183,8 +11523,9 @@
                             '<button ' + (isFirst ? 'disabled' : '') + ' onclick="flyttVenteliste(\'' + dagKey + '\',\'' + klasseKey + '\',' + i + ',-1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-bark-500 ' + (isFirst ? 'opacity-30 cursor-not-allowed' : 'hover:bg-bark-200 hover:text-bark-800') + ' transition" title="Flytt opp">▲</button>' +
                             '<button ' + (isLast ? 'disabled' : '') + ' onclick="flyttVenteliste(\'' + dagKey + '\',\'' + klasseKey + '\',' + i + ',1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-bark-500 ' + (isLast ? 'opacity-30 cursor-not-allowed' : 'hover:bg-bark-200 hover:text-bark-800') + ' transition" title="Flytt ned">▼</button>' +
                         '</div>' +
-                        '<div class="px-2 py-3 text-center">' +
+                        '<div class="px-2 py-3 text-center flex items-center justify-center gap-1">' +
                             '<button onclick="openMoveDialog(\'' + regnrEsc + '\', \'venteliste\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt</button>' +
+                            '<button onclick="trekkHund(\'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-700 border border-red-300 text-xs font-medium transition shadow-sm" title="Trekk påmeldingen">Trekk</button>' +
                         '</div>' +
                     '</div>';
                 }).join('');
@@ -11205,6 +11546,9 @@
                     '<div>' + rader + '</div>' +
                 '</div>';
             }).join('');
+
+            // Render trukket-liste parallelt (samme synlighetslogikk: partilister-fanen aktiv)
+            if (typeof renderTrukketListe === 'function') renderTrukketListe();
         }
 
         // Flytt hund opp/ned i venteliste

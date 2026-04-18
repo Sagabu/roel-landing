@@ -9210,6 +9210,14 @@ app.get("/api/prover/:id/partilister", (c) => {
     ORDER BY pd.startnummer
   `).all(proveId);
 
+  const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+  const startDato = prove?.start_dato || (partier.map(p => p.dato).filter(Boolean).sort()[0] || null);
+  const computeDay = (dato) => {
+    if (!dato || !startDato) return null;
+    const diff = Math.round((new Date(dato) - new Date(startDato)) / 86400000);
+    return diff >= 0 ? diff + 1 : null;
+  };
+
   // Bygg opp struktur som matcher localStorage-formatet
   // GDPR: Telefonnumre fjernes fra offentlig API
   const result = partier.map(parti => ({
@@ -9218,6 +9226,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     displayName: parti.display_navn || parti.navn,
     type: parti.type,
     date: parti.dato,
+    day: computeDay(parti.dato),
     klasse: parti.klasse,
     dogs: deltakere
       .filter(d => d.parti_id === parti.id)
@@ -9258,6 +9267,14 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
     ORDER BY pd.startnummer
   `).all(proveId);
 
+  const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+  const startDato = prove?.start_dato || (partier.map(p => p.dato).filter(Boolean).sort()[0] || null);
+  const computeDay = (dato) => {
+    if (!dato || !startDato) return null;
+    const diff = Math.round((new Date(dato) - new Date(startDato)) / 86400000);
+    return diff >= 0 ? diff + 1 : null;
+  };
+
   // Full versjon med telefonnumre for admin
   const result = partier.map(parti => ({
     id: parti.id,
@@ -9265,6 +9282,7 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
     displayName: parti.display_navn || parti.navn,
     type: parti.type,
     date: parti.dato,
+    day: computeDay(parti.dato),
     klasse: parti.klasse,
     dogs: deltakere
       .filter(d => d.parti_id === parti.id)

@@ -4328,11 +4328,33 @@
             return trialId ? `trialVenteliste_${trialId}` : null;
         }
 
+        // Utled p.day fra p.date for partier som mangler det. Bruker trialDateFrom som
+        // start, ellers tidligste parti-dato. Muterer og returnerer samme array.
+        function ensurePartyDays(parties) {
+            if (!Array.isArray(parties) || parties.length === 0) return parties;
+            const startDatoEl = document.getElementById('trialDateFrom');
+            let startStr = startDatoEl?.value || null;
+            if (!startStr) {
+                const dates = parties.map(p => p.date).filter(Boolean).sort();
+                if (dates.length) startStr = dates[0];
+            }
+            if (!startStr) return parties;
+            const start = new Date(startStr);
+            parties.forEach(p => {
+                if (!p.day && p.date) {
+                    const diff = Math.round((new Date(p.date) - start) / 86400000);
+                    if (diff >= 0) p.day = diff + 1;
+                }
+            });
+            return parties;
+        }
+
         // Hjelpefunksjoner for å lese/skrive med riktig nøkkel
         function getTrialParties() {
             const key = getTrialPartiesKey();
             if (!key) return []; // Ingen trialId = ingen partier
-            return JSON.parse(localStorage.getItem(key) || '[]');
+            const parties = JSON.parse(localStorage.getItem(key) || '[]');
+            return ensurePartyDays(parties);
         }
 
         function setTrialParties(parties) {
@@ -4407,6 +4429,7 @@
                 if (resp.ok) {
                     const parties = await resp.json();
                     if (Array.isArray(parties) && parties.length > 0) {
+                        ensurePartyDays(parties);
                         // Lagre til localStorage for offline-bruk (kun hvis vi har trialId)
                         const cacheKey = getTrialPartiesKey();
                         if (cacheKey) {

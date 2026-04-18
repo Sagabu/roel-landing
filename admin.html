@@ -7069,19 +7069,22 @@
             var partyNameEsc = partyName.replace(/'/g, "\\'");
             var bgClass = (i % 2 === 0) ? 'bg-white' : 'bg-bark-50';
 
-            // Opp/ned kun tillatt innenfor samme klasse (UK skal alltid stå over AK)
+            // Opp/ned kun tillatt innenfor samme klasse (UK skal alltid stå over AK).
+            // Hvis dommer har startet bedømming på partiet, lås rekkefølgen helt.
             var dogKl = (dog.klasse || '').toUpperCase();
             var prev = i > 0 ? party.dogs[i - 1] : null;
             var next = i < party.dogs.length - 1 ? party.dogs[i + 1] : null;
-            var canUp = prev && (prev.klasse || '').toUpperCase() === dogKl;
-            var canDown = next && (next.klasse || '').toUpperCase() === dogKl;
+            var reorderLast = !!party.bedomming_startet;
+            var canUp = !reorderLast && prev && (prev.klasse || '').toUpperCase() === dogKl;
+            var canDown = !reorderLast && next && (next.klasse || '').toUpperCase() === dogKl;
+            var lastTitle = reorderLast ? 'Låst — dommer har startet bedømming' : 'Kan ikke flyttes forbi annen klasse';
 
             var upBtn = canUp
                 ? '<button onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'up\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm" title="Flytt opp">↑</button>'
-                : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="Kan ikke flyttes forbi annen klasse">↑</span>';
+                : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="' + lastTitle + '">↑</span>';
             var downBtn = canDown
                 ? '<button onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'down\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm" title="Flytt ned">↓</button>'
-                : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="Kan ikke flyttes forbi annen klasse">↓</span>';
+                : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="' + lastTitle + '">↓</span>';
 
             return '<div class="grid grid-cols-5 md:grid-cols-6 lg:grid-cols-7 gap-0 ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
                 '<div class="px-3 py-3 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
@@ -7098,12 +7101,16 @@
             '</div>';
         }
 
-        // Bytt to naboer i samme parti. Bare tillatt når nabo har samme klasse,
-        // så UK alltid står over AK. Lagrer og re-rendrer.
+        // Bytt to naboer i samme parti. Bare tillatt når nabo har samme klasse
+        // (UK alltid over AK) OG partiet ikke er låst av pågående bedømming.
         function moveDogInParty(partyName, regnr, direction) {
             const parties = getTrialParties();
             const party = parties.find(p => p.name === partyName);
             if (!party || !Array.isArray(party.dogs)) return;
+            if (party.bedomming_startet) {
+                alert('Kan ikke endre rekkefølgen: dommer har startet bedømming på "' + partyName + '".');
+                return;
+            }
             const idx = party.dogs.findIndex(d => d.regnr === regnr);
             if (idx === -1) return;
             const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
@@ -7139,6 +7146,7 @@
 
             var ukBadge = party.ukCount ? '<span class="px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-300 rounded-md text-xs font-semibold">UK: ' + party.ukCount + '</span>' : '';
             var akBadge = party.akCount ? '<span class="px-2.5 py-1 bg-green-100 text-green-800 border border-green-300 rounded-md text-xs font-semibold">AK: ' + party.akCount + '</span>' : '';
+            var lockBadge = party.bedomming_startet ? '<span class="px-2.5 py-1 bg-red-100 text-red-800 border border-red-300 rounded-md text-xs font-semibold" title="Dommer har startet bedømming — rekkefølgen er låst">🔒 Bedømming pågår</span>' : '';
             var dogRows = party.dogs.map(function(dog, i) { return renderDogRowGlobal(dog, i, party); }).join('');
 
             var baseTitle = party.displayName || party.name;
@@ -7155,7 +7163,7 @@
                         '</div>' +
                         '<div class="flex items-center gap-2 flex-wrap">' +
                             '<span class="px-3 py-1 bg-white text-bark-700 rounded-full text-sm font-semibold border border-bark-200 shadow-sm">' + party.dogs.length + ' hunder</span>' +
-                            ukBadge + akBadge +
+                            ukBadge + akBadge + lockBadge +
                         '</div>' +
                     '</div>' +
                     // Terreng + Dommer kontroller

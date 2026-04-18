@@ -9349,6 +9349,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     date: parti.dato,
     day: computeDay(parti.dato),
     klasse: parti.klasse,
+    bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
       .filter(d => d.parti_id === parti.id)
       .map(d => ({
@@ -9405,6 +9406,7 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
     date: parti.dato,
     day: computeDay(parti.dato),
     klasse: parti.klasse,
+    bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
       .filter(d => d.parti_id === parti.id)
       .map(d => ({
@@ -9425,6 +9427,16 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
 
   return c.json(result);
 });
+
+// Har bedømming startet på et parti? Returnerer true hvis det finnes en kritikk
+// (uansett status, inkludert draft) eller en vk_bedomming-rad for partiet.
+// Brukes til å låse rekkefølge-endringer i partilister når dommer har begynt.
+function erBedommingStartet(proveId, partiNavn) {
+  const k = db.prepare("SELECT 1 FROM kritikker WHERE prove_id = ? AND parti = ? LIMIT 1").get(proveId, partiNavn);
+  if (k) return true;
+  const v = db.prepare("SELECT 1 FROM vk_bedomming WHERE prove_id = ? AND parti = ? LIMIT 1").get(proveId, partiNavn);
+  return !!v;
+}
 
 // Bro fra Bok B (parti_deltakere) til Bok A (pameldinger).
 // Motivasjon: NKK er kilden til påmeldinger. Admin laster opp NKK-fila og lagrer
@@ -9563,6 +9575,42 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
   const prove = db.prepare("SELECT id FROM prover WHERE id = ?").get(proveId);
   if (!prove) {
     return c.json({ error: "Prøve ikke funnet" }, 404);
+  }
+
+  // Lås: hvis bedømming har startet på et parti, avvis rekkefølge-endringer.
+  // Tillater likevel at hunder legges til eller fjernes — bare at relativ
+  // rekkefølge av felles hunder må være uendret. På den måten kan admin trekke
+  // en hund eller legge til en etteranmeldt, men ikke omrokkere midt i bedømming.
+  const eksisterende = db.prepare(`
+    SELECT pt.navn, pd.hund_regnr, pd.startnummer
+    FROM partier pt
+    LEFT JOIN parti_deltakere pd ON pd.parti_id = pt.id
+    WHERE pt.prove_id = ?
+    ORDER BY pt.navn, pd.startnummer
+  `).all(proveId);
+  const gammelPerParti = new Map();
+  for (const r of eksisterende) {
+    if (!gammelPerParti.has(r.navn)) gammelPerParti.set(r.navn, []);
+    if (r.hund_regnr) gammelPerParti.get(r.navn).push(r.hund_regnr);
+  }
+
+  for (const parti of partier) {
+    if (!erBedommingStartet(proveId, parti.navn)) continue;
+    const gammel = gammelPerParti.get(parti.navn) || [];
+    const ny = (parti.dogs || []).map(d => d.regnr).filter(Boolean);
+    const nySet = new Set(ny);
+    const gammelSet = new Set(gammel);
+    // Relativ orden av felles hunder må være lik
+    const gammelCommon = gammel.filter(r => nySet.has(r));
+    const nyCommon = ny.filter(r => gammelSet.has(r));
+    const samme = gammelCommon.length === nyCommon.length &&
+      gammelCommon.every((v, i) => v === nyCommon[i]);
+    if (!samme) {
+      return c.json({
+        error: `"${parti.navn}" er låst fordi dommer har startet bedømming. Du kan legge til eller trekke hunder, men ikke endre rekkefølgen mellom hundene som allerede er i partiet.`,
+        parti_last: parti.navn
+      }, 409);
+    }
   }
 
   try {

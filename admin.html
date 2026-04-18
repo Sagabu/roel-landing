@@ -6045,12 +6045,19 @@
             const container = document.getElementById('dommere-' + partiNavn.replace(/\s+/g, '-'));
             if (!container) return;
             const dommere = partyDommere[partiNavn] || [];
-            container.innerHTML = dommere.map(d => `
-                <span class="inline-flex items-center gap-1 px-2 py-1 bg-warm-100 text-warm-800 rounded-lg text-sm">
+            const partiNavnEsc = partiNavn.replace(/'/g, "\\'");
+            container.innerHTML = dommere.map(d => {
+                // Visuell forskjell på FKF-godkjent (warm) vs manuelt lagt til (amber)
+                const manuell = d.begrunnelse_type && d.begrunnelse;
+                const bg = manuell ? 'bg-amber-100 text-amber-900' : 'bg-warm-100 text-warm-800';
+                const title = manuell ? `${d.begrunnelse_type}: ${d.begrunnelse}` : '';
+                const badge = manuell ? `<span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 bg-amber-200 rounded" title="${title.replace(/"/g, '&quot;')}">${d.begrunnelse_type}</span>` : '';
+                return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm ${bg}">
                     <span>${d.navn}</span>
-                    <button onclick="removeDommerFromParty('${partiNavn}', '${d.telefon}')" class="text-warm-800 hover:text-red-600 ml-1">&times;</button>
-                </span>
-            `).join('');
+                    ${badge}
+                    <button onclick="removeDommerFromParty('${partiNavnEsc}', '${d.telefon}')" class="hover:text-red-600 ml-1">&times;</button>
+                </span>`;
+            }).join('');
         }
 
         // Lagre dommer-tildelinger (prøve-spesifikk) - synkroniserer til server
@@ -6091,12 +6098,22 @@
                         body: JSON.stringify({
                             dommere: dommere.map(d => ({
                                 telefon: d.telefon,
-                                rolle: d.rolle || null
+                                rolle: d.rolle || null,
+                                begrunnelse_type: d.begrunnelse_type || null,
+                                begrunnelse: d.begrunnelse || null
                             }))
                         })
                     });
                     if (!resp.ok) {
-                        console.warn(`⚠️ Kunne ikke synkronisere dommere for ${partiNavn}`);
+                        const errText = await resp.text();
+                        console.warn(`⚠️ Kunne ikke synkronisere dommere for ${partiNavn}:`, errText);
+                        // Vis feil til bruker hvis det er en 400 med begrunnelse-krav
+                        try {
+                            const err = JSON.parse(errText);
+                            if (err.krever_begrunnelse) {
+                                alert('Kunne ikke lagre dommer for ' + partiNavn + ': ' + err.error);
+                            }
+                        } catch (e) {}
                     }
                 }
                 console.log('✅ Dommertildelinger synkronisert til server');
@@ -6124,7 +6141,9 @@
                     result[t.parti].push({
                         telefon: t.dommer_telefon,
                         navn: `${t.fornavn} ${t.etternavn}`,
-                        rolle: t.dommer_rolle
+                        rolle: t.dommer_rolle,
+                        begrunnelse_type: t.begrunnelse_type || null,
+                        begrunnelse: t.begrunnelse || null
                     });
                 }
                 return result;
@@ -6173,19 +6192,135 @@
             }
 
             const results = searchFkfDommere(query);
+            const partiNavnEsc = partiNavn.replace(/'/g, "\\'");
+            const manualBtn = `
+                <button type="button"
+                    onclick="openManualDommerDialog('${partiNavnEsc}')"
+                    class="w-full text-left px-3 py-2 border-t border-bark-200 bg-amber-50 hover:bg-amber-100">
+                    <div class="text-sm font-medium text-amber-900">+ Legg til manuelt</div>
+                    <div class="text-xs text-amber-700">dommerelev, forsinket FKF-oppdatering o.l.</div>
+                </button>`;
+
             if (results.length === 0) {
-                container.innerHTML = '<div class="px-3 py-2 text-sm text-bark-500">Ingen treff</div>';
+                container.innerHTML = '<div class="px-3 py-2 text-sm text-bark-500">Ingen treff i FKF-listen</div>' + manualBtn;
             } else {
                 container.innerHTML = results.map(d => `
                     <button type="button"
-                        onclick="selectDommer('${partiNavn}', ${JSON.stringify(d).replace(/"/g, '&quot;')})"
-                        class="w-full text-left px-3 py-2 hover:bg-warm-50 border-b border-bark-100 last:border-0">
+                        onclick="selectDommer('${partiNavnEsc}', ${JSON.stringify(d).replace(/"/g, '&quot;')})"
+                        class="w-full text-left px-3 py-2 hover:bg-warm-50 border-b border-bark-100">
                         <div class="text-sm font-medium text-bark-800">${d.fornavn} ${d.etternavn}</div>
                         <div class="text-xs text-bark-500">${d.sted} • ${d.telefon1 || ''}</div>
                     </button>
-                `).join('');
+                `).join('') + manualBtn;
             }
             container.classList.remove('hidden');
+        }
+
+        // Dialog for å legge til dommer som ikke står på FKF-lista (dommerelev,
+        // forsinket FKF-oppdatering osv.). Krever begrunnelse som lagres i DB.
+        function openManualDommerDialog(partiNavn) {
+            document.querySelectorAll('[id^="dommer-results-"]').forEach(el => el.classList.add('hidden'));
+            document.getElementById('manualDommerDialog')?.remove();
+
+            const partiNavnEsc = partiNavn.replace(/'/g, "\\'");
+            const dialogHtml = `
+                <div id="manualDommerDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+                        <h3 class="text-lg font-bold text-bark-900 mb-2">Legg til dommer manuelt</h3>
+                        <div class="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-lg text-sm mb-4">
+                            Denne personen er ikke funnet i systemets FKF-liste over godkjente dommere.
+                            Det kan skyldes at listen ikke er oppdatert ennå, eller at personen er
+                            dommerelev. Legg ved begrunnelse for sporbarhet.
+                        </div>
+                        <div class="space-y-3">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-bark-700 mb-1">Fornavn *</label>
+                                    <input type="text" id="manDommerFornavn" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-bark-700 mb-1">Etternavn *</label>
+                                    <input type="text" id="manDommerEtternavn" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-bark-700 mb-1">Telefon *</label>
+                                <input type="tel" id="manDommerTelefon" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none" placeholder="+4712345678">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-bark-700 mb-1">Rolle *</label>
+                                <select id="manDommerType" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none bg-white">
+                                    <option value="">Velg...</option>
+                                    <option value="dommer">Dommer (forsinket FKF-oppdatering)</option>
+                                    <option value="dommerelev">Dommerelev</option>
+                                    <option value="annet">Annet</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-bark-700 mb-1">Begrunnelse *</label>
+                                <textarea id="manDommerBegrunnelse" rows="3" class="w-full px-3 py-2 rounded-lg border border-bark-200 focus:border-warm-500 outline-none" placeholder="F.eks. 'Nylig godkjent av FKF 2026-04-15' eller 'Dommerelev under veiledning av Ola Nordmann'"></textarea>
+                            </div>
+                        </div>
+                        <div class="mt-6 flex gap-3 justify-end">
+                            <button onclick="closeManualDommerDialog()" class="px-4 py-2 text-bark-600 hover:bg-bark-100 rounded-xl">Avbryt</button>
+                            <button onclick="confirmManualDommer('${partiNavnEsc}')" class="px-4 py-2 bg-warm-500 hover:bg-warm-600 text-white rounded-xl">Legg til</button>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        function closeManualDommerDialog() {
+            document.getElementById('manualDommerDialog')?.remove();
+        }
+
+        async function confirmManualDommer(partiNavn) {
+            const fornavn = document.getElementById('manDommerFornavn').value.trim();
+            const etternavn = document.getElementById('manDommerEtternavn').value.trim();
+            const telefon = document.getElementById('manDommerTelefon').value.trim();
+            const begrunnelse_type = document.getElementById('manDommerType').value;
+            const begrunnelse = document.getElementById('manDommerBegrunnelse').value.trim();
+
+            if (!fornavn || !etternavn || !telefon || !begrunnelse_type || !begrunnelse) {
+                alert('Alle felt er påkrevd.');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/dommere/opprett-manuelt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? 'Bearer ' + token : ''
+                    },
+                    body: JSON.stringify({ fornavn, etternavn, telefon })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    alert('Kunne ikke opprette: ' + (err.error || resp.status));
+                    return;
+                }
+                const result = await resp.json();
+                const tlf = result.telefon;
+
+                if (!partyDommere[partiNavn]) partyDommere[partiNavn] = [];
+                if (!partyDommere[partiNavn].some(d => d.telefon === tlf)) {
+                    partyDommere[partiNavn].push({
+                        telefon: tlf,
+                        navn: fornavn + ' ' + etternavn,
+                        sted: '',
+                        begrunnelse_type,
+                        begrunnelse
+                    });
+                    renderPartyDommere(partiNavn);
+                    savePartyDommere();
+                }
+                closeManualDommerDialog();
+                alert('✅ ' + fornavn + ' ' + etternavn + ' lagt til som dommer på ' + partiNavn + '.');
+            } catch (e) {
+                alert('Feil: ' + e.message);
+            }
         }
 
         // Velg dommer fra søkeresultat

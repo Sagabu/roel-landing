@@ -1087,6 +1087,10 @@ const migrations = [
   // Sporing av dommere med brukerprofil
   "ALTER TABLE fkf_godkjente_dommere ADD COLUMN linked_bruker_telefon TEXT DEFAULT NULL",
   "ALTER TABLE fkf_godkjente_dommere ADD COLUMN linked_at TEXT DEFAULT NULL",
+  // Begrunnelse ved manuell tildeling av dommer som ikke står på FKF-lista
+  // (f.eks. dommerelev eller forsinket oppdatering av listen)
+  "ALTER TABLE dommer_tildelinger ADD COLUMN begrunnelse_type TEXT DEFAULT NULL",
+  "ALTER TABLE dommer_tildelinger ADD COLUMN begrunnelse TEXT DEFAULT NULL",
   // SMS-samtykke med tidspunkt
   "ALTER TABLE brukere ADD COLUMN sms_samtykke INTEGER DEFAULT 0",
   "ALTER TABLE brukere ADD COLUMN sms_samtykke_tidspunkt TEXT DEFAULT NULL",
@@ -6609,6 +6613,7 @@ app.get("/api/prover/:id/dommer-tildelinger", (c) => {
   const proveId = c.req.param("id");
   const tildelinger = db.prepare(`
     SELECT dt.id, dt.parti, dt.dommer_rolle, dt.dommer_telefon,
+           dt.begrunnelse_type, dt.begrunnelse,
            b.fornavn, b.etternavn, b.telefon
     FROM dommer_tildelinger dt
     JOIN brukere b ON dt.dommer_telefon = b.telefon
@@ -6622,7 +6627,7 @@ app.get("/api/prover/:id/dommer-tildelinger", (c) => {
 app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
-  const { parti, dommer_telefon, dommer_rolle } = body;
+  const { parti, dommer_telefon, dommer_rolle, begrunnelse_type, begrunnelse } = body;
 
   if (!parti || !dommer_telefon) {
     return c.json({ error: "Parti og dommer_telefon er påkrevd" }, 400);
@@ -6641,14 +6646,30 @@ app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
     return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
   }
 
+  // Krav om begrunnelse for dommere som ikke står på FKF-lista
+  const erFkf = erFkfKoblet(dommer_telefon);
+  if (!erFkf && (!begrunnelse_type || !begrunnelse)) {
+    return c.json({
+      error: "Denne personen står ikke på FKF sin liste over godkjente dommere i systemet. Legg ved begrunnelse_type og begrunnelse for å kunne tildele.",
+      krever_begrunnelse: true
+    }, 400);
+  }
+
   try {
     db.prepare(`
-      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)
-      ON CONFLICT(prove_id, parti, dommer_telefon) DO UPDATE SET dommer_rolle = excluded.dommer_rolle
-    `).run(proveId, dommer_telefon, parti, dommer_rolle || null);
+      INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle, begrunnelse_type, begrunnelse)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(prove_id, parti, dommer_telefon) DO UPDATE SET
+        dommer_rolle = excluded.dommer_rolle,
+        begrunnelse_type = excluded.begrunnelse_type,
+        begrunnelse = excluded.begrunnelse
+    `).run(proveId, dommer_telefon, parti, dommer_rolle || null,
+           erFkf ? null : begrunnelse_type,
+           erFkf ? null : begrunnelse);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "dommer_tildelt", `Dommer ${dommer_telefon} tildelt ${parti} på prøve ${proveId}`
+      "dommer_tildelt",
+      `Dommer ${dommer_telefon} tildelt ${parti} på prøve ${proveId}` + (erFkf ? '' : ` [manuell: ${begrunnelse_type}]`)
     );
     return c.json({ success: true });
   } catch (err) {
@@ -6666,6 +6687,61 @@ app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireAdmin, (c) 
   return c.json({ success: true });
 });
 
+// Sjekk om en telefon er koblet til en FKF-godkjent dommer
+function erFkfKoblet(telefon) {
+  if (!telefon) return false;
+  const rad = db.prepare(`
+    SELECT 1 FROM fkf_godkjente_dommere
+    WHERE aktiv = 1 AND (
+      linked_bruker_telefon = ?
+      OR telefon1_normalized = ?
+      OR telefon2_normalized = ?
+    )
+    LIMIT 1
+  `).get(telefon, telefon, telefon);
+  return !!rad;
+}
+
+// Opprett bruker-rad manuelt for dommer/dommerelev som ikke står på FKF-lista.
+// Brukes når prøveledelsen må tildele noen som ikke er oppdatert i FKF-listen
+// (f.eks. nylig godkjent dommer, dommerelev, eller spesialtilfelle).
+app.post("/api/dommere/opprett-manuelt", requireAdmin, async (c) => {
+  const body = await c.req.json();
+  const { telefon, fornavn, etternavn } = body;
+  if (!telefon || !fornavn || !etternavn) {
+    return c.json({ error: "telefon, fornavn og etternavn er påkrevd" }, 400);
+  }
+  // Normaliser telefon: fjern mellomrom, behold + eller ikke
+  const telefonNormalisert = String(telefon).replace(/\s/g, '');
+
+  try {
+    const eksisterende = db.prepare("SELECT telefon, rolle FROM brukere WHERE telefon = ?").get(telefonNormalisert);
+    if (eksisterende) {
+      // Bruker finnes — utvid rolle med 'dommer' hvis ikke allerede satt
+      const roller = (eksisterende.rolle || '').split(',').map(r => r.trim()).filter(Boolean);
+      if (!roller.includes('dommer')) {
+        roller.push('dommer');
+        db.prepare("UPDATE brukere SET rolle = ? WHERE telefon = ?").run(roller.join(','), telefonNormalisert);
+      }
+      return c.json({ success: true, telefon: telefonNormalisert, opprettet: false });
+    }
+
+    db.prepare(`
+      INSERT INTO brukere (telefon, fornavn, etternavn, rolle, verifisert)
+      VALUES (?, ?, ?, 'dommer', 0)
+    `).run(telefonNormalisert, fornavn, etternavn);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_opprettet_manuelt",
+      `Manuell opprettelse: ${fornavn} ${etternavn} (${telefonNormalisert})`
+    );
+
+    return c.json({ success: true, telefon: telefonNormalisert, opprettet: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // Bulk-oppdater dommere for et parti (tillater tom array for å fjerne alle)
 app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
@@ -6680,17 +6756,40 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
     const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
     if (partiType === 'VK' && dommere.length > 2) return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
     if (partiType === 'UKAK' && dommere.length > 2) return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+
+    // Krav om begrunnelse for dommere som ikke står på FKF-lista
+    for (const d of dommere) {
+      if (!d.telefon) return c.json({ error: "Hver dommer må ha telefon" }, 400);
+      if (!erFkfKoblet(d.telefon)) {
+        if (!d.begrunnelse_type || !d.begrunnelse) {
+          return c.json({
+            error: `Dommer ${d.telefon} står ikke på FKF sin liste over godkjente dommere. Legg ved begrunnelse_type (f.eks. 'dommerelev') og begrunnelse.`,
+            krever_begrunnelse: true,
+            telefon: d.telefon
+          }, 400);
+        }
+      }
+    }
   }
 
   try {
     db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ? AND parti = ?").run(proveId, parti);
     if (dommere.length > 0) {
-      const insert = db.prepare("INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle) VALUES (?, ?, ?, ?)");
+      const insert = db.prepare(`
+        INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle, begrunnelse_type, begrunnelse)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
       for (const d of dommere) {
-        insert.run(proveId, d.telefon, parti, d.rolle || null);
+        const fkf = erFkfKoblet(d.telefon);
+        insert.run(proveId, d.telefon, parti, d.rolle || null,
+                   fkf ? null : (d.begrunnelse_type || null),
+                   fkf ? null : (d.begrunnelse || null));
       }
     }
-    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_parti_oppdatert", `${parti}: ${dommere.length > 0 ? dommere.map(d => d.telefon).join(', ') : '(fjernet alle)'}`);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "dommer_parti_oppdatert",
+      `${parti}: ${dommere.length > 0 ? dommere.map(d => d.telefon + (erFkfKoblet(d.telefon) ? '' : ' [manuell:' + (d.begrunnelse_type || '?') + ']')).join(', ') : '(fjernet alle)'}`
+    );
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);

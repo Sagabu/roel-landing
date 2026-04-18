@@ -14039,20 +14039,34 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
       return c.json({ exists: false });
     }
 
-    // Hent partiliste for å få hundenavn - sortert slik at nr tilsvarer posisjon
-    const pameldinger = db.prepare(`
-      SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase,
-             b.fornavn || ' ' || b.etternavn as forer_navn
-      FROM pameldinger p
-      JOIN hunder h ON p.hund_id = h.id
-      JOIN brukere b ON p.forer_telefon = b.telefon
-      WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
-      ORDER BY p.id
+    // Primærkilde: parti_deltakere (matcher rekkefølge admin/partilister viser).
+    // nr = idx+1 korrelerer med pd.startnummer siden den er 1..n sekvensiell per parti.
+    let hunder = db.prepare(`
+      SELECT pd.hund_regnr, pd.hund_navn, pd.rase, pd.forer_navn,
+             h.id as hund_id
+      FROM parti_deltakere pd
+      JOIN partier pt ON pt.id = pd.parti_id
+      LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
+      WHERE pd.prove_id = ? AND pt.navn = ? AND COALESCE(pd.status, 'aktiv') != 'trukket'
+      ORDER BY pd.startnummer
     `).all(proveId, parti);
+
+    // Fallback: pameldinger (digital pamelding uten parti_deltakere)
+    if (hunder.length === 0) {
+      hunder = db.prepare(`
+        SELECT p.hund_id, p.parti, h.navn as hund_navn, h.rase,
+               b.fornavn || ' ' || b.etternavn as forer_navn
+        FROM pameldinger p
+        JOIN hunder h ON p.hund_id = h.id
+        LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+        WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+        ORDER BY COALESCE(p.startnummer, 999), p.id
+      `).all(proveId, parti);
+    }
 
     // Bygg mapping fra nr til hundeinfo (nr er 1-basert indeks i partilisten)
     const nrToHund = {};
-    pameldinger.forEach((p, idx) => {
+    hunder.forEach((p, idx) => {
       nrToHund[idx + 1] = {
         hund_id: p.hund_id,
         hund_navn: p.hund_navn,
@@ -14114,26 +14128,49 @@ app.get("/api/vk-partiliste/:proveId/:parti", (c) => {
   try {
     const { proveId, parti } = c.req.param();
 
-    const pameldinger = db.prepare(`
-      SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase, h.regnr,
-             b.fornavn || ' ' || b.etternavn as forer_navn, b.telefon as forer_telefon
-      FROM pameldinger p
-      JOIN hunder h ON p.hund_id = h.id
-      JOIN brukere b ON p.forer_telefon = b.telefon
-      WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
-      ORDER BY p.id
+    // Primærkilde: parti_deltakere — samme logikk som /api/partiliste.
+    let hunder = db.prepare(`
+      SELECT pd.hund_regnr, pd.hund_navn, pd.rase, pd.forer_navn, pd.forer_telefon,
+             h.id as hund_id
+      FROM parti_deltakere pd
+      JOIN partier pt ON pt.id = pd.parti_id
+      LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
+      WHERE pd.prove_id = ? AND pt.navn = ? AND COALESCE(pd.status, 'aktiv') != 'trukket'
+      ORDER BY pd.startnummer
     `).all(proveId, parti);
 
-    // Formater som partiliste
-    const partiliste = pameldinger.map((p, idx) => ({
-      nr: idx + 1,
-      hund_id: p.hund_id,
-      race: p.rase || '',
-      name: p.hund_navn,
-      regnr: p.regnr || '',
-      owner: p.forer_navn,
-      owner_telefon: p.forer_telefon
-    }));
+    let partiliste;
+    if (hunder.length > 0) {
+      partiliste = hunder.map((p, idx) => ({
+        nr: idx + 1,
+        hund_id: p.hund_id,
+        race: p.rase || '',
+        name: p.hund_navn,
+        regnr: p.hund_regnr || '',
+        owner: p.forer_navn,
+        owner_telefon: p.forer_telefon
+      }));
+    } else {
+      // Fallback til pameldinger
+      const pameldinger = db.prepare(`
+        SELECT p.id, p.hund_id, p.parti, h.navn as hund_navn, h.rase, h.regnr,
+               b.fornavn || ' ' || b.etternavn as forer_navn, b.telefon as forer_telefon
+        FROM pameldinger p
+        JOIN hunder h ON p.hund_id = h.id
+        LEFT JOIN brukere b ON p.forer_telefon = b.telefon
+        WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+        ORDER BY COALESCE(p.startnummer, 999), p.id
+      `).all(proveId, parti);
+      partiliste = pameldinger.map((p, idx) => ({
+        nr: idx + 1,
+        hund_id: p.hund_id,
+        race: p.rase || '',
+        name: p.hund_navn,
+        regnr: p.regnr || '',
+        owner: p.forer_navn,
+        owner_telefon: p.forer_telefon
+      }));
+    }
 
     return c.json({ partiliste });
   } catch (err) {

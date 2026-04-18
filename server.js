@@ -11098,6 +11098,136 @@ app.get("/api/kritikker/:id", (c) => {
   return c.json(kritikk);
 });
 
+// Hent full data for PDF-visning av kritikk — matcher FKF-jaktprøveskjemaets layout.
+// Samler kritikk, hund (inkl. foreldre), eier/fører, prøve-info, ref.nr fra
+// nkkRapportDraft, alle dommere for partiet, og startnummer hvis i parti_deltakere.
+app.get("/api/kritikker/:id/visning", (c) => {
+  const id = c.req.param("id");
+  const k = db.prepare(`
+    SELECT k.*,
+           h.navn as hund_navn, h.regnr, h.rase, h.kjonn, h.fodt,
+           h.far_regnr, h.mor_regnr, h.eier_telefon,
+           p.navn as prove_navn, p.sted as prove_sted,
+           p.start_dato, p.slutt_dato,
+           b.fornavn || ' ' || b.etternavn as dommer_navn
+    FROM kritikker k
+    LEFT JOIN hunder h ON k.hund_id = h.id
+    LEFT JOIN prover p ON k.prove_id = p.id
+    LEFT JOIN brukere b ON k.dommer_telefon = b.telefon
+    WHERE k.id = ?
+  `).get(id);
+  if (!k) return c.json({ error: "Kritikk ikke funnet" }, 404);
+
+  // Hundens foreldre (far/mor navn) fra hunder-tabellen hvis regnr er registrert
+  const far = k.far_regnr ? db.prepare("SELECT navn, regnr FROM hunder WHERE regnr = ?").get(k.far_regnr) : null;
+  const mor = k.mor_regnr ? db.prepare("SELECT navn, regnr FROM hunder WHERE regnr = ?").get(k.mor_regnr) : null;
+
+  // Eier fra hunder.eier_telefon → brukere. Fallback til parti_deltakere.eier_navn
+  // hvis bruker ikke er koblet (typisk for NKK-importerte hunder)
+  let eier = null;
+  if (k.eier_telefon) {
+    eier = db.prepare(`
+      SELECT fornavn, etternavn, adresse, postnummer, sted, telefon
+      FROM brukere WHERE telefon = ?
+    `).get(k.eier_telefon);
+  }
+  // Fører + eier fra parti_deltakere (samme rad, siden NKK-fila gir denormalisert info)
+  const pd = db.prepare(`
+    SELECT pd.eier_navn, pd.eier_telefon as pd_eier_tlf,
+           pd.forer_navn, pd.forer_telefon as pd_forer_tlf,
+           pd.startnummer
+    FROM parti_deltakere pd
+    JOIN partier pt ON pt.id = pd.parti_id
+    WHERE pd.prove_id = ? AND pd.hund_regnr = ? AND pt.navn = ?
+    LIMIT 1
+  `).get(k.prove_id, k.regnr, k.parti);
+
+  // Alle dommere tildelt dette partiet (i signaturlinjer-formålet)
+  const dommere = db.prepare(`
+    SELECT dt.dommer_telefon, dt.dommer_rolle, dt.begrunnelse_type,
+           b.fornavn || ' ' || b.etternavn as navn
+    FROM dommer_tildelinger dt
+    JOIN brukere b ON dt.dommer_telefon = b.telefon
+    WHERE dt.prove_id = ? AND dt.parti = ?
+    ORDER BY dt.dommer_rolle NULLS LAST, b.etternavn
+  `).all(k.prove_id, k.parti);
+
+  // NKK-referansenummer fra nkkRapportDraft kv_store
+  let nkkRefNr = null;
+  const draftRow = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(`nkkRapportDraft_${k.prove_id}`);
+  if (draftRow?.value) {
+    try {
+      const draft = JSON.parse(draftRow.value);
+      nkkRefNr = draft.refNr || null;
+    } catch (e) {}
+  }
+
+  return c.json({
+    kritikk: {
+      id: k.id,
+      dato: k.dato,
+      klasse: k.klasse,
+      parti: k.parti,
+      sted: k.sted,
+      presisjon: k.presisjon,
+      reising: k.reising,
+      godkjent_reising: k.godkjent_reising,
+      stand_m: k.stand_m, stand_u: k.stand_u,
+      tomstand: k.tomstand, makker_stand: k.makker_stand,
+      sjanse: k.sjanse, slipptid: k.slipptid,
+      jaktlyst: k.jaktlyst, fart: k.fart,
+      selvstendighet: k.selvstendighet, soksbredde: k.soksbredde,
+      reviering: k.reviering, samarbeid: k.samarbeid,
+      sek_spontan: k.sek_spontan, sek_forbi: k.sek_forbi,
+      apport: k.apport, rapport_spontan: k.rapport_spontan,
+      adferd: k.adferd, premie: k.premie,
+      kritikk_tekst: k.kritikk_tekst,
+      status: k.status, approved_at: k.approved_at
+    },
+    hund: {
+      id: k.hund_id,
+      navn: k.hund_navn,
+      regnr: k.regnr,
+      rase: k.rase,
+      kjonn: k.kjonn,
+      fodt: k.fodt,
+      far: far ? `${far.navn}${far.regnr ? ' (' + far.regnr + ')' : ''}` : null,
+      mor: mor ? `${mor.navn}${mor.regnr ? ' (' + mor.regnr + ')' : ''}` : null,
+      far_regnr: k.far_regnr,
+      mor_regnr: k.mor_regnr
+    },
+    eier: {
+      navn: eier ? `${eier.fornavn} ${eier.etternavn}` : (pd?.eier_navn || null),
+      adresse: eier?.adresse || null,
+      postnummer: eier?.postnummer || null,
+      sted: eier?.sted || null,
+      telefon: eier?.telefon || pd?.pd_eier_tlf || null
+    },
+    forer: {
+      navn: pd?.forer_navn || null,
+      telefon: pd?.pd_forer_tlf || null
+    },
+    prove: {
+      id: k.prove_id,
+      navn: k.prove_navn,
+      sted: k.prove_sted,
+      start_dato: k.start_dato,
+      slutt_dato: k.slutt_dato,
+      nkk_ref_nr: nkkRefNr
+    },
+    parti: {
+      navn: k.parti,
+      startnummer: pd?.startnummer || null
+    },
+    dommere: dommere.map(d => ({
+      navn: d.navn,
+      rolle: d.dommer_rolle,
+      telefon: d.dommer_telefon
+    })),
+    dommer_hovedansvarlig: k.dommer_navn
+  });
+});
+
 // Opprett kritikk (krever dommer)
 app.post("/api/kritikker", requireDommer, async (c) => {
   const body = await c.req.json();

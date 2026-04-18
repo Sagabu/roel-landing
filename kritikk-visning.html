@@ -3,367 +3,485 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kritikkskjema - Fuglehundprøve</title>
+    <title>Kritikk — Fuglehundprøve</title>
     <link rel="icon" type="image/png" href="favicon.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        warm: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#E5C9B8', 400: '#D4A989', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14', 800: '#6E3018', 900: '#4A1E0D' },
-                        cream: { DEFAULT: '#F7F3EE', 50: '#FFFFFF', 100: '#F7F3EE', 200: '#FFF7F2', 300: '#EAD8CF' },
-                        sky: { 50: '#FFF7F2', 100: '#FFE1CF', 200: '#EAD8CF', 300: '#FD8536', 400: '#E5721F', 500: '#FD8536', 600: '#E5721F', 700: '#C45F14' },
-                        bark: { 50: '#F7F3EE', 100: '#FFF7F2', 200: '#EAD8CF', 300: '#D4A989', 400: '#B8977A', 500: '#9A8268', 600: '#7D6A54', 700: '#6E3018', 800: '#5A2812', 900: '#3D1B0C' }
-                    },
-                    fontFamily: {
-                        'serif': ['Playfair Display', 'Georgia', 'serif'],
-                        'sans': ['Inter', 'system-ui', 'sans-serif']
-                    }
-                }
-            }
-        }
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        /* A4-inspirert layout som matcher FKF-jaktprøveskjemaet */
+        :root {
+            --ink: #1a1a1a;
+            --line: #333;
+            --muted: #555;
+            --page-bg: #eee;
+            --paper-bg: #fff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--page-bg);
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--ink);
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .topbar {
+            background: #3D1B0C;
+            color: #fff;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .topbar h1 { font-size: 15px; margin: 0; font-weight: 600; }
+        .topbar .actions { display: flex; gap: 8px; }
+        .topbar button, .topbar a {
+            background: #FD8536;
+            color: #fff;
+            border: 0;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .topbar a.secondary { background: transparent; color: #ddd; }
+        main { padding: 16px; }
+        .sheet {
+            background: var(--paper-bg);
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 18px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        /* Header-tabellen: 7 kolonner */
+        table.hdr {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+        table.hdr td {
+            border: 1px solid var(--line);
+            padding: 3px 6px;
+            vertical-align: top;
+            font-size: 10px;
+        }
+        table.hdr td.label {
+            font-weight: 700;
+            background: #f5efe8;
+            white-space: nowrap;
+            font-size: 9px;
+            padding: 2px 5px;
+        }
+        table.hdr td.value {
+            font-size: 11px;
+            min-height: 18px;
+            padding: 3px 6px;
+        }
+        /* To-kolonne: kritikktekst venstre, strukturerte tall høyre */
+        .body-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 6px;
+        }
+        .critique-text {
+            border: 1px solid var(--line);
+            padding: 6px 8px;
+            min-height: 340px;
+            white-space: pre-wrap;
+            font-size: 10.5px;
+            line-height: 1.4;
+        }
+        table.scores {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table.scores td {
+            border: 1px solid var(--line);
+            padding: 3px 6px;
+            font-size: 10px;
+            vertical-align: middle;
+        }
+        table.scores td.label {
+            font-weight: 700;
+            background: #f5efe8;
+            white-space: nowrap;
+            font-size: 9.5px;
+        }
+        table.scores td.val {
+            text-align: center;
+            font-weight: 600;
+            width: 34px;
+            font-size: 11px;
+        }
+        table.scores td.val.blank { background: repeating-linear-gradient(45deg, transparent, transparent 4px, #f0f0f0 4px, #f0f0f0 5px); }
+        table.scores .section {
+            background: #e8ded0;
+            font-weight: 700;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            padding: 3px 6px;
+        }
+        table.scores td.sub {
+            font-size: 9px;
+            font-style: italic;
+            color: var(--muted);
+            background: #faf7f3;
+        }
+        /* Premie-boks */
+        .premie-box {
+            margin-top: 10px;
+            border: 2px solid var(--line);
+            padding: 6px 8px;
+            display: grid;
+            grid-template-columns: 1fr auto auto auto auto auto auto;
+            gap: 10px;
+            align-items: center;
+            font-size: 10px;
+        }
+        .premie-box .premie-value {
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .premie-box .chip {
+            padding: 2px 8px;
+            border: 1px solid var(--line);
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: 700;
+        }
+        .premie-box .chip.on { background: #3D1B0C; color: #fff; }
+        /* Signatur nederst */
+        .sig {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-top: 14px;
+            padding-top: 8px;
+            border-top: 1px solid #ccc;
+            font-size: 10px;
+        }
+        .sig .slot { }
+        .sig .slot b { display: block; font-size: 9px; margin-bottom: 12px; color: var(--muted); }
+        .sig .line { border-bottom: 1px solid var(--line); min-height: 14px; }
+        /* Status banner */
+        .status-banner {
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .status-banner.approved { background: #dcfce7; color: #14532d; border: 1px solid #86efac; }
+        .status-banner.pending { background: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd; }
+        .status-banner.returned { background: #fef3c7; color: #78350f; border: 1px solid #fcd34d; }
+        .status-banner.draft { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+
+        /* Print: fjern topbar, gjør det til A4 */
         @media print {
             .no-print { display: none !important; }
-            body { background: white !important; }
-            main { padding: 0 !important; }
+            body { background: #fff; font-size: 10px; }
+            main { padding: 0; }
+            .sheet { box-shadow: none; max-width: none; padding: 10px; }
+            @page { size: A4 landscape; margin: 10mm; }
         }
+
+        /* Fotnote med skala-beskrivelser */
+        .skala-note {
+            margin-top: 12px;
+            padding-top: 6px;
+            border-top: 1px dashed #999;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            font-size: 8.5px;
+            color: var(--muted);
+        }
+        .skala-note b { color: var(--ink); font-size: 9px; }
     </style>
 </head>
-<body class="bg-cream min-h-screen font-sans">
+<body>
 
-    <!-- Header -->
-    <header class="bg-bark-900/60 text-white backdrop-blur-sm shadow-lg no-print">
-        <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
-                <div>
-                    <h1 class="text-xl font-serif font-bold">Kritikkskjema</h1>
-                    <p class="text-bark-400 text-xs" id="headerTrialName">Fuglehundprøve</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-3">
-                <button onclick="window.print()" class="flex items-center gap-2 bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
-                    </svg>
-                    Skriv ut
-                </button>
-                <button onclick="goBack()" class="text-bark-300 hover:text-white text-sm flex items-center gap-1">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                    Lukk
-                </button>
-            </div>
-        </div>
-    </header>
+<header class="topbar no-print">
+    <h1>Kritikkskjema</h1>
+    <div class="actions">
+        <button onclick="window.print()">Skriv ut</button>
+        <a href="#" class="secondary" onclick="goBack(event)">Lukk</a>
+    </div>
+</header>
 
-    <main class="max-w-4xl mx-auto px-4 py-8">
-        <div id="critiqueContent">
-            <p class="text-center text-bark-500 py-12">Laster kritikk...</p>
-        </div>
-    </main>
+<main>
+    <div id="critiqueContent" class="sheet">
+        <p style="text-align:center;color:#888;padding:40px 0;">Laster kritikk...</p>
+    </div>
+</main>
 
-    <script>
-        const PARTIES = {
-            ukak1: { name: 'UK/AK Parti 1' },
-            ukak2: { name: 'UK/AK Parti 2' },
-            ukak3: { name: 'UK/AK Parti 3' },
-            ukak4: { name: 'UK/AK Parti 4' },
-            vk1: { name: 'VK Kval Parti 1' },
-            vk2: { name: 'VK Kval Parti 2' },
-            vkfinale: { name: 'VK Finale' }
+<script>
+    const params = new URLSearchParams(window.location.search);
+    const kritikkId = params.get('kritikk_id') || params.get('id');
+    // Legacy: party+dog fra gammelt nkk-godkjenning — krever oppslag for å finne kritikk_id
+    const legacyParty = params.get('party');
+    const legacyDog = params.get('dog');
+
+    function goBack(e) {
+        if (e) e.preventDefault();
+        if (document.referrer) history.back();
+        else window.location.href = 'nkk-godkjenning.html';
+    }
+
+    function fmt(val, dash = '') {
+        return (val === null || val === undefined || val === '') ? dash : String(val);
+    }
+
+    function fmtDato(isoStr) {
+        if (!isoStr) return '';
+        try {
+            const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return isoStr;
+            return d.toLocaleDateString('no-NO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        } catch (e) { return isoStr; }
+    }
+
+    // Premie-parser: trekker ut CACIT/ResCacit/CK/Finale/Semifinale/ÆP-flagg
+    function parsePremie(premieStr) {
+        const s = (premieStr || '').toUpperCase();
+        return {
+            text: premieStr || '',
+            cacit: /\bCACIT\b/.test(s),
+            resCacit: /\bRES\.?CACIT\b/.test(s) || /\bRESCACIT\b/.test(s),
+            ck: /\bCK\b/.test(s),
+            finale: /\bFINALE\b/.test(s),
+            semifinale: /\bSEMIFINALE\b/.test(s),
+            aep: /\bÆP\b/.test(s) || /\bAEP\b/.test(s)
         };
+    }
 
-        function goBack() {
-            if (document.referrer) {
-                history.back();
-            } else {
-                window.location.href = 'nkk-godkjenning.html';
-            }
+    function chip(label, active) {
+        return `<span class="chip${active ? ' on' : ''}">${label}</span>`;
+    }
+
+    function statusBanner(status, approved_at) {
+        if (status === 'godkjent' || status === 'approved') {
+            return `<div class="status-banner approved">✓ Godkjent av NKK-representant${approved_at ? ' — ' + fmtDato(approved_at) : ''}</div>`;
         }
-
-        function loadCritique() {
-            const params = new URLSearchParams(window.location.search);
-            const partyId = params.get('party');
-            const dogId = parseInt(params.get('dog'));
-
-            if (!partyId || !dogId) {
-                document.getElementById('critiqueContent').innerHTML = `
-                    <div class="text-center py-12">
-                        <p class="text-bark-500">Kritikk ikke funnet</p>
-                        <a href="nkk-godkjenning.html" class="text-warm-800 hover:text-warm-800 mt-4 inline-block">Tilbake til oversikten</a>
-                    </div>
-                `;
-                return;
-            }
-
-            const saved = localStorage.getItem('judgeData_' + partyId);
-            if (!saved) {
-                document.getElementById('critiqueContent').innerHTML = `
-                    <div class="text-center py-12">
-                        <p class="text-bark-500">Parti ikke funnet</p>
-                        <a href="nkk-godkjenning.html" class="text-warm-800 hover:text-warm-800 mt-4 inline-block">Tilbake til oversikten</a>
-                    </div>
-                `;
-                return;
-            }
-
-            const dogs = JSON.parse(saved);
-            const dog = dogs.find(d => d.id === dogId);
-
-            if (!dog) {
-                document.getElementById('critiqueContent').innerHTML = `
-                    <div class="text-center py-12">
-                        <p class="text-bark-500">Hund ikke funnet</p>
-                        <a href="nkk-godkjenning.html" class="text-warm-800 hover:text-warm-800 mt-4 inline-block">Tilbake til oversikten</a>
-                    </div>
-                `;
-                return;
-            }
-
-            renderCritique(dog, partyId);
+        if (status === 'returned' || status === 'returnert') {
+            return `<div class="status-banner returned">Returnert til dommer</div>`;
         }
+        if (status === 'submitted' || status === 'innsendt') {
+            return `<div class="status-banner pending">Venter NKK-godkjenning</div>`;
+        }
+        return `<div class="status-banner draft">Utkast</div>`;
+    }
 
-        function renderCritique(dog, partyId) {
-            const latestRound = dog.rounds[dog.rounds.length - 1];
-            const s = latestRound.scores;
-            const partyName = PARTIES[partyId]?.name || partyId;
+    function render(data) {
+        const k = data.kritikk;
+        const hund = data.hund || {};
+        const eier = data.eier || {};
+        const forer = data.forer || {};
+        const prove = data.prove || {};
+        const parti = data.parti || {};
+        const dommere = data.dommere || [];
+        const prem = parsePremie(k.premie);
 
-            // Determine class from party
-            const isVK = partyId.startsWith('vk');
-            const isFinale = partyId === 'vkfinale';
-            const isKval = partyId.startsWith('vk') && !isFinale;
+        // Byggere for scores-tabellen
+        const cell = (v) => (v === null || v === undefined) ? '<td class="val blank"></td>' : `<td class="val">${v}</td>`;
+        const yn = (v) => v === 1 ? 'Ja' : (v === 2 ? 'Nei' : (v ? v : '—'));
 
-            // Get trial name
-            let trialName = 'Fuglehundprøve';
-            try {
-                fetch('/api/trial').then(r => r.json()).then(t => {
-                    if (t.name) {
-                        document.getElementById('headerTrialName').textContent = t.name;
-                        document.getElementById('trialNameDisplay').textContent = t.name;
-                    }
-                });
-            } catch (e) {}
+        // Fuglebehandling tabell: 4 arbeids-kolonner, siste = Sum
+        // Dagens data har kun én verdi per felt — legges i kolonne 1, resten tom
+        const sumP = k.presisjon || 0;
+        const sumR = k.reising || 0;
+        const sumGR = k.godkjent_reising || 0;
+        const fugleBehandling = `
+            <tr><td class="section" colspan="6">Fuglebehandling <span style="font-weight:400;font-style:italic;font-size:8.5px;">(tallkarakter for hvert fuglearbeid)</span></td></tr>
+            <tr>
+                <td class="label">Presisjon</td>
+                ${cell(k.presisjon)}<td class="val blank"></td><td class="val blank"></td><td class="val blank"></td>
+                <td class="val" style="background:#f5efe8;">${sumP}</td>
+            </tr>
+            <tr>
+                <td class="label">Reising</td>
+                ${cell(k.reising)}<td class="val blank"></td><td class="val blank"></td><td class="val blank"></td>
+                <td class="val" style="background:#f5efe8;">${sumR}</td>
+            </tr>
+            <tr>
+                <td class="label">Godkjent reising</td>
+                ${cell(k.godkjent_reising)}<td class="val blank"></td><td class="val blank"></td><td class="val blank"></td>
+                <td class="val" style="background:#f5efe8;">${sumGR}</td>
+            </tr>
+            <tr>
+                <td class="label" style="text-align:right;" colspan="5">Sum</td>
+                <td class="val" style="background:#e8ded0;font-weight:700;">${sumP + sumR + sumGR}</td>
+            </tr>
+        `;
 
-            // Format prize with class
-            function formatPrize(prizeStr, dogClass) {
-                if (!prizeStr) return null;
+        // Hovedrader (stand/jaktegenskaper) — 2-kolonne layout i én tabell
+        const hovedRader = `
+            <tr>
+                <td class="label">Slipptid</td><td class="val">${fmt(k.slipptid, '—')}</td>
+                <td class="label">Jaktlyst</td>${cell(k.jaktlyst)}
+            </tr>
+            <tr>
+                <td class="label">Stand m/makker</td><td class="val">${fmt(k.stand_m, 0)}</td>
+                <td class="label">Fart</td>${cell(k.fart)}
+            </tr>
+            <tr>
+                <td class="label">Stand u/makker</td><td class="val">${fmt(k.stand_u, 0)}</td>
+                <td class="label">Selvstendighet</td>${cell(k.selvstendighet)}
+            </tr>
+            <tr>
+                <td class="label">Tomstand</td><td class="val">${fmt(k.tomstand, 0)}</td>
+                <td class="label">Søksbredde</td>${cell(k.soksbredde)}
+            </tr>
+            <tr>
+                <td class="label">Makkers stand</td><td class="val">${fmt(k.makker_stand, 0)}</td>
+                <td class="label">Reviering</td>${cell(k.reviering)}
+            </tr>
+            <tr>
+                <td class="label">Sjanse på fugl</td><td class="val">${fmt(k.sjanse, 0)}</td>
+                <td class="label">Samarbeid</td>${cell(k.samarbeid)}
+            </tr>
+            <tr>
+                <td class="label">Sekundering <span style="font-weight:400;font-size:8.5px;">(antall)</span></td>
+                <td class="val">${fmt(k.sek_spontan, 0)}</td>
+                <td class="label">Spontan</td><td class="val">${fmt(k.sek_spontan, 0)}</td>
+            </tr>
+            <tr>
+                <td class="label"></td><td class="val"></td>
+                <td class="label">Går forbi</td><td class="val">${fmt(k.sek_forbi, 0)}</td>
+            </tr>
+            <tr>
+                <td class="label">Apport <span style="font-weight:400;font-size:8.5px;">(Godkjent=1 Ikke godkj.=2)</span></td>
+                <td class="val">${fmt(k.apport, '—')}</td>
+                <td class="label">Rapport spontan</td><td class="val">${fmt(k.rapport_spontan, 0)}</td>
+            </tr>
+            <tr>
+                <td class="label">Adferd</td><td class="val" style="font-size:10px;text-align:left;">${fmt(k.adferd, '—')}</td>
+                <td class="label">Ikke ønsket</td><td class="val">${k.adferd ? '✓' : ''}</td>
+            </tr>
+        `;
 
-                // VK prizes: 1.VK, 2.VK, etc.
-                if (isVK) {
-                    const vkMatch = prizeStr.match(/(\d)\.\s*(?:VK|premie)/i);
-                    if (vkMatch) {
-                        const num = vkMatch[1];
-                        const suffix = isFinale ? 'Finale' : 'Kval';
-                        const hasCK = prizeStr.toLowerCase().includes('ck') || (num === '1' || num === '2') && dog.hasCK;
-                        return hasCK ? `${num}.VK ${suffix} m/CK` : `${num}.VK ${suffix}`;
-                    }
-                }
+        const scoresTable = `
+            <table class="scores">
+                ${fugleBehandling}
+                ${hovedRader}
+            </table>
+            <div class="premie-box">
+                <div><b style="font-size:10px;">Premie</b><div class="premie-value">${fmt(prem.text, '—')}</div></div>
+                ${chip('CACIT', prem.cacit)}
+                ${chip('ResCacit', prem.resCacit)}
+                ${chip('CK', prem.ck)}
+                ${chip('Finale', prem.finale)}
+                ${chip('Semifinale', prem.semifinale)}
+                ${chip('ÆP', prem.aep)}
+            </div>
+        `;
 
-                // UK/AK prizes: 1.premie UK, 2.premie AK, etc.
-                const premieMatch = prizeStr.match(/(\d)\.\s*premie/i);
-                if (premieMatch) {
-                    const num = premieMatch[1];
-                    const klasse = dogClass || dog.class || 'UK'; // Default to UK if not specified
-                    return `${num}. premie ${klasse}`;
-                }
+        // Header-tabell
+        const hdr = `
+            <table class="hdr">
+                <tr>
+                    <td class="label">Klasse</td><td class="value">${fmt(k.klasse)}</td>
+                    <td class="label">Parti</td><td class="value">${fmt(parti.navn)}</td>
+                    <td class="label">Ref.nr</td><td class="value">${fmt(prove.nkk_ref_nr)}</td>
+                    <td class="label">Rase</td><td class="value" colspan="1">${fmt(hund.rase)}</td>
+                    <td class="label">Reg.nr.</td><td class="value">${fmt(hund.regnr)}</td>
+                    <td class="label">Navn</td><td class="value">${fmt(hund.navn)}</td>
+                    <td class="label">Dato</td><td class="value">${fmtDato(k.dato)}</td>
+                </tr>
+                <tr>
+                    <td class="label">Eier</td><td class="value" colspan="3">${fmt(eier.navn)}</td>
+                    <td class="label">Adresse</td><td class="value" colspan="3">${fmt(eier.adresse)}</td>
+                    <td class="label">Postnr./sted</td><td class="value" colspan="3">${[eier.postnummer, eier.sted].filter(Boolean).join(' ')}</td>
+                    <td class="label">Telefon</td><td class="value">${fmt(eier.telefon)}</td>
+                </tr>
+                <tr>
+                    <td class="label">Fører</td><td class="value" colspan="5">${fmt(forer.navn)}</td>
+                    <td class="label">Hundens foreldre</td><td class="value" colspan="8">
+                        ${hund.far ? 'Far: ' + hund.far : ''}${hund.far && hund.mor ? '  •  ' : ''}${hund.mor ? 'Mor: ' + hund.mor : ''}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="label">Prøvested</td><td class="value" colspan="5">${fmt(prove.sted || prove.navn)}</td>
+                    <td class="label">Dommer(e)</td><td class="value" colspan="8">${dommere.map(d => d.navn).join(', ') || fmt(data.dommer_hovedansvarlig)}</td>
+                </tr>
+            </table>
+        `;
 
-                return prizeStr;
+        // Signatur-rad
+        const sig = `
+            <div class="sig">
+                <div class="slot"><b>Prøvested</b><div class="line"></div></div>
+                ${dommere.slice(0, 2).map(d => `
+                    <div class="slot"><b>Dommer${d.rolle ? ' ' + d.rolle : ''}${d.begrunnelse_type && d.begrunnelse_type !== 'dommer' ? ' (' + d.begrunnelse_type + ')' : ''}</b><div class="line">${d.navn || ''}</div></div>
+                `).join('')}
+                ${dommere.length < 2 ? `<div class="slot"><b>Dommer</b><div class="line"></div></div>` : ''}
+                ${dommere.length < 1 ? `<div class="slot"><b>Dommer</b><div class="line"></div></div>` : ''}
+            </div>
+        `;
+
+        // Skala-beskrivelser som fotnote
+        const skala = `
+            <div class="skala-note">
+                <div><b>Jaktlyst</b> 1=mangler • 2=lav • 3=moderat • 4=god • 5=høy • 6=særdeles høy</div>
+                <div><b>Fart</b> 1=lav • 2=moderat • 3=god • 4=stor • 5=meget • 6=særdeles</div>
+                <div><b>Selvstendighet</b> 1=helt avh. makker … 6=helt selvstendig</div>
+                <div><b>Søksbredde</b> 1=liten … 4=utmerket … 6=alt for stor</div>
+                <div><b>Reviering</b> 1=planløs … 4=utmerket … 6=alt for åpen</div>
+                <div><b>Samarbeid</b> 1=førerfiksert … 4=utmerket … 6=samarbeider ikke</div>
+                <div><b>Presisjon</b> 1=meget upresis • 2=upresis • 3=noe upresis • 4=presis</div>
+                <div><b>Reising</b> 1=nekter • 2=svært forsiktig • 3=forsiktig • 4=kontrollert • 5=villig • 6=djerv</div>
+            </div>
+        `;
+
+        document.getElementById('critiqueContent').innerHTML = `
+            ${statusBanner(k.status, k.approved_at)}
+            ${hdr}
+            <div class="body-grid">
+                <div class="critique-text">${fmt(k.kritikk_tekst, '—').replace(/</g, '&lt;').replace(/\n/g, '\n')}</div>
+                <div>${scoresTable}</div>
+            </div>
+            ${sig}
+            ${skala}
+        `;
+
+        document.title = `Kritikk — ${hund.navn || ''} ${hund.regnr || ''}`.trim();
+    }
+
+    async function load() {
+        try {
+            let id = kritikkId;
+            // Legacy fallback — prøv å finne kritikk_id via party+dog-parametere
+            // (gammelt nkk-godkjenning-format). Går direkte til feilmelding hvis ingen ID.
+            if (!id) {
+                document.getElementById('critiqueContent').innerHTML = `
+                    <p style="text-align:center;padding:30px;color:#666;">
+                        Ingen kritikk-ID angitt.<br>
+                        <a href="nkk-godkjenning.html" style="color:#FD8536;">Tilbake til oversikten</a>
+                    </p>`;
+                return;
             }
-
-            const formattedPrize = formatPrize(dog.prize, dog.class);
-
-            // Prize styling
-            const prizeConfig = {
-                '1': { bg: 'bg-gradient-to-r from-yellow-400 to-amber-500', text: 'text-white' },
-                '2': { bg: 'bg-gradient-to-r from-gray-300 to-gray-400', text: 'text-gray-800' },
-                '3': { bg: 'bg-gradient-to-r from-amber-600 to-amber-700', text: 'text-white' }
-            };
-            const prizeNum = formattedPrize?.match(/^(\d)/)?.[1] || '0';
-            const prize = prizeConfig[prizeNum] || { bg: 'bg-bark-200', text: 'text-bark-700' };
-
-            // Get dog image if available
-            let dogImage = dog.image || null;
-            try {
-                const userDogs = JSON.parse(localStorage.getItem('userDogs') || '[]');
-                const matchingDog = userDogs.find(d => d.regNr === dog.regNr || d.name === dog.name);
-                if (matchingDog?.image) {
-                    dogImage = matchingDog.image;
-                }
-            } catch (e) {}
-
-            // Status badge
-            const statusBadge = dog.critiqueStatus === 'approved'
-                ? '<span class="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Godkjent av NKK</span>'
-                : dog.critiqueStatus === 'returned'
-                ? '<span class="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-medium">Returnert til dommer</span>'
-                : '<span class="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">Venter godkjenning</span>';
-
-            // Score color helper
-            function scoreColor(val) {
-                if (val >= 5) return 'bg-green-500 text-white';
-                if (val >= 4) return 'bg-warm-500 text-white';
-                if (val >= 3) return 'bg-sky-300 text-white';
-                return 'bg-bark-300 text-bark-700';
+            const resp = await fetch(`/api/kritikker/${encodeURIComponent(id)}/visning`);
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                document.getElementById('critiqueContent').innerHTML = `
+                    <p style="text-align:center;padding:30px;color:#c00;">
+                        Kunne ikke hente kritikk: ${err.error || resp.status}
+                    </p>`;
+                return;
             }
-
+            const data = await resp.json();
+            render(data);
+        } catch (e) {
             document.getElementById('critiqueContent').innerHTML = `
-                <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-                    <!-- Hero Header -->
-                    <div class="bg-gradient-to-br from-bark-700 via-bark-800 to-bark-900 text-white p-8">
-                        <div class="flex items-start justify-between">
-                            <div class="flex items-center gap-6">
-                                ${dogImage ? `
-                                <div class="w-24 h-24 rounded-2xl overflow-hidden shadow-lg border-2 border-white/30">
-                                    <img src="${dogImage}" alt="${dog.name}" class="w-full h-full object-cover">
-                                </div>
-                                ` : `
-                                <div class="w-24 h-24 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center shadow-lg">
-                                    <span class="text-5xl font-bold font-serif">${dog.nr}</span>
-                                </div>
-                                `}
-                                <div>
-                                    <h1 class="text-3xl font-bold font-serif mb-1">${dog.regNr ? `<span class="text-bark-300 font-mono text-2xl mr-3">${dog.regNr}</span>` : ''}${dog.name}</h1>
-                                    <p class="text-bark-300 text-lg">${dog.breed}</p>
-                                    <div class="flex items-center gap-4 mt-3 text-sm text-bark-400">
-                                        <span>Fører: <strong class="text-white">${dog.handler}</strong></span>
-                                        <span>Eier: <strong class="text-white">${dog.owner}</strong></span>
-                                    </div>
-                                </div>
-                            </div>
-                            ${formattedPrize ? `
-                                <div class="${prize.bg} ${prize.text} px-6 py-4 rounded-xl shadow-lg text-center">
-                                    <p class="text-xs uppercase tracking-wide opacity-80 mb-1">Premie</p>
-                                    <p class="text-2xl font-bold">${formattedPrize}</p>
-                                </div>
-                            ` : ''}
-                        </div>
-                        <div class="flex items-center gap-4 mt-6 pt-6 border-t border-white/20">
-                            <span class="text-bark-300">${partyName}</span>
-                            <span class="text-bark-400">•</span>
-                            <span id="trialNameDisplay" class="text-bark-300">${trialName}</span>
-                            <span class="text-bark-400">•</span>
-                            ${statusBadge}
-                        </div>
-                    </div>
-
-                    <!-- Scores Section -->
-                    <div class="p-8 bg-bark-50 border-b border-bark-200">
-                        <h2 class="text-lg font-bold font-serif text-bark-700 mb-6">Vurdering</h2>
-
-                        <!-- Character Scores Grid -->
-                        <div class="grid grid-cols-6 gap-4 mb-8">
-                            ${[
-                                { key: 'JAKTLYST', abbr: 'JL', label: 'Jaktlyst' },
-                                { key: 'FART', abbr: 'FA', label: 'Fart' },
-                                { key: 'SELVSTENDIGHET', abbr: 'SE', label: 'Selvstendighet' },
-                                { key: 'SOKSBREDDE', abbr: 'SB', label: 'Søksbredde' },
-                                { key: 'REVIERING', abbr: 'RE', label: 'Reviering' },
-                                { key: 'SAMARBEID', abbr: 'SA', label: 'Samarbeid' }
-                            ].map(item => {
-                                const val = s[item.key] ?? '-';
-                                return `
-                                    <div class="text-center">
-                                        <div class="w-16 h-16 mx-auto ${typeof val === 'number' ? scoreColor(val) : 'bg-bark-200 text-bark-600'} rounded-2xl flex items-center justify-center shadow-md mb-2">
-                                            <span class="text-2xl font-bold">${val}</span>
-                                        </div>
-                                        <p class="text-sm font-bold text-bark-600">${item.abbr}</p>
-                                        <p class="text-xs text-bark-400">${item.label}</p>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-
-                        <!-- Detail Cards -->
-                        <div class="grid grid-cols-2 gap-6">
-                            <!-- Fuglebehandling -->
-                            <div class="bg-white rounded-xl p-5 border-2 border-warm-200">
-                                <h3 class="text-sm font-bold text-warm-800 uppercase tracking-wide mb-4 flex items-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
-                                    </svg>
-                                    Fuglebehandling
-                                </h3>
-                                <div class="space-y-3">
-                                    <div class="flex items-center justify-between py-2 border-b border-bark-100">
-                                        <span class="text-bark-600">Presisjon</span>
-                                        <span class="text-xl font-bold text-bark-800">${s.PRESISJON ?? '-'}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between py-2">
-                                        <span class="text-bark-600">Reising</span>
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-xl font-bold text-bark-800">${s.REISING ?? '-'}</span>
-                                            ${s.GODKJENT_REISING ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">Godkjent</span>' : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Stand -->
-                            <div class="bg-white rounded-xl p-5 border-2 border-bark-200">
-                                <h3 class="text-sm font-bold text-bark-700 uppercase tracking-wide mb-4 flex items-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                    Stand
-                                </h3>
-                                <div class="space-y-3">
-                                    <div class="flex items-center justify-between py-2 border-b border-bark-100">
-                                        <span class="text-bark-600">Med makker</span>
-                                        <span class="text-xl font-bold text-bark-800">${s.STAND_M ?? '-'}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between py-2 border-b border-bark-100">
-                                        <span class="text-bark-600">Uten makker</span>
-                                        <span class="text-xl font-bold text-bark-800">${s.STAND_U ?? '-'}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between py-2">
-                                        <span class="text-bark-600">Tomstand</span>
-                                        <span class="text-xl font-bold text-bark-800">${s.TOMSTAND ?? '-'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-
-                    <!-- Critique Text -->
-                    <div class="p-8">
-                        <h2 class="text-lg font-bold font-serif text-bark-700 mb-4">Kritikk</h2>
-                        <div class="bg-warm-50 border-2 border-warm-200 rounded-xl p-6">
-                            <p class="text-bark-800 leading-relaxed text-lg whitespace-pre-wrap">${dog.critique || 'Ingen kritikk skrevet'}</p>
-                        </div>
-                    </div>
-
-                    <!-- Footer / Signatures -->
-                    <div class="px-8 py-6 bg-bark-100 border-t border-bark-200">
-                        <div class="flex justify-between items-end">
-                            <div>
-                                <p class="text-xs text-bark-400 uppercase tracking-wide mb-1">Dommer</p>
-                                <p class="font-bold text-bark-800 text-lg">${dog.critiqueSubmittedBy || '-'}</p>
-                                <p class="text-sm text-bark-500">${dog.critiqueSubmittedAt ? new Date(dog.critiqueSubmittedAt).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</p>
-                            </div>
-                            ${dog.critiqueStatus === 'approved' ? `
-                            <div class="text-right">
-                                <p class="text-xs text-bark-400 uppercase tracking-wide mb-1">Godkjent av NKK</p>
-                                <p class="font-bold text-green-700 text-lg">${dog.approvedBy || 'NKK-representant'}</p>
-                                <p class="text-sm text-bark-500">${dog.approvedAt ? new Date(dog.approvedAt).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</p>
-                            </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                </div>
-            `;
+                <p style="text-align:center;padding:30px;color:#c00;">
+                    Feil: ${e.message}
+                </p>`;
         }
+    }
 
-        // Load on page ready
-        loadCritique();
-    </script>
+    load();
+</script>
 </body>
 </html>

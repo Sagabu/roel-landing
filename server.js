@@ -9356,7 +9356,9 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
 
       const partiId = partiResult.lastInsertRowid;
 
-      // Sett inn deltakere (hunder)
+      // Sett inn deltakere (hunder) — startnummer tildeles alltid sekvensielt
+      // basert på klientens array-rekkefølge, slik at public partiliste
+      // (ORDER BY startnummer) speiler den samme UK-øverst/AK-under-ordenen.
       if (Array.isArray(parti.dogs)) {
         let startnummer = 1;
         for (const dog of parti.dogs) {
@@ -9372,7 +9374,7 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
             dog.eierTelefon || '',
             dog.forer || '',
             dog.forerTelefon || '',
-            dog.startnummer || startnummer++,
+            startnummer++,
             dog.confirmed ? 1 : 0,
             dog.status || 'aktiv'
           );

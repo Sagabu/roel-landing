@@ -4328,6 +4328,28 @@
             return trialId ? `trialVenteliste_${trialId}` : null;
         }
 
+        // Regel: UK-hunder øverst, AK-hunder under, innad i hvert UK/AK-parti.
+        // Stabil sortering — bevarer innbyrdes rekkefølge innenfor hver klasse.
+        // VK-partier røres ikke.
+        function sortPartyDogs(party) {
+            if (!party || !Array.isArray(party.dogs)) return;
+            if (party.type === 'vk') return;
+            const uk = [], ak = [], other = [];
+            for (const d of party.dogs) {
+                const k = (d.klasse || '').toUpperCase();
+                if (k === 'UK') uk.push(d);
+                else if (k === 'AK') ak.push(d);
+                else other.push(d);
+            }
+            party.dogs = [...uk, ...ak, ...other];
+        }
+
+        function sortAllParties(parties) {
+            if (!Array.isArray(parties)) return parties;
+            parties.forEach(sortPartyDogs);
+            return parties;
+        }
+
         // Utled p.day fra p.date for partier som mangler det. Bruker trialDateFrom som
         // start, ellers tidligste parti-dato. Muterer og returnerer samme array.
         function ensurePartyDays(parties) {
@@ -4360,6 +4382,9 @@
         function setTrialParties(parties) {
             const key = getTrialPartiesKey();
             if (!key) return;
+
+            // Normaliser rekkefølge: UK øverst, AK under, innad i hvert parti.
+            sortAllParties(parties);
 
             // Sikre at parti-datoer er korrekte (renser gamle feil-datoer fra localStorage)
             const startDatoEl = document.getElementById('trialDateFrom');
@@ -6899,14 +6924,29 @@
         }
 
         // Render en enkelt hunderrad med flytt-knapp
-        function renderDogRowGlobal(dog, i, partyName) {
+        function renderDogRowGlobal(dog, i, party) {
             var klasseClass = 'bg-amber-100 text-amber-800';
             if (dog.klasse === 'UK') klasseClass = 'bg-blue-100 text-blue-800';
             else if (dog.klasse === 'AK') klasseClass = 'bg-green-100 text-green-800';
 
             var regnrEsc = (dog.regnr || '').replace(/'/g, "\\'");
+            var partyName = party.name;
             var partyNameEsc = partyName.replace(/'/g, "\\'");
             var bgClass = (i % 2 === 0) ? 'bg-white' : 'bg-bark-50';
+
+            // Opp/ned kun tillatt innenfor samme klasse (UK skal alltid stå over AK)
+            var dogKl = (dog.klasse || '').toUpperCase();
+            var prev = i > 0 ? party.dogs[i - 1] : null;
+            var next = i < party.dogs.length - 1 ? party.dogs[i + 1] : null;
+            var canUp = prev && (prev.klasse || '').toUpperCase() === dogKl;
+            var canDown = next && (next.klasse || '').toUpperCase() === dogKl;
+
+            var upBtn = canUp
+                ? '<button onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'up\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm" title="Flytt opp">↑</button>'
+                : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="Kan ikke flyttes forbi annen klasse">↑</span>';
+            var downBtn = canDown
+                ? '<button onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'down\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm" title="Flytt ned">↓</button>'
+                : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="Kan ikke flyttes forbi annen klasse">↓</span>';
 
             return '<div class="grid grid-cols-5 md:grid-cols-6 lg:grid-cols-7 gap-0 ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
                 '<div class="px-3 py-3 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
@@ -6915,11 +6955,31 @@
                 '<div class="px-3 py-3 text-sm text-bark-700 hidden lg:block truncate">' + (dog.eier || '–') + '</div>' +
                 '<div class="px-3 py-3 text-sm text-bark-700 truncate">' + (dog.forer || '–') + '</div>' +
                 '<div class="px-3 py-3 text-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
-                '<div class="px-3 py-3 text-center flex items-center justify-center gap-1">' +
+                '<div class="px-3 py-3 text-center flex items-center justify-center gap-1 flex-wrap">' +
+                    upBtn + downBtn +
                     '<button onclick="openMoveDialog(\'' + regnrEsc + '\', \'' + partyNameEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt</button>' +
                     '<button onclick="trekkHund(\'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-700 border border-red-300 text-xs font-medium transition shadow-sm" title="Trekk påmeldingen">Trekk</button>' +
                 '</div>' +
             '</div>';
+        }
+
+        // Bytt to naboer i samme parti. Bare tillatt når nabo har samme klasse,
+        // så UK alltid står over AK. Lagrer og re-rendrer.
+        function moveDogInParty(partyName, regnr, direction) {
+            const parties = getTrialParties();
+            const party = parties.find(p => p.name === partyName);
+            if (!party || !Array.isArray(party.dogs)) return;
+            const idx = party.dogs.findIndex(d => d.regnr === regnr);
+            if (idx === -1) return;
+            const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+            if (targetIdx < 0 || targetIdx >= party.dogs.length) return;
+            const a = party.dogs[idx];
+            const b = party.dogs[targetIdx];
+            if ((a.klasse || '').toUpperCase() !== (b.klasse || '').toUpperCase()) return;
+            party.dogs[idx] = b;
+            party.dogs[targetIdx] = a;
+            setTrialParties(parties);
+            renderAllParties(parties);
         }
 
         // Render et parti med flytt-funksjonalitet og terreng-felt
@@ -6944,7 +7004,7 @@
 
             var ukBadge = party.ukCount ? '<span class="px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-300 rounded-md text-xs font-semibold">UK: ' + party.ukCount + '</span>' : '';
             var akBadge = party.akCount ? '<span class="px-2.5 py-1 bg-green-100 text-green-800 border border-green-300 rounded-md text-xs font-semibold">AK: ' + party.akCount + '</span>' : '';
-            var dogRows = party.dogs.map(function(dog, i) { return renderDogRowGlobal(dog, i, party.name); }).join('');
+            var dogRows = party.dogs.map(function(dog, i) { return renderDogRowGlobal(dog, i, party); }).join('');
 
             var baseTitle = party.displayName || party.name;
             var displayTitle = dagNavn ? baseTitle + ' ' + dagNavn : baseTitle;
@@ -7110,6 +7170,9 @@
 
         function renderAllParties(parties) {
             if (!parties || parties.length === 0) return;
+
+            // Normaliser rekkefølge før render: UK øverst, AK under.
+            sortAllParties(parties);
 
             // Vis parti-seksjonen
             document.getElementById('partyListsEmptyState').classList.add('hidden');

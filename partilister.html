@@ -1417,40 +1417,24 @@
                              `<span style="display:inline-block;padding:2px 8px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:6px;font-size:10px;font-weight:700;">AK: ${akCount}</span>`;
                 }
 
-                // Hent bakgrunnsbilde som base64 (uten crossOrigin — same-origin)
-                let bgBase64 = '';
-                try {
-                    // Last bildet via fetch som blob → base64 (unngår CORS-problem)
-                    const bgResp = await fetch('images/partilister-bg-download.jpg');
-                    const bgBlob = await bgResp.blob();
-                    const bgDataUrl = await new Promise(r => {
-                        const reader = new FileReader();
-                        reader.onload = () => r(reader.result);
-                        reader.readAsDataURL(bgBlob);
-                    });
-                    const img = new Image();
-                    await new Promise((resolve, reject) => {
-                        img.onload = resolve;
-                        img.onerror = reject;
-                        img.src = bgDataUrl;
-                    });
-                    const cvs = document.createElement('canvas');
-                    cvs.width = imgWidth; cvs.height = 800;
-                    const ctx = cvs.getContext('2d');
-                    const sc = Math.max(imgWidth/img.width, 800/img.height);
-                    const w = img.width * sc, h = img.height * sc;
-                    ctx.drawImage(img, (imgWidth-w)/2, (800-h)/2, w, h);
-                    ctx.fillStyle = 'rgba(255,255,255,0.60)';
-                    ctx.fillRect(0, 0, imgWidth, 800);
-                    bgBase64 = cvs.toDataURL('image/jpeg', 0.8);
+                // Last bakgrunnsbildet direkte (uten FileReader/base64) — iPhone Safari
+                // tålte ikke 7-10 MB data-URL i CSS inline. Bildet caches globalt og
+                // tegnes på finalCanvas under (samme visuelle layout som før).
+                if (!window._partilisteBgImg) {
+                    try {
+                        window._partilisteBgImg = await new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => resolve(img);
+                            img.onerror = () => reject(new Error('Kunne ikke laste bakgrunnsbildet'));
+                            img.src = 'images/partilister-bg-download.jpg';
+                        });
+                    } catch(e) { console.warn('Bg-bilde feilet:', e); }
+                }
 
-                    // Lagre originalbilde for ytre ramme (tegnes på canvas etterpå)
-                    window._partilisteBgImg = img;
-                } catch(e) { console.warn('Bg-bilde feilet:', e); }
-
-                const bgCss = bgBase64
-                    ? `background-image:url('${bgBase64}');background-size:${imgWidth}px 800px;background-position:top center;background-repeat:no-repeat;`
-                    : 'background:white;';
+                // Semi-transparent hvit panel over tabellområdet. Gir ~samme milkaktig
+                // effekt som tidligere (bg × 0.4 + white × 0.6), men uten data-URL-CSS
+                // som html2canvas sliter med å re-dekode på iOS.
+                const bgCss = 'background:rgba(255,255,255,0.55);';
 
                 // Finn parti-dato (ukedag + dato)
                 let partiDato = '';
@@ -1518,9 +1502,11 @@
                     </div>
                 `;
 
+                // Lavere skala på smale vindu — iPhone-minnetak for canvas.
+                const canvasScale = window.innerWidth < 768 ? 1.5 : 2;
                 const rawCanvas = await html2canvas(el, {
                     backgroundColor: null,
-                    scale: 2,
+                    scale: canvasScale,
                     logging: false,
                     useCORS: true
                 });
@@ -1552,6 +1538,10 @@
                 const filename = `Partiliste_${partyId.replace(/\s+/g, '_')}_${dateStr}.png`;
 
                 finalCanvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        alert('Kunne ikke generere bilde: tom canvas-blob. Prøv igjen eller ta skjermbilde.');
+                        return;
+                    }
                     if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
                         try {
                             const file = new File([blob], filename, { type: 'image/png' });
@@ -1567,7 +1557,8 @@
 
             } catch (error) {
                 console.error('Feil ved generering av bilde:', error);
-                alert('Kunne ikke generere bilde. Prøv igjen.');
+                const msg = error?.message || String(error);
+                alert('Kunne ikke generere bilde: ' + msg + '\n\nPrøv igjen, eller ta skjermbilde som alternativ.');
             } finally {
                 if (saveBtn) { saveBtn.innerHTML = originalText; saveBtn.disabled = false; }
             }

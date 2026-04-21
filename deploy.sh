@@ -49,7 +49,11 @@ echo "=== Deploying to fuglehundprove.no ==="
 # Slett eventuelle lokale db-filer FØR deploy (sikkerhetskopi)
 rm -f fuglehund.db fuglehund.db-wal fuglehund.db-shm 2>/dev/null || true
 
-# Rsync med EKSPLISITT ekskludering av alle database-filer
+# Rsync med EKSPLISITT ekskludering av alle database-filer og sensitive env-filer.
+# VIKTIG: .env må ALDRI synkroniseres fra lokal maskin — den inneholder
+# prod-kredentialer (SMS/Vipps/JWT) som kun skal vedlikeholdes direkte på serveren.
+# Lokal .env er for lokal utvikling og har typisk dev-verdier som ville slått ut
+# ekte SMS-provider og satt NODE_ENV=development på prod.
 rsync -avz \
     --exclude 'node_modules' \
     --exclude '.git' \
@@ -58,6 +62,8 @@ rsync -avz \
     --exclude '*.db-shm' \
     --exclude 'fuglehund.db*' \
     --exclude 'backups/' \
+    --exclude '.env' \
+    --exclude '.env.*' \
     ./ ${SERVER}:${REMOTE_DIR}/
 
 echo "=== Files synced, checkpointing database ==="

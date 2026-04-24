@@ -3,7 +3,13 @@
  *
  * Håndterer JWT tokens og autentisering mot backend.
  * Inkluder dette scriptet før andre scripts som trenger auth.
+ *
+ * Guard mot dobbel-lasting: hvis auth.js lastes to ganger (f.eks. HTML har
+ * script-tag + serveWithShim auto-injecter), ville `const FuglehundAuth` og
+ * lignende deklarasjoner kastet SyntaxError ved andre evaluering og stoppet
+ * resten av siden sin JS. Hopp over hele initialiseringen hvis allerede lastet.
  */
+if (typeof window.FuglehundAuth === 'undefined') {
 
 const FuglehundAuth = (function() {
   const TOKEN_KEY = 'fuglehund_token';
@@ -708,3 +714,5 @@ window.handleApiError = function(error, customMessage) {
     injectAdminButton();
   }
 })();
+
+} // end if (typeof window.FuglehundAuth === 'undefined')

@@ -6975,6 +6975,7 @@
         // hundens navn, rase og eier automatisk fra databasen når regnr matcher.
         // Fører fylles IKKE ut — den er prøve-spesifikk og må velges per gang.
         let _addDogLookupTimer = null;
+        let _addDogSuggestions = [];
         function lookupHundByRegnr(query) {
             clearTimeout(_addDogLookupTimer);
             const suggest = document.getElementById('addDogRegnrSuggest');
@@ -6996,14 +6997,25 @@
                         hint.classList.add('hidden');
                         return;
                     }
-                    suggest.innerHTML = results.map(h => {
+                    // Cache og render med data-idx istedenfor å embedde JSON i onclick —
+                    // apostrof i hundenavn (f.eks. "Storbakken's") brøt tidligere inline-
+                    // onclick=' ... ' og gjorde knappen uklikkbar.
+                    _addDogSuggestions = results;
+                    const esc = s => String(s ?? '')
+                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    suggest.innerHTML = results.map((h, idx) => {
                         const eierTxt = h.eierNavn ? ' — eier: ' + h.eierNavn : ' — (uten registrert eier)';
-                        const payload = JSON.stringify(h).replace(/"/g, '&quot;');
-                        return '<button type="button" onclick=\'selectExistingHund(' + JSON.stringify(h) + ')\' class="w-full text-left px-3 py-2 hover:bg-warm-50 border-b border-bark-100 last:border-0">' +
-                            '<div class="text-sm font-medium text-bark-800">' + (h.regnr || '') + ' — ' + (h.navn || '') + '</div>' +
-                            '<div class="text-xs text-bark-500">' + (h.rase || '—') + eierTxt + '</div>' +
+                        return '<button type="button" data-idx="' + idx + '" class="add-dog-suggest-btn w-full text-left px-3 py-2 hover:bg-warm-50 border-b border-bark-100 last:border-0">' +
+                            '<div class="text-sm font-medium text-bark-800">' + esc(h.regnr) + ' — ' + esc(h.navn) + '</div>' +
+                            '<div class="text-xs text-bark-500">' + esc(h.rase || '—') + esc(eierTxt) + '</div>' +
                             '</button>';
                     }).join('');
+                    suggest.querySelectorAll('.add-dog-suggest-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const idx = parseInt(btn.dataset.idx, 10);
+                            if (_addDogSuggestions[idx]) selectExistingHund(_addDogSuggestions[idx]);
+                        });
+                    });
                     suggest.classList.remove('hidden');
                 } catch (e) { /* stille feil */ }
             }, 250);

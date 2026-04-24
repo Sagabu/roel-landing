@@ -10047,21 +10047,23 @@
         function openMoveDialog(regnr, fromPartyName) {
             const parties = getTrialParties();
 
-            // Finn hunden — søk i partier ELLER venteliste
+            // Finn hunden i det SPESIFIKKE partiet den ble klikket fra.
+            // Hunder kan stå i flere partier (f.eks. både lørdag og søndag, eller
+            // ved feil i VK+UKAK). Vi må ta klasse/dag fra riktig rad, ikke
+            // bare første regnr-match.
             let dog = null;
             let fromParty = null;
 
-            // Søk i partier
-            for (const party of parties) {
-                const found = party.dogs.find(d => d.regnr === regnr);
+            const exactParty = parties.find(p => p.name === fromPartyName);
+            if (exactParty) {
+                const found = exactParty.dogs.find(d => d.regnr === regnr);
                 if (found) {
                     dog = found;
-                    fromParty = party;
-                    break;
+                    fromParty = exactParty;
                 }
             }
 
-            // Hvis ikke funnet i partier, søk i venteliste
+            // Hvis ikke funnet (hunden kan komme fra venteliste): søk i venteliste
             if (!dog) {
                 const venteliste = getTrialVenteliste();
                 const allVenteliste = [
@@ -10073,6 +10075,16 @@
                 ];
                 dog = allVenteliste.find(d => d.regnr === regnr);
                 if (dog) fromParty = null; // Kommer fra venteliste, ikke parti
+            }
+
+            // Siste fallback: søk alle partier (matcher gammel oppførsel) hvis
+            // fromPartyName ikke traff. Beholder bakoverkompatibilitet med
+            // andre kallsteder.
+            if (!dog) {
+                for (const party of parties) {
+                    const found = party.dogs.find(d => d.regnr === regnr);
+                    if (found) { dog = found; fromParty = party; break; }
+                }
             }
 
             if (!dog) {

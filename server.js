@@ -9342,6 +9342,7 @@ app.get("/api/prover/:id/partilister", (c) => {
 
   // Bygg opp struktur som matcher localStorage-formatet
   // GDPR: Telefonnumre fjernes fra offentlig API
+  // Trukne hunder (status='trukket') ekskluderes helt fra offentlig API
   const result = partier.map(parti => ({
     id: parti.id,
     name: parti.navn,
@@ -9352,7 +9353,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
-      .filter(d => d.parti_id === parti.id)
+      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket')
       .map(d => ({
         regnr: d.hund_regnr,
         hundenavn: d.hund_navn,
@@ -9399,6 +9400,21 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
   };
 
   // Full versjon med telefonnumre for admin
+  // dogs[] = aktive hunder (status != 'trukket'), trukne[] = hunder som meldt forfall
+  const mapDog = (d) => ({
+    regnr: d.hund_regnr,
+    hundenavn: d.hund_navn,
+    rase: d.rase,
+    kjonn: d.kjonn,
+    klasse: d.klasse,
+    eier: d.eier_navn,
+    eierTelefon: d.eier_telefon,
+    forer: d.forer_navn,
+    forerTelefon: d.forer_telefon,
+    startnummer: d.startnummer,
+    confirmed: d.bekreftet === 1,
+    status: d.status
+  });
   const result = partier.map(parti => ({
     id: parti.id,
     name: parti.navn,
@@ -9409,21 +9425,11 @@ app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
-      .filter(d => d.parti_id === parti.id)
-      .map(d => ({
-        regnr: d.hund_regnr,
-        hundenavn: d.hund_navn,
-        rase: d.rase,
-        kjonn: d.kjonn,
-        klasse: d.klasse,
-        eier: d.eier_navn,
-        eierTelefon: d.eier_telefon,
-        forer: d.forer_navn,
-        forerTelefon: d.forer_telefon,
-        startnummer: d.startnummer,
-        confirmed: d.bekreftet === 1,
-        status: d.status
-      }))
+      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket')
+      .map(mapDog),
+    trukne: deltakere
+      .filter(d => d.parti_id === parti.id && d.status === 'trukket')
+      .map(mapDog)
   }));
 
   return c.json(result);

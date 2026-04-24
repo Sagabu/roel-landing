@@ -4455,6 +4455,40 @@
                     const parties = await resp.json();
                     if (Array.isArray(parties) && parties.length > 0) {
                         ensurePartyDays(parties);
+
+                        // Aggreger trukne hunder fra server-responsen til trialTrukket_-strukturen
+                        // så renderTrukketListe viser dem under "Trukne påmeldinger".
+                        // Server returnerer trukne separat per parti (status='trukket' i parti_deltakere).
+                        const trukket = { dag1: { uk: [], ak: [] }, dag2: { uk: [], ak: [] },
+                                          dag3: { uk: [], ak: [] }, dag4: { uk: [], ak: [] }, vk: [] };
+                        for (const p of parties) {
+                            if (!Array.isArray(p.trukne) || p.trukne.length === 0) continue;
+                            const dagNr = p.day || 1;
+                            const dagKey = 'dag' + dagNr;
+                            for (const d of p.trukne) {
+                                const isVK = p.type === 'vk' || (d.klasse || '').toUpperCase() === 'VK';
+                                if (isVK) {
+                                    trukket.vk.push(Object.assign({}, d, {
+                                        trukket_fra: 'parti ' + (p.displayName || p.name)
+                                    }));
+                                } else if (trukket[dagKey]) {
+                                    const klKey = (d.klasse || 'AK').toLowerCase();
+                                    if (!trukket[dagKey][klKey]) trukket[dagKey][klKey] = [];
+                                    trukket[dagKey][klKey].push(Object.assign({}, d, {
+                                        trukket_fra: 'parti ' + (p.displayName || p.name)
+                                    }));
+                                }
+                            }
+                        }
+                        const trukketKey = getTrialTrukketKey();
+                        if (trukketKey) {
+                            localStorage.setItem(trukketKey, JSON.stringify(trukket));
+                        }
+
+                        // Fjern trukne-feltet fra party-objektene før lagring/rendering
+                        // så party.dogs.length og UI-telling kun inkluderer aktive hunder.
+                        for (const p of parties) { delete p.trukne; }
+
                         // Lagre til localStorage for offline-bruk (kun hvis vi har trialId)
                         const cacheKey = getTrialPartiesKey();
                         if (cacheKey) {

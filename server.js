@@ -4438,7 +4438,7 @@ app.post("/api/hunder", async (c) => {
                           eierbevis, eierbevis_dato, aversjonsbevis, aversjonsbevis_dato,
                           vaksinasjon, vaksinasjon_dato)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(regnr || null, navn, rase || null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null,
+    `).run(regnr || null, navn, rase ? normalizeRase(rase) : null, kjonn || null, fodselsdato || null, eier_telefon, klubb_id || null, bilde || null,
            eierbevis || null, eierbevis_dato || null, aversjonsbevis || null, aversjonsbevis_dato || null,
            vaksinasjon || null, vaksinasjon_dato || null);
 
@@ -4474,7 +4474,8 @@ app.put("/api/hunder/:id", async (c) => {
   for (const [bodyKey, dbCol] of Object.entries(fieldMap)) {
     if (bodyKey in body) {
       sets.push(`${dbCol} = ?`);
-      vals.push(body[bodyKey]);
+      // Normaliser rase så skrivefeil og eldre format blir kanonisk
+      vals.push(bodyKey === 'rase' && body[bodyKey] ? normalizeRase(body[bodyKey]) : body[bodyKey]);
     }
   }
 
@@ -9659,7 +9660,7 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
             proveId,
             dog.regnr || '',
             dog.hundenavn || dog.navn || '',
-            dog.rase || '',
+            normalizeRase(dog.rase),
             dog.kjonn || '',
             dog.klasse || '',
             dog.eier || '',
@@ -11622,6 +11623,50 @@ function parseClass(klasseRaw) {
 
 // --- Parse participant list (PDF, CSV, Excel) ---
 // Supports both FormData upload and JSON base64 upload
+// Kanoniske rasenavn for stående fuglehunder (må holdes i sync med raser.js).
+// Brukes til å normalisere rase ved NKK-import. Frontend bruker raser.js med en
+// rikere alias-liste; her holder en case-insensitiv match mot kanonisk form
+// for 95% av NKK-filene som allerede bruker riktig navn.
+const KANONISKE_RASER_SERVER = [
+  'Breton', 'Engelsk Setter', 'Gordon Setter', 'Grosser Münsterländer',
+  'Irsk Rød og Hvit Setter', 'Irsk Setter', 'Italiensk Spinone',
+  'Kleiner Münsterländer', 'Pointer', 'Ungarsk Vizsla Korthåret',
+  'Ungarsk Vizsla Strihåret', 'Vorstehhund Korthåret', 'Vorstehhund Langhåret',
+  'Vorstehhund Strihåret', 'Weimaraner Korthåret', 'Weimaraner Langhåret'
+];
+const RASE_ALIAS_SERVER = {
+  // Eldre "Korthår Vorsteh"-format → NKK-format
+  'korthår vorsteh': 'Vorstehhund Korthåret',
+  'korthaar vorsteh': 'Vorstehhund Korthåret',
+  'strihår vorsteh': 'Vorstehhund Strihåret',
+  'strihaar vorsteh': 'Vorstehhund Strihåret',
+  'langhår vorsteh': 'Vorstehhund Langhåret',
+  'langhaar vorsteh': 'Vorstehhund Langhåret',
+  // Tyske navn
+  'deutsch kurzhaar': 'Vorstehhund Korthåret',
+  'deutsch drahthaar': 'Vorstehhund Strihåret',
+  'deutsch langhaar': 'Vorstehhund Langhåret',
+  // Engelske navn som kan dukke opp i eldre filer
+  'english setter': 'Engelsk Setter',
+  'irish setter': 'Irsk Setter',
+  'weimaraner': 'Weimaraner Korthåret',
+  'vizsla': 'Ungarsk Vizsla Korthåret',
+  'spinone italiano': 'Italiensk Spinone'
+};
+function normalizeRase(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  const key = raw.toLowerCase().replace(/\s+/g, ' ');
+  // Eksakt match mot kanonisk form
+  for (const r of KANONISKE_RASER_SERVER) {
+    if (r.toLowerCase() === key) return r;
+  }
+  // Alias-treff
+  if (RASE_ALIAS_SERVER[key]) return RASE_ALIAS_SERVER[key];
+  // Ukjent — returner som-er (med trim), så blir synlig i UI som "ikke i listen"
+  return raw;
+}
+
 app.post("/api/parse-participants", async (c) => {
   let fileName, buffer;
 
@@ -11718,7 +11763,7 @@ app.post("/api/parse-participants", async (c) => {
             participants.push({
               regnr: match[1],
               hundenavn: match[2].trim(),
-              rase: match[3].trim(),
+              rase: normalizeRase(match[3]),
               eier: formatName(match[4].trim()),
               forer: formatName(match[5].trim()),
               klasseRaw: match[6].toUpperCase(),
@@ -11949,11 +11994,13 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
         // Sjekk om hunden allerede finnes
         const existing = findHund.get(regnr);
 
+        const normalisertRase = p.rase ? normalizeRase(p.rase) : null;
+
         if (existing) {
           // Oppdater eksisterende hund (kun hvis ikke allerede har eier)
           updateHund.run(
             p.hundenavn || p.navn,
-            p.rase || null,
+            normalisertRase,
             null, // Ikke overskrive eksisterende eier_telefon
             regnr
           );
@@ -11963,7 +12010,7 @@ app.post("/api/import-participants", requireAdmin, async (c) => {
           insertHund.run(
             regnr,
             p.hundenavn || p.navn,
-            p.rase || null,
+            normalisertRase,
             null, // Kjønn ikke i deltakerliste
             null  // Eier kobles senere når bruker registrerer seg
           );
@@ -12202,6 +12249,11 @@ app.get("/site-lock.js", (c) => {
   return c.body(readFileSync(join(__dirname, "site-lock.js"), "utf-8"));
 });
 
+app.get("/raser.js", (c) => {
+  c.header("Content-Type", "application/javascript");
+  return c.body(readFileSync(join(__dirname, "raser.js"), "utf-8"));
+});
+
 app.get("/admin-lock.js", (c) => {
   c.header("Content-Type", "application/javascript");
   return c.body(readFileSync(join(__dirname, "admin-lock.js"), "utf-8"));
@@ -12220,7 +12272,7 @@ function serveWithShim(filePath, c, isAdmin = false) {
   if (isAdmin) {
     injected += `<script src="/admin-lock.js"></script>\n`;
   }
-  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/error-handler.js"></script>\n<script src="/navbar.js" defer></script>`;
+  injected += `<script src="/auth.js"></script>\n<script src="/storage-shim.js"></script>\n<script src="/raser.js"></script>\n<script src="/error-handler.js"></script>\n<script src="/navbar.js" defer></script>`;
 
   if (html.includes("<head>")) {
     html = html.replace("<head>", `<head>\n${injected}`);

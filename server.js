@@ -9624,6 +9624,17 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
     // Start transaksjon
     db.exec("BEGIN TRANSACTION");
 
+    // Bevar trukne parti_deltakere-rader! Klienten sender kun aktive, så en
+    // naiv DELETE-alt ville slette alle hunder som har meldt forfall — og
+    // sletter dermed hele historikken. Samler disse opp per (parti-navn, regnr)
+    // så vi kan gjeninnsette dem etter parti-rekreering.
+    const trukneSnapshot = db.prepare(`
+      SELECT pd.*, p.navn as parti_navn
+      FROM parti_deltakere pd
+      JOIN partier p ON p.id = pd.parti_id
+      WHERE pd.prove_id = ? AND pd.status = 'trukket'
+    `).all(proveId);
+
     // Slett eksisterende partier og deltakere for denne prøven
     db.prepare("DELETE FROM parti_deltakere WHERE prove_id = ?").run(proveId);
     db.prepare("DELETE FROM partier WHERE prove_id = ?").run(proveId);
@@ -9640,6 +9651,10 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    // Map fra gammelt parti-navn → ny parti_id (fylles nedenfor etter hvert som
+    // partier settes inn, slik at trukne kan legges tilbake til rett parti)
+    const navnTilNyParti = new Map();
+
     let sortering = 0;
     for (const parti of partier) {
       // Sett inn parti
@@ -9654,6 +9669,7 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
       );
 
       const partiId = partiResult.lastInsertRowid;
+      navnTilNyParti.set(parti.name, partiId);
 
       // Sett inn deltakere (hunder) — startnummer tildeles alltid sekvensielt
       // basert på klientens array-rekkefølge, slik at public partiliste
@@ -9679,6 +9695,28 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
           );
         }
       }
+    }
+
+    // Gjeninnsett trukne-rader som ble samlet før DELETE. Sett dem til samme
+    // parti-navn om det finnes, ellers hopp over (partiet eksisterer ikke lenger
+    // og det gir ingen mening å ha en trukket-rad uten parti).
+    // Ikke overskriv hvis klienten har sendt samme regnr som aktiv i samme parti.
+    let gjeninnsatt = 0;
+    for (const t of trukneSnapshot) {
+      const nyId = navnTilNyParti.get(t.parti_navn);
+      if (!nyId) continue;
+      // Sjekk: er regnr allerede lagt inn som aktiv i det nye partiet?
+      const finnes = db.prepare(`
+        SELECT 1 FROM parti_deltakere
+        WHERE parti_id = ? AND hund_regnr = ? LIMIT 1
+      `).get(nyId, t.hund_regnr);
+      if (finnes) continue;
+      insertDeltaker.run(
+        nyId, proveId, t.hund_regnr, t.hund_navn, t.rase, t.kjonn, t.klasse,
+        t.eier_navn, t.eier_telefon, t.forer_navn, t.forer_telefon,
+        t.startnummer || 99, t.bekreftet || 0, 'trukket'
+      );
+      gjeninnsatt++;
     }
 
     db.exec("COMMIT");

@@ -4417,8 +4417,42 @@
             }
         }
 
-        // Synkroniser partilister til server
+        // Synkroniser partilister til server — serialisert + siste-vinner.
+        // Flere raske UI-endringer skal ikke race. Mens en PUT er i flight
+        // samler vi siste tilstand i _nextParties; når PUT-en er ferdig fyrer
+        // vi én ny PUT med siste tilstand. Dette hindrer også at en sein PUT
+        // med stale data overskriver en nyere PUT-tilstand.
+        let _partiesSyncing = false;
+        let _nextParties = null;
+        let _pendingSaves = 0;
+
+        function updateSavingBadge() {
+            let badge = document.getElementById('fuglehund-save-badge');
+            if (_pendingSaves > 0) {
+                if (!badge) {
+                    badge = document.createElement('div');
+                    badge.id = 'fuglehund-save-badge';
+                    badge.style.cssText = 'position:fixed;top:8px;right:8px;padding:6px 12px;border-radius:12px;font-size:12px;font-family:system-ui,sans-serif;z-index:10000;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;box-shadow:0 1px 3px rgba(0,0,0,0.1);';
+                    document.body.appendChild(badge);
+                }
+                badge.textContent = '💾 Lagrer ' + _pendingSaves + ' endring' + (_pendingSaves > 1 ? 'er' : '') + '…';
+            } else if (badge) {
+                badge.remove();
+            }
+        }
+
         async function syncPartiesToServer(parties, proveId) {
+            // Allerede i ferd med å lagre — hold siste tilstand og returner.
+            // Den pågående PUT-en vil fyre oppfølgingen selv.
+            if (_partiesSyncing) {
+                _nextParties = { parties, proveId };
+                return;
+            }
+
+            _partiesSyncing = true;
+            _pendingSaves++;
+            updateSavingBadge();
+
             try {
                 const token = localStorage.getItem('fuglehund_token');
                 const resp = await fetch(`/api/prover/${proveId}/partilister`, {
@@ -4438,8 +4472,30 @@
                 }
             } catch (err) {
                 console.error('❌ Feil ved synkronisering av partilister:', err);
+            } finally {
+                _partiesSyncing = false;
+                _pendingSaves--;
+                updateSavingBadge();
+
+                // Ventet ny tilstand? Fyr ny PUT med siste.
+                if (_nextParties) {
+                    const next = _nextParties;
+                    _nextParties = null;
+                    syncPartiesToServer(next.parties, next.proveId);
+                }
             }
         }
+
+        // Blokker hard-refresh / side-navigasjon mens en PUT er i flight.
+        // Uten dette kan brukeren taste Cmd+Shift+R før serveren har lagret,
+        // og endringen forsvinner silent.
+        window.addEventListener('beforeunload', (e) => {
+            if (_pendingSaves > 0 || _partiesSyncing || _nextParties) {
+                e.preventDefault();
+                e.returnValue = 'Det er ulagrede endringer som synkroniseres. Last på nytt senere.';
+                return e.returnValue;
+            }
+        });
 
         // Last partilister fra server (kalles ved oppstart og prøvebytte)
         // Bruker admin-endepunkt for å få med telefonnumre (for SMS-utsending etc.)
@@ -4766,8 +4822,21 @@
             if (teller) teller.textContent = total + ' hunder trukket';
         }
 
-        // Synkroniser venteliste til server
+        // Synkroniser venteliste til server — samme serialisering som
+        // syncPartiesToServer for å unngå race.
+        let _ventelisteSyncing = false;
+        let _nextVenteliste = null;
+
         async function syncVentelisteToServer(venteliste, proveId) {
+            if (_ventelisteSyncing) {
+                _nextVenteliste = { venteliste, proveId };
+                return;
+            }
+
+            _ventelisteSyncing = true;
+            _pendingSaves++;
+            updateSavingBadge();
+
             try {
                 const token = localStorage.getItem('fuglehund_token');
                 const resp = await fetch(`/api/prover/${proveId}/venteliste`, {
@@ -4786,6 +4855,16 @@
                 }
             } catch (err) {
                 console.error('❌ Feil ved synkronisering av venteliste:', err);
+            } finally {
+                _ventelisteSyncing = false;
+                _pendingSaves--;
+                updateSavingBadge();
+
+                if (_nextVenteliste) {
+                    const next = _nextVenteliste;
+                    _nextVenteliste = null;
+                    syncVentelisteToServer(next.venteliste, next.proveId);
+                }
             }
         }
 

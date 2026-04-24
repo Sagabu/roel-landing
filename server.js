@@ -373,6 +373,20 @@ db.exec(`
     UNIQUE(parti_id, hund_regnr)
   );
 
+  -- Arkiv av parti_deltakere før destruktiv PUT (for recovery hvis klienten
+  -- sender ufullstendig liste — f.eks. PDF-parser som mangler en dag).
+  -- Behold siste 20 per prøve.
+  CREATE TABLE IF NOT EXISTS parti_deltakere_arkiv (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prove_id TEXT NOT NULL,
+    arkivert_at TEXT DEFAULT (datetime('now')),
+    aarsak TEXT,
+    gammel_antall INTEGER,
+    ny_antall INTEGER,
+    snapshot_json TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_pda_prove ON parti_deltakere_arkiv(prove_id, arkivert_at DESC);
+
   -- Venteliste (hunder som ikke fikk plass)
   CREATE TABLE IF NOT EXISTS venteliste (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9547,15 +9561,40 @@ function syncPameldingerForProve(proveId) {
     } catch (e) { console.warn(`[bro] Upsert feilet for hund ${regnr}:`, e.message); }
   }
 
+  // Hunder på venteliste er ikke avmeldt — behold status='venteliste'.
+  // Viktig: admin flytter ofte hunder fra parti til venteliste. Uten dette
+  // sjekket markerte broen hunden som 'avmeldt' i pameldinger, og siden
+  // ingen kritikk/resultat-flyt kan starte fra 'avmeldt', måtte admin
+  // manuelt gjenopplive hunden for å legge dem tilbake i parti senere.
+  const ventelisteHundIds = db.prepare(`
+    SELECT DISTINCT h.id
+    FROM venteliste v JOIN hunder h ON h.regnr = v.hund_regnr
+    WHERE v.prove_id = ?
+  `).all(proveId).map(r => r.id);
+
   // Hunder som var i pameldinger tidligere men ikke lenger i parti_deltakere:
-  // marker som avmeldt (ikke slett — FK fra kritikker/avmeldinger kan peke hit)
+  // - Hvis de står på venteliste: status='venteliste'
+  // - Ellers: status='avmeldt'
+  // (ikke slett — FK fra kritikker/avmeldinger kan peke hit)
   let avmeldt = 0;
-  if (activeHundIds.length > 0) {
-    const placeholders = activeHundIds.map(() => '?').join(',');
+  let venteliste_markert = 0;
+
+  if (ventelisteHundIds.length > 0) {
+    const vPh = ventelisteHundIds.map(() => '?').join(',');
+    const vr = db.prepare(`
+      UPDATE pameldinger SET status = 'venteliste', updated_at = datetime('now')
+      WHERE prove_id = ? AND hund_id IN (${vPh}) AND status NOT IN ('venteliste', 'bekreftet', 'pameldt')
+    `).run(proveId, ...ventelisteHundIds);
+    venteliste_markert = vr.changes;
+  }
+
+  const alleAktiveIds = [...activeHundIds, ...ventelisteHundIds];
+  if (alleAktiveIds.length > 0) {
+    const placeholders = alleAktiveIds.map(() => '?').join(',');
     const r = db.prepare(`
       UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
       WHERE prove_id = ? AND hund_id NOT IN (${placeholders}) AND status != 'avmeldt'
-    `).run(proveId, ...activeHundIds);
+    `).run(proveId, ...alleAktiveIds);
     avmeldt = r.changes;
   } else {
     const r = db.prepare(`
@@ -9565,7 +9604,7 @@ function syncPameldingerForProve(proveId) {
     avmeldt = r.changes;
   }
 
-  return { synkronisert, avmeldt };
+  return { synkronisert, avmeldt, venteliste_markert };
 }
 
 // Lagre partilister (erstatter alle eksisterende for prøven)
@@ -9624,16 +9663,49 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
     // Start transaksjon
     db.exec("BEGIN TRANSACTION");
 
+    // Full snapshot av parti_deltakere før DELETE — gir forensisk recovery
+    // hvis klienten sender en delvis liste (f.eks. PDF-parser som mangler en
+    // dag) og data ville gått tapt. Arkivet ryddes til siste 20 per prøve.
+    const fullSnapshot = db.prepare(`
+      SELECT pd.*, p.navn AS parti_navn, p.dato AS parti_dato, p.type AS parti_type, p.klasse AS parti_klasse
+      FROM parti_deltakere pd
+      JOIN partier p ON p.id = pd.parti_id
+      WHERE pd.prove_id = ?
+    `).all(proveId);
+
+    if (fullSnapshot.length > 0) {
+      // Sammenlign med innkommende data — advar hvis mer enn 10% av hundene
+      // forsvinner (kan indikere bug eller ufullstendig PDF-import).
+      const gammelAktiv = fullSnapshot.filter(r => (r.status || 'aktiv') !== 'trukket').length;
+      const nyAktiv = partier.reduce((s, p) => s + (Array.isArray(p.dogs) ? p.dogs.length : 0), 0);
+      const drop = gammelAktiv - nyAktiv;
+
+      db.prepare(`
+        INSERT INTO parti_deltakere_arkiv (prove_id, aarsak, gammel_antall, ny_antall, snapshot_json)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        proveId,
+        drop > gammelAktiv * 0.1 ? 'put_partilister_stort_fall' : 'put_partilister',
+        gammelAktiv,
+        nyAktiv,
+        JSON.stringify(fullSnapshot)
+      );
+
+      // Rydd opp — behold siste 20 arkiver per prøve
+      db.prepare(`
+        DELETE FROM parti_deltakere_arkiv
+        WHERE prove_id = ? AND id NOT IN (
+          SELECT id FROM parti_deltakere_arkiv WHERE prove_id = ?
+          ORDER BY arkivert_at DESC LIMIT 20
+        )
+      `).run(proveId, proveId);
+    }
+
     // Bevar trukne parti_deltakere-rader! Klienten sender kun aktive, så en
     // naiv DELETE-alt ville slette alle hunder som har meldt forfall — og
     // sletter dermed hele historikken. Samler disse opp per (parti-navn, regnr)
     // så vi kan gjeninnsette dem etter parti-rekreering.
-    const trukneSnapshot = db.prepare(`
-      SELECT pd.*, p.navn as parti_navn
-      FROM parti_deltakere pd
-      JOIN partier p ON p.id = pd.parti_id
-      WHERE pd.prove_id = ? AND pd.status = 'trukket'
-    `).all(proveId);
+    const trukneSnapshot = fullSnapshot.filter(r => r.status === 'trukket');
 
     // Slett eksisterende partier og deltakere for denne prøven
     db.prepare("DELETE FROM parti_deltakere WHERE prove_id = ?").run(proveId);

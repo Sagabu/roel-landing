@@ -17,12 +17,16 @@
   const SYNCED_KEYS = [
     'userProfile', 'userDogs', 'userTrials', 'userMandates',
     'judgeSession', 'clubLogo',
-    'trialParticipants', 'trialParties', 'praktiskInfo', 'currentTrialId'
+    'trialParticipants', 'praktiskInfo', 'currentTrialId'
   ];
 
-  // judgeData_* and trialParties_* keys are dynamic (per party / per trial)
+  // trialParties_<proveId> er bevisst FJERNET fra sync — den har sin egen
+  // kanonisk kilde via /api/prover/:id/partilister/admin (parti_deltakere-
+  // tabellen). Hvis shim-en hydrerte trialParties fra kv_store, kunne stale
+  // data overskrive ferske server-data (f.eks. VK-partier manglende).
+  // judgeData_* og trialParticipants_* er fortsatt dynamiske sync-nøkler.
   function isSyncedKey(key) {
-    return SYNCED_KEYS.includes(key) || key.startsWith('judgeData_') || key.startsWith('trialParties_') || key.startsWith('trialParticipants_');
+    return SYNCED_KEYS.includes(key) || key.startsWith('judgeData_') || key.startsWith('trialParticipants_');
   }
 
   // Hent auth headers for requests

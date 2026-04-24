@@ -4447,9 +4447,16 @@
         async function loadPartiesFromServer(proveId) {
             try {
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch(`/api/prover/${proveId}/partilister/admin`, {
+                let resp = await fetch(`/api/prover/${proveId}/partilister/admin`, {
                     headers: token ? { 'Authorization': `Bearer ${token}` } : {}
                 });
+                // Fallback til offentlig endepunkt hvis admin-auth feiler — da
+                // vises ihvertfall fersk server-data istedenfor stale localStorage.
+                // (trukne[]-feltet mangler, men aktive partier er til stede)
+                if (!resp.ok && (resp.status === 401 || resp.status === 403)) {
+                    console.warn('Admin partilister: auth feilet (' + resp.status + '), faller tilbake til offentlig endepunkt');
+                    resp = await fetch(`/api/prover/${proveId}/partilister`);
+                }
 
                 if (resp.ok) {
                     const parties = await resp.json();

@@ -4066,48 +4066,54 @@
             const after = state.afterRedegjoerelse || { dog1NeedNewDog: true, dog2NeedNewDog: true };
             state.afterRedegjoerelse = null;
 
-            // Kun TTG (Tid til gode) trigger needNewDog — så hvis flagget er
-            // satt vet vi at hunden har TTG. Spør dommer om den skal hentes
-            // ny makker NÅ eller vente til senere i runden.
-            const promptTTGChoice = (position) => {
-                const dogNr = state.selectedDogs[position];
-                const dog = partyList.find(d => d.nr === dogNr);
-                const navn = dog ? `${dog.race} ${dog.name}` : `Hund ${dogNr}`;
-                return confirm(
-                    `${navn} har "Tid til gode".\n\n` +
-                    `OK = Hent ny makker NÅ og fortsett slippet for ${navn}.\n` +
-                    `Avbryt = Vent — ${navn} står på TTG-listen og hentes tilbake senere ` +
-                    `(neste vanlige makkerpar kommer opp).`
-                );
-            };
-
             if (after.dog1NeedNewDog && after.dog2NeedNewDog) {
                 // Begge har TTG — la begge stå på TTG-listen, hent neste vanlige par
                 proceedToNextPair();
                 return;
             }
 
+            // Én hund har TTG — vis sexy valg-modal i stedet for confirm()
             if (after.dog1NeedNewDog) {
-                if (promptTTGChoice(1)) {
-                    openPartyListModal(1);
-                } else {
-                    proceedToNextPair();
-                }
+                showTTGPartnerChoiceModal(1);
                 return;
             }
-
             if (after.dog2NeedNewDog) {
-                if (promptTTGChoice(2)) {
-                    openPartyListModal(2);
-                } else {
-                    proceedToNextPair();
-                }
+                showTTGPartnerChoiceModal(2);
                 return;
             }
 
             // Ingen trenger ny makker — bare gå til neste par
             proceedToNextPair();
         }
+
+        // === TTG-MAKKERVALG-MODAL (etter redegjørelse) ===
+        // Vises når én hund har TTG og dommer må velge om den skal pares med
+        // ny makker nå eller stå på TTG-listen til senere.
+        let ttgPartnerChoicePos = null;
+
+        function showTTGPartnerChoiceModal(position) {
+            ttgPartnerChoicePos = position;
+            const dogNr = state.selectedDogs[position];
+            const dog = partyList.find(d => d.nr === dogNr);
+            const navn = dog ? `${dog.race} ${dog.name}` : `Hund ${dogNr}`;
+            document.getElementById('ttgPartnerDogName').textContent = navn;
+            document.getElementById('ttgPartnerChoiceModal').classList.remove('hidden');
+        }
+
+        function ttgPartnerChoiceNow() {
+            document.getElementById('ttgPartnerChoiceModal').classList.add('hidden');
+            const pos = ttgPartnerChoicePos;
+            ttgPartnerChoicePos = null;
+            if (pos !== null) openPartyListModal(pos);
+        }
+
+        function ttgPartnerChoiceWait() {
+            document.getElementById('ttgPartnerChoiceModal').classList.add('hidden');
+            ttgPartnerChoicePos = null;
+            proceedToNextPair();
+        }
+        window.ttgPartnerChoiceNow = ttgPartnerChoiceNow;
+        window.ttgPartnerChoiceWait = ttgPartnerChoiceWait;
 
         function generateNextRoundPairings() {
             // Finn alle aktive hunder (ikke avsluttet) - behold original rekkefølge fra partilisten
@@ -5269,6 +5275,52 @@ Antall slipp: ${state.currentSlipp}
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
                     Vent til neste runde
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TTG Makker-valg Modal — vises etter redegjørelse når én hund har
+         "tid til gode" og dommer må bestemme om hen skal pares med ny
+         makker nå eller stå på TTG-listen til senere. -->
+    <div id="ttgPartnerChoiceModal" class="hidden fixed inset-0 bg-black/50 z-[55] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-amber-200 bg-amber-500 text-white rounded-t-2xl">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h2 class="text-xl font-bold font-serif">Tid til gode</h2>
+                </div>
+            </div>
+            <div class="p-5">
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                    <p class="text-sm text-amber-900">
+                        <strong id="ttgPartnerDogName" class="text-amber-700">Hunden</strong>
+                        har "Tid til gode" og trenger mer slipptid.
+                    </p>
+                </div>
+                <p class="text-bark-700 mb-2 font-semibold text-center">Hva vil du gjøre?</p>
+            </div>
+            <div class="px-4 pb-4 space-y-2">
+                <button onclick="ttgPartnerChoiceNow()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-bold py-4 rounded-xl transition flex items-center gap-3 px-5 shadow-md">
+                    <svg class="w-7 h-7 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-left flex-1">
+                        <div class="text-base">Hent ny makker NÅ</div>
+                        <div class="text-xs font-normal opacity-90">Velg en partner og fortsett slippet umiddelbart</div>
+                    </div>
+                </button>
+                <button onclick="ttgPartnerChoiceWait()" class="w-full bg-bark-500 hover:bg-bark-600 text-white font-bold py-4 rounded-xl transition flex items-center gap-3 px-5 shadow-md">
+                    <svg class="w-7 h-7 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-left flex-1">
+                        <div class="text-base">Vent til senere</div>
+                        <div class="text-xs font-normal opacity-90">Hund står på TTG-listen — neste vanlige makkerpar kommer</div>
+                    </div>
                 </button>
             </div>
         </div>

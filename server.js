@@ -14669,7 +14669,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
     const { proveId, parti } = c.req.param();
 
     const bedomming = db.prepare(`
-      SELECT plasseringer, premietildelinger, dog_data, vk_type, current_round, status, live_modus, updated_at
+      SELECT plasseringer, premietildelinger, dog_data, tid_til_gode, vk_type, current_round, status, live_modus, updated_at
       FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
@@ -14771,6 +14771,23 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
         };
       });
 
+    // Hunder med "Tid til gode" — venter på ny makker eller mer slipptid.
+    // Vises på offentlig partiliste mellom rangerte og avsluttede hunder.
+    const tidTilGodeRaw = JSON.parse(bedomming.tid_til_gode || '{}');
+    const tidTilGode = Object.entries(tidTilGodeRaw)
+      .filter(([_, hasTTG]) => hasTTG)
+      .map(([nr, _]) => {
+        const hund = nrToHund[parseInt(nr)];
+        return {
+          nr: parseInt(nr),
+          hund_id: hund?.hund_id || null,
+          hund_navn: hund?.hund_navn || `Hund #${nr}`,
+          rase: hund?.rase || '',
+          forer: hund?.forer || '',
+          stats: aggregerStats(parseInt(nr))
+        };
+      });
+
     return c.json({
       exists: true,
       vk_type: bedomming.vk_type,
@@ -14779,6 +14796,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
       live_modus: bedomming.live_modus || 0,
       updated_at: bedomming.updated_at,
       rangering,
+      tidTilGode,
       avsluttet
     });
   } catch (err) {

@@ -1163,13 +1163,14 @@
                 const data = await response.json();
 
                 const harRangering = data.rangering && data.rangering.length > 0;
+                const harTTG = data.tidTilGode && data.tidTilGode.length > 0;
                 const harAvsluttet = data.avsluttet && data.avsluttet.length > 0;
 
                 // Vis tom-tilstand kun hvis BÅDE rangering og avsluttet er tom.
                 // Tidligere skjult avsluttet-listen når rangering=[] — så live-
                 // admin som bare avsluttet hunder uten å plassere noen ennå,
                 // viste ingenting på offentlig partiliste.
-                if (!data.exists || (!harRangering && !harAvsluttet)) {
+                if (!data.exists || (!harRangering && !harTTG && !harAvsluttet)) {
                     // Bygg status-tekst som matcher hovedvisningen så også tom-
                     // tilstanden viser hvor i bedømmingen vi er.
                     let tomTekst = 'Venter på dømming';
@@ -1204,15 +1205,18 @@
                 const liveModus = data.live_modus === 1;
                 let rundeBadge;
                 if (status === 'aktiv') {
-                    rundeBadge = `<span class="px-2.5 py-1 bg-forest-600 text-white rounded text-xs font-bold inline-flex items-center gap-1.5">
-                        <span class="w-1.5 h-1.5 bg-white rounded-full live-dot"></span>
-                        Runde ${rundeNr} pågår
+                    // Bruker bark-700 (mørk brun) som er definert i tailwind-config
+                    // — forest-fargen var ikke registrert, så badge var nesten
+                    // usynlig (hvit tekst på beige). 🐕-emoji for ekstra synlighet.
+                    rundeBadge = `<span class="px-3 py-1.5 bg-bark-700 text-white rounded-lg text-sm font-bold inline-flex items-center gap-2 shadow-sm">
+                        <span class="w-2 h-2 bg-white rounded-full live-dot"></span>
+                        Runde ${rundeNr} pågår 🐕
                     </span>`;
                 } else if (status === 'fullfort' && !liveModus) {
-                    rundeBadge = `<span class="px-2.5 py-1 bg-amber-500 text-white rounded text-xs font-bold">Bedømming ferdig</span>`;
+                    rundeBadge = `<span class="px-3 py-1.5 bg-warm-600 text-white rounded-lg text-sm font-bold inline-flex items-center gap-2 shadow-sm">Bedømming ferdig 🐕</span>`;
                 } else {
                     // fullfort+live, innsendt, godkjent → ferdig for dagen
-                    rundeBadge = `<span class="px-2.5 py-1 bg-bark-600 text-white rounded text-xs font-bold">Bedømming ferdig for dagen</span>`;
+                    rundeBadge = `<span class="px-3 py-1.5 bg-bark-700 text-white rounded-lg text-sm font-bold inline-flex items-center gap-2 shadow-sm">Bedømming ferdig for dagen 🏁</span>`;
                 }
 
                 let vkTypeBadge = '';
@@ -1262,7 +1266,27 @@
                             `;
                         }).join('')}
                     </div>
-                    ${data.avsluttet && data.avsluttet.length > 0 ? `
+                    ${harTTG ? `
+                        <div class="mt-3 pt-3 border-t border-bark-200">
+                            <p class="text-xs font-bold text-amber-700 mb-2 flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                Tid til gode (${data.tidTilGode.length})
+                            </p>
+                            <div class="space-y-2">
+                                ${data.tidTilGode.map(dog => `
+                                    <div class="flex items-start gap-3 p-2 rounded-lg border border-amber-200 bg-amber-50">
+                                        <span class="text-amber-600 flex-shrink-0">⏱️</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-medium text-sm text-amber-900 truncate">${dog.hund_navn}</p>
+                                            <p class="text-xs text-amber-700/80">${dog.rase} · ${dog.forer}</p>
+                                            ${formatStats(dog.stats)}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    ${harAvsluttet ? `
                         <div class="mt-4 pt-3 border-t border-bark-200">
                             <p class="text-xs font-medium text-bark-500 mb-2">Avsluttet (${data.avsluttet.length}):</p>
                             <div class="space-y-2">

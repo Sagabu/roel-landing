@@ -3710,27 +3710,39 @@
         function showTidTilGodeChoice(dogsWithTTG) {
             ttgDogsForChoice = dogsWithTTG;
 
-            const dogNames = dogsWithTTG.map(dogNr => {
-                const dog = partyList.find(d => d.nr === dogNr);
-                return dog ? `${dog.nr}. ${dog.name}` : `Hund ${dogNr}`;
-            });
-
             const modal = document.getElementById('tidTilGodeChoiceModal');
             const listEl = document.getElementById('ttgChoiceDogList');
             const titleEl = document.getElementById('ttgChoiceTitle');
             const descEl = document.getElementById('ttgChoiceDesc');
 
             titleEl.textContent = `Runde ${state.currentRound} ferdig`;
-            descEl.textContent = 'Følgende hunder har tid til gode. Skal de bedømmes nå (samme runde) eller venter du til neste runde for å gi dem den manglende tiden?';
+            descEl.innerHTML = 'Følgende hunder har <strong>tid til gode</strong>. ' +
+                'Du kan sette opp ekstra slipp med to av dem nå — kun 2 hunder per slipp, ' +
+                'så gjenta til alle har den ønskede tiden. Eller la dem stå til neste runde ' +
+                'for å gi den manglende tiden der.';
 
-            listEl.innerHTML = dogNames.map(name => `
-                <li class="flex items-center gap-2 p-2 bg-amber-50 rounded-lg">
-                    <svg class="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span class="font-medium text-amber-800">${name}</span>
-                </li>
-            `).join('');
+            // Vis slipptid + manglende minutter per hund så dommer kan planlegge
+            // hvor lenge resten av slippene skal være.
+            listEl.innerHTML = dogsWithTTG.map(dogNr => {
+                const dog = partyList.find(d => d.nr === dogNr);
+                const navn = dog ? `${dog.nr}. ${dog.race} ${dog.name}` : `Hund ${dogNr}`;
+                const tot = getTotalSlipptid(dogNr);
+                const mangler = Math.max(0, 15 - tot);
+                const tidTekst = mangler > 0
+                    ? `<span class="font-mono">${tot} min</span> <span class="text-amber-600">(mangler ${mangler} min)</span>`
+                    : `<span class="font-mono">${tot} min</span> <span class="text-green-600">(har 15+ min)</span>`;
+                return `
+                    <li class="flex items-start gap-2 p-2 bg-amber-50 rounded-lg">
+                        <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium text-amber-900">${navn}</div>
+                            <div class="text-xs">${tidTekst}</div>
+                        </div>
+                    </li>
+                `;
+            }).join('');
 
             modal.classList.remove('hidden');
         }
@@ -3774,11 +3786,16 @@
                 return !isFinished;
             });
 
-            // Bygg options - marker TTG-hunder
+            // Bygg options - marker TTG-hunder + vis slipptid så dommer kan
+            // planlegge slippets lengde basert på hver hunds manglende tid.
             const buildOptions = (selectedNr = null) => {
                 return '<option value="">-- Velg hund --</option>' + availableDogs.map(dog => {
                     const isTTG = suggestedDogs.includes(dog.nr);
-                    const ttgLabel = isTTG ? ' ⏱️ (tid til gode)' : '';
+                    const tot = getTotalSlipptid(dog.nr);
+                    const mangler = Math.max(0, 15 - tot);
+                    const ttgLabel = isTTG
+                        ? ` ⏱️ ${tot} min${mangler > 0 ? ` (mangler ${mangler})` : ''}`
+                        : '';
                     const selected = dog.nr === selectedNr ? 'selected' : '';
                     return `<option value="${dog.nr}" ${selected}>${dog.nr}. ${dog.name}${ttgLabel}</option>`;
                 }).join('');

@@ -1142,19 +1142,24 @@
 
         // Load and display live ranking for a party from server
         async function loadPartyLiveRanking(party) {
+            // partyId brukes for DOM-oppslag (matcher renderer som setter id med
+            // party.id). partyApiName brukes for server-API-kall — vk_bedomming.parti
+            // og partier.navn lagrer partinavnet ("VK Kval 1"), ikke numerisk id.
             const partyId = party.id || party.name;
+            const partyApiName = party.name || party.id;
             const container = document.getElementById(`ranking-${partyId}`);
             if (!container) return;
 
-            if (bedommingUtenforSystemet) {
-                return;
-            }
+            // Tidligere ble det tidlig-returnert hvis bedommingUtenforSystemet=true
+            // (manuell bedømming). Det er nøyaktig live-admin-scenariet — da SKAL
+            // vi vise live rangering. Sjekken er fjernet; vk-rangering-endepunktet
+            // returnerer tom struktur når ingen bedømming er i gang.
 
             // Hent live rangering fra server
             const currentProveId = proveId || 'demo';
 
             try {
-                const response = await fetch(`/api/vk-rangering/${currentProveId}/${encodeURIComponent(partyId)}`);
+                const response = await fetch(`/api/vk-rangering/${currentProveId}/${encodeURIComponent(partyApiName)}`);
                 const data = await response.json();
 
                 const harRangering = data.rangering && data.rangering.length > 0;

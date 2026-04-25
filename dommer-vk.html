@@ -815,6 +815,15 @@
                 const dommerData = await dommerResp.json();
                 partiDommere = dommerData.dommere || [];
 
+                // I live-modus (manuell bedømming) er live-admin alene-
+                // ansvarlig for rangering-syncing — vanlige dommere på partiet
+                // er kun for offentlig visning. Hopper over eier-valg-modalen
+                // og setter admin som eier automatisk.
+                if (liveModus) {
+                    liveRangeringEier = dommerTelefon;
+                    return;
+                }
+
                 // Hvis bare én dommer, ingen valg nødvendig
                 if (partiDommere.length <= 1) {
                     return;
@@ -975,9 +984,12 @@
         function erJegLiveEier() {
             // Returner true hvis:
             // - Det er demo-modus
+            // - Vi er i live-modus (live-admin er alltid alene-ansvarlig
+            //   for syncing — vanlige dommere på partiet er kun for visning)
             // - Det er bare én dommer
             // - Jeg er valgt som eier
             if (proveId === 'demo') return true;
+            if (liveModus) return true;
             if (partiDommere.length <= 1) return true;
             return liveRangeringEier === dommerTelefon;
         }
@@ -1286,6 +1298,9 @@
                 }
 
                 const liveData = {
+                    // Identifiser hvem som synker (server bruker dette til å
+                    // auto-detektere live_modus via dommer-tildeling-rolle).
+                    dommer_telefon: dommerTelefon || null,
                     current_slipp: state.currentSlipp,
                     current_round: state.currentRound,
                     selected_dogs: state.selectedDogs,
@@ -1944,32 +1959,88 @@
             const dog1JudgedThisRound = judgedThisRound.includes(dog1Nr);
             const dog2JudgedThisRound = judgedThisRound.includes(dog2Nr);
 
-            // Sjekk om hundene mangler status for dette slippet
-            // TTG gjelder kun for dette slippet, men plassering kan være fra tidligere
-            const dog1HasNewStatus = state.tidTilGode[dog1Nr] ||
-                (dog1JudgedThisRound && state.plasseringer[dog1Nr]) ||
-                (state.currentRound === 1 && state.plasseringer[dog1Nr]);
-            const dog2HasNewStatus = state.tidTilGode[dog2Nr] ||
-                (dog2JudgedThisRound && state.plasseringer[dog2Nr]) ||
-                (state.currentRound === 1 && state.plasseringer[dog2Nr]);
+            // Klassifiser hundenes status
+            const dog1Avsluttet = state.plasseringer[dog1Nr] === 'avsluttet';
+            const dog2Avsluttet = state.plasseringer[dog2Nr] === 'avsluttet';
+            const dog1HasTTG = !!state.tidTilGode[dog1Nr];
+            const dog2HasTTG = !!state.tidTilGode[dog2Nr];
 
-            // Hvis begge mangler status for dette slippet, vis plasserings-modal
-            if (!dog1HasNewStatus && !dog2HasNewStatus) {
+            // "Done" = hunden trenger ikke noe mer input på dette slippet:
+            // har TTG, er avsluttet, eller har en ekte plassering.
+            const dog1HasPlassering = state.plasseringer[dog1Nr] && !dog1Avsluttet;
+            const dog2HasPlassering = state.plasseringer[dog2Nr] && !dog2Avsluttet;
+
+            // Sjekk om hundene mangler status for dette slippet
+            const dog1HasNewStatus = dog1HasTTG || dog1Avsluttet ||
+                (dog1JudgedThisRound && dog1HasPlassering) ||
+                (state.currentRound === 1 && dog1HasPlassering);
+            const dog2HasNewStatus = dog2HasTTG || dog2Avsluttet ||
+                (dog2JudgedThisRound && dog2HasPlassering) ||
+                (state.currentRound === 1 && dog2HasPlassering);
+
+            // SLIPPTID-VALIDERING når én hund er avsluttet og den andre er
+            // "ufullført" (ingen plassering, ingen TTG, ikke avsluttet).
+            // Hvis felles slipptid < 15 min, har slippet sannsynligvis ikke
+            // pågått normalt — spør om den gjenværende hunden skal ha TTG i
+            // stedet for å plasseres.
+            const slipptid1 = parseInt(document.getElementById('dog1_slipptid')?.value) || 0;
+            const slipptid2 = parseInt(document.getElementById('dog2_slipptid')?.value) || 0;
+            const fellesSlipptid = Math.max(slipptid1, slipptid2);
+
+            if (dog1Avsluttet && !dog2HasNewStatus && fellesSlipptid < 15) {
+                const navn = `${dog2.race} ${dog2.name}`;
+                const valg = confirm(
+                    `Slipptid er ${fellesSlipptid} min — under normale 15 min.\n\n` +
+                    `Skal ${navn} få "Tid til gode" (kjøres senere med ny makker)?\n\n` +
+                    `OK = sett TTG på ${navn}\n` +
+                    `Avbryt = slipptid er riktig, fortsett til plassering`
+                );
+                if (valg) {
+                    state.tidTilGode[dog2Nr] = true;
+                    document.getElementById('dog2_tidtilgode').checked = true;
+                    saveToStorage();
+                    updatePlacementDropdowns();
+                    renderRankings();
+                }
+            }
+            if (dog2Avsluttet && !dog1HasNewStatus && fellesSlipptid < 15) {
+                const navn = `${dog1.race} ${dog1.name}`;
+                const valg = confirm(
+                    `Slipptid er ${fellesSlipptid} min — under normale 15 min.\n\n` +
+                    `Skal ${navn} få "Tid til gode" (kjøres senere med ny makker)?\n\n` +
+                    `OK = sett TTG på ${navn}\n` +
+                    `Avbryt = slipptid er riktig, fortsett til plassering`
+                );
+                if (valg) {
+                    state.tidTilGode[dog1Nr] = true;
+                    document.getElementById('dog1_tidtilgode').checked = true;
+                    saveToStorage();
+                    updatePlacementDropdowns();
+                    renderRankings();
+                }
+            }
+
+            // Re-evaluer status etter evt. TTG-tilføyelse over
+            const dog1HasTTGNow = !!state.tidTilGode[dog1Nr];
+            const dog2HasTTGNow = !!state.tidTilGode[dog2Nr];
+            const dog1NeedsPlacement = !dog1Avsluttet && !dog1HasTTGNow && !dog1HasPlassering;
+            const dog2NeedsPlacement = !dog2Avsluttet && !dog2HasTTGNow && !dog2HasPlassering;
+
+            // Vis plasserings-modal hvis MINST ÉN aktiv hund mangler plassering.
+            // Modalen filtrerer selv ut avsluttede/TTG-hunder fra listen så
+            // brukeren plasserer kun den/de aktive hundene visuelt — ingen
+            // tall-inntasting kreves lenger.
+            if (dog1NeedsPlacement || dog2NeedsPlacement) {
                 openDualPlacementModal();
                 return;
             }
 
-            // Hvis kun én mangler status, valider den
-            if (!dog1HasNewStatus) {
-                if (!validateAndSaveDog(1, true)) return;
-            }
-            if (!dog2HasNewStatus) {
-                if (!validateAndSaveDog(2, true)) return;
-            }
-
-            // Sjekk status etter evt. validering
-            const dog1NeedNewDog = state.tidTilGode[dog1Nr] || state.plasseringer[dog1Nr] === 'avsluttet';
-            const dog2NeedNewDog = state.tidTilGode[dog2Nr] || state.plasseringer[dog2Nr] === 'avsluttet';
+            // Status etter evt. validering — KUN TTG trigger ny makker.
+            // Avsluttede hunder er ferdig med konkurransen og skal IKKE byttes
+            // ut med en ny hund (tidligere bug: "avsluttet" trigget ny-makker-
+            // dialog selv om slippet var fullført).
+            const dog1NeedNewDog = !!state.tidTilGode[dog1Nr];
+            const dog2NeedNewDog = !!state.tidTilGode[dog2Nr];
 
             saveSlippComment();
             saveDogData(1);
@@ -3197,8 +3268,18 @@
                 .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
                 .map(([nr, plass]) => parseInt(nr));
 
-            // Hunder som skal plasseres
-            dogsToPlaceInModal = [dog1Nr, dog2Nr];
+            // Hunder som skal plasseres — ekskluder avsluttede (de er ferdige
+            // med konkurransen og trenger ikke plasseres) og hunder med TTG
+            // (de kommer tilbake med ny makker senere). Slik kan modalen åpnes
+            // også når én hund er avsluttet, og brukeren plasserer kun den
+            // gjenværende aktive hunden visuelt i stedet for å skrive et tall.
+            dogsToPlaceInModal = [dog1Nr, dog2Nr].filter(nr => {
+                const plass = state.plasseringer[nr];
+                if (plass === 'avsluttet') return false;
+                if (state.tidTilGode[nr]) return false;
+                if (plass && plass !== 'avsluttet') return false; // allerede plassert
+                return true;
+            });
 
             // Vis forrige rundes rangering hvis vi er i runde 2+
             const previousRound = state.currentRound - 1;

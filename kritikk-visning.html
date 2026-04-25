@@ -52,7 +52,8 @@
             padding: 18px 20px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        /* Header-tabellen: 7 kolonner */
+        /* Header-tabellen: kompakt grid med label + verdi i SAMME celle.
+           Liten label-tekst øverst, verdi som hovedinnhold under. */
         table.hdr {
             width: 100%;
             border-collapse: collapse;
@@ -62,19 +63,24 @@
             border: 1px solid var(--line);
             padding: 3px 6px;
             vertical-align: top;
-            font-size: 10px;
-        }
-        table.hdr td.label {
-            font-weight: 700;
-            background: #f5efe8;
-            white-space: nowrap;
-            font-size: 9px;
-            padding: 2px 5px;
-        }
-        table.hdr td.value {
             font-size: 11px;
-            min-height: 18px;
-            padding: 3px 6px;
+            line-height: 1.2;
+        }
+        table.hdr td .label {
+            display: block;
+            font-weight: 700;
+            font-size: 8.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: var(--muted);
+            margin-bottom: 2px;
+        }
+        table.hdr td .value {
+            display: block;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--ink);
+            min-height: 13px;
         }
         /* To-kolonne: kritikktekst venstre, strukturerte tall høyre */
         .body-grid {
@@ -378,33 +384,42 @@
             </div>
         `;
 
-        // Header-tabell
+        // Header-tabell — label og verdi i SAMME celle (label øverst i lite,
+        // verdi som hovedinnhold under). Hver celle = ett felt.
+        const cellHtml = (label, value, colspan) => {
+            const cs = colspan && colspan > 1 ? ` colspan="${colspan}"` : '';
+            return `<td${cs}><span class="label">${label}</span><span class="value">${value || '&nbsp;'}</span></td>`;
+        };
+        const foreldreVerdi = [
+            hund.far ? 'Far: ' + hund.far : '',
+            hund.mor ? 'Mor: ' + hund.mor : ''
+        ].filter(Boolean).join('  •  ');
+        const dommereVerdi = dommere.map(d => d.navn).join(', ') || fmt(data.dommer_hovedansvarlig);
+
         const hdr = `
             <table class="hdr">
                 <tr>
-                    <td class="label">Klasse</td><td class="value">${fmt(k.klasse)}</td>
-                    <td class="label">Parti</td><td class="value">${fmt(parti.navn)}</td>
-                    <td class="label">Ref.nr</td><td class="value">${fmt(prove.nkk_ref_nr)}</td>
-                    <td class="label">Rase</td><td class="value" colspan="1">${fmt(hund.rase)}</td>
-                    <td class="label">Reg.nr.</td><td class="value">${fmt(hund.regnr)}</td>
-                    <td class="label">Navn</td><td class="value">${fmt(hund.navn)}</td>
-                    <td class="label">Dato</td><td class="value">${fmtDato(k.dato)}</td>
+                    ${cellHtml('Klasse', fmt(k.klasse))}
+                    ${cellHtml('Parti', fmt(parti.navn))}
+                    ${cellHtml('Ref.nr', fmt(prove.nkk_ref_nr))}
+                    ${cellHtml('Rase', fmt(hund.rase))}
+                    ${cellHtml('Reg.nr.', fmt(hund.regnr))}
+                    ${cellHtml('Navn', fmt(hund.navn))}
+                    ${cellHtml('Dato', fmtDato(k.dato))}
                 </tr>
                 <tr>
-                    <td class="label">Eier</td><td class="value" colspan="3">${fmt(eier.navn)}</td>
-                    <td class="label">Adresse</td><td class="value" colspan="3">${fmt(eier.adresse)}</td>
-                    <td class="label">Postnr./sted</td><td class="value" colspan="3">${[eier.postnummer, eier.sted].filter(Boolean).join(' ')}</td>
-                    <td class="label">Telefon</td><td class="value">${fmt(eier.telefon)}</td>
+                    ${cellHtml('Eier', fmt(eier.navn), 2)}
+                    ${cellHtml('Adresse', fmt(eier.adresse), 2)}
+                    ${cellHtml('Postnr./sted', [eier.postnummer, eier.sted].filter(Boolean).join(' '), 2)}
+                    ${cellHtml('Telefon', fmt(eier.telefon))}
                 </tr>
                 <tr>
-                    <td class="label">Fører</td><td class="value" colspan="5">${fmt(forer.navn)}</td>
-                    <td class="label">Hundens foreldre</td><td class="value" colspan="8">
-                        ${hund.far ? 'Far: ' + hund.far : ''}${hund.far && hund.mor ? '  •  ' : ''}${hund.mor ? 'Mor: ' + hund.mor : ''}
-                    </td>
+                    ${cellHtml('Fører', fmt(forer.navn), 3)}
+                    ${cellHtml('Hundens foreldre', foreldreVerdi, 4)}
                 </tr>
                 <tr>
-                    <td class="label">Prøvested</td><td class="value" colspan="5">${fmt(prove.sted || prove.navn)}</td>
-                    <td class="label">Dommer(e)</td><td class="value" colspan="8">${dommere.map(d => d.navn).join(', ') || fmt(data.dommer_hovedansvarlig)}</td>
+                    ${cellHtml('Prøvested', fmt(prove.sted || prove.navn), 3)}
+                    ${cellHtml('Dommer(e)', dommereVerdi, 4)}
                 </tr>
             </table>
         `;

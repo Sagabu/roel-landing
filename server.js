@@ -1098,6 +1098,8 @@ const migrations = [
   "ALTER TABLE kritikker ADD COLUMN intern_kun INTEGER DEFAULT 0",
   // Marker vk_bedomming-rader som live-only (ikke send-inn-flyt)
   "ALTER TABLE vk_bedomming ADD COLUMN live_modus INTEGER DEFAULT 0",
+  // Hvilke hunder som er valgt i nåværende slipp (for refresh-restoring)
+  "ALTER TABLE vk_bedomming ADD COLUMN selected_dogs TEXT DEFAULT '{}'",
   // Passord-autentisering for brukere
   "ALTER TABLE brukere ADD COLUMN passord_hash TEXT DEFAULT NULL",
   "ALTER TABLE brukere ADD COLUMN siste_innlogging TEXT DEFAULT NULL",
@@ -14383,7 +14385,9 @@ app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
         judged_this_round: JSON.parse(bedomming.judged_this_round || '{}'),
         round_snapshots: JSON.parse(bedomming.round_snapshots || '{}'),
         premietildelinger: JSON.parse(bedomming.premietildelinger || '{}'),
+        selected_dogs: JSON.parse(bedomming.selected_dogs || '{}'),
         status: bedomming.status,
+        live_modus: bedomming.live_modus || 0,
         updated_at: bedomming.updated_at
       }
     });
@@ -14434,6 +14438,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
           judged_this_round = ?,
           round_snapshots = ?,
           premietildelinger = ?,
+          selected_dogs = ?,
           status = ?,
           live_modus = ?,
           updated_at = datetime('now')
@@ -14453,6 +14458,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
         JSON.stringify(body.judged_this_round || {}),
         JSON.stringify(body.round_snapshots || {}),
         JSON.stringify(body.premietildelinger || {}),
+        JSON.stringify(body.selected_dogs || {}),
         body.status || 'aktiv',
         liveModus,
         proveId,
@@ -14465,8 +14471,8 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
           prove_id, parti, dommer_telefon, vk_type,
           current_slipp, current_round, plasseringer, tid_til_gode,
           dog_data, slipp_comments, slipp_dogs, round_pairings,
-          opponents, judged_this_round, round_snapshots, premietildelinger, status, live_modus
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          opponents, judged_this_round, round_snapshots, premietildelinger, selected_dogs, status, live_modus
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         proveId,
         parti,
@@ -14484,6 +14490,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
         JSON.stringify(body.judged_this_round || {}),
         JSON.stringify(body.round_snapshots || {}),
         JSON.stringify(body.premietildelinger || {}),
+        JSON.stringify(body.selected_dogs || {}),
         body.status || 'aktiv',
         liveModus
       );

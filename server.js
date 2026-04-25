@@ -14666,7 +14666,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
     const { proveId, parti } = c.req.param();
 
     const bedomming = db.prepare(`
-      SELECT plasseringer, premietildelinger, vk_type, current_round, status, updated_at
+      SELECT plasseringer, premietildelinger, dog_data, vk_type, current_round, status, updated_at
       FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 

@@ -1388,14 +1388,17 @@
 
             const ukakParties = parties.filter(p => p.type === 'ukak').length;
 
-            // VK: skille kval / semi / finale via vkSubType (alle har type='vk')
-            // 1-day VK lagres uten vkSubType og navnet inneholder "Finale" — regnes som finale
-            const vkKvalFordelt = parties.filter(p => p.type === 'vk' && p.vkSubType === 'vk_kval').length;
-            const vkSemiFordelt = parties.filter(p => p.type === 'vk' && p.vkSubType === 'vk_semi').length;
-            const vkFinaleFordelt = parties.filter(p => p.type === 'vk' && (
-                p.vkSubType === 'vk_finale' ||
-                (!p.vkSubType && (p.name || '').toLowerCase().includes('finale'))
-            )).length;
+            // VK: skille kval / semi / finale via vkSubType og navn (alle har type='vk')
+            const isVkFinale = (p) => p.type === 'vk' && (
+                p.vkSubType === 'vk_finale' || (p.name || '').toLowerCase().includes('finale')
+            );
+            const isVkSemi = (p) => p.type === 'vk' && (
+                p.vkSubType === 'vk_semi' || (p.name || '').toLowerCase().includes('semi')
+            );
+            // Kval = alt VK som ikke er finale eller semi (robust mot eldre data uten vkSubType)
+            const vkKvalFordelt = parties.filter(p => p.type === 'vk' && !isVkFinale(p) && !isVkSemi(p)).length;
+            const vkSemiFordelt = parties.filter(isVkSemi).length;
+            const vkFinaleFordelt = parties.filter(isVkFinale).length;
 
             // Konfigurert antall kval-partier (fallback når ingenting er fordelt enda)
             const vkKvalKonfigurert = proveConfig?.vkKvalPartier || (vkSamlet?.antallPartier || 0);
@@ -1434,7 +1437,7 @@
                 ${visFinale ? `
                 <div class="bg-black/30 backdrop-blur-sm rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
                     <p class="text-xl md:text-3xl font-serif font-semibold text-white">${vkFinaleFordelt}</p>
-                    <p class="text-bark-300 text-[10px] md:text-xs mt-0.5 md:mt-1">VK finale-partier</p>
+                    <p class="text-bark-300 text-[10px] md:text-xs mt-0.5 md:mt-1">VK finale</p>
                 </div>
                 ` : ''}
             `;

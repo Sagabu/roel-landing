@@ -1712,6 +1712,32 @@
             return total;
         }
 
+        // Slipptid kun for én bestemt runde. Beregnes ved å sammenligne
+        // dagens dogData mot snapshot tatt ved slutten av forrige runde —
+        // alt nytt siden snapshot er fra inneværende runde.
+        // Brukes for TTG-sjekk i runde 2+: en hund må ha 15 min slipptid
+        // PER runde, ikke bare totalt.
+        function getRoundSlipptid(dogNr, round) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return 0;
+
+            // Runde 1: alt teller (ingen snapshot å trekke fra)
+            if ((round || 1) <= 1) {
+                return getTotalSlipptid(dogNr);
+            }
+
+            // Runde N>1: total minus alt frem til snapshot fra runde N-1
+            let priorTotal = 0;
+            const prevSnap = state.roundSnapshots?.[round - 1];
+            const prevSlipps = prevSnap?.dogData?.[dogNr]?.slipps;
+            if (prevSlipps) {
+                Object.values(prevSlipps).forEach(slipp => {
+                    if (slipp.slipptid) priorTotal += slipp.slipptid;
+                });
+            }
+            return Math.max(0, getTotalSlipptid(dogNr) - priorTotal);
+        }
+
         // Hent slipptid-historikk for en hund (array med { slippNr, tid })
         function getSlipptidHistory(dogNr, excludeCurrentSlipp = false) {
             const data = state.dogData[dogNr];
@@ -3721,16 +3747,20 @@
                 'så gjenta til alle har den ønskede tiden. Eller la dem stå til neste runde ' +
                 'for å gi den manglende tiden der.';
 
-            // Vis slipptid + manglende minutter per hund så dommer kan planlegge
-            // hvor lenge resten av slippene skal være.
+            // Vis slipptid for INNEVÆRENDE RUNDE + manglende minutter.
+            // Hver runde kreves separat 15 min slipptid — hund med 15 min
+            // i runde 1 og 10 min i runde 2 mangler fortsatt 5 min i runde 2.
+            const aktivRunde = state.currentRound || 1;
             listEl.innerHTML = dogsWithTTG.map(dogNr => {
                 const dog = partyList.find(d => d.nr === dogNr);
                 const navn = dog ? `${dog.nr}. ${dog.race} ${dog.name}` : `Hund ${dogNr}`;
-                const tot = getTotalSlipptid(dogNr);
-                const mangler = Math.max(0, 15 - tot);
-                const tidTekst = mangler > 0
-                    ? `<span class="font-mono">${tot} min</span> <span class="text-amber-600">(mangler ${mangler} min)</span>`
-                    : `<span class="font-mono">${tot} min</span> <span class="text-green-600">(har 15+ min)</span>`;
+                const rundeTid = getRoundSlipptid(dogNr, aktivRunde);
+                const totTid = getTotalSlipptid(dogNr);
+                const mangler = Math.max(0, 15 - rundeTid);
+                const rundeTekst = mangler > 0
+                    ? `<span class="font-mono">${rundeTid} min</span> <span class="text-amber-600">(mangler ${mangler} min i runde ${aktivRunde})</span>`
+                    : `<span class="font-mono">${rundeTid} min</span> <span class="text-green-600">(runde ${aktivRunde} fullført)</span>`;
+                const totalLabel = aktivRunde > 1 ? `<div class="text-[10px] text-bark-500">Totalt: ${totTid} min</div>` : '';
                 return `
                     <li class="flex items-start gap-2 p-2 bg-amber-50 rounded-lg">
                         <svg class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3738,7 +3768,8 @@
                         </svg>
                         <div class="flex-1 min-w-0">
                             <div class="font-medium text-amber-900">${navn}</div>
-                            <div class="text-xs">${tidTekst}</div>
+                            <div class="text-xs">${rundeTekst}</div>
+                            ${totalLabel}
                         </div>
                     </li>
                 `;
@@ -3786,15 +3817,17 @@
                 return !isFinished;
             });
 
-            // Bygg options - marker TTG-hunder + vis slipptid så dommer kan
-            // planlegge slippets lengde basert på hver hunds manglende tid.
+            // Bygg options - marker TTG-hunder + vis slipptid for INNEVÆRENDE
+            // RUNDE så dommer kan planlegge slippets lengde basert på det som
+            // mangler i akkurat denne runden.
+            const aktivRunde = state.currentRound || 1;
             const buildOptions = (selectedNr = null) => {
                 return '<option value="">-- Velg hund --</option>' + availableDogs.map(dog => {
                     const isTTG = suggestedDogs.includes(dog.nr);
-                    const tot = getTotalSlipptid(dog.nr);
-                    const mangler = Math.max(0, 15 - tot);
+                    const rundeTid = getRoundSlipptid(dog.nr, aktivRunde);
+                    const mangler = Math.max(0, 15 - rundeTid);
                     const ttgLabel = isTTG
-                        ? ` ⏱️ ${tot} min${mangler > 0 ? ` (mangler ${mangler})` : ''}`
+                        ? ` ⏱️ ${rundeTid} min${mangler > 0 ? ` (mangler ${mangler})` : ''}`
                         : '';
                     const selected = dog.nr === selectedNr ? 'selected' : '';
                     return `<option value="${dog.nr}" ${selected}>${dog.nr}. ${dog.name}${ttgLabel}</option>`;

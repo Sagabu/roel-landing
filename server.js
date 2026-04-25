@@ -14669,7 +14669,8 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
     const { proveId, parti } = c.req.param();
 
     const bedomming = db.prepare(`
-      SELECT plasseringer, premietildelinger, dog_data, tid_til_gode, vk_type, current_round, status, live_modus, updated_at
+      SELECT plasseringer, premietildelinger, dog_data, tid_til_gode, round_snapshots,
+             vk_type, current_round, status, live_modus, updated_at
       FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
@@ -14788,6 +14789,33 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
         };
       });
 
+    // Forrige rundes rangering fra snapshot — vises på offentlig partiliste
+    // som referanse-liste under avsluttede når runde 2+ pågår.
+    let previousRoundRanking = [];
+    let previousRoundNumber = null;
+    if ((bedomming.current_round || 1) > 1) {
+      try {
+        const snapshots = JSON.parse(bedomming.round_snapshots || '{}');
+        const prevRound = bedomming.current_round - 1;
+        const prevSnap = snapshots[prevRound];
+        if (prevSnap?.plasseringer) {
+          previousRoundNumber = prevRound;
+          previousRoundRanking = Object.entries(prevSnap.plasseringer)
+            .filter(([_, plass]) => plass !== 'avsluttet')
+            .sort((a, b) => parseInt(a[1]) - parseInt(b[1]))
+            .map(([nr, plass]) => {
+              const hund = nrToHund[parseInt(nr)];
+              return {
+                plass: parseInt(plass),
+                nr: parseInt(nr),
+                hund_navn: hund?.hund_navn || `Hund #${nr}`,
+                rase: hund?.rase || ''
+              };
+            });
+        }
+      } catch (e) { /* ignorer parse-feil */ }
+    }
+
     return c.json({
       exists: true,
       vk_type: bedomming.vk_type,
@@ -14797,7 +14825,9 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
       updated_at: bedomming.updated_at,
       rangering,
       tidTilGode,
-      avsluttet
+      avsluttet,
+      previousRoundNumber,
+      previousRoundRanking
     });
   } catch (err) {
     console.error("VK-rangering GET error:", err);

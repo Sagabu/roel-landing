@@ -4483,6 +4483,24 @@ app.put("/api/hunder/:id", async (c) => {
     vaksinasjon: "vaksinasjon", vaksinasjon_dato: "vaksinasjon_dato",
     aversjonsbevis: "aversjonsbevis", aversjonsbevis_dato: "aversjonsbevis_dato"
   };
+  // Spesialhåndter eier_telefon: tomt → NULL (FK godtar ikke ''), og
+  // ikke-eksisterende telefon → avvis med tydelig feilmelding så vi
+  // ikke bryter brukere(telefon) FK-en.
+  if ('eier_telefon' in body) {
+    const tlf = (body.eier_telefon || '').trim();
+    if (!tlf) {
+      body.eier_telefon = null;
+    } else {
+      const finnes = db.prepare("SELECT 1 FROM brukere WHERE telefon = ?").get(tlf);
+      if (!finnes) {
+        return c.json({
+          error: `Telefon "${tlf}" er ikke registrert som bruker. Opprett brukeren først, eller la eier-telefon stå tom.`
+        }, 400);
+      }
+      body.eier_telefon = tlf;
+    }
+  }
+
   const sets = [];
   const vals = [];
 
@@ -4502,7 +4520,7 @@ app.put("/api/hunder/:id", async (c) => {
     }
   }
 
-  if (sets.length === 0 && !body.eier_navn) {
+  if (sets.length === 0 && !('eier_navn' in body)) {
     return c.json({ error: "Ingen felter å oppdatere" }, 400);
   }
 

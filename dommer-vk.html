@@ -1485,6 +1485,47 @@
             } catch (e) {
                 console.warn('Reset: kunne ikke synke til server', e);
             }
+
+            // Garantert server-clear: saveToStorage er gated bak erJegLiveEier
+            // i multi-dommer-scenarier. Reset er en destruktiv handling og må
+            // ALLTID propageres så offentlig partiliste oppdateres umiddelbart.
+            // Sender derfor en eksplisitt PUT med fullstendig tom tilstand.
+            if (proveId && proveId !== 'demo') {
+                try {
+                    const token = localStorage.getItem('fuglehund_token');
+                    await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                        },
+                        body: JSON.stringify({
+                            dommer_telefon: dommerTelefon || null,
+                            current_slipp: 1,
+                            current_round: 1,
+                            selected_dogs: { 1: 1, 2: 2 },
+                            plasseringer: {},
+                            tid_til_gode: {},
+                            dog_data: {},
+                            slipp_comments: {},
+                            round_pairings: {},
+                            opponents: {},
+                            judged_this_round: {},
+                            round_snapshots: {},
+                            slipp_dogs: {},
+                            slipp_rankings: {},
+                            premietildelinger: {},
+                            kvalifisert_til_finale: {},
+                            vk_type: state.vkType || '1dag',
+                            status: 'aktiv',
+                            judging_finished: false,
+                            live_modus: liveModus ? 1 : 0
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Reset: eksplisitt server-PUT feilet', e);
+                }
+            }
         }
         window.confirmResetAll = confirmResetAll;
         window.closeResetWarning = closeResetWarning;

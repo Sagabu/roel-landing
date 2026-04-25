@@ -1411,9 +1411,23 @@
             }
         }
 
+        // Trigger: åpner advarsel-modal. Faktisk reset skjer i confirmResetAll().
         function resetAll() {
-            if (!confirm('Er du sikker på at du vil nullstille all bedømmelse?')) return;
+            const modal = document.getElementById('resetWarningModal');
+            if (modal) modal.classList.remove('hidden');
+        }
 
+        function closeResetWarning() {
+            const modal = document.getElementById('resetWarningModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function confirmResetAll() {
+            closeResetWarning();
+
+            // Nullstill ALLE state-felter (forrige versjon glemte halvparten,
+            // så server-state overskrev tilbake ved neste sync — derfor "ingen
+            // funksjon" når brukeren testet).
             localStorage.removeItem('dommertest_vk_dual');
             state.currentSlipp = 1;
             state.currentRound = 1;
@@ -1422,8 +1436,16 @@
             state.tidTilGode = {};
             state.dogData = {};
             state.slippComments = {};
+            state.slippDogs = {};
+            state.slippRankings = {};
             state.roundPairings = {};
             state.opponents = {};
+            state.judgedThisRound = {};
+            state.roundSnapshots = {};
+            state.premietildelinger = {};
+            state.kvalifisertTilFinale = {};
+            state.judgingFinished = false;
+            state.afterRedegjoerelse = null;
 
             // Oppdater UI
             populateDogSelectors();
@@ -1444,10 +1466,28 @@
                 document.getElementById(`dog${pos}_apport`).checked = false;
                 document.getElementById(`dog${pos}_slipptid`).value = '';
                 document.getElementById(`dog${pos}_notater`).value = '';
-                document.getElementById(`dog${pos}_slipptid_info`).innerHTML = '';
+                const ttgChk = document.getElementById(`dog${pos}_tidtilgode`);
+                if (ttgChk) ttgChk.checked = false;
+                const avslChk = document.getElementById(`dog${pos}_avslutt`);
+                if (avslChk) avslChk.checked = false;
+                document.getElementById(`dog${pos}_plassering`).value = '';
+                const slippInfo = document.getElementById(`dog${pos}_slipptid_info`);
+                if (slippInfo) slippInfo.innerHTML = '';
             });
-            document.getElementById('slippComment').value = '';
+            const slippComment = document.getElementById('slippComment');
+            if (slippComment) slippComment.value = '';
+
+            // Push den tomme tilstanden til serveren så ikke neste poll/load
+            // henter tilbake de gamle dataene. Uten dette steget virket reset
+            // bare et øyeblikk lokalt før stale server-state kom tilbake.
+            try {
+                await saveToStorage();
+            } catch (e) {
+                console.warn('Reset: kunne ikke synke til server', e);
+            }
         }
+        window.confirmResetAll = confirmResetAll;
+        window.closeResetWarning = closeResetWarning;
 
         function populateDogSelectors() {
             const options = partyList.map(dog =>
@@ -5275,6 +5315,53 @@ Antall slipp: ${state.currentSlipp}
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
                     Vent til neste runde
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset-advarsel-modal — destruktiv operasjon, krever eksplisitt
+         bekreftelse. Rød fargesetting og tydelig liste med konsekvenser. -->
+    <div id="resetWarningModal" class="hidden fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md border-2 border-red-300">
+            <div class="p-4 border-b border-red-200 bg-red-600 text-white rounded-t-2xl">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <h2 class="text-xl font-bold font-serif">⚠️ Nullstill bedømmelse?</h2>
+                </div>
+            </div>
+            <div class="p-5">
+                <p class="text-bark-900 font-bold text-center mb-3 text-base">
+                    Er du HELT sikker på at du vil nullstille bedømmelsen?
+                </p>
+                <div class="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-3">
+                    <p class="text-sm font-semibold text-red-800 mb-2">Dette fører til at følgende slettes permanent:</p>
+                    <ul class="text-sm text-red-700 space-y-1.5">
+                        <li class="flex gap-2"><span class="text-red-500 flex-shrink-0">✗</span>Alle plasseringer og rangering</li>
+                        <li class="flex gap-2"><span class="text-red-500 flex-shrink-0">✗</span>Alle slipp-data (FMR, FUR, slått, sjanser, TS, slipptid)</li>
+                        <li class="flex gap-2"><span class="text-red-500 flex-shrink-0">✗</span>Alle dommer-notater og slipp-kommentarer</li>
+                        <li class="flex gap-2"><span class="text-red-500 flex-shrink-0">✗</span>"Tid til gode" og avsluttede hunder</li>
+                        <li class="flex gap-2"><span class="text-red-500 flex-shrink-0">✗</span>Premietildelinger og finale-kvalifisering</li>
+                        <li class="flex gap-2"><span class="text-red-500 flex-shrink-0">✗</span>Snapshots fra fullførte runder</li>
+                    </ul>
+                </div>
+                <p class="text-xs text-bark-500 text-center italic">
+                    Bedømmingen settes tilbake til runde 1, slipp 1. Endringen oppdateres
+                    også på offentlig partiliste.
+                    <strong class="text-red-600">Kan ikke angres.</strong>
+                </p>
+            </div>
+            <div class="px-4 pb-4 flex gap-2">
+                <button onclick="closeResetWarning()" class="flex-1 bg-bark-200 hover:bg-bark-300 text-bark-800 font-bold py-3 rounded-xl transition">
+                    Avbryt
+                </button>
+                <button onclick="confirmResetAll()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 shadow-md">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3"/>
+                    </svg>
+                    Ja, nullstill alt
                 </button>
             </div>
         </div>

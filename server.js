@@ -14712,6 +14712,29 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
 
     const plasseringer = JSON.parse(bedomming.plasseringer || '{}');
     const premietildelinger = JSON.parse(bedomming.premietildelinger || '{}');
+    const dogData = JSON.parse(bedomming.dog_data || '{}');
+
+    // Aggreger statistikk per hund på tvers av alle slipp så live-rangeringen
+    // viser samlet FMR/FUR/slått/sjanser/TS og slipptid for hver hund.
+    // dogData har struktur: { hundNr: { slipps: { 1: { fmr, fur, slat, ... } } } }
+    function aggregerStats(hundNr) {
+      const data = dogData[hundNr];
+      if (!data?.slipps) return null;
+      const sum = { fmr: 0, fur: 0, slatt: 0, sjanse: 0, ts: 0, slipptid: 0 };
+      for (const slipp of Object.values(data.slipps)) {
+        if (!slipp) continue;
+        sum.fmr += parseInt(slipp.fmr) || 0;
+        sum.fur += parseInt(slipp.fur) || 0;
+        sum.slatt += parseInt(slipp.slat) || 0;
+        sum.sjanse += parseInt(slipp.sjanse) || 0;
+        sum.ts += parseInt(slipp.ts) || 0;
+        sum.slipptid += parseInt(slipp.slipptid) || 0;
+      }
+      // Returnerer null hvis alle teller er 0 og slipptid er 0 — sparer
+      // klienten for å rendre tomme bokser.
+      const harData = sum.fmr || sum.fur || sum.slatt || sum.sjanse || sum.ts || sum.slipptid;
+      return harData ? sum : null;
+    }
 
     // Bygg rangering med hundeinfo - plasseringer bruker nr (startnummer) som nøkkel
     const rangering = Object.entries(plasseringer)
@@ -14726,7 +14749,8 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
           hund_navn: hund?.hund_navn || `Hund #${nr}`,
           rase: hund?.rase || '',
           forer: hund?.forer || '',
-          premie: premietildelinger[nr] || null
+          premie: premietildelinger[nr] || null,
+          stats: aggregerStats(parseInt(nr))
         };
       });
 
@@ -14739,7 +14763,8 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
           hund_id: hund?.hund_id || null,
           hund_navn: hund?.hund_navn || `Hund #${nr}`,
           rase: hund?.rase || '',
-          forer: hund?.forer || ''
+          forer: hund?.forer || '',
+          stats: aggregerStats(parseInt(nr))
         };
       });
 

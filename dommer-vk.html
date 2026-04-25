@@ -1320,33 +1320,128 @@
             } catch (e) { return false; }
         }
 
+        // Aggressiv retry: sjekk hvert 10. sek så lenge det er upålagte
+        // endringer. Vi prøver UANSETT navigator.onLine (som kan være
+        // upålitelig på iOS Safari og enkelte Android-versjoner) — fetch-en
+        // selv vil enten lykkes eller feile, og det er signalet vi stoler på.
         function _scheduleSyncRetry() {
             if (_vkSyncRetryTimer) return;
+            console.log('[dommer-vk] Starter retry-loop (10s intervall)');
             _vkSyncRetryTimer = setInterval(async () => {
-                if (!_hasPendingSync() || !navigator.onLine) {
-                    if (!_hasPendingSync()) {
+                if (!_hasPendingSync()) {
+                    console.log('[dommer-vk] Pending sync cleared — stopper retry-loop');
+                    clearInterval(_vkSyncRetryTimer);
+                    _vkSyncRetryTimer = null;
+                    return;
+                }
+                console.log('[dommer-vk] Retry: forsøker sync (online=' + navigator.onLine + ')');
+                try { await _trySyncNow(); } catch (e) {}
+            }, 10000);
+        }
+
+        // Ren synk-funksjon som hopper rett til server-PUT uten å re-skrive
+        // localStorage først. Brukes av retry-loop og online-event så vi
+        // ikke flagger pending=true unødvendig.
+        async function _trySyncNow() {
+            if (proveId === 'demo') return;
+            if (!(erJegLiveEier() || liveModus)) return;
+
+            const filteredDogData = {};
+            for (const [hundNr, data] of Object.entries(state.dogData)) {
+                if (!data) continue;
+                filteredDogData[hundNr] = { slipps: {} };
+                if (data.slipps) {
+                    for (const [slippNr, slipp] of Object.entries(data.slipps)) {
+                        filteredDogData[hundNr].slipps[slippNr] = {
+                            slipptid: slipp.slipptid || 0,
+                            fmr: slipp.fmr || 0,
+                            fur: slipp.fur || 0,
+                            slat: slipp.slat || 0,
+                            sjanse: slipp.sjanse || 0,
+                            ts: slipp.ts || 0,
+                            apport: slipp.apport || false
+                        };
+                    }
+                }
+            }
+
+            const liveData = {
+                dommer_telefon: dommerTelefon || null,
+                current_slipp: state.currentSlipp,
+                current_round: state.currentRound,
+                selected_dogs: state.selectedDogs,
+                plasseringer: state.plasseringer,
+                tid_til_gode: state.tidTilGode,
+                dog_data: filteredDogData,
+                slipp_comments: inkluderSlippKommentarer ? state.slippComments : {},
+                round_pairings: state.roundPairings,
+                opponents: state.opponents,
+                judged_this_round: state.judgedThisRound,
+                round_snapshots: state.roundSnapshots,
+                slipp_dogs: state.slippDogs,
+                slipp_rankings: state.slippRankings,
+                vk_type: state.vkType,
+                premietildelinger: state.premietildelinger,
+                kvalifisert_til_finale: state.kvalifisertTilFinale,
+                judging_finished: state.judgingFinished,
+                live_modus: liveModus ? 1 : 0
+            };
+
+            // 10s timeout via AbortController så fetch ikke henger evig på
+            // tregt nettverk eller halv-død forbindelse.
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            try {
+                const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(liveData),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (resp.ok) {
+                    console.log('[dommer-vk] Sync OK ✓');
+                    _saveLocalState(true);
+                    _updateOfflineBanner();
+                    if (_vkSyncRetryTimer) {
                         clearInterval(_vkSyncRetryTimer);
                         _vkSyncRetryTimer = null;
                     }
-                    return;
+                } else {
+                    console.warn('[dommer-vk] Sync HTTP-feil:', resp.status);
                 }
-                try { await saveToStorage(); } catch (e) {}
-            }, 30000);
+            } catch (err) {
+                clearTimeout(timeoutId);
+                console.warn('[dommer-vk] Sync feilet:', err.message);
+            }
         }
 
         function _installOnlineListener() {
             if (_vkOnlineListenerInstalled) return;
             _vkOnlineListenerInstalled = true;
+
             window.addEventListener('online', () => {
-                console.log('[dommer-vk] Online — forsøker sync');
+                console.log('[dommer-vk] online-event — forsøker sync');
                 if (_hasPendingSync()) {
-                    saveToStorage().catch(e => console.warn('Sync failed', e));
+                    _trySyncNow();
                 }
                 _updateOfflineBanner();
             });
             window.addEventListener('offline', () => {
+                console.log('[dommer-vk] offline-event');
                 _updateOfflineBanner();
             });
+
+            // visibilitychange: på mobil kan tab-en bli backgrounded mens
+            // brukeren er på fjellet og setInterval kan stoppe / utsettes.
+            // Når tab kommer tilbake i fokus, prøv sync umiddelbart.
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && _hasPendingSync()) {
+                    console.log('[dommer-vk] Tab synlig — forsøker sync');
+                    _trySyncNow();
+                }
+            });
+
             window.addEventListener('beforeunload', (e) => {
                 if (_hasPendingSync()) {
                     e.preventDefault();
@@ -1393,6 +1488,9 @@
             // 1) Skriv localStorage UMIDDELBART (markert som upålagt sync)
             _saveLocalState(false);
             _updateOfflineBanner();
+            // 2) Start retry-loop nå så vi har sikkerhetsnett uansett hva
+            //    som skjer i fortsettelsen (eks. fetch henger).
+            _scheduleSyncRetry();
 
             // Lagre live-rangering til server hvis ikke demo OG (jeg er live-
             // rangering eier ELLER vi er i live-modus). Live-admin (manuell
@@ -1454,27 +1552,37 @@
                 };
 
                 let serverSyncSuccess = false;
+                // 10s timeout via AbortController så fetch ikke henger evig
+                // på halvdød/treg forbindelse.
+                const ctrl = new AbortController();
+                const tid = setTimeout(() => ctrl.abort(), 10000);
                 try {
                     const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(liveData)
+                        body: JSON.stringify(liveData),
+                        signal: ctrl.signal
                     });
+                    clearTimeout(tid);
                     serverSyncSuccess = resp.ok;
                     if (!resp.ok) {
                         console.warn('[dommer-vk] Server svarte ikke OK på sync:', resp.status);
                     }
                 } catch (err) {
+                    clearTimeout(tid);
                     console.warn('[dommer-vk] Sync feilet (offline?):', err.message);
                 }
 
                 if (serverSyncSuccess) {
                     // Skriv localStorage på nytt med pending=false
                     _saveLocalState(true);
-                } else {
-                    // pending=true er allerede satt — start retry-loop hvis ikke allerede
-                    _scheduleSyncRetry();
+                    if (_vkSyncRetryTimer) {
+                        clearInterval(_vkSyncRetryTimer);
+                        _vkSyncRetryTimer = null;
+                    }
                 }
+                // Hvis ikke success, retry-loopen kjører allerede (startet i
+                // begynnelsen av saveToStorage) og vil prøve hvert 10. sek.
                 _updateOfflineBanner();
             }
 

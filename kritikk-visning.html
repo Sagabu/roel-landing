@@ -310,7 +310,7 @@
         const prem = parsePremie(k.premie);
 
         // Byggere for scores-tabellen
-        const cell = (v) => (v === null || v === undefined) ? '<td class="val blank"></td>' : `<td class="val">${v}</td>`;
+        const cell = (v) => (v === null || v === undefined) ? '<td class="val"></td>' : `<td class="val">${v}</td>`;
         const yn = (v) => v === 1 ? 'Ja' : (v === 2 ? 'Nei' : (v ? v : '—'));
 
         // Fuglebehandling: 5 hvite bokser per rad (én pr fuglearbeid).
@@ -337,61 +337,62 @@
             <tr><td class="val" colspan="6">&nbsp;</td></tr>
         `;
 
-        // Hovedrader (stand/jaktegenskaper). Spacer-cellen mellom venstre
-        // og høyre par dytter høyre par helt ut til kanten — egen tabell
-        // for å beholde ren kolonnestruktur i fuglebehandling over.
-        const spacer = '<td class="spacer"></td>';
+        // Hovedrader: 7 like store firkanter (én pr fuglearbeid) mellom
+        // venstre label og høyre label. Første firkant kan inneholde verdi.
+        // Match for FKF jaktprøveskjemaets 7-arbeids-kolonner.
+        const numOrBlank = (v) => (v === null || v === undefined || v === '') ? '' : v;
+        const sevenBoxes = (firstVal) => {
+            return `<td class="val">${numOrBlank(firstVal)}</td>` + '<td class="val"></td>'.repeat(6);
+        };
         const hovedRader = `
             <tr>
-                <td class="label">Slipptid</td><td class="val">${fmt(k.slipptid, '—')}</td>
-                ${spacer}
+                <td class="label">Slipptid</td>
+                ${sevenBoxes(k.slipptid)}
                 <td class="label">Jaktlyst</td>${cell(k.jaktlyst)}
             </tr>
             <tr>
-                <td class="label">Stand m/makker</td><td class="val">${fmt(k.stand_m, 0)}</td>
-                ${spacer}
+                <td class="label">Stand m/makker</td>
+                ${sevenBoxes(k.stand_m)}
                 <td class="label">Fart</td>${cell(k.fart)}
             </tr>
             <tr>
-                <td class="label">Stand u/makker</td><td class="val">${fmt(k.stand_u, 0)}</td>
-                ${spacer}
+                <td class="label">Stand u/makker</td>
+                ${sevenBoxes(k.stand_u)}
                 <td class="label">Selvstendighet</td>${cell(k.selvstendighet)}
             </tr>
             <tr>
-                <td class="label">Tomstand</td><td class="val">${fmt(k.tomstand, 0)}</td>
-                ${spacer}
+                <td class="label">Tomstand</td>
+                ${sevenBoxes(k.tomstand)}
                 <td class="label">Søksbredde</td>${cell(k.soksbredde)}
             </tr>
             <tr>
-                <td class="label">Makkers stand</td><td class="val">${fmt(k.makker_stand, 0)}</td>
-                ${spacer}
+                <td class="label">Makkers stand</td>
+                ${sevenBoxes(k.makker_stand)}
                 <td class="label">Reviering</td>${cell(k.reviering)}
             </tr>
             <tr>
-                <td class="label">Sjanse på fugl</td><td class="val">${fmt(k.sjanse, 0)}</td>
-                ${spacer}
+                <td class="label">Sjanse på fugl</td>
+                ${sevenBoxes(k.sjanse)}
                 <td class="label">Samarbeid</td>${cell(k.samarbeid)}
             </tr>
             <tr>
-                <td class="label"></td><td class="val"></td>
-                ${spacer}
+                <td class="label"></td>
+                ${sevenBoxes(null)}
                 <td class="label">Spontan</td><td class="val">${fmt(k.sek_spontan, 0)}</td>
             </tr>
             <tr>
                 <td class="label">Sekundering <span style="font-weight:400;font-size:8.5px;">(antall)</span></td>
-                <td class="val">${fmt(k.sek_spontan, 0)}</td>
-                ${spacer}
+                ${sevenBoxes(k.sek_spontan)}
                 <td class="label">Går forbi</td><td class="val">${fmt(k.sek_forbi, 0)}</td>
             </tr>
             <tr>
                 <td class="label">Apport <span style="font-weight:400;font-size:8.5px;">(Godkjent=1 Ikke godkj.=2)</span></td>
-                <td class="val">${fmt(k.apport, '—')}</td>
-                ${spacer}
+                ${sevenBoxes(k.apport)}
                 <td class="label">Rapport spontan</td><td class="val">${fmt(k.rapport_spontan, 0)}</td>
             </tr>
             <tr>
-                <td class="label">Adferd</td><td class="val" style="font-size:10px;text-align:left;">${fmt(k.adferd, '—')}</td>
-                ${spacer}
+                <td class="label">Adferd</td>
+                <td class="val" colspan="7" style="text-align:left;font-size:10px;">${fmt(k.adferd, '—')}</td>
                 <td class="label">Ikke ønsket</td><td class="val">${k.adferd ? '✓' : ''}</td>
             </tr>
         `;

@@ -1170,22 +1170,51 @@
                 // admin som bare avsluttet hunder uten å plassere noen ennå,
                 // viste ingenting på offentlig partiliste.
                 if (!data.exists || (!harRangering && !harAvsluttet)) {
+                    // Bygg status-tekst som matcher hovedvisningen så også tom-
+                    // tilstanden viser hvor i bedømmingen vi er.
+                    let tomTekst = 'Venter på dømming';
+                    if (data.exists) {
+                        const s = data.status || 'aktiv';
+                        const r = data.current_round || 1;
+                        const lm = data.live_modus === 1;
+                        if (s === 'aktiv') tomTekst = `Runde ${r} pågår`;
+                        else if (s === 'fullfort' && !lm) tomTekst = 'Bedømming ferdig';
+                        else tomTekst = 'Bedømming ferdig for dagen';
+                    }
                     container.innerHTML = `
                         <div class="text-center py-6">
                             <svg class="w-10 h-10 text-bark-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            <p class="text-bark-400 text-sm">${data.exists ? 'Dømming pågår...' : 'Venter på dømming'}</p>
-                            ${data.exists && data.current_round ? `<p class="text-xs text-bark-400 mt-1">Runde ${data.current_round}</p>` : ''}
+                            <p class="text-bark-400 text-sm">${tomTekst}</p>
                         </div>
                     `;
                     return;
                 }
 
-                // Vis VK-type badge + runde-badge øverst så det er lett å se
-                // hvilken runde bedømmingen er på.
+                // Vis runde-status. Server-tilstanden + live_modus avgjør tekst:
+                //   aktiv (live_modus=0):    "Runde X pågår"
+                //   aktiv (live_modus=1):    "Runde X pågår" (live-admin)
+                //   fullfort (live_modus=1): "Bedømming ferdig for dagen" (live-admin avsluttet)
+                //   fullfort (live_modus=0): "Bedømming ferdig" (digital, alle slipp ferdig)
+                //   innsendt:                "Bedømming ferdig for dagen" (digital sendt NKK)
+                //   godkjent:                "Bedømming ferdig for dagen" (NKK godkjent)
                 const rundeNr = data.current_round || 1;
-                const rundeBadge = `<span class="px-2.5 py-0.5 bg-forest-600 text-white rounded text-xs font-bold">Runde ${rundeNr}</span>`;
+                const status = data.status || 'aktiv';
+                const liveModus = data.live_modus === 1;
+                let rundeBadge;
+                if (status === 'aktiv') {
+                    rundeBadge = `<span class="px-2.5 py-1 bg-forest-600 text-white rounded text-xs font-bold inline-flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 bg-white rounded-full live-dot"></span>
+                        Runde ${rundeNr} pågår
+                    </span>`;
+                } else if (status === 'fullfort' && !liveModus) {
+                    rundeBadge = `<span class="px-2.5 py-1 bg-amber-500 text-white rounded text-xs font-bold">Bedømming ferdig</span>`;
+                } else {
+                    // fullfort+live, innsendt, godkjent → ferdig for dagen
+                    rundeBadge = `<span class="px-2.5 py-1 bg-bark-600 text-white rounded text-xs font-bold">Bedømming ferdig for dagen</span>`;
+                }
+
                 let vkTypeBadge = '';
                 if (data.vk_type === 'kval') vkTypeBadge = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Kvalifisering</span>';
                 else if (data.vk_type === 'finale') vkTypeBadge = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">Finale</span>';

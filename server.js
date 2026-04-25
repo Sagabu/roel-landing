@@ -14527,9 +14527,12 @@ app.post("/api/vk-bedomming/:proveId/:parti/avslutt", async (c) => {
       }, 400);
     }
 
+    // Bruker 'fullfort' (gyldig per CHECK-constraint) + live_modus=1 som
+    // skiller live-rangering-avslutning fra digital "send-inn"-flyt. Klienten
+    // tolker kombinasjonen som "Bedømming ferdig for dagen".
     db.prepare(`
       UPDATE vk_bedomming
-      SET status = 'avsluttet', submitted_at = datetime('now'), updated_at = datetime('now')
+      SET status = 'fullfort', submitted_at = datetime('now'), updated_at = datetime('now')
       WHERE prove_id = ? AND parti = ?
     `).run(proveId, parti);
 
@@ -14666,7 +14669,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
     const { proveId, parti } = c.req.param();
 
     const bedomming = db.prepare(`
-      SELECT plasseringer, premietildelinger, dog_data, vk_type, current_round, status, updated_at
+      SELECT plasseringer, premietildelinger, dog_data, vk_type, current_round, status, live_modus, updated_at
       FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
@@ -14773,6 +14776,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
       vk_type: bedomming.vk_type,
       current_round: bedomming.current_round,
       status: bedomming.status,
+      live_modus: bedomming.live_modus || 0,
       updated_at: bedomming.updated_at,
       rangering,
       avsluttet

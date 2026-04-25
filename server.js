@@ -1090,6 +1090,14 @@ const migrations = [
   "ALTER TABLE hunder ADD COLUMN bilde TEXT DEFAULT NULL",
   // Fri-tekst eier-navn for hunder uten Norge-bruker (NKK-import o.l.)
   "ALTER TABLE hunder ADD COLUMN eier_navn TEXT DEFAULT NULL",
+  // Manuell bedømming på prøven (vs digital). Når på, kan admin tildele en
+  // 'live_admin' på VK-partier som får dommer-vk-flyten KUN for live
+  // rangering — ingen kritikker sendes til NKK.
+  "ALTER TABLE prove_config ADD COLUMN manuell_bedomming INTEGER DEFAULT 0",
+  // Marker kritikk-rader som er laget av live_admin (ikke skal til NKK)
+  "ALTER TABLE kritikker ADD COLUMN intern_kun INTEGER DEFAULT 0",
+  // Marker vk_bedomming-rader som live-only (ikke send-inn-flyt)
+  "ALTER TABLE vk_bedomming ADD COLUMN live_modus INTEGER DEFAULT 0",
   // Passord-autentisering for brukere
   "ALTER TABLE brukere ADD COLUMN passord_hash TEXT DEFAULT NULL",
   "ALTER TABLE brukere ADD COLUMN siste_innlogging TEXT DEFAULT NULL",
@@ -6708,6 +6716,35 @@ app.get("/api/prover/:id/dommer-tildelinger", (c) => {
   return c.json(tildelinger);
 });
 
+// Hjelpefunksjon: bestem om en bruker har admin-rolle (for å kunne være
+// live_admin på et VK-parti). Aksepterer admin/proveleder/klubbleder/
+// sekretær/superadmin — samme settet som requireAdmin selv tillater.
+function harAdminRolle(telefon) {
+  if (!telefon) return false;
+  const bruker = db.prepare("SELECT rolle FROM brukere WHERE telefon = ?").get(telefon);
+  if (!bruker?.rolle) return false;
+  const roller = String(bruker.rolle).split(/[,\s]+/).map(r => r.trim().toLowerCase()).filter(Boolean);
+  const adminRoller = new Set(['admin', 'superadmin', 'klubbleder', 'proveleder', 'sekretær', 'sekretar']);
+  return roller.some(r => adminRoller.has(r));
+}
+
+// Hjelpefunksjon: validerer at live_admin-rolle er gyldig for et parti.
+// Returnerer { ok: true } eller { ok: false, error: '...' }.
+function validerLiveAdminRolle(proveId, parti) {
+  // Må være VK-parti
+  const partiRad = db.prepare("SELECT type FROM partier WHERE prove_id = ? AND navn = ?").get(proveId, parti);
+  if (!partiRad) return { ok: false, error: `Parti "${parti}" finnes ikke på prøven` };
+  if (partiRad.type !== 'vk') {
+    return { ok: false, error: "live_admin kan kun tildeles VK-partier" };
+  }
+  // Prøven må være satt til manuell bedømming
+  const config = db.prepare("SELECT manuell_bedomming FROM prove_config WHERE prove_id = ?").get(proveId);
+  if (!config || config.manuell_bedomming !== 1) {
+    return { ok: false, error: "Manuell bedømming må være på for prøven før du kan tildele administrator" };
+  }
+  return { ok: true };
+}
+
 // Tildel dommer til parti
 app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
   const proveId = c.req.param("id");
@@ -6721,26 +6758,47 @@ app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
   const prove = db.prepare("SELECT id FROM prover WHERE id = ?").get(proveId);
   if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
 
-  const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
-  const eksisterende = db.prepare("SELECT COUNT(*) as antall FROM dommer_tildelinger WHERE prove_id = ? AND parti = ? AND dommer_telefon != ?").get(proveId, parti, dommer_telefon);
+  const erLiveAdmin = dommer_rolle === 'live_admin';
 
-  if (partiType === 'VK' && eksisterende.antall >= 2) {
-    return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
-  }
-  if (partiType === 'UKAK' && eksisterende.antall >= 2) {
-    return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
-  }
+  // live_admin har egne valideringsregler (VK + manuell + admin-rolle).
+  // Hopper over FKF-sjekk og 2-dommer-grensen for live_admin.
+  if (erLiveAdmin) {
+    const v = validerLiveAdminRolle(proveId, parti);
+    if (!v.ok) return c.json({ error: v.error }, 400);
 
-  // Krav om begrunnelse for dommere som ikke står på FKF-lista
-  const erFkf = erFkfKoblet(dommer_telefon);
-  if (!erFkf && (!begrunnelse_type || !begrunnelse)) {
-    return c.json({
-      error: "Denne personen står ikke på FKF sin liste over godkjente dommere i systemet. Legg ved begrunnelse_type og begrunnelse for å kunne tildele.",
-      krever_begrunnelse: true
-    }, 400);
+    if (!harAdminRolle(dommer_telefon)) {
+      return c.json({
+        error: "Personen må ha admin-rolle på prøven for å kunne være live-administrator (admin, proveleder, klubbleder, sekretær eller superadmin)"
+      }, 400);
+    }
+  } else {
+    const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+    // Tell kun ekte dommere (ikke live_admin) mot 2-grensen
+    const eksisterende = db.prepare(`
+      SELECT COUNT(*) as antall FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon != ?
+        AND (dommer_rolle IS NULL OR dommer_rolle != 'live_admin')
+    `).get(proveId, parti, dommer_telefon);
+
+    if (partiType === 'VK' && eksisterende.antall >= 2) {
+      return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
+    }
+    if (partiType === 'UKAK' && eksisterende.antall >= 2) {
+      return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+    }
+
+    // Krav om begrunnelse for dommere som ikke står på FKF-lista
+    const erFkf = erFkfKoblet(dommer_telefon);
+    if (!erFkf && (!begrunnelse_type || !begrunnelse)) {
+      return c.json({
+        error: "Denne personen står ikke på FKF sin liste over godkjente dommere i systemet. Legg ved begrunnelse_type og begrunnelse for å kunne tildele.",
+        krever_begrunnelse: true
+      }, 400);
+    }
   }
 
   try {
+    const erFkf = erLiveAdmin ? false : erFkfKoblet(dommer_telefon);
     db.prepare(`
       INSERT INTO dommer_tildelinger (prove_id, dommer_telefon, parti, dommer_rolle, begrunnelse_type, begrunnelse)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -6749,12 +6807,12 @@ app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
         begrunnelse_type = excluded.begrunnelse_type,
         begrunnelse = excluded.begrunnelse
     `).run(proveId, dommer_telefon, parti, dommer_rolle || null,
-           erFkf ? null : begrunnelse_type,
-           erFkf ? null : begrunnelse);
+           (erLiveAdmin || erFkf) ? null : begrunnelse_type,
+           (erLiveAdmin || erFkf) ? null : begrunnelse);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "dommer_tildelt",
-      `Dommer ${dommer_telefon} tildelt ${parti} på prøve ${proveId}` + (erFkf ? '' : ` [manuell: ${begrunnelse_type}]`)
+      erLiveAdmin ? "live_admin_tildelt" : "dommer_tildelt",
+      `${erLiveAdmin ? 'Live-admin' : 'Dommer'} ${dommer_telefon} tildelt ${parti} på prøve ${proveId}` + (!erLiveAdmin && !erFkf ? ` [manuell: ${begrunnelse_type}]` : '')
     );
     return c.json({ success: true });
   } catch (err) {
@@ -6836,14 +6894,32 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
 
   if (!Array.isArray(dommere)) return c.json({ error: "dommere må være en array" }, 400);
 
-  // Valider kun hvis det faktisk er dommere (tom array tillates for å fjerne alle)
-  if (dommere.length > 0) {
-    const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
-    if (partiType === 'VK' && dommere.length > 2) return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
-    if (partiType === 'UKAK' && dommere.length > 2) return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+  // Splitt i ekte dommere vs live_admin — har ulike valideringsregler
+  const liveAdminer = dommere.filter(d => d.rolle === 'live_admin');
+  const ekteDommere = dommere.filter(d => d.rolle !== 'live_admin');
 
-    // Krav om begrunnelse for dommere som ikke står på FKF-lista
-    for (const d of dommere) {
+  // Valider live_admin: VK-parti, manuell bedømming på, admin-rolle
+  if (liveAdminer.length > 0) {
+    const v = validerLiveAdminRolle(proveId, parti);
+    if (!v.ok) return c.json({ error: v.error }, 400);
+    for (const d of liveAdminer) {
+      if (!d.telefon) return c.json({ error: "Hver tildeling må ha telefon" }, 400);
+      if (!harAdminRolle(d.telefon)) {
+        return c.json({
+          error: `${d.telefon} har ikke admin-rolle og kan ikke være live-administrator`,
+          telefon: d.telefon
+        }, 400);
+      }
+    }
+  }
+
+  // Valider ekte dommere: 2-grensen, FKF-sjekk
+  if (ekteDommere.length > 0) {
+    const partiType = parti.toLowerCase().startsWith('vk') ? 'VK' : 'UKAK';
+    if (partiType === 'VK' && ekteDommere.length > 2) return c.json({ error: "VK-partier kan maksimalt ha 2 dommere" }, 400);
+    if (partiType === 'UKAK' && ekteDommere.length > 2) return c.json({ error: "UK/AK-partier kan maksimalt ha 2 dommere" }, 400);
+
+    for (const d of ekteDommere) {
       if (!d.telefon) return c.json({ error: "Hver dommer må ha telefon" }, 400);
       if (!erFkfKoblet(d.telefon)) {
         if (!d.begrunnelse_type || !d.begrunnelse) {
@@ -6865,15 +6941,16 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       for (const d of dommere) {
-        const fkf = erFkfKoblet(d.telefon);
+        const erLA = d.rolle === 'live_admin';
+        const fkf = erLA ? false : erFkfKoblet(d.telefon);
         insert.run(proveId, d.telefon, parti, d.rolle || null,
-                   fkf ? null : (d.begrunnelse_type || null),
-                   fkf ? null : (d.begrunnelse || null));
+                   (erLA || fkf) ? null : (d.begrunnelse_type || null),
+                   (erLA || fkf) ? null : (d.begrunnelse || null));
       }
     }
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "dommer_parti_oppdatert",
-      `${parti}: ${dommere.length > 0 ? dommere.map(d => d.telefon + (erFkfKoblet(d.telefon) ? '' : ' [manuell:' + (d.begrunnelse_type || '?') + ']')).join(', ') : '(fjernet alle)'}`
+      `${parti}: ${dommere.length > 0 ? dommere.map(d => (d.rolle === 'live_admin' ? '[live] ' : '') + d.telefon + (d.rolle === 'live_admin' ? '' : (erFkfKoblet(d.telefon) ? '' : ' [manuell:' + (d.begrunnelse_type || '?') + ']'))).join(', ') : '(fjernet alle)'}`
     );
     return c.json({ success: true });
   } catch (err) {
@@ -8660,7 +8737,8 @@ app.get("/api/prover/:id/config", (c) => {
       pris_lavland: 1050,
       pris_skog: 900,
       pris_apport: 400,
-      refusjon_prosent: 75
+      refusjon_prosent: 75,
+      manuell_bedomming: 0
     };
   }
 
@@ -8682,7 +8760,9 @@ app.put("/api/prover/:id/config", requireAdmin, async (c) => {
     "vk_kval_dag", "vk_semi_dag", "vk_finale_dag", // For fler-dagers VK
     "pris_hogfjell", "pris_lavland", "pris_skog", "pris_apport",
     "frist_pamelding", "frist_avmelding", "refusjon_prosent",
-    "krever_sauebevis", "krever_vaksinasjon", "krever_rabies"
+    "krever_sauebevis", "krever_vaksinasjon", "krever_rabies",
+    "manuell_bedomming" // 0=digital (default), 1=manuell — admin tildeler
+                        // live_admin på VK for live rangering uten kritikk-flyt
   ];
 
   const sets = [];
@@ -14282,6 +14362,18 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
       SELECT id FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
+    // live_modus = 1 hvis bedømmingen er kjørt av live_admin (manuell
+    // bedømming, kun for live rangering — ingen kritikker til NKK).
+    // Auto-detekteres fra dommer-tildeling hvis ikke eksplisitt sendt.
+    let liveModus = body.live_modus === 1 || body.live_modus === true ? 1 : 0;
+    if (!liveModus && body.dommer_telefon) {
+      const tildeling = db.prepare(`
+        SELECT dommer_rolle FROM dommer_tildelinger
+        WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+      `).get(proveId, parti, body.dommer_telefon);
+      if (tildeling?.dommer_rolle === 'live_admin') liveModus = 1;
+    }
+
     if (existing) {
       // Oppdater
       db.prepare(`
@@ -14301,6 +14393,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
           round_snapshots = ?,
           premietildelinger = ?,
           status = ?,
+          live_modus = ?,
           updated_at = datetime('now')
         WHERE prove_id = ? AND parti = ?
       `).run(
@@ -14319,6 +14412,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
         JSON.stringify(body.round_snapshots || {}),
         JSON.stringify(body.premietildelinger || {}),
         body.status || 'aktiv',
+        liveModus,
         proveId,
         parti
       );
@@ -14329,8 +14423,8 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
           prove_id, parti, dommer_telefon, vk_type,
           current_slipp, current_round, plasseringer, tid_til_gode,
           dog_data, slipp_comments, slipp_dogs, round_pairings,
-          opponents, judged_this_round, round_snapshots, premietildelinger, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          opponents, judged_this_round, round_snapshots, premietildelinger, status, live_modus
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         proveId,
         parti,
@@ -14348,7 +14442,8 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
         JSON.stringify(body.judged_this_round || {}),
         JSON.stringify(body.round_snapshots || {}),
         JSON.stringify(body.premietildelinger || {}),
-        body.status || 'aktiv'
+        body.status || 'aktiv',
+        liveModus
       );
     }
 
@@ -14360,6 +14455,56 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
   }
 });
 
+// Avslutt live rangering (manuell bedømming) — ingen kritikk-flyt til NKK.
+// Brukes av live_admin når partiet er ferdig "bedømt" for live-visningens
+// skyld. Setter vk_bedomming.status='avsluttet' og markerer evt. lagrede
+// kritikk-utkast som intern_kun=1 så de aldri kan sendes til NKK.
+app.post("/api/vk-bedomming/:proveId/:parti/avslutt", async (c) => {
+  try {
+    const { proveId, parti } = c.req.param();
+
+    const bedomming = db.prepare(`
+      SELECT id, dommer_telefon, live_modus FROM vk_bedomming
+      WHERE prove_id = ? AND parti = ?
+    `).get(proveId, parti);
+
+    if (!bedomming) return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+
+    // Sikkerhets-sjekk: dette endepunktet er kun for live_modus.
+    // Hvis bedømmingen IKKE er live, må send-inn brukes.
+    if (bedomming.live_modus !== 1) {
+      return c.json({
+        error: "Avslutt er kun gyldig for live rangering (manuell bedømming). Bruk send-inn-flyten for digital bedømming."
+      }, 400);
+    }
+
+    db.prepare(`
+      UPDATE vk_bedomming
+      SET status = 'avsluttet', submitted_at = datetime('now'), updated_at = datetime('now')
+      WHERE prove_id = ? AND parti = ?
+    `).run(proveId, parti);
+
+    // Marker evt. mellomlagrede kritikker som intern_kun så de aldri går
+    // til NKK. Brukeren kan ha skrevet noter underveis — vi sletter dem
+    // ikke (admin kan ha bruk for dem internt) men skiller dem ut.
+    db.prepare(`
+      UPDATE kritikker SET intern_kun = 1, updated_at = datetime('now')
+      WHERE prove_id = ? AND parti_navn = ?
+    `).run(proveId, parti);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "live_rangering_avsluttet",
+      `Live rangering avsluttet for ${parti} på prøve ${proveId}`
+    );
+
+    autoBackup("vk-bedomming-live-avsluttet");
+    return c.json({ success: true, message: "Live rangering avsluttet" });
+  } catch (err) {
+    console.error("VK-bedomming avslutt error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // Send inn VK-bedømming for godkjenning
 app.post("/api/vk-bedomming/:proveId/:parti/send-inn", async (c) => {
   try {
@@ -14367,11 +14512,19 @@ app.post("/api/vk-bedomming/:proveId/:parti/send-inn", async (c) => {
 
     // Sjekk at bedømming finnes og er fullført
     const bedomming = db.prepare(`
-      SELECT id, status, dommer_telefon FROM vk_bedomming WHERE prove_id = ? AND parti = ?
+      SELECT id, status, dommer_telefon, live_modus FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
     if (!bedomming) {
       return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+    }
+
+    // Live rangering (manuell bedømming) skal ikke sendes inn til NKK —
+    // bruk /avslutt-endepunktet i stedet.
+    if (bedomming.live_modus === 1) {
+      return c.json({
+        error: "Dette er en live rangering. Bruk 'Avslutt live rangering' i stedet for 'Send inn'."
+      }, 400);
     }
 
     if (bedomming.status !== 'fullfort') {

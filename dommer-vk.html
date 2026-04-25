@@ -96,6 +96,17 @@
 </head>
 <body class="bg-cream min-h-screen font-sans">
 
+    <!-- Live-modus banner: vises når URL har ?modus=live (live_admin på
+         manuell bedømming). Indikerer tydelig at flyten kun er for live
+         rangering — ingen kritikker sendes til NKK. -->
+    <div id="liveModusBanner" class="hidden bg-purple-600 text-white px-4 py-2 text-sm text-center font-medium sticky top-0 z-[60] shadow-md">
+        <span class="inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <strong>Live-rangering (manuell bedømming)</strong> — endringer vises live på partilisten. Ingen kritikker sendes til NKK.
+            <button onclick="avsluttLiveRangering()" class="ml-3 px-3 py-1 bg-white text-purple-700 hover:bg-purple-50 rounded-lg text-xs font-bold">Avslutt live rangering</button>
+        </span>
+    </div>
+
     <!-- Header -->
     <header class="bg-bark-900/60 text-white backdrop-blur-sm sticky top-0 z-50 shadow-lg">
         <div class="px-4 py-2">
@@ -620,6 +631,11 @@
         const urlParams = new URLSearchParams(window.location.search);
         const proveId = urlParams.get('prove') || 'demo';
         const parti = urlParams.get('parti') || 'VK';
+        // Live-modus: brukeren er tildelt som live_admin på et VK-parti for
+        // å styre rangerings-flyten på offentlig partiliste under manuell
+        // bedømming. Skiller flyten fra digital bedømming — ingen kritikk
+        // sendes til NKK ved avslutning.
+        const liveModus = urlParams.get('modus') === 'live';
 
         // Hent dommer-info fra session
         let dommerTelefon = null;
@@ -647,6 +663,41 @@
             { nr: 5, hund_id: 5, race: 'IS', name: 'Vinterens Håp', owner: 'Dahl, Lisa' },
             { nr: 6, hund_id: 6, race: 'ES', name: 'Sølvrevens Balder', owner: 'Vik, Thomas' }
         ];
+
+        // Vis live-modus banner umiddelbart hvis URL-param indikerer det
+        if (liveModus) {
+            const banner = document.getElementById('liveModusBanner');
+            if (banner) banner.classList.remove('hidden');
+        }
+
+        // Avslutt live rangering — kalles fra banner-knapp i live-modus.
+        // Lagrer siste tilstand og kaller server-endepunktet som markerer
+        // bedømmingen som avsluttet uten kritikk-flyt mot NKK.
+        async function avsluttLiveRangering() {
+            if (!confirm('Avslutt live rangering for dette partiet?\n\nDette stenger partiet for videre endringer. Ingen kritikker sendes til NKK.')) return;
+            try {
+                // Lagre siste tilstand først
+                state.judgingFinished = true;
+                await saveToStorage();
+
+                // Kall avslutt-endepunktet
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/avslutt`, {
+                    method: 'POST',
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    alert('Kunne ikke avslutte: ' + (err.error || resp.status));
+                    return;
+                }
+                alert('Live rangering avsluttet.');
+                window.location.href = '/dommer-hjem.html';
+            } catch (err) {
+                alert('Nettverksfeil ved avslutning: ' + err.message);
+            }
+        }
+        window.avsluttLiveRangering = avsluttLiveRangering;
 
         // Initialize
         async function init() {
@@ -1249,7 +1300,10 @@
                     vk_type: state.vkType,
                     premietildelinger: state.premietildelinger,
                     kvalifisert_til_finale: state.kvalifisertTilFinale,
-                    judging_finished: state.judgingFinished
+                    judging_finished: state.judgingFinished,
+                    // Manuell bedømming: marker raden så send-inn-flyten
+                    // avvises og avslutt-flyten brukes i stedet.
+                    live_modus: liveModus ? 1 : 0
                 };
 
                 try {

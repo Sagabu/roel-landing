@@ -352,6 +352,10 @@
             }
             const isVK = party.type === 'vk' || party.type === 'vkfinale';
             const isFinale = party.type === 'vkfinale';
+            // Live-admin (manuell bedømming): styrer KUN live rangering på
+            // offentlig partiliste — ingen kritikk-flyt mot NKK.
+            const isLiveAdmin = (judgeRole === 'live_admin' ||
+                                 currentTildeling?.dommerRolle === 'live_admin');
 
             // Get progress status - sjekk både gammel og ny storage-nøkkel
             let statusText = 'Ikke startet';
@@ -507,6 +511,13 @@
 
             container.innerHTML = `
                 <div class="${bgColor} rounded-xl border-2 ${borderColor} p-6 shadow-sm">
+                    ${isLiveAdmin ? `
+                    <div class="mb-3 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg flex items-start gap-2">
+                        <svg class="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        <div class="text-xs text-purple-700"><strong>Live-administrator:</strong> Manuell bedømming. Du styrer kun live-rangering på offentlig partiliste — ingen kritikk sendes til NKK.</div>
+                    </div>` : ''}
                     <div class="flex items-center justify-between mb-4">
                         <div>
                             <div class="flex items-center gap-2">
@@ -522,10 +533,18 @@
 
                     <div class="flex items-center gap-3 mb-4">
                         <span class="text-xs ${statusClasses} px-3 py-1 rounded-full">${statusText}</span>
-                        ${isVK ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
+                        ${isVK && !isLiveAdmin ? `<span class="text-xs text-bark-400">• Dommer ${judgeRole || '?'} av ${party.judges}</span>` : ''}
                     </div>
 
-                    ${(() => { console.log('DEBUG rendering buttons, allDogsFinished:', allDogsFinished); return allDogsFinished; })() ? `
+                    ${isLiveAdmin ? `
+                    <!-- Live-admin: kun "Start/fortsett live rangering". Ingen kritikk-knapper. -->
+                    <button onclick="goToAssessment()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        ${finishedDogs > 0 ? 'Fortsett live rangering' : 'Start live rangering'}
+                    </button>
+                    ` : (allDogsFinished ? `
                     <!-- Alle hunder er bedømt - vis kritikk-knapper -->
                     <div class="space-y-3">
                         <button onclick="goToFinalCritique()" class="w-full bg-forest-600 hover:bg-forest-700 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
@@ -550,7 +569,7 @@
                         </svg>
                         ${finishedDogs > 0 ? 'Fortsett bedømming' : 'Start bedømming'}
                     </button>
-                    `}
+                    `)}
                 </div>
             `;
             console.log('DEBUG: HTML contains Skriv kritikker:', container.innerHTML.includes('Skriv kritikker'));
@@ -609,8 +628,11 @@
             const party = PARTIES[assignedPartyId] || (currentTildeling ? buildDynamicParty(currentTildeling) : null);
             const partiParam = encodeURIComponent(assignedPartyId);
             const proveParam = assignedProveId || 'demo';
+            // Live-modus: brukeren har live_admin-tildeling og bruker dommer-
+            // vk-flyten kun for live rangering på offentlig partiliste.
+            const liveModusParam = (currentTildeling?.dommerRolle === 'live_admin') ? '&modus=live' : '';
             if (party && (party.type === 'vk' || party.type === 'vkfinale')) {
-                window.location.href = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}`;
+                window.location.href = `dommer-vk.html?prove=${proveParam}&parti=${partiParam}${liveModusParam}`;
             } else {
                 // UK/AK parties use dommer-ukak.html — URL-encode så navn som
                 // "UK/AK Parti 1" går gjennom path-parameteren uten å brytes opp.

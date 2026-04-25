@@ -2254,6 +2254,11 @@
                 <section id="partilister" class="hidden space-y-6">
                     <div class="flex items-center justify-between flex-wrap gap-4">
                         <h2 class="text-xl font-bold font-serif text-bark-900">Parti- og ventelister</h2>
+                        <label class="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-bark-200 cursor-pointer hover:bg-bark-50 select-none">
+                            <input type="checkbox" id="manuellBedommingToggle" onchange="onManuellBedommingChange(this.checked)" class="w-4 h-4 rounded">
+                            <span class="text-sm font-medium text-bark-700">Manuell bedømming</span>
+                            <span class="text-xs text-bark-400" title="Når på: dommere på partier vises kun for synliggjøring (ingen kritikk-flyt). Admin kan tildele live-administrator på VK-partier som styrer live-rangering på offentlig partiliste.">ⓘ</span>
+                        </label>
                     </div>
 
                     <!-- Offentlig deling — alltid øverst for enkel tilgang -->
@@ -6195,14 +6200,17 @@
             savePartyDommere();
         }
 
-        // Render dommere for et parti
+        // Render dommere for et parti — viser også live_admin-tildelinger
+        // separat i et eget "Live-admin"-felt (kun synlig på VK-partier).
         function renderPartyDommere(partiNavn) {
             const container = document.getElementById('dommere-' + partiNavn.replace(/\s+/g, '-'));
             if (!container) return;
-            const dommere = partyDommere[partiNavn] || [];
+            const alle = partyDommere[partiNavn] || [];
+            const dommere = alle.filter(d => d.rolle !== 'live_admin');
+            const liveAdmins = alle.filter(d => d.rolle === 'live_admin');
             const partiNavnEsc = partiNavn.replace(/'/g, "\\'");
-            container.innerHTML = dommere.map(d => {
-                // Visuell forskjell på FKF-godkjent (warm) vs manuelt lagt til (amber)
+
+            const dommerHtml = dommere.map(d => {
                 const manuell = d.begrunnelse_type && d.begrunnelse;
                 const bg = manuell ? 'bg-amber-100 text-amber-900' : 'bg-warm-100 text-warm-800';
                 const title = manuell ? `${d.begrunnelse_type}: ${d.begrunnelse}` : '';
@@ -6213,6 +6221,20 @@
                     <button onclick="removeDommerFromParty('${partiNavnEsc}', '${d.telefon}')" class="hover:text-red-600 ml-1">&times;</button>
                 </span>`;
             }).join('');
+
+            container.innerHTML = dommerHtml;
+
+            // Render live_admins i sin egen container hvis den finnes
+            const adminContainer = document.getElementById('live-admin-' + partiNavn.replace(/\s+/g, '-'));
+            if (adminContainer) {
+                adminContainer.innerHTML = liveAdmins.map(d => `
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-sm bg-purple-100 text-purple-800">
+                        <span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 bg-purple-200 rounded">live</span>
+                        <span>${d.navn}</span>
+                        <button onclick="removeDommerFromParty('${partiNavnEsc}', '${d.telefon}')" class="hover:text-red-600 ml-1">&times;</button>
+                    </span>
+                `).join('');
+            }
         }
 
         // Lagre dommer-tildelinger (prøve-spesifikk) - synkroniserer til server
@@ -6306,6 +6328,123 @@
                 console.error('Feil ved lasting av dommertildelinger fra server:', err);
                 return {};
             }
+        }
+
+        // ========================================
+        // MANUELL BEDØMMING + LIVE-ADMIN
+        // ========================================
+
+        // Lokal cache av prøve-config (manuell_bedomming-flagget brukes
+        // bl.a. i renderDayGlobal for å vise/skjule live-admin-knappen).
+        let proveConfigCache = { manuell_bedomming: 0 };
+
+        async function loadProveConfig(proveId) {
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/config`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (resp.ok) proveConfigCache = await resp.json();
+            } catch (e) { /* ignorer; default 0 */ }
+            const toggle = document.getElementById('manuellBedommingToggle');
+            if (toggle) toggle.checked = proveConfigCache.manuell_bedomming === 1;
+            return proveConfigCache;
+        }
+
+        async function onManuellBedommingChange(checked) {
+            const proveId = getCurrentTrialId();
+            if (!proveId) {
+                alert('Velg en prøve først.');
+                document.getElementById('manuellBedommingToggle').checked = !checked;
+                return;
+            }
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/config`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({ manuell_bedomming: checked ? 1 : 0 })
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                proveConfigCache.manuell_bedomming = checked ? 1 : 0;
+                // Re-render partilister så live-admin-feltet vises/skjules
+                const parties = getTrialParties();
+                if (parties.length > 0) renderAllParties(parties);
+            } catch (err) {
+                alert('Kunne ikke lagre: ' + err.message);
+                document.getElementById('manuellBedommingToggle').checked = !checked;
+            }
+        }
+
+        // Søk etter brukere som kan settes som live-admin (må ha admin-rolle).
+        // Server validerer rollen ved lagring — UI søker bredt og merker
+        // hvilke som har admin-rolle slik at admin slipper å gjette.
+        async function showLiveAdminResults(partiNavn, partiId, query) {
+            const container = document.getElementById('live-admin-results-' + partiId);
+            if (!container) return;
+            if (!query || query.length < 2) {
+                container.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/brukere/sok?q=${encodeURIComponent(query)}`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (!resp.ok) { container.classList.add('hidden'); return; }
+                const data = await resp.json();
+                const adminRoller = new Set(['admin', 'superadmin', 'klubbleder', 'proveleder', 'sekretær', 'sekretar']);
+                const partiNavnEsc = partiNavn.replace(/'/g, "\\'");
+                const treff = (data.brukere || data || []).slice(0, 8);
+                if (treff.length === 0) {
+                    container.innerHTML = '<div class="px-3 py-2 text-sm text-bark-400">Ingen treff</div>';
+                    container.classList.remove('hidden');
+                    return;
+                }
+                container.innerHTML = treff.map(b => {
+                    const roller = String(b.rolle || '').split(/[,\s]+/).map(r => r.trim().toLowerCase()).filter(Boolean);
+                    const harAdmin = roller.some(r => adminRoller.has(r));
+                    const adminBadge = harAdmin
+                        ? '<span class="text-[10px] font-semibold uppercase px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded ml-1">admin</span>'
+                        : '<span class="text-[10px] uppercase px-1.5 py-0.5 bg-bark-100 text-bark-500 rounded ml-1" title="Mangler admin-rolle — server vil avvise">ikke admin</span>';
+                    const data_telefon = (b.telefon || '').replace(/'/g, "\\'");
+                    const data_navn = ((b.fornavn || '') + ' ' + (b.etternavn || '')).trim().replace(/'/g, "\\'");
+                    return `<button type="button" class="w-full text-left px-3 py-2 hover:bg-purple-50 border-b border-bark-100 last:border-0 ${harAdmin ? '' : 'opacity-60'}"
+                        onclick="addLiveAdminToParty('${partiNavnEsc}', '${data_telefon}', '${data_navn}', ${harAdmin})">
+                        <div class="text-sm font-medium text-bark-800">${data_navn || b.telefon}${adminBadge}</div>
+                        <div class="text-xs text-bark-500">${b.telefon || ''}</div>
+                    </button>`;
+                }).join('');
+                container.classList.remove('hidden');
+            } catch (e) { container.classList.add('hidden'); }
+        }
+
+        function addLiveAdminToParty(partiNavn, telefon, navn, harAdmin) {
+            if (!harAdmin) {
+                if (!confirm('Personen har ikke admin-rolle og vil bli avvist av serveren. Fortsett likevel?')) return;
+            }
+            if (!partyDommere[partiNavn]) partyDommere[partiNavn] = [];
+            if (partyDommere[partiNavn].some(d => d.telefon === telefon)) {
+                alert('Allerede tildelt på dette partiet.');
+                return;
+            }
+            partyDommere[partiNavn].push({
+                telefon: telefon,
+                navn: navn || telefon,
+                rolle: 'live_admin'
+            });
+            renderPartyDommere(partiNavn);
+            savePartyDommere();
+            // Skjul søkeresultater + tøm søkefelt
+            const partiId = (partiNavn || '').replace(/\s+/g, '-');
+            const search = document.getElementById('live-admin-sok-' + partiId);
+            const results = document.getElementById('live-admin-results-' + partiId);
+            if (search) search.value = '';
+            if (results) { results.classList.add('hidden'); results.innerHTML = ''; }
         }
 
         // Last dommer-tildelinger (prøve-spesifikk) - server først, deretter localStorage
@@ -7475,6 +7614,31 @@
                             '</div>' +
                         '</div>' +
                     '</div>' +
+                    // Live-admin-rad — kun for VK-partier når manuell bedømming er på.
+                    // Dommerne over har INGEN funksjon i manuell-modus (kun visning),
+                    // så vi viser en tydelig merknad og lar admin tildele en
+                    // live-administrator som kan styre rangerings-flyten.
+                    (party.type === 'vk' && proveConfigCache.manuell_bedomming === 1 ?
+                        '<div class="mt-3 pt-3 border-t border-purple-200/60 bg-purple-50/50 -mx-5 px-5 py-3">' +
+                            '<div class="flex items-start gap-2 mb-2">' +
+                                '<svg class="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>' +
+                                '</svg>' +
+                                '<div class="text-xs text-purple-700"><strong>Manuell bedømming:</strong> Dommerne over vises kun for synliggjøring. Tildel en live-administrator som kan styre rangering på offentlig partiliste.</div>' +
+                            '</div>' +
+                            '<div class="flex items-center gap-2 flex-wrap">' +
+                                '<label class="text-sm font-medium text-purple-700 whitespace-nowrap">Live-admin:</label>' +
+                                '<div id="live-admin-' + partiId + '" class="flex flex-wrap gap-1"></div>' +
+                                '<div class="relative flex-1 min-w-[180px]">' +
+                                    '<input type="text" id="live-admin-sok-' + partiId + '" placeholder="Søk admin (navn/telefon)..." ' +
+                                        'class="w-full px-3 py-1.5 text-sm bg-white border border-purple-200 rounded-lg focus:border-purple-500 focus:outline-none" ' +
+                                        'data-parti-navn="' + party.name + '" data-parti-id="' + partiId + '" ' +
+                                        'oninput="showLiveAdminResults(this.dataset.partiNavn, this.dataset.partiId, this.value)">' +
+                                    '<div id="live-admin-results-' + partiId + '" class="hidden absolute z-50 mt-1 w-80 bg-white border border-purple-200 rounded-xl shadow-lg max-h-60 overflow-y-auto"></div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>'
+                        : '') +
                 '</div>' +
                 // GRID-BASERT TABELL (strekker seg alltid 100%)
                 '<div class="bg-bark-100 partilister-row border-b-2 border-bark-200">' +
@@ -7650,6 +7814,8 @@
                 await loadPartyDommere();
                 await loadVkConfigFromServer();
                 await loadSignaturerFromServer();
+                // Last prøve-config (manuell_bedomming-flagget) for live-admin-UI
+                await loadProveConfig(proveId);
 
                 const savedParties = serverParties.length > 0 ? serverParties : getTrialParties();
                 const savedVenteliste = serverVenteliste && Object.keys(serverVenteliste).length > 0

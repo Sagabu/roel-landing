@@ -710,7 +710,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_rapport_versjoner_prove ON rapport_versjoner(prove_id);
   CREATE INDEX IF NOT EXISTS idx_rapport_versjoner_type ON rapport_versjoner(rapport_type);
 
-  -- VK-bedømming (Vinnerklasse dommerkort)
+  -- VK-bedømming (Vinnerklasse kritikkskjema)
   CREATE TABLE IF NOT EXISTS vk_bedomming (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     prove_id TEXT NOT NULL,
@@ -13442,7 +13442,7 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
       VALUES (?, ?, 'ukak1')
     `).run(proveId, dommerTelefon);
 
-    // IKKE opprett ferdigutfylte dommerkort - la testdommeren fylle ut selv
+    // IKKE opprett ferdigutfylte kritikkskjema - la testdommeren fylle ut selv
     // slik at vi kan teste hele flyten fra start til slutt
 
     // Logg
@@ -14349,7 +14349,7 @@ app.delete("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
 });
 
 // ============================================
-// VK-BEDØMMING API (Vinnerklasse dommerkort)
+// VK-BEDØMMING API (Vinnerklasse kritikkskjema)
 // ============================================
 
 // Hent VK-bedømming for et parti

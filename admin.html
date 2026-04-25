@@ -6346,8 +6346,16 @@
                 });
                 if (resp.ok) proveConfigCache = await resp.json();
             } catch (e) { /* ignorer; default 0 */ }
+
+            // Toggle synkes med prøvedetaljer sin radio-knapp (source of truth:
+            // praktiskInfo.bedommingUtenforSystemet). Server returnerer manuell_-
+            // bedomming basert på samme kilde, så vi reflekterer kun her.
+            const radio = document.querySelector('input[name="bedomMethod"]:checked');
+            const fraRadio = radio?.value === 'manuell';
+            const fraServer = proveConfigCache.manuell_bedomming === 1;
+            const erManuell = fraRadio || fraServer; // hvis enten sier ja, så ja
             const toggle = document.getElementById('manuellBedommingToggle');
-            if (toggle) toggle.checked = proveConfigCache.manuell_bedomming === 1;
+            if (toggle) toggle.checked = erManuell;
             return proveConfigCache;
         }
 
@@ -6358,6 +6366,23 @@
                 document.getElementById('manuellBedommingToggle').checked = !checked;
                 return;
             }
+
+            // Synk radio-knappene i prøvedetaljer-seksjonen så valget speiles
+            // begge steder. Triggrer oppdaterBedomMethod som tar ansvar for å
+            // lagre praktiskInfo.bedommingUtenforSystemet til server.
+            const targetRadio = document.querySelector(`input[name="bedomMethod"][value="${checked ? 'manuell' : 'digital'}"]`);
+            if (targetRadio && !targetRadio.checked) {
+                targetRadio.checked = true;
+                if (typeof oppdaterBedomMethod === 'function') {
+                    oppdaterBedomMethod();
+                }
+                // oppdaterBedomMethod lagrer praktiskInfo asynkront via savePraktiskInfo
+                // (eksisterende flow). Vi sier ifra hvis det funket.
+            }
+
+            // Speil også til prove_config.manuell_bedomming for backend-validering
+            // av live_admin-rolle. Dette er en speilet kopi — praktiskInfo er
+            // kanonisk kilde.
             try {
                 const token = localStorage.getItem('fuglehund_token');
                 const resp = await fetch(`/api/prover/${proveId}/config`, {
@@ -6370,7 +6395,6 @@
                 });
                 if (!resp.ok) throw new Error(await resp.text());
                 proveConfigCache.manuell_bedomming = checked ? 1 : 0;
-                // Re-render partilister så live-admin-feltet vises/skjules
                 const parties = getTrialParties();
                 if (parties.length > 0) renderAllParties(parties);
             } catch (err) {
@@ -6378,6 +6402,44 @@
                 document.getElementById('manuellBedommingToggle').checked = !checked;
             }
         }
+
+        // Når radio-knappen i prøvedetaljer endres, oppdater toggle i partilister
+        // også (samme tilstand begge steder). Dette wrappes rundt eksisterende
+        // oppdaterBedomMethod-funksjon som allerede håndterer praktiskInfo-lagring.
+        // Wrapping skjer DOMContentLoaded for å sikre at funksjonen er definert.
+        document.addEventListener('DOMContentLoaded', () => {
+            const orig = window.oppdaterBedomMethod;
+            if (typeof orig === 'function') {
+                window.oppdaterBedomMethod = function() {
+                    const ret = orig.apply(this, arguments);
+                    const radio = document.querySelector('input[name="bedomMethod"]:checked');
+                    const erManuell = radio?.value === 'manuell';
+                    const toggle = document.getElementById('manuellBedommingToggle');
+                    if (toggle) toggle.checked = erManuell;
+                    proveConfigCache.manuell_bedomming = erManuell ? 1 : 0;
+                    // Speil også til prove_config så server-validering for live_admin
+                    // er konsistent — fire-and-forget; praktiskInfo er kanonisk.
+                    const proveId = getCurrentTrialId();
+                    if (proveId) {
+                        const token = localStorage.getItem('fuglehund_token');
+                        fetch(`/api/prover/${proveId}/config`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                            },
+                            body: JSON.stringify({ manuell_bedomming: erManuell ? 1 : 0 })
+                        }).catch(() => {});
+                    }
+                    // Re-render partilister så live-admin-feltet på VK vises/skjules
+                    const parties = getTrialParties();
+                    if (parties.length > 0 && typeof renderAllParties === 'function') {
+                        renderAllParties(parties);
+                    }
+                    return ret;
+                };
+            }
+        });
 
         // Søk etter brukere som kan settes som live-admin (må ha admin-rolle).
         // Server validerer rollen ved lagring — UI søker bredt og merker

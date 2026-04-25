@@ -6728,6 +6728,27 @@ function harAdminRolle(telefon) {
   return roller.some(r => adminRoller.has(r));
 }
 
+// Hjelpefunksjon: er prøven satt til manuell bedømming?
+// Source of truth er praktiskInfo.bedommingUtenforSystemet (settes ved
+// prøveopprettelse i admin.html "prøvedetaljer"). prove_config.manuell_-
+// bedomming er en speilet kopi for raskere oppslag i rene endepunkter.
+function erManuellBedomming(proveId) {
+  // 1) praktiskInfo (kanonisk kilde) — settes ved prøveopprettelse
+  try {
+    const row = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(`praktiskInfo_${proveId}`);
+    if (row?.value) {
+      const pi = JSON.parse(row.value);
+      if (typeof pi.bedommingUtenforSystemet === 'boolean') {
+        return pi.bedommingUtenforSystemet === true;
+      }
+    }
+  } catch (e) { /* fall gjennom til prove_config */ }
+
+  // 2) prove_config (fallback / mirror)
+  const config = db.prepare("SELECT manuell_bedomming FROM prove_config WHERE prove_id = ?").get(proveId);
+  return config?.manuell_bedomming === 1;
+}
+
 // Hjelpefunksjon: validerer at live_admin-rolle er gyldig for et parti.
 // Returnerer { ok: true } eller { ok: false, error: '...' }.
 function validerLiveAdminRolle(proveId, parti) {
@@ -6737,9 +6758,8 @@ function validerLiveAdminRolle(proveId, parti) {
   if (partiRad.type !== 'vk') {
     return { ok: false, error: "live_admin kan kun tildeles VK-partier" };
   }
-  // Prøven må være satt til manuell bedømming
-  const config = db.prepare("SELECT manuell_bedomming FROM prove_config WHERE prove_id = ?").get(proveId);
-  if (!config || config.manuell_bedomming !== 1) {
+  // Prøven må være satt til manuell bedømming (source: praktiskInfo)
+  if (!erManuellBedomming(proveId)) {
     return { ok: false, error: "Manuell bedømming må være på for prøven før du kan tildele administrator" };
   }
   return { ok: true };
@@ -8742,6 +8762,11 @@ app.get("/api/prover/:id/config", (c) => {
     };
   }
 
+  // manuell_bedomming kan være satt i prove_config eller (kanonisk) i
+  // praktiskInfo.bedommingUtenforSystemet — la praktiskInfo overstyre
+  // så feltet alltid speiler det admin valgte ved prøveopprettelse.
+  config.manuell_bedomming = erManuellBedomming(proveId) ? 1 : 0;
+
   return c.json(config);
 });
 
@@ -9905,6 +9930,15 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
       // dog ble shadow'd av trukne-restore (dup-check på regnr hoppet over
       // aktiv-insertet). Dedupliker også på regnr i samme parti så ikke en
       // stale dobbeltoppføring ender opp som to rader.
+      //
+      // ENRICHMENT FRA HUNDER-TABELL: Klient-data kan være stale (admin
+      // har f.eks. oppdatert eier_navn via admin-panel.html siden client
+      // sist hentet partiet). Vi prioriterer derfor verdier fra hunder-
+      // tabellen (kanonisk kilde) og faller tilbake til klient-data kun
+      // når hunder-tabellen ikke har feltet satt. Dette hindrer at en PUT
+      // partilister overskriver nyere endringer fra admin-panel.html.
+      const hundLookup = db.prepare("SELECT navn, rase, kjonn, eier_navn, eier_telefon FROM hunder WHERE regnr = ?");
+
       if (Array.isArray(parti.dogs)) {
         let startnummer = 1;
         const seenRegnrs = new Set();
@@ -9916,16 +9950,24 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
             continue;
           }
           if (regnr) seenRegnrs.add(regnr);
+
+          const hund = regnr ? hundLookup.get(regnr) : null;
+
           insertDeltaker.run(
             partiId,
             proveId,
             regnr,
-            dog.hundenavn || dog.navn || '',
-            normalizeRase(dog.rase),
-            dog.kjonn || '',
+            // hunder.navn er kanonisk; fall tilbake til klient
+            (hund?.navn || dog.hundenavn || dog.navn || ''),
+            normalizeRase(hund?.rase || dog.rase),
+            (hund?.kjonn || dog.kjonn || ''),
             dog.klasse || '',
-            dog.eier || '',
-            dog.eierTelefon || '',
+            // KRITISK for issue: hunder.eier_navn (oppdatert via admin-
+            // panel) prioriteres over klient-data. NULL-felt på hunder
+            // betyr at admin ikke har endret — bruk klientens (NKK PDF
+            // kan ha denormalisert eier_navn uten å fylle hunder-tabellen).
+            (hund?.eier_navn || dog.eier || ''),
+            (hund?.eier_telefon || dog.eierTelefon || ''),
             dog.forer || '',
             dog.forerTelefon || '',
             startnummer++,

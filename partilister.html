@@ -1020,7 +1020,7 @@
                             <div class="flex items-center gap-1.5 md:gap-2 flex-shrink-0 flex-wrap">
                                 <span class="px-2 md:px-3 py-0.5 md:py-1 bg-bark-100 text-bark-700 rounded-full text-xs md:text-sm font-medium">${party.dogs?.length || 0}</span>
                                 ${classBadges}
-                                ${isVK ? `<span class="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                ${isVK ? `<span id="liveBadge-${partyId}" class="hidden items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                                     <span class="w-2 h-2 bg-green-500 rounded-full live-dot"></span>
                                     Live
                                 </span>` : ''}
@@ -1106,8 +1106,10 @@
                         </div>
 
                         ${isVK ? `
-                        <!-- Live ranking panel (right side) - kun for VK -->
-                        <div class="lg:w-80 lg:border-l border-t lg:border-t-0 border-bark-100 bg-gradient-to-b from-bark-50 to-white">
+                        <!-- Live ranking panel (right side) - kun for VK. Skjult som default;
+                             vises først når live-rangering er aktivert (live-admin har startet
+                             eller digital dommer har valgt seg som live-rangering-eier). -->
+                        <div id="livePanel-${partyId}" class="hidden lg:w-80 lg:border-l border-t lg:border-t-0 border-bark-100 bg-gradient-to-b from-bark-50 to-white">
                             <div class="px-4 py-3 bg-bark-100 border-b border-bark-200">
                                 <h4 class="font-semibold text-bark-800 flex items-center gap-2">
                                     <svg class="w-4 h-4 text-warm-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1157,10 +1159,31 @@
 
             // Hent live rangering fra server
             const currentProveId = proveId || 'demo';
+            const liveBadge = document.getElementById(`liveBadge-${partyId}`);
+            const livePanel = document.getElementById(`livePanel-${partyId}`);
 
             try {
                 const response = await fetch(`/api/vk-rangering/${currentProveId}/${encodeURIComponent(partyApiName)}`);
                 const data = await response.json();
+
+                // Live-broadcast er aktivt når enten live-admin (manuell) eller en
+                // valgt live-rangering-eier (digital) faktisk sender data. Inntil
+                // det skal panelet og Live-badgen være skjult — partilisten vises
+                // som vanlig.
+                const liveBroadcastActive = !!data.exists && (
+                    data.live_modus === 1 || !!data.live_rangering_eier
+                );
+                const isAktiv = data.status === 'aktiv' || !data.status;
+
+                if (livePanel) livePanel.classList.toggle('hidden', !liveBroadcastActive);
+                if (liveBadge) {
+                    // Live-badge bare når broadcasting OG bedømming pågår.
+                    // Etter ferdig/innsendt/godkjent fjernes "live"-merkingen.
+                    const visBadge = liveBroadcastActive && isAktiv;
+                    liveBadge.classList.toggle('hidden', !visBadge);
+                    liveBadge.classList.toggle('flex', visBadge);
+                }
+                if (!liveBroadcastActive) return;
 
                 const harRangering = data.rangering && data.rangering.length > 0;
                 const harTTG = data.tidTilGode && data.tidTilGode.length > 0;

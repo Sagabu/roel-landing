@@ -14670,7 +14670,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
 
     const bedomming = db.prepare(`
       SELECT plasseringer, premietildelinger, dog_data, tid_til_gode, round_snapshots,
-             vk_type, current_round, status, live_modus, updated_at
+             vk_type, current_round, status, live_modus, live_rangering_eier, updated_at
       FROM vk_bedomming WHERE prove_id = ? AND parti = ?
     `).get(proveId, parti);
 
@@ -14822,6 +14822,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
       current_round: bedomming.current_round,
       status: bedomming.status,
       live_modus: bedomming.live_modus || 0,
+      live_rangering_eier: bedomming.live_rangering_eier || null,
       updated_at: bedomming.updated_at,
       rangering,
       tidTilGode,

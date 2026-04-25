@@ -3560,50 +3560,211 @@ fuglehundprove.no`;
                 return;
             }
 
+            // Cache hunder slik at openHundEditDialog kan slå opp uten ny request
+            window._hunderCache = hunder;
+
+            const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
             container.innerHTML = `
                 <!-- Desktop header -->
                 <div class="hidden md:grid bg-bark-50 sticky top-0 grid-cols-6 gap-0 text-sm">
                     <div class="px-3 py-2 font-medium text-bark-600">Navn</div>
                     <div class="px-3 py-2 font-medium text-bark-600">Rase</div>
-                    <div class="px-3 py-2 font-medium text-bark-600">NKK-nr</div>
+                    <div class="px-3 py-2 font-medium text-bark-600">Reg.nr</div>
                     <div class="px-3 py-2 font-medium text-bark-600">Eier</div>
                     <div class="px-3 py-2 font-medium text-bark-600">Registrert</div>
                     <div class="px-3 py-2 text-right font-medium text-bark-600">Kilde</div>
                 </div>
                 <div class="text-sm">
-                    ${hunder.map(h => `
+                    ${hunder.map((h, idx) => `
                         <!-- Desktop view -->
-                        <div class="hidden md:grid grid-cols-6 gap-0 border-t border-bark-100 hover:bg-bark-50">
-                            <div class="px-3 py-2 font-medium">${h.navn || '-'}</div>
-                            <div class="px-3 py-2 text-bark-500">${h.rase || '-'}</div>
-                            <div class="px-3 py-2 text-bark-500 font-mono text-xs">${h.nkk_id || '-'}</div>
-                            <div class="px-3 py-2 text-bark-500 truncate">${h.eier_navn || h.eier_telefon || '-'}</div>
+                        <div class="hidden md:grid grid-cols-6 gap-0 border-t border-bark-100 hover:bg-warm-50 cursor-pointer" data-hund-idx="${idx}" title="Klikk for å redigere">
+                            <div class="px-3 py-2 font-medium text-warm-700">${esc(h.navn) || '-'}</div>
+                            <div class="px-3 py-2 text-bark-500">${esc(h.rase) || '-'}</div>
+                            <div class="px-3 py-2 text-bark-500 font-mono text-xs">${esc(h.regnr) || '-'}</div>
+                            <div class="px-3 py-2 text-bark-500 truncate">${esc(h.eier_navn || h.eier_telefon) || '-'}</div>
                             <div class="px-3 py-2 text-bark-400 text-xs">${h.created_at ? new Date(h.created_at).toLocaleDateString('no-NO') : '-'}</div>
                             <div class="px-3 py-2 text-right">
-                                <span class="px-2 py-0.5 rounded text-xs ${h.kilde === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${h.kilde || 'manuell'}</span>
+                                <span class="px-2 py-0.5 rounded text-xs ${h.kilde === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${esc(h.kilde) || 'manuell'}</span>
                             </div>
                         </div>
                         <!-- Mobil view -->
-                        <div class="md:hidden border-t border-bark-100 p-3">
+                        <div class="md:hidden border-t border-bark-100 p-3 hover:bg-warm-50 cursor-pointer" data-hund-idx="${idx}">
                             <div class="flex justify-between items-start mb-2">
                                 <div>
-                                    <div class="font-medium text-bark-800">${h.navn || '-'}</div>
-                                    <div class="text-xs text-bark-500">${h.rase || '-'}</div>
+                                    <div class="font-medium text-warm-700">${esc(h.navn) || '-'}</div>
+                                    <div class="text-xs text-bark-500">${esc(h.rase) || '-'}</div>
                                 </div>
-                                <span class="px-2 py-0.5 rounded text-xs ${h.kilde === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${h.kilde || 'manuell'}</span>
+                                <span class="px-2 py-0.5 rounded text-xs ${h.kilde === 'import' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">${esc(h.kilde) || 'manuell'}</span>
                             </div>
                             <div class="text-xs text-bark-500 space-y-1">
-                                <div>NKK: <span class="font-mono">${h.nkk_id || '-'}</span></div>
-                                <div>Eier: ${h.eier_navn || h.eier_telefon || '-'}</div>
+                                <div>Reg.nr: <span class="font-mono">${esc(h.regnr) || '-'}</span></div>
+                                <div>Eier: ${esc(h.eier_navn || h.eier_telefon) || '-'}</div>
                             </div>
                         </div>
                     `).join('')}
                 </div>
-                <p class="text-xs text-bark-400 mt-2 text-center">Viser ${hunder.length} av ${total} hunder</p>
+                <p class="text-xs text-bark-400 mt-2 text-center">Viser ${hunder.length} av ${total} hunder · Klikk på en rad for å redigere</p>
             `;
+
+            // Bind klikk-handlere via data-idx (unngår onclick-injeksjon med
+            // tegn som apostrof i hundenavn — samme bug som addDog-dialog hadde).
+            container.querySelectorAll('[data-hund-idx]').forEach(row => {
+                row.addEventListener('click', () => {
+                    const idx = parseInt(row.dataset.hundIdx, 10);
+                    if (window._hunderCache && window._hunderCache[idx]) {
+                        openHundEditDialog(window._hunderCache[idx]);
+                    }
+                });
+            });
         } catch (err) {
             console.error('Feil ved lasting av hunder:', err);
             document.getElementById('hundeList').innerHTML = '<p class="text-red-500 text-center py-4">Feil ved lasting: ' + err.message + '</p>';
+        }
+    }
+
+    // ========================================
+    // REDIGER HUND - dialog
+    // ========================================
+    function closeHundEditDialog() {
+        const d = document.getElementById('hundEditDialog');
+        if (d) d.remove();
+    }
+
+    function openHundEditDialog(hund) {
+        closeHundEditDialog();
+
+        const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        // Bygg rase-options. Bruker Raser.buildRaseOptions hvis tilgjengelig.
+        const raseOptionsHtml = (typeof Raser !== 'undefined' && Raser.buildRaseOptions)
+            ? Raser.buildRaseOptions(hund.rase || '', 'Velg rase')
+            : `<option value="">Velg rase</option><option value="${esc(hund.rase || '')}" selected>${esc(hund.rase || '')}</option>`;
+
+        const dialogHtml = `
+            <div id="hundEditDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-bark-900">Rediger hund</h3>
+                        <button onclick="closeHundEditDialog()" class="text-bark-400 hover:text-bark-600 text-2xl leading-none">&times;</button>
+                    </div>
+                    <p class="text-xs text-bark-500 mb-4">Endringer oppdateres umiddelbart over hele systemet — partier, kritikker og resultater.</p>
+
+                    <form id="hundEditForm" class="space-y-3">
+                        <input type="hidden" id="hundEditId" value="${esc(hund.id)}">
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Hundens navn *</label>
+                            <input type="text" id="hundEditNavn" required value="${esc(hund.navn || '')}" class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Registreringsnummer *</label>
+                            <input type="text" id="hundEditRegnr" required value="${esc(hund.regnr || '')}" class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none font-mono">
+                            <p class="text-xs text-amber-600 mt-1">⚠ Endring av regnr propageres til parti_deltakere — sjekk at det er korrekt før lagring.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Rase *</label>
+                            <select id="hundEditRase" required class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none bg-white">
+                                ${raseOptionsHtml}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Kjønn</label>
+                            <select id="hundEditKjonn" class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none bg-white">
+                                <option value="">— Ikke satt —</option>
+                                <option value="hannhund" ${hund.kjonn === 'hannhund' ? 'selected' : ''}>Hannhund</option>
+                                <option value="tispe" ${hund.kjonn === 'tispe' ? 'selected' : ''}>Tispe</option>
+                                <option value="male" ${hund.kjonn === 'male' ? 'selected' : ''}>Male (legacy)</option>
+                                <option value="female" ${hund.kjonn === 'female' ? 'selected' : ''}>Female (legacy)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-bark-700 mb-1">Født</label>
+                            <input type="date" id="hundEditFodt" value="${esc(hund.fodt || '')}" class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">
+                        </div>
+
+                        <div class="border-t border-bark-100 pt-3 mt-4">
+                            <h4 class="text-sm font-semibold text-bark-700 mb-2">Eier</h4>
+
+                            <div class="mb-2">
+                                <label class="block text-xs font-medium text-bark-600 mb-1">Eiers navn (vises i partilister og kritikker)</label>
+                                <input type="text" id="hundEditEierNavn" value="${esc(hund.eier_navn || '')}" placeholder="F.eks. Etternavn, Fornavn" class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-bark-600 mb-1">Eiers telefon (kobler til bruker)</label>
+                                <input type="text" id="hundEditEierTelefon" value="${esc(hund.eier_telefon || '')}" placeholder="F.eks. 12345678" class="w-full px-3 py-2 rounded-xl border border-bark-200 focus:border-warm-500 focus:outline-none">
+                            </div>
+                        </div>
+
+                        <div id="hundEditError" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2"></div>
+
+                        <div class="flex gap-3 justify-end pt-2">
+                            <button type="button" onclick="closeHundEditDialog()" class="px-4 py-2 text-bark-600 hover:bg-bark-100 rounded-xl">Avbryt</button>
+                            <button type="submit" class="px-4 py-2 bg-warm-500 hover:bg-warm-600 text-white rounded-xl font-medium">Lagre endringer</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', dialogHtml);
+
+        document.getElementById('hundEditForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await saveHundEdit();
+        });
+    }
+
+    async function saveHundEdit() {
+        const id = document.getElementById('hundEditId').value;
+        const errorEl = document.getElementById('hundEditError');
+        errorEl.classList.add('hidden');
+
+        const body = {
+            navn: document.getElementById('hundEditNavn').value.trim(),
+            regnr: document.getElementById('hundEditRegnr').value.trim(),
+            rase: document.getElementById('hundEditRase').value,
+            kjonn: document.getElementById('hundEditKjonn').value,
+            fodt: document.getElementById('hundEditFodt').value,
+            eier_telefon: document.getElementById('hundEditEierTelefon').value.trim(),
+            eier_navn: document.getElementById('hundEditEierNavn').value.trim()
+        };
+
+        if (!body.navn || !body.regnr || !body.rase) {
+            errorEl.textContent = 'Navn, regnr og rase er obligatorisk.';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('fuglehund_token');
+            const resp = await fetch(`/api/hunder/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                errorEl.textContent = err.error || `Kunne ikke lagre (HTTP ${resp.status})`;
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            closeHundEditDialog();
+            // Reload listen så endringene reflekteres umiddelbart
+            await loadHunder(document.getElementById('hundeSearch').value);
+        } catch (err) {
+            errorEl.textContent = 'Nettverksfeil: ' + err.message;
+            errorEl.classList.remove('hidden');
         }
     }
 

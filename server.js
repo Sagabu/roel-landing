@@ -4478,6 +4478,7 @@ app.put("/api/hunder/:id", async (c) => {
   const fieldMap = {
     regnr: "regnr", navn: "navn", rase: "rase", kjonn: "kjonn",
     fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde",
+    eier_telefon: "eier_telefon",
     eierbevis: "eierbevis", eierbevis_dato: "eierbevis_dato",
     vaksinasjon: "vaksinasjon", vaksinasjon_dato: "vaksinasjon_dato",
     aversjonsbevis: "aversjonsbevis", aversjonsbevis_dato: "aversjonsbevis_dato"
@@ -4493,12 +4494,61 @@ app.put("/api/hunder/:id", async (c) => {
     }
   }
 
-  if (sets.length === 0) {
+  // Hvis regnr endres, sjekk at det ikke kolliderer med en annen hund
+  if (body.regnr && body.regnr !== existing.regnr) {
+    const collide = db.prepare("SELECT id FROM hunder WHERE regnr = ? AND id != ?").get(body.regnr, id);
+    if (collide) {
+      return c.json({ error: `regnr "${body.regnr}" er allerede registrert på en annen hund (id ${collide.id})` }, 409);
+    }
+  }
+
+  if (sets.length === 0 && !body.eier_navn) {
     return c.json({ error: "Ingen felter å oppdatere" }, 400);
   }
 
-  vals.push(id);
-  db.prepare(`UPDATE hunder SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+  // Kjør hele oppdateringen i transaksjon så hund og denormaliserte
+  // parti_deltakere-rader endres atomisk.
+  const tx = db.transaction(() => {
+    if (sets.length > 0) {
+      vals.push(id);
+      db.prepare(`UPDATE hunder SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+    }
+
+    // Propager til parti_deltakere som har denormaliserte kopier av
+    // hund-data. Vi finner radene via eksisterende regnr (eller nytt
+    // regnr hvis det nettopp ble endret).
+    const oldRegnr = existing.regnr;
+    const newRegnr = body.regnr || oldRegnr;
+
+    const partiSets = [];
+    const partiVals = [];
+    if ('navn' in body) { partiSets.push("hund_navn = ?"); partiVals.push(body.navn); }
+    if ('rase' in body) { partiSets.push("rase = ?"); partiVals.push(normalizeRase(body.rase)); }
+    if ('kjonn' in body) { partiSets.push("kjonn = ?"); partiVals.push(body.kjonn); }
+    if ('eier_navn' in body) { partiSets.push("eier_navn = ?"); partiVals.push(body.eier_navn || ''); }
+    if (newRegnr !== oldRegnr) { partiSets.push("hund_regnr = ?"); partiVals.push(newRegnr); }
+
+    if (partiSets.length > 0 && oldRegnr) {
+      partiVals.push(oldRegnr);
+      db.prepare(`UPDATE parti_deltakere SET ${partiSets.join(", ")} WHERE hund_regnr = ?`).run(...partiVals);
+    }
+  });
+
+  try {
+    tx();
+  } catch (err) {
+    console.error("Hund-oppdatering feilet:", err);
+    return c.json({ error: err.message }, 500);
+  }
+
+  // Audit-logg endringen
+  const endredeFelt = Object.keys(body).filter(k => fieldMap[k] || k === 'eier_navn');
+  if (endredeFelt.length > 0) {
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "hund_oppdatert",
+      `Hund ${id} (${existing.navn} ${existing.regnr}) oppdatert: ${endredeFelt.join(', ')}`
+    );
+  }
 
   const updated = db.prepare("SELECT * FROM hunder WHERE id = ?").get(id);
   return c.json(updated);

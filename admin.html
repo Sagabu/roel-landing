@@ -36,19 +36,40 @@
         @media print {
             .no-print { display: none !important; }
         }
-        /* Partilister kolonne-template for lg-skjermer.
-           Tailwind CDN prosesserer ikke alltid arbitrary grid-template-columns
-           med komplekse argumenter, så vi bruker en eksplisitt CSS-klasse. */
-        @media (min-width: 1024px) {
-            .partilister-row-lg {
+        /* Partilister kolonne-template. Tailwind CDN-utility-klasser lastes
+           etter denne <style>-blokken, så vi MÅ unngå å mikse Tailwind grid-
+           cols-* med vår grid-template-columns — Tailwind-utility ville
+           overstyre og wrap'e Handling-kolonnen til neste rad. Definerer
+           hele templatet i én klasse istedenfor. */
+        .partilister-row {
+            display: grid;
+            gap: 0;
+        }
+        /* Mobile: vis kun 5 kolonner (Rase + Eier skjult via .hidden) */
+        .partilister-row {
+            grid-template-columns: 2rem minmax(0, 2fr) minmax(0, 1fr) 3rem auto;
+        }
+        @media (min-width: 768px) {
+            .partilister-row {
                 grid-template-columns:
                     2.5rem               /* Nr */
-                    minmax(0, 1.9fr)     /* Hund (navn + regnr) */
+                    minmax(0, 2fr)       /* Hund */
+                    2.75rem              /* Rase forkortelse */
+                    minmax(0, 1.3fr)     /* Fører */
+                    3.5rem               /* Klasse */
+                    auto;                /* Handling */
+            }
+        }
+        @media (min-width: 1024px) {
+            .partilister-row {
+                grid-template-columns:
+                    2.5rem               /* Nr */
+                    minmax(0, 1.9fr)     /* Hund */
                     2.75rem              /* Rase forkortelse */
                     minmax(0, 1.3fr)     /* Eier */
                     minmax(0, 1.3fr)     /* Fører */
-                    3.5rem               /* Klasse-badge */
-                    auto;                /* Handling-knapper */
+                    3.5rem               /* Klasse */
+                    auto;                /* Handling */
             }
         }
         /* Bakgrunnsbilder for seksjoner - 80-85% opacity */
@@ -7344,7 +7365,7 @@
                 : (dog.rase || '–');
             var raseFull = dog.rase || '';
 
-            return '<div class="grid grid-cols-5 md:grid-cols-6 partilister-row-lg gap-0 ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
+            return '<div class="partilister-row ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
                 '<div class="py-2 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
                 '<div class="pl-1 pr-2 py-2 min-w-0"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
                 '<div class="py-2 text-sm text-bark-700 hidden md:block text-center font-medium" title="' + raseFull + '">' + raseForkort + '</div>' +
@@ -7456,7 +7477,7 @@
                     '</div>' +
                 '</div>' +
                 // GRID-BASERT TABELL (strekker seg alltid 100%)
-                '<div class="bg-bark-100 grid grid-cols-5 md:grid-cols-6 partilister-row-lg gap-0 border-b-2 border-bark-200">' +
+                '<div class="bg-bark-100 partilister-row border-b-2 border-bark-200">' +
                     '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>' +
                     '<div class="pl-1 pr-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>' +
                     '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center hidden md:block">Rase</div>' +

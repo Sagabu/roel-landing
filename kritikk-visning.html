@@ -449,7 +449,77 @@
         document.title = `Kritikk — ${hund.navn || ''} ${hund.regnr || ''}`.trim();
     }
 
+    // Preview-modus: vis mock-data så design kan inspiseres uten å ha
+    // en ekte kritikk i databasen. Trigges av ?preview=1 i URL-en.
+    function getPreviewData() {
+        return {
+            kritikk: {
+                klasse: 'AK',
+                slipptid: 60,
+                jaktlyst: 5,
+                fart: 4,
+                selvstendighet: 5,
+                soksbredde: 4,
+                reviering: 4,
+                samarbeid: 4,
+                stand_m: 1,
+                stand_u: 2,
+                tomstand: 0,
+                makker_stand: 0,
+                sjanse: 0,
+                sek_spontan: 1,
+                sek_forbi: 0,
+                rapport_spontan: 0,
+                presisjon: 4,
+                reising: 4,
+                godkjent_reising: 4,
+                apport: 1,
+                adferd: '',
+                premie: '1.AK m/CK',
+                kritikk_tekst: 'Hund som starter med høy jaktlyst og god fart. Søker bredt og selvstendig i godt revier. Tar ut to støtt staende fugler — første presisjon noe upresis men reises kontrollert og felles på kommando. Andre stand presisjon, kontrollert reising og godkjent felling. Sekunderer makker spontant og korrekt. Apportoppgave løst tilfredsstillende. God dag.',
+                dato: '2026-04-25',
+                status: 'godkjent',
+                approved_at: '2026-04-25 16:30:00'
+            },
+            hund: {
+                navn: 'Eksempel Bella av Fjellet',
+                regnr: 'NO12345/22',
+                rase: 'Engelsk Setter',
+                far: 'Fjellets Storm NO22341/19',
+                mor: 'Bjerkaasens Tira NO38522/20'
+            },
+            eier: {
+                navn: 'Ola Nordmann',
+                adresse: 'Fjellveien 12',
+                postnummer: '7340',
+                sted: 'Oppdal',
+                telefon: '99988877'
+            },
+            forer: {
+                navn: 'Kari Nordmann'
+            },
+            prove: {
+                navn: 'Eksempelprøven 2026',
+                sted: 'Lifjellet',
+                nkk_ref_nr: 'NKK-2026-1234'
+            },
+            parti: {
+                navn: 'UK/AK Parti 1'
+            },
+            dommere: [
+                { navn: 'Per Hansen', rolle: '1', begrunnelse_type: 'dommer' },
+                { navn: 'Liv Olsen', rolle: '2', begrunnelse_type: 'dommer' }
+            ]
+        };
+    }
+
     async function load() {
+        // Preview-modus
+        if (params.get('preview') === '1' || params.get('preview') === 'true') {
+            render(getPreviewData());
+            return;
+        }
+
         try {
             let id = kritikkId;
             // Legacy fallback — prøv å finne kritikk_id via party+dog-parametere
@@ -458,6 +528,7 @@
                 document.getElementById('critiqueContent').innerHTML = `
                     <p style="text-align:center;padding:30px;color:#666;">
                         Ingen kritikk-ID angitt.<br>
+                        Vil du se layouten? Bruk <a href="?preview=1" style="color:#FD8536;">?preview=1</a> for forhåndsvisning med eksempel-data.<br><br>
                         <a href="nkk-godkjenning.html" style="color:#FD8536;">Tilbake til oversikten</a>
                     </p>`;
                 return;

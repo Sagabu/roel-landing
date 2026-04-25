@@ -64,6 +64,9 @@ rsync -avz \
     --exclude 'backups/' \
     --exclude '.env' \
     --exclude '.env.*' \
+    --exclude '.claude/' \
+    --exclude '.vibe-attachments/' \
+    --exclude '.vibe-images/' \
     ./ ${SERVER}:${REMOTE_DIR}/
 
 echo "=== Files synced, checkpointing database ==="

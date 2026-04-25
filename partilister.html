@@ -1098,7 +1098,7 @@
                                             <div class="py-2.5 px-3 min-w-0 text-bark-700 text-sm truncate">${dog.eier || '—'}</div>
                                             <div class="py-2.5 px-3 min-w-0 text-bark-700 text-sm truncate">${dog.forer || '—'}</div>
                                             <div class="py-2.5 px-3 text-bark-600 font-medium text-sm">${dog.premie || '-'}</div>
-                                            ${isVK ? `<div class="py-2.5 px-3" id="status-${partyId}-${i + 1}"><span class="text-bark-400 text-sm">-</span></div>` : ''}
+                                            ${isVK ? `<div class="py-2.5 px-3 flex items-center" id="status-${partyId}-${i + 1}"><span class="inline-flex items-center justify-center w-3 h-3 rounded-full bg-transparent ring-1 ring-bark-300" title="Ikke startet"></span></div>` : ''}
                                         </div>
                                     `;
                                 }).join('')}
@@ -1318,23 +1318,45 @@
                     </p>
                 `;
 
-                // Update status in the main list for each ranked dog (using nr - startnummer)
-                data.rangering.forEach(dog => {
-                    const statusEl = document.getElementById(`status-${partyId}-${dog.nr}`);
-                    if (statusEl) {
-                        statusEl.innerHTML = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">#${dog.plass}</span>`;
-                    }
-                });
+                // Status-dotter: 4-tilstands visuell indikator i status-kolonnen.
+                // Prioritet: avsluttet > TTG > har plassering nå > hadde plassering
+                // i forrige runde > ikke startet. En hund som har vært på minst
+                // ett slipp (rangering, TTG, avsluttet, eller forrige rundes
+                // ranking) skifter aldri tilbake til grå "ikke startet".
+                const dotConfig = {
+                    avsluttet: { cls: 'bg-red-500', ring: '', tooltip: 'Avsluttet' },
+                    ttg: { cls: 'bg-amber-500', ring: '', tooltip: 'Tid til gode' },
+                    medvideres: { cls: 'bg-green-500', ring: '', tooltip: 'Med videre' },
+                    ikkestartet: { cls: 'bg-transparent', ring: 'ring-1 ring-bark-300', tooltip: 'Ikke startet' }
+                };
 
-                // Mark avsluttet dogs
-                if (data.avsluttet) {
-                    data.avsluttet.forEach(dog => {
-                        const statusEl = document.getElementById(`status-${partyId}-${dog.nr}`);
-                        if (statusEl) {
-                            statusEl.innerHTML = `<span class="px-2 py-1 bg-bark-100 text-bark-500 rounded text-xs">Avsluttet</span>`;
-                        }
-                    });
-                }
+                // Bygg dot-state per hund-nummer
+                const dogStatus = {};
+                (data.avsluttet || []).forEach(d => { dogStatus[d.nr] = 'avsluttet'; });
+                (data.tidTilGode || []).forEach(d => { if (!dogStatus[d.nr]) dogStatus[d.nr] = 'ttg'; });
+                (data.rangering || []).forEach(d => { if (!dogStatus[d.nr]) dogStatus[d.nr] = 'medvideres'; });
+                (data.previousRoundRanking || []).forEach(d => { if (!dogStatus[d.nr]) dogStatus[d.nr] = 'medvideres'; });
+
+                // Oppdater alle status-celler i partiet — fyller "ikke startet" der ingen
+                // annen tilstand finnes (f.eks. hunder som ikke er kommet ut på slipp ennå).
+                const statusCells = document.querySelectorAll(`[id^="status-${partyId}-"]`);
+                statusCells.forEach(cell => {
+                    const idMatch = cell.id.match(/status-.+-(\d+)$/);
+                    if (!idMatch) return;
+                    const nr = parseInt(idMatch[1]);
+                    const tilstand = dogStatus[nr] || 'ikkestartet';
+                    const cfg = dotConfig[tilstand];
+                    let detail = cfg.tooltip;
+                    if (tilstand === 'medvideres') {
+                        const ranked = (data.rangering || []).find(d => d.nr === nr);
+                        if (ranked) detail = `Med videre — plass ${ranked.plass}${ranked.premie ? ` (${ranked.premie})` : ''}`;
+                        else if ((data.previousRoundRanking || []).find(d => d.nr === nr)) detail = 'Med videre fra forrige runde';
+                    }
+                    cell.innerHTML = `
+                        <span class="inline-flex items-center justify-center w-3 h-3 rounded-full ${cfg.cls} ${cfg.ring}"
+                              title="${detail}"></span>
+                    `;
+                });
 
             } catch (e) {
                 console.error('Error loading live ranking:', e);

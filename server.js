@@ -1088,6 +1088,8 @@ const migrations = [
   "ALTER TABLE klubber ADD COLUMN vipps_nummer TEXT DEFAULT NULL",
   // Bilde-kolonne for hunder
   "ALTER TABLE hunder ADD COLUMN bilde TEXT DEFAULT NULL",
+  // Fri-tekst eier-navn for hunder uten Norge-bruker (NKK-import o.l.)
+  "ALTER TABLE hunder ADD COLUMN eier_navn TEXT DEFAULT NULL",
   // Passord-autentisering for brukere
   "ALTER TABLE brukere ADD COLUMN passord_hash TEXT DEFAULT NULL",
   "ALTER TABLE brukere ADD COLUMN siste_innlogging TEXT DEFAULT NULL",
@@ -4478,7 +4480,7 @@ app.put("/api/hunder/:id", async (c) => {
   const fieldMap = {
     regnr: "regnr", navn: "navn", rase: "rase", kjonn: "kjonn",
     fodselsdato: "fodt", fodt: "fodt", klubb_id: "klubb_id", bilde: "bilde",
-    eier_telefon: "eier_telefon",
+    eier_telefon: "eier_telefon", eier_navn: "eier_navn",
     eierbevis: "eierbevis", eierbevis_dato: "eierbevis_dato",
     vaksinasjon: "vaksinasjon", vaksinasjon_dato: "vaksinasjon_dato",
     aversjonsbevis: "aversjonsbevis", aversjonsbevis_dato: "aversjonsbevis_dato"
@@ -4520,7 +4522,7 @@ app.put("/api/hunder/:id", async (c) => {
     }
   }
 
-  if (sets.length === 0 && !('eier_navn' in body)) {
+  if (sets.length === 0) {
     return c.json({ error: "Ingen felter å oppdatere" }, 400);
   }
 
@@ -5495,8 +5497,8 @@ app.get("/api/superadmin/hunder", (c) => {
   let params = [];
 
   if (search) {
-    whereConditions.push("(h.navn LIKE ? OR h.regnr LIKE ? OR h.nkk_id LIKE ? OR b.fornavn LIKE ? OR b.etternavn LIKE ?)");
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    whereConditions.push("(h.navn LIKE ? OR h.regnr LIKE ? OR h.nkk_id LIKE ? OR h.eier_navn LIKE ? OR b.fornavn LIKE ? OR b.etternavn LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   if (rase) {
@@ -5512,7 +5514,7 @@ app.get("/api/superadmin/hunder", (c) => {
 
   const rows = db.prepare(`
     SELECT h.id, h.regnr, h.nkk_id, h.navn, h.rase, h.kjonn, h.fodt, h.eier_telefon, h.created_at, h.kilde,
-           b.fornavn || ' ' || b.etternavn as eier_navn
+           COALESCE(NULLIF(h.eier_navn, ''), NULLIF(b.fornavn || ' ' || b.etternavn, ' ')) as eier_navn
     FROM hunder h
     LEFT JOIN brukere b ON h.eier_telefon = b.telefon
     ${whereClause}

@@ -9746,13 +9746,30 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
       // Sett inn deltakere (hunder) — startnummer tildeles alltid sekvensielt
       // basert på klientens array-rekkefølge, slik at public partiliste
       // (ORDER BY startnummer) speiler den samme UK-øverst/AK-under-ordenen.
+      //
+      // KRITISK: status er ALLTID 'aktiv' for dogs i parti.dogs[]. Trukne
+      // bevares utelukkende via trukneSnapshot-restoring under. Stale
+      // localStorage kunne tidligere inneholde trukne med status='trukket'
+      // embedded i parti.dogs — da ble de lagret som trukket i stedet for
+      // aktiv, og brukeren så "endringer forsvinner" fordi deres aktive
+      // dog ble shadow'd av trukne-restore (dup-check på regnr hoppet over
+      // aktiv-insertet). Dedupliker også på regnr i samme parti så ikke en
+      // stale dobbeltoppføring ender opp som to rader.
       if (Array.isArray(parti.dogs)) {
         let startnummer = 1;
+        const seenRegnrs = new Set();
         for (const dog of parti.dogs) {
+          const regnr = dog.regnr || '';
+          if (regnr && seenRegnrs.has(regnr)) {
+            // Duplikat innen samme parti — hopp over (UNIQUE constraint
+            // ville uansett kastet; bedre å ignorere stille).
+            continue;
+          }
+          if (regnr) seenRegnrs.add(regnr);
           insertDeltaker.run(
             partiId,
             proveId,
-            dog.regnr || '',
+            regnr,
             dog.hundenavn || dog.navn || '',
             normalizeRase(dog.rase),
             dog.kjonn || '',
@@ -9763,7 +9780,7 @@ app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
             dog.forerTelefon || '',
             startnummer++,
             dog.confirmed ? 1 : 0,
-            dog.status || 'aktiv'
+            'aktiv'  // force aktiv — aldri bevare klient-sent trukket
           );
         }
       }

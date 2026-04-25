@@ -130,7 +130,19 @@ const FuglehundAuth = (function() {
       // Admin-rolle gis til admin, proveleder og klubbleder
       return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
     }
-    if (rolle === 'dommer') return roller.includes('dommer') || roller.includes('admin');
+    if (rolle === 'dommer') {
+      // Dommer-sider tillates også for alle admin-varianter, inkl. proveleder/
+      // klubbleder/sekretær/superadmin. Dette er nødvendig fordi en bruker
+      // med admin-rolle (uten dommer-rolle) kan være tildelt som "live_admin"
+      // på et VK-parti og må kunne åpne dommer-vk.html for å styre rangeringen.
+      return roller.includes('dommer')
+          || roller.includes('admin')
+          || roller.includes('proveleder')
+          || roller.includes('klubbleder')
+          || roller.includes('sekretær')
+          || roller.includes('sekretar')
+          || roller.includes('superadmin');
+    }
     if (rolle === 'klubbleder') return roller.includes('klubbleder') || roller.includes('admin');
     if (rolle === 'nkkrep') return roller.includes('nkkrep') || roller.includes('admin');
     if (rolle === 'proveleder') return roller.includes('proveleder') || roller.includes('admin');

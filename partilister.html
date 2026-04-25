@@ -1388,12 +1388,22 @@
 
             const ukakParties = parties.filter(p => p.type === 'ukak').length;
 
-            // VK: bruk konfigurasjon (ikke faktisk fordelt)
-            const vkKvalPartier = proveConfig?.vkKvalPartier || (vkSamlet?.antallPartier || 0);
-            const vkHarFinale = vkKvalPartier > 0 ? 1 : 0;
-            // Hvis VK allerede er fordelt, bruk faktiske partier
-            const vkFordeltPartier = parties.filter(p => p.type === 'vk' || p.type === 'vk-kval').length;
-            const vkKvalVisning = vkFordeltPartier > 0 ? vkFordeltPartier : vkKvalPartier;
+            // VK: skille kval / semi / finale via vkSubType (alle har type='vk')
+            // 1-day VK lagres uten vkSubType og navnet inneholder "Finale" — regnes som finale
+            const vkKvalFordelt = parties.filter(p => p.type === 'vk' && p.vkSubType === 'vk_kval').length;
+            const vkSemiFordelt = parties.filter(p => p.type === 'vk' && p.vkSubType === 'vk_semi').length;
+            const vkFinaleFordelt = parties.filter(p => p.type === 'vk' && (
+                p.vkSubType === 'vk_finale' ||
+                (!p.vkSubType && (p.name || '').toLowerCase().includes('finale'))
+            )).length;
+
+            // Konfigurert antall kval-partier (fallback når ingenting er fordelt enda)
+            const vkKvalKonfigurert = proveConfig?.vkKvalPartier || (vkSamlet?.antallPartier || 0);
+            const vkKvalVisning = vkKvalFordelt > 0 ? vkKvalFordelt : vkKvalKonfigurert;
+
+            const visKval = vkKvalVisning > 0;
+            const visSemi = vkSemiFordelt > 0;
+            const visFinale = vkFinaleFordelt > 0;
 
             const statsContainer = document.getElementById('quickStats');
             statsContainer.innerHTML = `
@@ -1409,13 +1419,22 @@
                     <p class="text-xl md:text-3xl font-serif font-semibold text-white">${ukakParties}</p>
                     <p class="text-bark-300 text-[10px] md:text-xs mt-0.5 md:mt-1">UK/AK-partier</p>
                 </div>
+                ${visKval ? `
                 <div class="bg-black/30 backdrop-blur-sm rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
                     <p class="text-xl md:text-3xl font-serif font-semibold text-white">${vkKvalVisning}</p>
                     <p class="text-bark-300 text-[10px] md:text-xs mt-0.5 md:mt-1">VK kval-partier</p>
                 </div>
-                ${vkHarFinale ? `
-                <div class="bg-black/30 backdrop-blur-sm rounded-xl md:rounded-2xl p-3 md:p-4 text-center flex items-center justify-center">
-                    <p class="text-sm md:text-base font-serif font-semibold text-white">VK finale</p>
+                ` : ''}
+                ${visSemi ? `
+                <div class="bg-black/30 backdrop-blur-sm rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
+                    <p class="text-xl md:text-3xl font-serif font-semibold text-white">${vkSemiFordelt}</p>
+                    <p class="text-bark-300 text-[10px] md:text-xs mt-0.5 md:mt-1">VK semi-partier</p>
+                </div>
+                ` : ''}
+                ${visFinale ? `
+                <div class="bg-black/30 backdrop-blur-sm rounded-xl md:rounded-2xl p-3 md:p-4 text-center">
+                    <p class="text-xl md:text-3xl font-serif font-semibold text-white">${vkFinaleFordelt}</p>
+                    <p class="text-bark-300 text-[10px] md:text-xs mt-0.5 md:mt-1">VK finale-partier</p>
                 </div>
                 ` : ''}
             `;

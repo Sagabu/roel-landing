@@ -727,6 +727,13 @@
             renderRoundHistoryButtons();
             setupDictation();
 
+            // Live-admin: opprett vk_bedomming-rad umiddelbart med live_modus=1
+            // så offentlig partilist får live-indikator så snart "Start live
+            // rangering" trykkes — uten å vente på første handling.
+            if (liveModus && proveId !== 'demo') {
+                saveToStorage().catch(err => console.warn('Init-save (live-admin) feilet:', err));
+            }
+
             // Start polling for ikke-eiere (hvis eier allerede er valgt)
             startLiveRangeringPolling();
         }
@@ -826,8 +833,32 @@
                     return;
                 }
 
-                // Hvis bare én dommer, ingen valg nødvendig
+                // Solo-dommer: ingen modal trengs. Auto-sett denne dommeren
+                // som live-rangering-eier på server så vk_bedomming-raden
+                // opprettes umiddelbart og offentlig partilist kan vise
+                // live-indikator (uten å vente på første handling).
                 if (partiDommere.length <= 1) {
+                    if (partiDommere.length === 1 &&
+                        partiDommere[0].dommer_telefon === dommerTelefon) {
+                        try {
+                            const resp = await window.FuglehundAuth.authFetch(
+                                `/api/vk-bedomming/${proveId}/${parti}/set-live-eier`,
+                                {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        eier_telefon: dommerTelefon,
+                                        inkluder_slipp_kommentarer: false
+                                    })
+                                }
+                            );
+                            if (resp.ok || resp.status === 409) {
+                                liveRangeringEier = dommerTelefon;
+                            }
+                        } catch (err) {
+                            console.warn('Solo-dommer auto-eier feilet:', err);
+                        }
+                    }
                     return;
                 }
 
@@ -879,7 +910,7 @@
             inkluderSlippKommentarer = inkluderCheckbox ? inkluderCheckbox.checked : false;
 
             try {
-                const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}/set-live-eier`, {
+                const resp = await window.FuglehundAuth.authFetch(`/api/vk-bedomming/${proveId}/${parti}/set-live-eier`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

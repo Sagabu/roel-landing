@@ -1177,38 +1177,68 @@
         // =============================================
         // Last bedømmingsdata fra server
         async function loadFromServer() {
+            _installOnlineListener();
+
             if (proveId === 'demo') {
-                // For demo, bruk localStorage som før
                 loadFromLocalStorage();
+                _updateOfflineBanner();
                 return;
             }
 
+            // Hvis localStorage har upålagte endringer (f.eks. fra offline-
+            // arbeid), MÅ vi bruke disse fremfor server-state for ikke å
+            // overskrive arbeidet. Server kan ha eldre data fra før admin
+            // gikk offline.
+            const hadPending = _hasPendingSync();
+
+            let serverData = null;
             try {
                 const response = await fetch(`/api/vk-bedomming/${proveId}/${parti}`);
-                const result = await response.json();
-
-                if (result.exists && result.data) {
-                    const data = result.data;
-                    state.currentSlipp = data.current_slipp || 1;
-                    state.currentRound = data.current_round || 1;
-                    state.selectedDogs = data.selected_dogs || { 1: 1, 2: 2 };
-                    state.plasseringer = data.plasseringer || {};
-                    state.tidTilGode = data.tid_til_gode || {};
-                    state.dogData = data.dog_data || {};
-                    state.slippComments = data.slipp_comments || {};
-                    state.roundPairings = data.round_pairings || {};
-                    state.opponents = data.opponents || {};
-                    state.judgedThisRound = data.judged_this_round || {};
-                    state.roundSnapshots = data.round_snapshots || {};
-                    state.slippDogs = data.slipp_dogs || {};
-                    state.slippRankings = data.slipp_rankings || {};
-                    state.vkType = data.vk_type || '1dag';
-                    state.premietildelinger = data.premietildelinger || {};
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.exists && result.data) serverData = result.data;
                 }
             } catch (err) {
-                console.error('Feil ved lasting fra server:', err);
+                console.warn('[dommer-vk] Fetch feilet, faller tilbake til localStorage:', err.message);
             }
 
+            if (hadPending) {
+                // Lokal state har ulagrede endringer — bruk dem
+                console.log('[dommer-vk] Bruker localStorage (har upålagte endringer)');
+                loadFromLocalStorage();
+                _scheduleSyncRetry();
+                // Forsøk umiddelbart å pushe til server hvis vi nå er online
+                if (navigator.onLine) {
+                    setTimeout(() => saveToStorage().catch(() => {}), 500);
+                }
+            } else if (serverData) {
+                // Bruk fersk server-state
+                state.currentSlipp = serverData.current_slipp || 1;
+                state.currentRound = serverData.current_round || 1;
+                state.selectedDogs = serverData.selected_dogs || { 1: 1, 2: 2 };
+                state.plasseringer = serverData.plasseringer || {};
+                state.tidTilGode = serverData.tid_til_gode || {};
+                state.dogData = serverData.dog_data || {};
+                state.slippComments = serverData.slipp_comments || {};
+                state.roundPairings = serverData.round_pairings || {};
+                state.opponents = serverData.opponents || {};
+                state.judgedThisRound = serverData.judged_this_round || {};
+                state.roundSnapshots = serverData.round_snapshots || {};
+                state.slippDogs = serverData.slipp_dogs || {};
+                state.slippRankings = serverData.slipp_rankings || {};
+                state.vkType = serverData.vk_type || '1dag';
+                state.premietildelinger = serverData.premietildelinger || {};
+                // Oppdater localStorage med ferske server-data så reload uten
+                // dekning også viser dem.
+                _saveLocalState(true);
+            } else {
+                // Server ga ingen data og ingen pending — fall tilbake til
+                // localStorage hvis den finnes (f.eks. offline ved oppstart).
+                console.log('[dommer-vk] Ingen server-data, leser localStorage');
+                loadFromLocalStorage();
+            }
+
+            _updateOfflineBanner();
             document.getElementById('currentSlipp').textContent = state.currentSlipp;
         }
 
@@ -1242,10 +1272,23 @@
             document.getElementById('currentSlipp').textContent = state.currentSlipp;
         }
 
-        // Lagre til server (og localStorage som backup)
-        async function saveToStorage() {
-            // Alltid lagre ALT til localStorage som backup (inkl. notater)
-            localStorage.setItem('dommertest_vk_dual', JSON.stringify({
+        // === OFFLINE-STØTTE ===
+        // dommer-vk må fungere på fjellet med varierende dekning. Strategi:
+        // 1. localStorage er ALLTID kilden lokalt — hver state-mutasjon
+        //    skrives umiddelbart med _pendingSync=true.
+        // 2. Server-PUT prøves etterpå. Lykkes den → flagg=false. Feiler →
+        //    flagg=true og retry-loop startes.
+        // 3. window.online + 30 sek periodisk retry forsøker re-send mens
+        //    det ligger upålagte endringer.
+        // 4. loadFromServer faller tilbake til localStorage hvis fetch feiler
+        //    ELLER hvis localStorage har upålagte endringer (server kan ha
+        //    eldre data enn det vi gjorde offline).
+        // 5. beforeunload advarer hvis det er upålagte endringer.
+        let _vkSyncRetryTimer = null;
+        let _vkOnlineListenerInstalled = false;
+
+        function _saveLocalState(syncSuccess) {
+            const data = {
                 currentSlipp: state.currentSlipp,
                 currentRound: state.currentRound,
                 selectedDogs: state.selectedDogs,
@@ -1262,8 +1305,94 @@
                 vkType: state.vkType,
                 premietildelinger: state.premietildelinger,
                 kvalifisertTilFinale: state.kvalifisertTilFinale,
-                judgingFinished: state.judgingFinished
-            }));
+                judgingFinished: state.judgingFinished,
+                _pendingSync: syncSuccess === false,
+                _savedAt: Date.now()
+            };
+            localStorage.setItem('dommertest_vk_dual', JSON.stringify(data));
+        }
+
+        function _hasPendingSync() {
+            try {
+                const raw = localStorage.getItem('dommertest_vk_dual');
+                if (!raw) return false;
+                return JSON.parse(raw)._pendingSync === true;
+            } catch (e) { return false; }
+        }
+
+        function _scheduleSyncRetry() {
+            if (_vkSyncRetryTimer) return;
+            _vkSyncRetryTimer = setInterval(async () => {
+                if (!_hasPendingSync() || !navigator.onLine) {
+                    if (!_hasPendingSync()) {
+                        clearInterval(_vkSyncRetryTimer);
+                        _vkSyncRetryTimer = null;
+                    }
+                    return;
+                }
+                try { await saveToStorage(); } catch (e) {}
+            }, 30000);
+        }
+
+        function _installOnlineListener() {
+            if (_vkOnlineListenerInstalled) return;
+            _vkOnlineListenerInstalled = true;
+            window.addEventListener('online', () => {
+                console.log('[dommer-vk] Online — forsøker sync');
+                if (_hasPendingSync()) {
+                    saveToStorage().catch(e => console.warn('Sync failed', e));
+                }
+                _updateOfflineBanner();
+            });
+            window.addEventListener('offline', () => {
+                _updateOfflineBanner();
+            });
+            window.addEventListener('beforeunload', (e) => {
+                if (_hasPendingSync()) {
+                    e.preventDefault();
+                    e.returnValue = 'Det er endringer som ikke er synket til server. Vent til sync er ferdig.';
+                    return e.returnValue;
+                }
+            });
+        }
+
+        function _updateOfflineBanner() {
+            let banner = document.getElementById('vkOfflineBanner');
+            const pending = _hasPendingSync();
+            const offline = !navigator.onLine;
+
+            if (!offline && !pending) {
+                if (banner) banner.remove();
+                return;
+            }
+
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'vkOfflineBanner';
+                banner.className = 'sticky top-0 z-[58] px-4 py-2 text-sm text-center font-medium shadow-md';
+                const liveBanner = document.getElementById('liveModusBanner');
+                if (liveBanner && liveBanner.parentNode) {
+                    liveBanner.parentNode.insertBefore(banner, liveBanner.nextSibling);
+                } else {
+                    document.body.insertBefore(banner, document.body.firstChild);
+                }
+            }
+
+            if (offline) {
+                banner.className = 'sticky top-0 z-[58] px-4 py-2 text-sm text-center font-medium shadow-md bg-amber-500 text-white';
+                banner.innerHTML = '⚠️ <strong>Offline</strong> — endringer lagres lokalt og synkroniseres automatisk når dekning er tilbake';
+            } else if (pending) {
+                banner.className = 'sticky top-0 z-[58] px-4 py-2 text-sm text-center font-medium shadow-md bg-blue-600 text-white';
+                banner.innerHTML = '🔄 Synkroniserer ulagrede endringer til server...';
+            }
+        }
+
+        // Lagre til server (og localStorage som backup) — offline-robust
+        async function saveToStorage() {
+            _installOnlineListener();
+            // 1) Skriv localStorage UMIDDELBART (markert som upålagt sync)
+            _saveLocalState(false);
+            _updateOfflineBanner();
 
             // Lagre live-rangering til server hvis ikke demo OG (jeg er live-
             // rangering eier ELLER vi er i live-modus). Live-admin (manuell
@@ -1324,21 +1453,37 @@
                     live_modus: liveModus ? 1 : 0
                 };
 
+                let serverSyncSuccess = false;
                 try {
-                    await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
+                    const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(liveData)
                     });
+                    serverSyncSuccess = resp.ok;
+                    if (!resp.ok) {
+                        console.warn('[dommer-vk] Server svarte ikke OK på sync:', resp.status);
+                    }
                 } catch (err) {
-                    console.error('Feil ved lagring til server:', err);
+                    console.warn('[dommer-vk] Sync feilet (offline?):', err.message);
                 }
+
+                if (serverSyncSuccess) {
+                    // Skriv localStorage på nytt med pending=false
+                    _saveLocalState(true);
+                } else {
+                    // pending=true er allerede satt — start retry-loop hvis ikke allerede
+                    _scheduleSyncRetry();
+                }
+                _updateOfflineBanner();
             }
 
             // ALLTID lagre dommerens egne notater til server (uavhengig av live-eier status)
             // Dette sikrer at alle dommere har tilgang til sine notater når de kommer ned fra fjellet
             if (proveId !== 'demo' && dommerTelefon) {
-                await saveDommerNotaterToServer();
+                try {
+                    await saveDommerNotaterToServer();
+                } catch (e) { /* notater feiler stille — fanges av retry-loopen som re-sender hele state */ }
             }
         }
 

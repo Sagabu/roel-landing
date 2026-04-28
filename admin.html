@@ -1150,7 +1150,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Klokkeslett opprop</label>
-                            <input type="time" id="trialTime" value="08:00" onchange="if (typeof savePraktiskInfo === 'function' && getCurrentTrialId()) savePraktiskInfo()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="time" id="trialTime" value="08:00" onchange="autoLagrePraktiskFelt('klokkeslett', this.value)" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Sted / Område</label>
@@ -1158,7 +1158,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Jegermiddag (dato)</label>
-                            <input type="date" id="trialJegermiddag" value="" onchange="if (typeof savePraktiskInfo === 'function' && getCurrentTrialId()) savePraktiskInfo()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="date" id="trialJegermiddag" value="" onchange="autoLagrePraktiskFelt('jegermiddagDato', this.value)" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                     </div>
 
@@ -4402,6 +4402,45 @@
                 return '';
             }
             return urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
+        }
+
+        // Auto-lagring av et enkelt praktiskInfo-felt — laster eksisterende
+        // praktiskInfo først, oppdaterer kun det ene feltet, og lagrer
+        // tilbake. Hindrer at andre felter overskrives med tomme verdier
+        // ved hard-refresh før brukeren har fylt ut alt. Brukes for
+        // trialTime og trialJegermiddag som ikke har egne kolonner i prover.
+        async function autoLagrePraktiskFelt(felt, verdi) {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const headers = {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                };
+                // Hent eksisterende praktiskInfo
+                const resp = await fetch(`/api/storage/praktiskInfo_${proveId}`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                let praktiskInfo = {};
+                if (resp.ok) {
+                    const data = await resp.json();
+                    praktiskInfo = data.value || {};
+                }
+                // Oppdater kun det ene feltet (merge)
+                praktiskInfo[felt] = verdi;
+                // Lagre tilbake (server-side)
+                await fetch(`/api/storage/praktiskInfo_${proveId}`, {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify({ value: praktiskInfo })
+                });
+                // Speil til localStorage så lokal cache er konsistent
+                localStorage.setItem(`praktiskInfo_${proveId}`, JSON.stringify(praktiskInfo));
+                if (window.FuglehundToast) FuglehundToast.success('Lagret', 1500);
+            } catch (err) {
+                if (window.FuglehundToast) FuglehundToast.error('Nettverksfeil ved lagring');
+            }
         }
 
         // Auto-lagring av prøvedetaljer-felter til prover-tabellen.
@@ -19906,7 +19945,10 @@
                 }
             }
 
-            const navnOk = navnInput?.value === forventetNavn;
+            // Trim whitespace foran/bak — admin kan ha kopiert med ekstra
+            // mellomrom. Beholder case-sensitiv match siden prøvenavn KAN
+            // ha bevisst forskjellig store/små bokstaver.
+            const navnOk = (navnInput?.value || '').trim() === (forventetNavn || '').trim();
             const arsakOk = arsak !== '';
             const kommentarOk = arsak !== 'annet' || kommentarVal.length > 0;
             btn.disabled = !(navnOk && arsakOk && kommentarOk);
@@ -19915,7 +19957,8 @@
         async function bekreftKansellerProve() {
             const proveId = slettProveAktivId;
             if (!proveId) return;
-            const navn = document.getElementById('slettBekreftNavn')?.value;
+            // Trim whitespace så admin ikke låses ute pga. utilsiktet mellomrom
+            const navn = (document.getElementById('slettBekreftNavn')?.value || '').trim();
             const arsak = document.getElementById('kansArsak')?.value;
             const kommentar = (document.getElementById('kansKommentar')?.value || '').trim();
             const beholdKritikker = document.getElementById('kansBeholdKritikker')?.checked || false;
@@ -20302,8 +20345,12 @@
         }
 
         // Last terminliste ved oppstart
-        document.addEventListener('DOMContentLoaded', function() {
-            lastTerminliste();
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Vent på at terminlisten er ferdig lastet før vi prøver å
+            // velge en prøve — tidligere brukte vi setTimeout(500ms) som
+            // race-fallback, men på tregt nettverk var alleProver fortsatt
+            // tom og velgProve ble aldri kalt.
+            await lastTerminliste();
             updateDVKStatusBadge();
 
             // Sjekk om det er en valgt prøve fra før — kall full velgProve
@@ -20311,12 +20358,10 @@
             // fylles ut korrekt etter hard-refresh.
             const savedTrialId = localStorage.getItem('currentTrialId');
             if (savedTrialId) {
-                setTimeout(() => {
-                    const prove = alleProver.find(p => p.id === savedTrialId);
-                    if (prove && typeof velgProve === 'function') {
-                        velgProve(savedTrialId);
-                    }
-                }, 500);
+                const prove = alleProver.find(p => p.id === savedTrialId);
+                if (prove && typeof velgProve === 'function') {
+                    await velgProve(savedTrialId);
+                }
             }
 
             // Lukk autocomplete når man klikker utenfor

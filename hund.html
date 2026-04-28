@@ -646,6 +646,23 @@
             console.log('[hund.html] Ferdig med søk, dog funnet:', !!dog, dog?.name || dog?.navn);
             if (dog) {
                 currentDog = dog;
+
+                // Sørg for at titler ALLTID hentes fra serveren — hund-data kan
+                // ha kommet fra localStorage eller demo-database som ikke har
+                // titler. Slår opp via regnr (foretrukket) eller id.
+                if (!Array.isArray(currentDog.titler)) {
+                    try {
+                        const idForOppslag = currentDog.regNumber || currentDog.id;
+                        if (idForOppslag) {
+                            const titlerResp = await fetch(`/api/hunder/${encodeURIComponent(idForOppslag)}`);
+                            if (titlerResp.ok) {
+                                const apiDog = await titlerResp.json();
+                                currentDog.titler = apiDog.titler || [];
+                            }
+                        }
+                    } catch (e) { /* stille feil — uten titler er det også OK */ }
+                }
+
                 console.log('[hund.html] Rendrer profil for:', currentDog.name);
                 renderDogProfile();
                 renderCritiques();

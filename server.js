@@ -1190,8 +1190,8 @@ const migrations = [
   "ALTER TABLE prover ADD COLUMN proveleder_navn TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN nkkrep_navn TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN nkkvara_navn TEXT DEFAULT NULL",
-  // Prøvetype (høyfjell_host, høyfjell_vinter, lavland_host, skogsfugl_host, skogsfugl_vinter, fullkombinert, apport)
-  "ALTER TABLE prover ADD COLUMN prove_type TEXT DEFAULT 'høyfjell_host'",
+  // Prøvetype (hoyfjell_host, hoyfjell_vinter, lavland_host, skogsfugl_host, skogsfugl_vinter, fullkombinert, apport, nm_hoyfjell_host, nm_vinter)
+  "ALTER TABLE prover ADD COLUMN prove_type TEXT DEFAULT 'hoyfjell_host'",
   // Arrangør-navn (per-prøve override, fall tilbake til klubb_navn hvis ikke satt)
   "ALTER TABLE prover ADD COLUMN arrangor_navn TEXT DEFAULT NULL",
   // Automatisk venteliste-opprykk konfigurasjon
@@ -1278,6 +1278,13 @@ const migrations = [
   // Uønsket adferd i kritikker (for NJFF-rapportering)
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd INTEGER DEFAULT 0",
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
+  // Stavefiks for prove_type — fjerner ø-tegnet i 'høyfjell_*' så verdiene
+  // er konsistent med kode-vennlig "hoyfjell_*" (samme mønster som NM-typene
+  // 'nm_hoyfjell_host'). Tidligere brukte ulike steder (opprett-prove vs
+  // admin.html) ulik stavemåte og forårsaket at dropdown-en falt tilbake
+  // til feil verdi. Idempotent: REPLACE av allerede-uten-ø verdier endrer
+  // ingenting.
+  "UPDATE prover SET prove_type = REPLACE(REPLACE(prove_type, 'høyfjell_', 'hoyfjell_'), 'høyfjell-', 'hoyfjell-')",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
@@ -7943,7 +7950,7 @@ app.post("/api/prover", requireAdmin, async (c) => {
       dvk_navn = '',
       klasser = { uk: true, ak: true, vk: true },
       partier = {},
-      prove_type = 'høyfjell_host',
+      prove_type = 'hoyfjell_host',
       arrangor_navn = null
     } = body;
 

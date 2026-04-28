@@ -1212,6 +1212,11 @@ const migrations = [
   "ALTER TABLE prove_config ADD COLUMN vk_kval_dag INTEGER DEFAULT NULL",
   "ALTER TABLE prove_config ADD COLUMN vk_semi_dag INTEGER DEFAULT NULL",
   "ALTER TABLE prove_config ADD COLUMN vk_finale_dag INTEGER DEFAULT NULL",
+  // NM-arrangement (NM høyfjell høst og NM vinter): har_nm_lag aktiverer
+  // lagkonkurranse på dag 1 (dag før kval). kongepokal_innvilget settes av
+  // arrangør basert på NKK-tildeling for det aktuelle året.
+  "ALTER TABLE prove_config ADD COLUMN har_nm_lag INTEGER DEFAULT 0",
+  "ALTER TABLE prove_config ADD COLUMN kongepokal_innvilget INTEGER DEFAULT 0",
   // Forbedret fullmakt-matching med epost
   "ALTER TABLE ventende_fullmakter ADD COLUMN eier_epost TEXT DEFAULT NULL",
   "ALTER TABLE ventende_fullmakter ADD COLUMN forer_epost TEXT DEFAULT NULL",
@@ -8788,8 +8793,9 @@ app.put("/api/prover/:id/config", requireAdmin, async (c) => {
     "pris_hogfjell", "pris_lavland", "pris_skog", "pris_apport",
     "frist_pamelding", "frist_avmelding", "refusjon_prosent",
     "krever_sauebevis", "krever_vaksinasjon", "krever_rabies",
-    "manuell_bedomming" // 0=digital (default), 1=manuell — admin tildeler
-                        // live_admin på VK for live rangering uten kritikk-flyt
+    "manuell_bedomming", // 0=digital (default), 1=manuell — admin tildeler
+                         // live_admin på VK for live rangering uten kritikk-flyt
+    "har_nm_lag", "kongepokal_innvilget" // NM-spesifikke flagg
   ];
 
   const sets = [];

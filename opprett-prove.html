@@ -103,7 +103,7 @@
                     <!-- Prøvetype dropdown for fuglehundprøve -->
                     <div id="trialTypeSelect">
                         <label class="block text-sm font-medium text-bark-700 mb-2">Type fuglehundprøve *</label>
-                        <select id="trialType" class="w-full px-4 py-3 border border-bark-300 rounded-lg focus:ring-2 focus:ring-warm-500 focus:border-warm-500 transition bg-white">
+                        <select id="trialType" onchange="onTrialTypeChange()" class="w-full px-4 py-3 border border-bark-300 rounded-lg focus:ring-2 focus:ring-warm-500 focus:border-warm-500 transition bg-white">
                             <option value="">Velg type...</option>
                             <option value="hoyfjell_host">Høyfjell høst</option>
                             <option value="hoyfjell_vinter">Høyfjell vinter</option>
@@ -113,7 +113,51 @@
                             <option value="skogsfugl_vinter">Skogsfugl vinter</option>
                             <option value="apport">Apport</option>
                             <option value="fullkombinert">Fullkombinert</option>
+                            <option value="nm_hoyfjell_host">NM høyfjell høst</option>
+                            <option value="nm_vinter">NM vinter</option>
                         </select>
+                    </div>
+
+                    <!-- NM-spesifikke innstillinger — vises kun når NM-type er valgt.
+                         3-dagers struktur (kval/semi/finale) er obligatorisk for NM,
+                         og settes automatisk i prove_config etter opprettelse. -->
+                    <div id="nmSettings" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-4">
+                        <div class="flex items-start gap-2">
+                            <svg class="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <div class="text-sm text-amber-900">
+                                <p class="font-semibold mb-1">NM-arrangement</p>
+                                <p>Prøven blir 3 dager: kvalifisering, semifinale, finale.</p>
+                            </div>
+                        </div>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" id="harNmLag" onchange="onNmLagChange()"
+                                   class="mt-1 w-5 h-5 text-amber-600 border-bark-300 rounded focus:ring-amber-500">
+                            <div>
+                                <span class="font-medium text-bark-800">Arranger NM Lag også</span>
+                                <p class="text-xs text-bark-600 mt-0.5">
+                                    Aktiverer lagkonkurranse på dagen før kvalifiseringen.
+                                    Prøven utvides automatisk med én ekstra dag (totalt 4 dager).
+                                    Lagene består av tre hunder per raseklubb.
+                                </p>
+                                <p id="nmLagDateInfo" class="hidden text-xs font-medium text-amber-800 mt-1"></p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" id="kongepokalInnvilget"
+                                   class="mt-1 w-5 h-5 text-amber-600 border-bark-300 rounded focus:ring-amber-500">
+                            <div>
+                                <span class="font-medium text-bark-800">Kongepokal er innvilget for dette arrangementet</span>
+                                <p class="text-xs text-bark-600 mt-0.5">
+                                    Hukes av kun hvis NKK har tildelt kongepokal til arrangementet for det
+                                    aktuelle året. Vinneren av finalen kan da tildeles kongepokal forutsatt
+                                    at kvalitetskravene er oppfylt.
+                                </p>
+                            </div>
+                        </label>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -473,7 +517,9 @@
             'skogsfugl_host': 'Skogsfugl høst',
             'skogsfugl_vinter': 'Skogsfugl vinter',
             'apport': 'Apport',
-            'fullkombinert': 'Fullkombinert'
+            'fullkombinert': 'Fullkombinert',
+            'nm_hoyfjell_host': 'NM høyfjell høst',
+            'nm_vinter': 'NM vinter'
         };
 
         // Hjelpefunksjon for å få ukedag-navn basert på dag-nummer
@@ -510,6 +556,11 @@
             document.getElementById('endDate').valueAsDate = new Date(twoWeeks.getTime() + 24 * 60 * 60 * 1000);
             document.getElementById('deadline').valueAsDate = oneWeek;
             document.getElementById('lateDeadline').valueAsDate = tenDays;
+
+            // Hold NM Lag-info synkronisert hvis admin endrer startdato senere
+            document.getElementById('startDate').addEventListener('change', () => {
+                if (document.getElementById('harNmLag').checked) onNmLagChange();
+            });
         });
 
         function toggleUKOptions() {
@@ -541,6 +592,49 @@
         function toggleVKOptions() {
             const vkChecked = document.getElementById('classVK').checked;
             document.getElementById('vkOptions').classList.toggle('hidden', !vkChecked);
+        }
+
+        // NM-typer trigger 3-dagers struktur og åpner valg for NM Lag og kongepokal
+        function isNmType(type) {
+            return type === 'nm_hoyfjell_host' || type === 'nm_vinter';
+        }
+
+        function onTrialTypeChange() {
+            const type = document.getElementById('trialType').value;
+            const nmSettings = document.getElementById('nmSettings');
+            if (isNmType(type)) {
+                nmSettings.classList.remove('hidden');
+            } else {
+                nmSettings.classList.add('hidden');
+                document.getElementById('harNmLag').checked = false;
+                document.getElementById('kongepokalInnvilget').checked = false;
+                document.getElementById('nmLagDateInfo').classList.add('hidden');
+            }
+        }
+
+        // Når NM Lag krysses av: utvid prøvens lengde med én dag i forkant
+        // (lag avholdes dagen før kvalifiseringen). Viser bekreftelse til admin.
+        function onNmLagChange() {
+            const harLag = document.getElementById('harNmLag').checked;
+            const info = document.getElementById('nmLagDateInfo');
+            const startInput = document.getElementById('startDate');
+            if (!harLag) {
+                info.classList.add('hidden');
+                return;
+            }
+            const startVal = startInput.value;
+            if (!startVal) {
+                info.textContent = 'Sett startdato først så viser vi når NM Lag holdes.';
+                info.classList.remove('hidden');
+                return;
+            }
+            // Beregn lag-dato = startdato - 1 dag (lokal tid).
+            const d = new Date(startVal + 'T12:00:00');
+            d.setDate(d.getDate() - 1);
+            const dager = ['søndag','mandag','tirsdag','onsdag','torsdag','fredag','lørdag'];
+            const lagDato = d.toLocaleDateString('nb-NO', { day:'numeric', month:'long', year:'numeric' });
+            info.textContent = `NM Lag holdes ${dager[d.getDay()]} ${lagDato}, dagen før kvalifiseringen.`;
+            info.classList.remove('hidden');
         }
 
         function updateVKFields() {
@@ -936,6 +1030,19 @@
                 vk: trialData.classes.VK !== null
             };
 
+            // NM-håndtering: hvis prøvetypen er NM og admin har huket av "NM Lag",
+            // utvider vi prøven med én ekstra dag i forkant slik at lag avholdes
+            // dagen før kvalifiseringen. start_dato sendes da som lag-dagen.
+            const erNm = isNmType(trialData.type);
+            const harNmLag = erNm && document.getElementById('harNmLag').checked;
+            const kongepokal = erNm && document.getElementById('kongepokalInnvilget').checked;
+            let startDatoForApi = trialData.startDate;
+            if (harNmLag && trialData.startDate) {
+                const d = new Date(trialData.startDate + 'T12:00:00');
+                d.setDate(d.getDate() - 1);
+                startDatoForApi = d.toISOString().slice(0, 10);
+            }
+
             // Create trial in prover table via API
             fetch('/api/prover', {
                 method: 'POST',
@@ -943,10 +1050,11 @@
                 body: JSON.stringify({
                     navn: trialData.name,
                     sted: trialData.location,
-                    start_dato: trialData.startDate,
+                    start_dato: startDatoForApi,
                     slutt_dato: trialData.endDate,
                     klubb_id: currentUser?.clubId || null,
                     klasser: klasserObj,
+                    prove_type: trialData.type,
                     nkkrep_telefon: trialData.nkkRep.phone || null,
                     nkkvara_telefon: trialData.nkkVara.phone || null,
                     dvk_telefon: trialData.dvk.phone || null,
@@ -957,9 +1065,33 @@
                     throw new Error('Kunne ikke opprette prøve');
                 }
                 return resp.json();
-            }).then(data => {
+            }).then(async data => {
                 // Store the server-generated ID
                 localStorage.setItem('currentTrialId', data.id);
+
+                // For NM-prøver: lagre 3-dagers VK-struktur og NM-flagg i prove_config.
+                // vk_kval_dag/semi/finale beregnes ut fra om lag-dagen er med eller ikke.
+                if (erNm) {
+                    const offset = harNmLag ? 1 : 0; // 1 ekstra dag i forkant hvis lag
+                    const configBody = {
+                        vk_type: '3dag',
+                        vk_kval_dag: 1 + offset,
+                        vk_semi_dag: 2 + offset,
+                        vk_finale_dag: 3 + offset,
+                        har_nm_lag: harNmLag ? 1 : 0,
+                        kongepokal_innvilget: kongepokal ? 1 : 0
+                    };
+                    try {
+                        await fetch(`/api/prover/${data.id}/config`, {
+                            method: 'PUT',
+                            headers: headers,
+                            body: JSON.stringify(configBody)
+                        });
+                    } catch (err) {
+                        console.warn('NM-config kunne ikke lagres:', err);
+                    }
+                }
+
                 // Redirect to admin page with the new trial ID
                 window.location.href = 'admin.html?trial=' + data.id;
             }).catch(err => {

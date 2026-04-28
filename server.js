@@ -1753,6 +1753,14 @@ const requireAuth = async (c, next) => {
   await next();
 };
 
+// Hjelpefunksjon: er prøven låst for endringer? (status='fullfort')
+// Fullførte prøver skal ikke kunne ta nye påmeldinger, kritikker, eller
+// vk-bedømmings-endringer. Brukes i mutation-endepunkter som mutation-guard.
+function proveErLast(proveId) {
+  const row = db.prepare("SELECT status FROM prover WHERE id = ?").get(proveId);
+  return row?.status === 'fullfort';
+}
+
 // Hjelpefunksjon for å sjekke rolle (støtter komma-separerte roller)
 function hasRole(rolleStr, requiredRole) {
   if (!rolleStr) return false;
@@ -8975,6 +8983,11 @@ app.post("/api/prover/:id/pameldinger", requireAuth, async (c) => {
     return c.json({ error: "Prøve ikke funnet" }, 404);
   }
 
+  // Blokker påmelding på fullført prøve
+  if (prove.status === 'fullfort') {
+    return c.json({ error: "Prøven er fullført — påmelding er stengt" }, 400);
+  }
+
   // Hent hund
   const hund = db.prepare("SELECT * FROM hunder WHERE id = ?").get(body.hund_id);
   if (!hund) {
@@ -12286,6 +12299,11 @@ app.post("/api/kritikker", requireDommer, async (c) => {
   const body = await c.req.json();
   const bruker = c.get("bruker");
 
+  // Blokker oppretting av kritikk på fullført prøve
+  if (body.prove_id && proveErLast(body.prove_id)) {
+    return c.json({ error: "Prøven er fullført — kritikker kan ikke endres" }, 400);
+  }
+
   // Bruk innlogget dommers telefon
   const dommer_telefon = bruker.telefon;
 
@@ -12393,13 +12411,18 @@ app.put("/api/kritikker/:id", requireDommer, async (c) => {
   const bruker = c.get("bruker");
 
   // Sjekk at dommeren eier denne kritikken (eller er admin)
-  const existing = db.prepare("SELECT dommer_telefon FROM kritikker WHERE id = ?").get(id);
+  const existing = db.prepare("SELECT dommer_telefon, prove_id FROM kritikker WHERE id = ?").get(id);
   if (!existing) {
     return c.json({ error: "Kritikk ikke funnet" }, 404);
   }
 
   if (existing.dommer_telefon !== bruker.telefon && bruker.rolle !== "admin") {
     return c.json({ error: "Du kan kun redigere dine egne kritikker" }, 403);
+  }
+
+  // Blokker endring av kritikk på fullført prøve
+  if (existing.prove_id && proveErLast(existing.prove_id)) {
+    return c.json({ error: "Prøven er fullført — kritikker kan ikke endres" }, 400);
   }
 
   const fields = [
@@ -15125,6 +15148,13 @@ app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
 // Lagre/oppdater VK-bedømming
 app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
   try {
+    // Blokker endring av VK-bedømming på fullført prøve. Dette er hoved-
+    // endepunktet dommer-vk.html bruker for live-rangering — fullført låser
+    // partilisten så live-rangerings-eier ikke kan pushe nye data.
+    const proveIdGuard = c.req.param("proveId");
+    if (proveErLast(proveIdGuard)) {
+      return c.json({ error: "Prøven er fullført — VK-bedømming kan ikke endres" }, 400);
+    }
     const { proveId, parti } = c.req.param();
     const body = await c.req.json();
 

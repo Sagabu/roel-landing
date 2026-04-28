@@ -19487,6 +19487,7 @@
         // bekreftelse (skriv prøvenavn + årsak) og blokkerer hvis det finnes
         // betalte beløp som ikke er refundert.
         let slettProveAktivId = null;
+        let slettProveAktivNavn = null;
 
         // Beholdt som alias så eksisterende kall (eks. fra refunder-modal som
         // re-kaller for å oppdatere visning) fortsatt fungerer
@@ -19494,6 +19495,7 @@
 
         async function kansellerProve(proveId, proveNavn) {
             slettProveAktivId = proveId;
+            slettProveAktivNavn = proveNavn;
             const modal = document.getElementById('slettProveModal');
             const innhold = document.getElementById('slettProveInnhold');
             const tittel = document.getElementById('slettProveTittel');
@@ -19761,15 +19763,18 @@
         function lukkSlettModal() {
             document.getElementById('slettProveModal').classList.add('hidden');
             slettProveAktivId = null;
+            slettProveAktivNavn = null;
         }
 
         // Marker som fullført — viser forhåndsvisning av gjenstående oppgaver
         // (vipps-betalinger, kritikk-utkast, aktive bedømminger). Blokkerer
         // ikke fullføring, men oppfordrer til opprydding.
         let fullforAktivId = null;
+        let fullforAktivNavn = null;
 
         async function fullforProve(proveId, proveNavn) {
             fullforAktivId = proveId;
+            fullforAktivNavn = proveNavn;
             const modal = document.getElementById('fullforModal');
             const innhold = document.getElementById('fullforInnhold');
             document.getElementById('fullforTittel').textContent = `Marker prøve som fullført: ${proveNavn}`;
@@ -19912,6 +19917,7 @@
         function lukkFullforModal() {
             document.getElementById('fullforModal').classList.add('hidden');
             fullforAktivId = null;
+            fullforAktivNavn = null;
         }
 
         // Manuell betaling-modal (gjenbrukt for både vipps og jegermiddag,
@@ -19960,9 +19966,8 @@
                 });
                 if (resp.ok) {
                     lukkManuellBetalingModal();
-                    if (fullforAktivId) {
-                        const navn = document.getElementById('fullforTittel')?.textContent?.replace(/^Marker prøve som fullført:\s*/, '') || '';
-                        fullforProve(fullforAktivId, navn);
+                    if (fullforAktivId && fullforAktivNavn) {
+                        fullforProve(fullforAktivId, fullforAktivNavn);
                     }
                 } else {
                     const err = await resp.json().catch(() => ({}));
@@ -19985,9 +19990,8 @@
                     headers: token ? { 'Authorization': `Bearer ${token}` } : {}
                 });
                 if (resp.ok) {
-                    if (fullforAktivId) {
-                        const tittelTxt = document.getElementById('fullforTittel')?.textContent?.replace(/^Marker prøve som fullført:\s*/, '') || '';
-                        fullforProve(fullforAktivId, tittelTxt);
+                    if (fullforAktivId && fullforAktivNavn) {
+                        fullforProve(fullforAktivId, fullforAktivNavn);
                     }
                 } else {
                     const err = await resp.json().catch(() => ({}));
@@ -20042,10 +20046,12 @@
                 });
                 if (resp.ok) {
                     lukkRefunderModal();
-                    // Refresh forhåndsvisning så blokkering oppdateres
-                    if (slettProveAktivId) {
-                        const navn = document.querySelector('#slettProveTittel')?.textContent?.replace(/^Slett prøve:\s*/, '') || '';
-                        slettProve(slettProveAktivId, navn);
+                    // Refresh forhåndsvisning så blokkering oppdateres.
+                    // Bruker lagret navn istedenfor å parse fra modal-tittelen
+                    // (tittelen prefikseres med "Kanseller prøve:" og regex
+                    // var skrevet for gammel "Slett prøve:"-tekst).
+                    if (slettProveAktivId && slettProveAktivNavn) {
+                        kansellerProve(slettProveAktivId, slettProveAktivNavn);
                     }
                 } else {
                     const err = await resp.json().catch(() => ({}));

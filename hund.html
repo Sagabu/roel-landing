@@ -597,6 +597,7 @@
                             gender: apiDog.kjonn || 'male',
                             owner: apiDog.eier_navn || 'Ukjent',
                             image: apiDog.bilde || null,
+                            titler: apiDog.titler || [],
                             critiques: kritikker.map(k => ({
                                 id: `db-${k.id}`,
                                 trial: k.prove_navn || 'Ukjent prøve',
@@ -706,6 +707,28 @@
                         </svg>
                    </div>`;
 
+            // Norgesmester-titler — vises ØVERST i profilen som tydelig bragd-seksjon.
+            // Sorteres nyeste først (server returnerer dem sortert). Hvis hunden ikke har
+            // titler, vises ikke seksjonen i det hele tatt.
+            const titler = Array.isArray(currentDog.titler) ? currentDog.titler : [];
+            const titlerHtml = titler.length > 0 ? `
+                <div class="bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 border-y border-amber-300 px-6 py-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <svg class="w-5 h-5 text-amber-700" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.366 2.446a1 1 0 00-.364 1.118l1.286 3.957c.3.921-.755 1.688-1.54 1.118l-3.366-2.446a1 1 0 00-1.176 0l-3.366 2.446c-.784.57-1.838-.197-1.539-1.118l1.286-3.957a1 1 0 00-.364-1.118L2.07 9.384c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69L9.05 2.927z"/>
+                        </svg>
+                        <h2 class="text-base font-bold font-serif text-amber-900 uppercase tracking-wide">Titler</h2>
+                    </div>
+                    <ul class="space-y-1">
+                        ${titler.map(t => `
+                            <li class="text-amber-900 font-semibold text-sm sm:text-base">
+                                🏆 ${t.tittel_full}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            ` : '';
+
             document.getElementById('dogProfile').innerHTML = `
                 <div class="bg-gradient-to-r from-warm-600 to-bark-800 px-6 py-8">
                     <div class="flex flex-col sm:flex-row items-center gap-6">
@@ -717,6 +740,7 @@
                         </div>
                     </div>
                 </div>
+                ${titlerHtml}
                 <div class="p-6">
                     <div class="grid grid-cols-2 gap-6">
                         <div>

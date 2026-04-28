@@ -4525,7 +4525,21 @@ app.delete("/api/brukere/:telefon", requireAuth, (c) => {
 app.get("/api/brukere/:telefon/hunder", (c) => {
   const telefon = c.req.param("telefon");
   const hunder = db.prepare(`
-    SELECT h.*, k.navn as klubb_navn
+    SELECT h.*, k.navn as klubb_navn,
+      EXISTS (
+        SELECT 1 FROM kritikker kr
+        JOIN prover pr ON pr.id = kr.prove_id
+        WHERE kr.hund_id = h.id
+          AND pr.prove_type IN ('nm_hoyfjell_host', 'nm_vinter')
+          AND (
+            kr.premie LIKE '1vk_nm_finale%'
+            OR kr.premie LIKE '1vk_ck_nm_finale%'
+            OR kr.premie LIKE '1vk_cacit_nm_finale%'
+            OR kr.premie LIKE '1.VK NM finale%'
+            OR kr.premie LIKE '1.VK m/CK NM finale%'
+            OR kr.premie LIKE '1.VK m/CACIT NM finale%'
+          )
+      ) AS har_norgesmester_tittel
     FROM hunder h
     LEFT JOIN klubber k ON h.klubb_id = k.id
     WHERE h.eier_telefon = ?
@@ -4544,8 +4558,24 @@ app.get("/api/brukere/:telefon/hunder", (c) => {
 // Hent alle hunder (for søk)
 app.get("/api/hunder", (c) => {
   const search = c.req.query("search");
+  // EXISTS-subquery for å flagge hunder som har Norgesmester-tittel
+  // (1.VK NM finale på en NM-prøve). Brukes til å vise badge i listinger.
   let query = `
-    SELECT h.*, k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as eier_navn
+    SELECT h.*, k.navn as klubb_navn, b.fornavn || ' ' || b.etternavn as eier_navn,
+      EXISTS (
+        SELECT 1 FROM kritikker kr
+        JOIN prover pr ON pr.id = kr.prove_id
+        WHERE kr.hund_id = h.id
+          AND pr.prove_type IN ('nm_hoyfjell_host', 'nm_vinter')
+          AND (
+            kr.premie LIKE '1vk_nm_finale%'
+            OR kr.premie LIKE '1vk_ck_nm_finale%'
+            OR kr.premie LIKE '1vk_cacit_nm_finale%'
+            OR kr.premie LIKE '1.VK NM finale%'
+            OR kr.premie LIKE '1.VK m/CK NM finale%'
+            OR kr.premie LIKE '1.VK m/CACIT NM finale%'
+          )
+      ) AS har_norgesmester_tittel
     FROM hunder h
     LEFT JOIN klubber k ON h.klubb_id = k.id
     LEFT JOIN brukere b ON h.eier_telefon = b.telefon
@@ -4747,9 +4777,69 @@ app.get("/api/hunder/:id", (c) => {
   if (!hund) return c.json({ error: "Hund ikke funnet" }, 404);
 
   const resultater = db.prepare("SELECT * FROM resultater WHERE hund_id = ? ORDER BY dato DESC").all(hund.id);
+  const titler = byggHundTitler(hund.id);
 
-  return c.json({ ...hund, results: resultater });
+  return c.json({ ...hund, results: resultater, titler });
 });
+
+// Bygg liste med Norgesmester-titler for en hund. Tittel tildeles automatisk
+// til vinneren av NM finale (1.VK NM finale, evt. m/CK eller m/CACIT) — kun
+// hvis hund er norsk-registrert (regnr starter med "NO"). Ikke-norske hunder
+// får tittelen "Vinner av NM" istedenfor.
+//
+// Format: "Norgesmester (høyfjell høst 2026) - Sølvi - Per Hansen"
+//
+// Returneres sortert nyeste først så hund-detaljsiden kan vise dem i riktig
+// rekkefølge.
+function byggHundTitler(hundId) {
+  // Premie-verdier som indikerer 1.VK NM finale (vinneren).
+  // Format brukt av dommer-vk.html: "1vk_nm_finale", "1vk_ck_nm_finale", "1vk_cacit_nm_finale"
+  // Format brukt av dommer-kritikk.html (legacy): "1.VK NM finale" (med varianter)
+  const rader = db.prepare(`
+    SELECT k.premie, k.dato, k.prove_id, k.forer_telefon,
+           p.prove_type, p.start_dato as prove_start_dato,
+           h.navn as hund_navn, h.regnr,
+           bf.fornavn || ' ' || bf.etternavn as forer_navn,
+           be.fornavn || ' ' || be.etternavn as eier_navn
+    FROM kritikker k
+    JOIN hunder h ON h.id = k.hund_id
+    LEFT JOIN prover p ON p.id = k.prove_id
+    LEFT JOIN brukere bf ON bf.telefon = k.forer_telefon
+    LEFT JOIN brukere be ON be.telefon = h.eier_telefon
+    WHERE k.hund_id = ?
+      AND p.prove_type IN ('nm_hoyfjell_host', 'nm_vinter')
+      AND (
+        k.premie LIKE '1vk_nm_finale%'
+        OR k.premie LIKE '1vk_ck_nm_finale%'
+        OR k.premie LIKE '1vk_cacit_nm_finale%'
+        OR k.premie LIKE '1.VK NM finale%'
+        OR k.premie LIKE '1.VK m/CK NM finale%'
+        OR k.premie LIKE '1.VK m/CACIT NM finale%'
+      )
+    ORDER BY COALESCE(p.start_dato, k.dato) DESC
+  `).all(hundId);
+
+  return rader.map(r => {
+    const datoForAr = r.prove_start_dato || r.dato || '';
+    const aar = (datoForAr || '').slice(0, 4);
+    const erNorsk = (r.regnr || '').toUpperCase().startsWith('NO');
+    const typeLabel = r.prove_type === 'nm_hoyfjell_host' ? 'høyfjell høst' : 'vinter';
+    const tittelPrefix = erNorsk ? 'Norgesmester' : 'Vinner av NM';
+    const hundenavn = r.hund_navn || '';
+    const fEier = r.forer_navn || r.eier_navn || '';
+    return {
+      tittel_kort: `${tittelPrefix} ${typeLabel} ${aar}`,
+      tittel_full: `${tittelPrefix} (${typeLabel} ${aar}) - ${hundenavn} - ${fEier}`,
+      aar: parseInt(aar) || 0,
+      type: r.prove_type,
+      type_label: typeLabel,
+      er_norsk: erNorsk,
+      hund_navn: hundenavn,
+      forer_eier: fEier,
+      prove_id: r.prove_id
+    };
+  });
+}
 
 // ============================================
 // HUND-SØK PÅ REGNR (for bruker-registrering)

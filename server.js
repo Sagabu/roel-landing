@@ -1799,11 +1799,10 @@ const requireAdmin = async (c, next) => {
     return c.json({ error: "Ugyldig eller utløpt token" }, 401);
   }
 
-  // NKK-rep og NKK-vara har admin-tilgang automatisk fordi de må kunne
-  // godkjenne kritikker og kontrollsignere rapporter. De har egen flyt
-  // (nkk-godkjenning), men disse handlingene krever requireAdmin. Legges
-  // automatisk inn her så vi slipper dobbelt-rolletildeling i DB.
-  if (!hasAnyRole(payload.rolle, ["admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar", "nkkrep", "nkkvara"])) {
+  // NKK-rep og NKK-vara er IKKE generelle administratorer. De har spesifikke
+  // ansvar (godkjenne kritikker, kontrollsignere rapporter) på prøvene de er
+  // tildelt. Tilgangen håndteres via harProveAdmin (per-prøve), ikke her.
+  if (!hasAnyRole(payload.rolle, ["admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar"])) {
     return c.json({ error: "Krever admin-tilgang" }, 403);
   }
 
@@ -1814,26 +1813,40 @@ const requireAdmin = async (c, next) => {
 // Sjekk at innlogget bruker har admin-tilgang til en SPESIFIKK prøve.
 // Adminrettigheter er per prøve — en proveleder på prøve A har ikke
 // automatisk tilgang til prøve B selv om begge er i samme klubb.
-// NKK-rep og NKK-vara er ikke administratorer; de er tildelte roller
-// på lik linje med dommere og har egen flyt (nkk-godkjenning) for
-// kritikk-godkjenning og rapport-kontrollsignering.
 // Tilgang gis hvis brukeren er:
 //   1) superadmin (overstyrer alt)
 //   2) prøveleder på den spesifikke prøven
 //   3) team-medlem med rolle 'admin' eller 'sekretariat' på den prøven
+//   4) NKK-rep eller NKK-vara på den spesifikke prøven (begge har samme
+//      tilgang så vara er sikkerhetsnett hvis rep er forhindret)
 function harProveAdmin(payload, proveId) {
   if (!payload || !proveId) return false;
   if (hasAnyRole(payload.rolle, ["superadmin"])) return true;
   const prove = db.prepare(`
-    SELECT proveleder_telefon FROM prover WHERE id = ?
+    SELECT proveleder_telefon, nkkrep_telefon, nkkvara_telefon FROM prover WHERE id = ?
   `).get(proveId);
   if (!prove) return false;
   if (prove.proveleder_telefon === payload.telefon) return true;
+  if (prove.nkkrep_telefon === payload.telefon) return true;
+  if (prove.nkkvara_telefon === payload.telefon) return true;
   const team = db.prepare(`
     SELECT 1 FROM prove_team
     WHERE prove_id = ? AND telefon = ? AND rolle IN ('admin', 'sekretariat')
   `).get(proveId, payload.telefon);
   return !!team;
+}
+
+// Sjekk om brukeren er NKK-rep eller NKK-vara på en spesifikk prøve.
+// Brukes til å logge "overstyring" når en annen rolle godkjenner kritikker.
+function erNkkRolleForProve(payload, proveId) {
+  if (!payload || !proveId) return null;
+  const prove = db.prepare(`
+    SELECT nkkrep_telefon, nkkvara_telefon FROM prover WHERE id = ?
+  `).get(proveId);
+  if (!prove) return null;
+  if (prove.nkkrep_telefon === payload.telefon) return 'nkkrep';
+  if (prove.nkkvara_telefon === payload.telefon) return 'nkkvara';
+  return null;
 }
 
 // Sjekk at bruker har klubb-admin-tilgang (oppretter prøver, inviterer
@@ -12873,26 +12886,43 @@ app.put("/api/kritikker/:id/submit", requireDommer, async (c) => {
   return c.json({ success: true });
 });
 
-// NKK-rep godkjenner kritikk
-app.put("/api/kritikker/:id/godkjenn", requireAdmin, async (c) => {
+// NKK-rep (eller NKK-vara hvis NKK-rep er forhindret) godkjenner kritikk.
+// Krever per-prøve-tilgang — slår opp prove_id fra kritikken og sjekker at
+// brukeren har admin-tilgang til den spesifikke prøven (NKK-rep, NKK-vara,
+// proveleder, team-admin eller superadmin).
+// Hvis godkjenneren ikke er NKK-rep eller NKK-vara, logges det som
+// "overstyring" i admin_log for sporbarhet.
+app.put("/api/kritikker/:id/godkjenn", requireAuth, async (c) => {
   const id = c.req.param("id");
   const bruker = c.get("bruker");
 
-  const result = db.prepare(`
+  const kritikk = db.prepare("SELECT prove_id FROM kritikker WHERE id = ?").get(id);
+  if (!kritikk) return c.json({ error: "Kritikk ikke funnet" }, 404);
+  if (!harProveAdmin(bruker, kritikk.prove_id)) {
+    return c.json({ error: "Du har ikke tilgang til å godkjenne denne kritikken" }, 403);
+  }
+
+  const nkkRolle = erNkkRolleForProve(bruker, kritikk.prove_id);
+  const erOverstyring = !nkkRolle && !hasAnyRole(bruker.rolle, ["superadmin"]);
+
+  db.prepare(`
     UPDATE kritikker SET status = 'approved', approved_at = datetime('now'), approved_by = ?, updated_at = datetime('now')
     WHERE id = ?
   `).run(`${bruker.navn || bruker.telefon}`, id);
 
-  if (result.changes === 0) return c.json({ error: "Kritikk ikke funnet" }, 404);
-
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-    "kritikk_godkjent", `Kritikk ${id} godkjent av ${bruker.telefon}`
+    erOverstyring ? "kritikk_godkjent_overstyring" : "kritikk_godkjent",
+    JSON.stringify({
+      kritikk_id: id, godkjent_av: bruker.telefon,
+      rolle: nkkRolle || (hasAnyRole(bruker.rolle, ["superadmin"]) ? "superadmin" : "prove_admin_overstyring"),
+      prove_id: kritikk.prove_id
+    })
   );
-  return c.json({ success: true });
+  return c.json({ success: true, overstyring: erOverstyring });
 });
 
-// NKK-rep returnerer kritikk til dommer
-app.put("/api/kritikker/:id/returner", requireAdmin, async (c) => {
+// NKK-rep (eller NKK-vara) returnerer kritikk til dommer
+app.put("/api/kritikker/:id/returner", requireAuth, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
@@ -12906,6 +12936,9 @@ app.put("/api/kritikker/:id/returner", requireAdmin, async (c) => {
   `).get(id);
 
   if (!kritikk) return c.json({ error: "Kritikk ikke funnet" }, 404);
+  if (!harProveAdmin(bruker, kritikk.prove_id)) {
+    return c.json({ error: "Du har ikke tilgang til å returnere denne kritikken" }, 403);
+  }
 
   const result = db.prepare(`
     UPDATE kritikker SET status = 'returned', nkk_comment = ?, updated_at = datetime('now')
@@ -15630,6 +15663,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", requireAuth, async (c) => {
 app.post("/api/vk-bedomming/:proveId/:parti/avslutt", requireAuth, async (c) => {
   try {
     const { proveId, parti } = c.req.param();
+    const bruker = c.get("bruker");
 
     const bedomming = db.prepare(`
       SELECT id, dommer_telefon, live_modus FROM vk_bedomming
@@ -15637,6 +15671,15 @@ app.post("/api/vk-bedomming/:proveId/:parti/avslutt", requireAuth, async (c) => 
     `).get(proveId, parti);
 
     if (!bedomming) return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+
+    // Tilgang: dommer/live-admin tildelt på partiet, eller per-prøve-admin.
+    const erTildelt = !!db.prepare(`
+      SELECT 1 FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+    `).get(proveId, parti, bruker.telefon);
+    if (!erTildelt && !harProveAdmin(bruker, proveId)) {
+      return c.json({ error: "Du har ikke tilgang til å avslutte dette partiet" }, 403);
+    }
 
     // Sikkerhets-sjekk: dette endepunktet er kun for live_modus.
     // Hvis bedømmingen IKKE er live, må send-inn brukes.
@@ -15680,6 +15723,7 @@ app.post("/api/vk-bedomming/:proveId/:parti/avslutt", requireAuth, async (c) => 
 app.post("/api/vk-bedomming/:proveId/:parti/send-inn", requireAuth, async (c) => {
   try {
     const { proveId, parti } = c.req.param();
+    const bruker = c.get("bruker");
 
     // Sjekk at bedømming finnes og er fullført
     const bedomming = db.prepare(`
@@ -15688,6 +15732,15 @@ app.post("/api/vk-bedomming/:proveId/:parti/send-inn", requireAuth, async (c) =>
 
     if (!bedomming) {
       return c.json({ error: "VK-bedømming ikke funnet" }, 404);
+    }
+
+    // Tilgang: dommer tildelt på partiet, eller per-prøve-admin.
+    const erTildelt = !!db.prepare(`
+      SELECT 1 FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+    `).get(proveId, parti, bruker.telefon);
+    if (!erTildelt && !harProveAdmin(bruker, proveId)) {
+      return c.json({ error: "Du har ikke tilgang til å sende inn dette partiet" }, 403);
     }
 
     // Live rangering (manuell bedømming) skal ikke sendes inn til NKK —

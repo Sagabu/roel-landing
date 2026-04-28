@@ -1821,6 +1821,36 @@ function harProveAdmin(payload, proveId) {
   return !!team;
 }
 
+// Sjekk at bruker har klubb-admin-tilgang (oppretter prøver, inviterer
+// flere klubb-admins). Superadmin overstyrer alltid.
+function harKlubbAdmin(payload, klubbId) {
+  if (!payload || !klubbId) return false;
+  if (hasAnyRole(payload.rolle, ["superadmin"])) return true;
+  const row = db.prepare(`
+    SELECT 1 FROM klubb_admins WHERE klubb_id = ? AND telefon = ?
+  `).get(klubbId, payload.telefon);
+  return !!row;
+}
+
+const requireKlubbAdmin = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+  }
+  const token = authHeader.slice(7);
+  const payload = verifyToken(token);
+  if (!payload) {
+    return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+  }
+  const klubbId = c.req.param("id") || c.req.param("klubbId");
+  if (!klubbId) return c.json({ error: "Mangler klubb-ID" }, 400);
+  if (!harKlubbAdmin(payload, klubbId)) {
+    return c.json({ error: "Du er ikke administrator for denne klubben" }, 403);
+  }
+  c.set("bruker", payload);
+  await next();
+};
+
 // Middleware: krever per-prøve admin-tilgang. Henter prøve-ID fra
 // route-param 'id' eller 'proveId'. Avviser med 403 hvis brukeren ikke
 // har tilgang til akkurat den prøven (selv om de er admin på en annen).
@@ -5100,7 +5130,22 @@ app.get("/api/klubber/:id/logo", (c) => {
 // ============================================
 
 // Legg til administrator for en klubb
-app.post("/api/klubber/:id/admins", async (c) => {
+// List alle admins for en klubb. Krever klubb-admin-tilgang.
+app.get("/api/klubber/:id/admins", requireKlubbAdmin, (c) => {
+  const klubbId = c.req.param("id");
+  const rows = db.prepare(`
+    SELECT ka.telefon, ka.rolle,
+           b.fornavn, b.etternavn,
+           b.fornavn || ' ' || b.etternavn AS navn
+    FROM klubb_admins ka
+    LEFT JOIN brukere b ON b.telefon = ka.telefon
+    WHERE ka.klubb_id = ?
+    ORDER BY b.etternavn, b.fornavn
+  `).all(klubbId);
+  return c.json({ admins: rows });
+});
+
+app.post("/api/klubber/:id/admins", requireKlubbAdmin, async (c) => {
   const klubbId = c.req.param("id");
   const body = await c.req.json();
   const telefon = (body.telefon || "").replace(/\s/g, "");
@@ -5143,7 +5188,7 @@ app.post("/api/klubber/:id/admins", async (c) => {
 });
 
 // Fjern administrator fra en klubb
-app.delete("/api/klubber/:id/admins/:telefon", (c) => {
+app.delete("/api/klubber/:id/admins/:telefon", requireKlubbAdmin, (c) => {
   const klubbId = c.req.param("id");
   const telefon = c.req.param("telefon");
 

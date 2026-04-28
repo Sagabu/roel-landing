@@ -1080,15 +1080,15 @@
                         <div class="flex-1 space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-bark-500 mb-2">Prøvenavn</label>
-                                <input type="text" id="trialName" value="" placeholder="F.eks. Høstprøven 2026" class="w-full px-4 py-3 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-lg font-semibold">
+                                <input type="text" id="trialName" value="" placeholder="F.eks. Høstprøven 2026" onblur="autoLagreProverFelt('navn', this.value.trim())" class="w-full px-4 py-3 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none text-lg font-semibold">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-bark-500 mb-2">Arrangør</label>
-                                <input type="text" id="organizerName" value="" placeholder="F.eks. Fuglehundklubben" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                                <input type="text" id="organizerName" value="" placeholder="F.eks. Fuglehundklubben" onblur="autoLagreProverFelt('arrangor_navn', this.value.trim())" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-bark-500 mb-2">Type prøve</label>
-                                <select id="proveType" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none bg-white">
+                                <select id="proveType" onchange="onProveTypeChange()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none bg-white">
                                     <option value="høyfjell_host">Høyfjell høst</option>
                                     <option value="høyfjell_vinter">Høyfjell vinter</option>
                                     <option value="lavland_host" disabled class="text-bark-400">Lavland høst (kommer)</option>
@@ -1100,29 +1100,52 @@
                                     <option value="nm_vinter">NM vinter</option>
                                 </select>
                             </div>
+
+                            <!-- NM-spesifikke innstillinger — vises kun ved NM-prøvetyper.
+                                 Auto-lagres ved endring til prove_config (har_nm_lag,
+                                 kongepokal_innvilget). -->
+                            <div id="nmSettingsAdmin" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                                <p class="text-xs font-semibold text-amber-900 uppercase">NM-innstillinger</p>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" id="adminHarNmLag" onchange="autoLagreNmFlag('har_nm_lag', this.checked)"
+                                        class="mt-0.5 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
+                                    <span class="text-sm text-bark-800">
+                                        <strong>Arranger NM Lag</strong> —
+                                        <span class="text-bark-600 text-xs">utvider prøven med en lag-dag før kvalifiseringen</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" id="adminKongepokalInnvilget" onchange="autoLagreNmFlag('kongepokal_innvilget', this.checked)"
+                                        class="mt-0.5 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
+                                    <span class="text-sm text-bark-800">
+                                        <strong>Kongepokal er innvilget</strong> —
+                                        <span class="text-bark-600 text-xs">kun hvis NKK har tildelt kongepokal for året</span>
+                                    </span>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
                     <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Dato fra</label>
-                            <input type="date" id="trialDateFrom" value="" onchange="updateTrialDays()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="date" id="trialDateFrom" value="" onchange="updateTrialDays(); autoLagreProverFelt('start_dato', this.value)" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Dato til</label>
-                            <input type="date" id="trialDateTo" value="" onchange="updateTrialDays()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="date" id="trialDateTo" value="" onchange="updateTrialDays(); autoLagreProverFelt('slutt_dato', this.value)" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Klokkeslett opprop</label>
-                            <input type="time" id="trialTime" value="08:00" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="time" id="trialTime" value="08:00" onchange="if (typeof savePraktiskInfo === 'function' && getCurrentTrialId()) savePraktiskInfo()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Sted / Område</label>
-                            <input type="text" id="trialLocation" value="" placeholder="F.eks. Lierne" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="text" id="trialLocation" value="" placeholder="F.eks. Lierne" onblur="autoLagreProverFelt('sted', this.value.trim())" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-bark-500 mb-2">Jegermiddag (dato)</label>
-                            <input type="date" id="trialJegermiddag" value="" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
+                            <input type="date" id="trialJegermiddag" value="" onchange="if (typeof savePraktiskInfo === 'function' && getCurrentTrialId()) savePraktiskInfo()" class="w-full px-4 py-2 rounded-xl border border-earth-300 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                         </div>
                     </div>
 
@@ -4366,6 +4389,100 @@
                 return '';
             }
             return urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
+        }
+
+        // Auto-lagring av prøvedetaljer-felter til prover-tabellen.
+        // Kalles ved onblur (tekst-felter) eller onchange (dato/dropdown) så
+        // brukeren ikke mister endringer ved hard-refresh. Følger samme
+        // mønster som oppdaterBedomMethod → savePraktiskInfo (som allerede
+        // er etablert som auto-save-pattern i systemet).
+        // Sender PUT med kun det ene feltet som endret seg.
+        let _autoLagreUnderveis = false;
+        async function autoLagreProverFelt(felt, verdi) {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return; // Ny prøve — krever opprettelse via "Lagre detaljer"-knappen
+            if (_autoLagreUnderveis) return; // Hindre overlappende kall
+            _autoLagreUnderveis = true;
+            try {
+                const resp = await fetch(`/api/prover/${proveId}`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ [felt]: verdi })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    if (window.FuglehundToast) {
+                        FuglehundToast.error('Kunne ikke lagre: ' + (err.error || resp.status));
+                    }
+                    return;
+                }
+                // Oppdater lokal cache av prøven så terminliste-rendringen er konsistent
+                if (Array.isArray(alleProver)) {
+                    const p = alleProver.find(x => x.id === proveId);
+                    if (p) p[felt] = verdi;
+                }
+                if (window.FuglehundToast) FuglehundToast.success('Lagret', 1500);
+            } catch (err) {
+                if (window.FuglehundToast) FuglehundToast.error('Nettverksfeil ved lagring');
+            } finally {
+                _autoLagreUnderveis = false;
+            }
+        }
+
+        // Auto-lagring av NM-flagger til prove_config (har_nm_lag, kongepokal_innvilget)
+        async function autoLagreNmFlag(felt, krysset) {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+            try {
+                const resp = await fetch(`/api/prover/${proveId}/config`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ [felt]: krysset ? 1 : 0 })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    if (window.FuglehundToast) {
+                        FuglehundToast.error('Kunne ikke lagre NM-flagg: ' + (err.error || resp.status));
+                    }
+                    // Reverser sjekkboksen siden lagring feilet
+                    const cb = document.getElementById(felt === 'har_nm_lag' ? 'adminHarNmLag' : 'adminKongepokalInnvilget');
+                    if (cb) cb.checked = !krysset;
+                    return;
+                }
+                if (window.FuglehundToast) FuglehundToast.success('Lagret', 1500);
+            } catch (err) {
+                if (window.FuglehundToast) FuglehundToast.error('Nettverksfeil');
+            }
+        }
+
+        // Når prøvetypen endres: auto-lagre + vis/skjul NM-seksjonen
+        async function onProveTypeChange() {
+            const sel = document.getElementById('proveType');
+            const ny = sel?.value || '';
+            const erNm = ny === 'nm_hoyfjell_host' || ny === 'nm_vinter';
+            const nmSection = document.getElementById('nmSettingsAdmin');
+            if (nmSection) nmSection.classList.toggle('hidden', !erNm);
+            await autoLagreProverFelt('prove_type', ny);
+            // Last NM-flagger fra config hvis NM-prøve, ellers nullstill UI
+            if (erNm) {
+                await lastNmFlagger();
+            }
+        }
+
+        // Last NM-flagger (har_nm_lag, kongepokal_innvilget) fra prove_config
+        // og oppdater sjekkbokser. Kalles ved valg av prøve og prøvetype-bytte.
+        async function lastNmFlagger() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+            try {
+                const resp = await fetch(`/api/prover/${proveId}/config`, { headers: getAuthHeaders() });
+                if (!resp.ok) return;
+                const cfg = await resp.json();
+                const lagBox = document.getElementById('adminHarNmLag');
+                const kpBox = document.getElementById('adminKongepokalInnvilget');
+                if (lagBox) lagBox.checked = cfg.har_nm_lag === 1;
+                if (kpBox) kpBox.checked = cfg.kongepokal_innvilget === 1;
+            } catch (e) { /* stille feil — sjekkboksene beholder default */ }
         }
 
         function getTrialPartiesKey() {
@@ -19436,6 +19553,20 @@
             // Vis livssyklus-knapper (Marker som fullført / Kanseller prøve)
             oppdaterLivssyklusKnapper();
 
+            // Sett prøvetype-dropdown til lagret verdi og vis/skjul NM-seksjon
+            const proveTypeEl = document.getElementById('proveType');
+            if (proveTypeEl && prove.prove_type) {
+                proveTypeEl.value = prove.prove_type;
+                const erNm = prove.prove_type === 'nm_hoyfjell_host' || prove.prove_type === 'nm_vinter';
+                const nmSection = document.getElementById('nmSettingsAdmin');
+                if (nmSection) nmSection.classList.toggle('hidden', !erNm);
+                if (erNm) lastNmFlagger();
+            }
+
+            // Sett arrangør-feltet
+            const orgEl = document.getElementById('organizerName');
+            if (orgEl && prove.arrangor_navn !== undefined) orgEl.value = prove.arrangor_navn || '';
+
             // Gå til prøvedetaljer
             showSection('provedetaljer');
         }
@@ -20155,22 +20286,16 @@
             lastTerminliste();
             updateDVKStatusBadge();
 
-            // Sjekk om det er en valgt prøve fra før
+            // Sjekk om det er en valgt prøve fra før — kall full velgProve
+            // så alle felter (navn, dato, sted, type, arrangør, NM-flagger)
+            // fylles ut korrekt etter hard-refresh.
             const savedTrialId = localStorage.getItem('currentTrialId');
             if (savedTrialId) {
-                // Vent på at terminlisten er lastet, så velg prøven
                 setTimeout(() => {
                     const prove = alleProver.find(p => p.id === savedTrialId);
-                    if (prove) {
-                        valgtProveId = savedTrialId;
-                        document.getElementById('trialHeaderName').textContent = prove.navn || prove.name;
-                        document.getElementById('trialHeaderInfo').textContent = `${formaterDato(prove.start_dato || prove.start_date, prove.slutt_dato || prove.end_date)} · ${prove.sted || prove.location || ''}`;
-                        document.getElementById('valgtProveStats').classList.remove('hidden');
-                        document.getElementById('valgtProveNavn').textContent = prove.navn || prove.name;
-                        oppdaterLivssyklusKnapper();
+                    if (prove && typeof velgProve === 'function') {
+                        velgProve(savedTrialId);
                     }
-                    // Last inn partier for SMS-mottakerlisten
-                    loadSmsPartier();
                 }, 500);
             }
 

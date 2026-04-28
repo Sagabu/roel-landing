@@ -1217,6 +1217,26 @@ const migrations = [
   // arrangør basert på NKK-tildeling for det aktuelle året.
   "ALTER TABLE prove_config ADD COLUMN har_nm_lag INTEGER DEFAULT 0",
   "ALTER TABLE prove_config ADD COLUMN kongepokal_innvilget INTEGER DEFAULT 0",
+  // Trygg prøvesletting: snapshot av prøvenavn så historiske SMS, vipps-
+  // og jegermiddag-poster forblir lesbare for klubben etter at prøven slettes.
+  "ALTER TABLE sms_log ADD COLUMN prove_navn_snapshot TEXT DEFAULT NULL",
+  "ALTER TABLE vipps_foresporsler ADD COLUMN prove_navn_snapshot TEXT DEFAULT NULL",
+  "ALTER TABLE vipps_foresporsler ADD COLUMN klubb_id_snapshot TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN prove_navn_snapshot TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN klubb_id_snapshot TEXT DEFAULT NULL",
+  // Refund-sporing for vipps_mottakere og jegermiddag_pameldinger.
+  // Status='kansellert' + refundert_dato IS NOT NULL = ble betalt, så refundert.
+  // Status='kansellert' + refundert_dato IS NULL = aldri betalt, kansellert.
+  "ALTER TABLE vipps_mottakere ADD COLUMN refundert_dato TEXT DEFAULT NULL",
+  "ALTER TABLE vipps_mottakere ADD COLUMN refundert_av TEXT DEFAULT NULL",
+  "ALTER TABLE vipps_mottakere ADD COLUMN refundert_belop INTEGER DEFAULT NULL",
+  "ALTER TABLE vipps_mottakere ADD COLUMN refundert_referanse TEXT DEFAULT NULL",
+  "ALTER TABLE vipps_mottakere ADD COLUMN refundert_kommentar TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_dato TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_av TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_belop INTEGER DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_referanse TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_kommentar TEXT DEFAULT NULL",
   // Forbedret fullmakt-matching med epost
   "ALTER TABLE ventende_fullmakter ADD COLUMN eier_epost TEXT DEFAULT NULL",
   "ALTER TABLE ventende_fullmakter ADD COLUMN forer_epost TEXT DEFAULT NULL",
@@ -7891,26 +7911,274 @@ app.get("/api/prover/:id/logo", (c) => {
   });
 });
 
-// Slett prøve
+// Forhåndsvisning før prøvesletting — teller alt som vil bli slettet,
+// flagger ubetalte vipps-forespørsler som blokkerer sletting.
+// Klubben kan se hva som forsvinner og hva som må refunderes først.
+app.get("/api/prover/:id/slett-forhandsvisning", requireAdmin, (c) => {
+  const id = c.req.param("id");
+  const prove = db.prepare("SELECT id, navn FROM prover WHERE id = ?").get(id);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+  const count = (sql, ...params) => db.prepare(sql).get(id, ...params)?.n || 0;
+
+  const sletteCounts = {
+    pameldinger: count("SELECT COUNT(*) n FROM pameldinger WHERE prove_id = ?"),
+    avmeldinger: count("SELECT COUNT(*) n FROM avmeldinger WHERE prove_id = ?"),
+    partier: count("SELECT COUNT(*) n FROM partier WHERE prove_id = ?"),
+    parti_deltakere: count("SELECT COUNT(*) n FROM parti_deltakere WHERE prove_id = ?"),
+    venteliste: count("SELECT COUNT(*) n FROM venteliste WHERE prove_id = ?"),
+    kritikker: count("SELECT COUNT(*) n FROM kritikker WHERE prove_id = ?"),
+    dommer_tildelinger: count("SELECT COUNT(*) n FROM dommer_tildelinger WHERE prove_id = ?"),
+    dommer_foresporsler: count("SELECT COUNT(*) n FROM dommer_foresporsler WHERE prove_id = ?"),
+    dommer_oppgjor: count("SELECT COUNT(*) n FROM dommer_oppgjor WHERE prove_id = ?"),
+    dommer_notater: count("SELECT COUNT(*) n FROM dommer_notater WHERE prove_id = ?"),
+    vk_bedomming: count("SELECT COUNT(*) n FROM vk_bedomming WHERE prove_id = ?"),
+    rapport_versjoner: count("SELECT COUNT(*) n FROM rapport_versjoner WHERE prove_id = ?"),
+    parti_signaturer: count("SELECT COUNT(*) n FROM parti_signaturer WHERE prove_id = ?"),
+    prove_dokumenter: count("SELECT COUNT(*) n FROM prove_dokumenter WHERE prove_id = ?"),
+    dvk_kontroller: count("SELECT COUNT(*) n FROM dvk_kontroller WHERE prove_id = ?"),
+    meldinger: count("SELECT COUNT(*) n FROM meldinger WHERE prove_id = ?"),
+    prove_team: count("SELECT COUNT(*) n FROM prove_team WHERE prove_id = ?"),
+    fratatte_aversjonsbevis: count("SELECT COUNT(*) n FROM fratatte_aversjonsbevis WHERE prove_id = ?")
+  };
+
+  // Vipps-betalinger som må håndteres før sletting:
+  // - 'betalt' uten refundert_dato = ulovlig å slette uten refusjon
+  // - 'venter' = sendt men ikke betalt; kanselleres automatisk ved sletting
+  const ubetalteRefusjoner = db.prepare(`
+    SELECT m.id, m.deltaker_navn, m.deltaker_telefon, f.belop, f.beskrivelse
+    FROM vipps_mottakere m
+    JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+    WHERE f.prove_id = ? AND m.status = 'betalt' AND m.refundert_dato IS NULL
+  `).all(id);
+
+  const ventendeVipps = db.prepare(`
+    SELECT COUNT(*) n FROM vipps_mottakere m
+    JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+    WHERE f.prove_id = ? AND m.status = 'venter'
+  `).get(id)?.n || 0;
+
+  // Jegermiddag: betalt + ikke refundert = blokkerer; pameldt/bekreftet = kanselleres
+  const ubetalteJegermiddag = db.prepare(`
+    SELECT j.id, b.fornavn || ' ' || b.etternavn AS navn, j.bruker_telefon, j.belop
+    FROM jegermiddag_pameldinger j
+    LEFT JOIN brukere b ON b.telefon = j.bruker_telefon
+    WHERE j.prove_id = ? AND j.betalt = 1 AND j.refundert_dato IS NULL
+  `).all(id);
+
+  const ventendeSms = count("SELECT COUNT(*) n FROM sms_queue WHERE prove_id = ? AND status = 'pending'");
+
+  // SMS-historikk beholdes (sms_log + sms_queue med status sent/failed/cancelled)
+  const smsBeholdt = count("SELECT COUNT(*) n FROM sms_log WHERE prove_id = ?");
+
+  // Avansering — kan slettes hvis ingen blokkerende refusjoner
+  const blokkert = ubetalteRefusjoner.length > 0 || ubetalteJegermiddag.length > 0;
+
+  return c.json({
+    id: prove.id,
+    navn: prove.navn,
+    blokkert,
+    sletteCounts,
+    refusjon_kreves: {
+      vipps: ubetalteRefusjoner,
+      jegermiddag: ubetalteJegermiddag
+    },
+    kanselleres_ved_sletting: {
+      vipps_ventende: ventendeVipps,
+      sms_pending: ventendeSms
+    },
+    beholdes: {
+      sms_historikk: smsBeholdt
+    }
+  });
+});
+
+// Marker en vipps-mottaker som refundert (admin har refundert utenfor systemet,
+// f.eks. via Vipps Merchant Portal eller bankoverføring)
+app.post("/api/vipps-mottakere/:id/refunder", requireAdmin, async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    const bruker = c.get("bruker");
+
+    const mottaker = db.prepare(`
+      SELECT m.*, f.belop AS opprinnelig_belop, f.prove_id, f.beskrivelse
+      FROM vipps_mottakere m
+      JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+      WHERE m.id = ?
+    `).get(id);
+    if (!mottaker) return c.json({ error: "Vipps-mottaker ikke funnet" }, 404);
+    if (mottaker.status !== 'betalt') {
+      return c.json({ error: "Kan kun refundere mottakere med status 'betalt'" }, 400);
+    }
+    if (mottaker.refundert_dato) {
+      return c.json({ error: "Allerede markert som refundert" }, 409);
+    }
+
+    const refundertBelop = parseInt(body.refundert_belop) || mottaker.opprinnelig_belop;
+    const refundertDato = body.refundert_dato || new Date().toISOString().slice(0, 10);
+
+    db.prepare(`
+      UPDATE vipps_mottakere
+      SET status = 'kansellert',
+          refundert_dato = ?,
+          refundert_av = ?,
+          refundert_belop = ?,
+          refundert_referanse = ?,
+          refundert_kommentar = ?
+      WHERE id = ?
+    `).run(refundertDato, bruker.telefon, refundertBelop,
+           body.refundert_referanse || null, body.refundert_kommentar || null, id);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "betaling_refundert",
+      JSON.stringify({
+        type: "vipps", mottaker_id: id, beholdne: mottaker.deltaker_navn,
+        belop: refundertBelop, av: bruker.telefon, prove_id: mottaker.prove_id
+      })
+    );
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Refund vipps-mottaker error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Marker en jegermiddag-påmelding som refundert
+app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAdmin, async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    const bruker = c.get("bruker");
+
+    const pamelding = db.prepare("SELECT * FROM jegermiddag_pameldinger WHERE id = ?").get(id);
+    if (!pamelding) return c.json({ error: "Jegermiddag-påmelding ikke funnet" }, 404);
+    if (!pamelding.betalt) {
+      return c.json({ error: "Kan kun refundere påmeldinger som er betalt" }, 400);
+    }
+    if (pamelding.refundert_dato) {
+      return c.json({ error: "Allerede markert som refundert" }, 409);
+    }
+
+    const refundertBelop = parseInt(body.refundert_belop) || pamelding.belop;
+    const refundertDato = body.refundert_dato || new Date().toISOString().slice(0, 10);
+
+    db.prepare(`
+      UPDATE jegermiddag_pameldinger
+      SET status = 'avmeldt',
+          refundert_dato = ?,
+          refundert_av = ?,
+          refundert_belop = ?,
+          refundert_referanse = ?,
+          refundert_kommentar = ?
+      WHERE id = ?
+    `).run(refundertDato, bruker.telefon, refundertBelop,
+           body.refundert_referanse || null, body.refundert_kommentar || null, id);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "betaling_refundert",
+      JSON.stringify({
+        type: "jegermiddag", pamelding_id: id, bruker: pamelding.bruker_telefon,
+        belop: refundertBelop, av: bruker.telefon, prove_id: pamelding.prove_id
+      })
+    );
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Refund jegermiddag error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Slett prøve — atomisk sletting av alle 28 prøve-relaterte tabeller pluss
+// kv_store-nøkler. Krever at admin skriver prøvenavnet for å bekrefte, og
+// blokkerer hvis det finnes betalte beløp som ikke er refundert.
+// SMS-historikk og vipps/jegermiddag-historikk beholdes (med snapshot av
+// prøvenavn) så klubb beholder sporbarhet for økonomi og kommunikasjon.
 app.delete("/api/prover/:id", requireAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     const bruker = c.get("bruker");
+    const body = await c.req.json().catch(() => ({}));
 
     const existing = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
-    if (!existing) {
-      return c.json({ error: "Prøve ikke funnet" }, 404);
+    if (!existing) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+    // Krev at admin skriver eksakt prøvenavn for å bekrefte
+    if (body.confirm_navn !== existing.navn) {
+      return c.json({
+        error: "Bekreftelse mangler: skriv prøvenavnet eksakt for å slette",
+        kreves_navn: existing.navn
+      }, 400);
+    }
+
+    // Blokker hvis det er betalte beløp som ikke er refundert
+    const ubetalteVipps = db.prepare(`
+      SELECT COUNT(*) n FROM vipps_mottakere m
+      JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+      WHERE f.prove_id = ? AND m.status = 'betalt' AND m.refundert_dato IS NULL
+    `).get(id)?.n || 0;
+    const ubetalteJeger = db.prepare(`
+      SELECT COUNT(*) n FROM jegermiddag_pameldinger
+      WHERE prove_id = ? AND betalt = 1 AND refundert_dato IS NULL
+    `).get(id)?.n || 0;
+
+    if (ubetalteVipps > 0 || ubetalteJeger > 0) {
+      return c.json({
+        error: "Sletting blokkert: det finnes betalte beløp som ikke er refundert",
+        ubetalte_vipps: ubetalteVipps,
+        ubetalte_jegermiddag: ubetalteJeger
+      }, 400);
     }
 
     autoBackup("prove_slettet");
 
-    // Slett relaterte data først
-    db.prepare("DELETE FROM dommer_tildelinger WHERE prove_id = ?").run(id);
-    db.prepare("DELETE FROM prover WHERE id = ?").run(id);
+    const klubbId = existing.klubb_id || null;
+    const proveNavn = existing.navn;
+
+    // Atomisk sletting i én transaksjon
+    const slettAlt = db.transaction(() => {
+      // 1) Snapshot prøvenavn på rader vi BEHOLDER (sms-historikk og vipps/jegermiddag-historikk)
+      db.prepare("UPDATE sms_log SET prove_navn_snapshot = ? WHERE prove_id = ? AND prove_navn_snapshot IS NULL").run(proveNavn, id);
+      db.prepare("UPDATE vipps_foresporsler SET prove_navn_snapshot = ?, klubb_id_snapshot = ? WHERE prove_id = ? AND prove_navn_snapshot IS NULL").run(proveNavn, klubbId, id);
+      db.prepare("UPDATE jegermiddag_pameldinger SET prove_navn_snapshot = ?, klubb_id_snapshot = ? WHERE prove_id = ? AND prove_navn_snapshot IS NULL").run(proveNavn, klubbId, id);
+
+      // 2) Cancel ventende SMS og vipps-forespørsler som ikke skal sendes/følges opp
+      db.prepare("UPDATE sms_queue SET status = 'cancelled', error_message = 'Prøve slettet' WHERE prove_id = ? AND status = 'pending'").run(id);
+      db.prepare(`
+        UPDATE vipps_mottakere SET status = 'kansellert'
+        WHERE foresporsel_id IN (SELECT id FROM vipps_foresporsler WHERE prove_id = ?)
+          AND status = 'venter'
+      `).run(id);
+
+      // 3) Slett alle prøve-spesifikke tabeller (utenom sms_log/sms_queue/vipps/jegermiddag)
+      const slettTabeller = [
+        "avmeldinger", "dommer_foresporsler", "dommer_notater", "dommer_oppgjor",
+        "dommer_tildelinger", "dvk_journaler", "dvk_kontroller", "dvk_signaturer",
+        "fratatte_aversjonsbevis", "kritikker", "meldinger", "pameldinger",
+        "parti_deltakere", "parti_deltakere_arkiv", "parti_signaturer",
+        "partier", "prove_config", "prove_dokumenter", "prove_team",
+        "rapport_logg", "rapport_versjoner", "rolle_sms_sendt",
+        "venteliste", "ventende_fullmakter", "vk_bedomming"
+      ];
+      for (const tab of slettTabeller) {
+        db.prepare(`DELETE FROM ${tab} WHERE prove_id = ?`).run(id);
+      }
+
+      // 4) Slett kv_store-nøkler med suffiks _${prove_id} (eks. praktiskInfo_<id>,
+      //    vkSamletListe_<id>, automatikkInnstillinger_<id> osv.)
+      db.prepare("DELETE FROM kv_store WHERE key LIKE ?").run(`%_${id}`);
+
+      // 5) Selve prøven
+      db.prepare("DELETE FROM prover WHERE id = ?").run(id);
+    });
+
+    slettAlt();
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "prove_slettet",
-      JSON.stringify({ id, navn: existing.navn, slettet_av: bruker.telefon })
+      JSON.stringify({ id, navn: existing.navn, klubb_id: klubbId, slettet_av: bruker.telefon })
     );
 
     return c.json({ success: true, message: "Prøve slettet" });

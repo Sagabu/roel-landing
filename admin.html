@@ -19477,29 +19477,264 @@
             }, 100);
         }
 
-        // Slett prøve
+        // Slett prøve — åpner forhåndsvisning som krever eksplisitt
+        // bekreftelse (skriv prøvenavn) og blokkerer hvis det finnes
+        // betalte beløp som ikke er refundert.
+        let slettProveAktivId = null;
+
         async function slettProve(proveId, proveNavn) {
-            if (!confirm(`Er du sikker på at du vil slette "${proveNavn}"?\n\nDette kan ikke angres.`)) {
-                return;
-            }
+            slettProveAktivId = proveId;
+            const modal = document.getElementById('slettProveModal');
+            const innhold = document.getElementById('slettProveInnhold');
+            const tittel = document.getElementById('slettProveTittel');
+            tittel.textContent = `Slett prøve: ${proveNavn}`;
+            innhold.innerHTML = '<p class="text-bark-500 text-sm">Henter oversikt...</p>';
+            modal.classList.remove('hidden');
 
             try {
-                const resp = await fetch(`/api/prover/${proveId}`, {
-                    method: 'DELETE'
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/slett-forhandsvisning`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
                 });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    innhold.innerHTML = `<p class="text-red-600">${err.error || 'Kunne ikke hente forhåndsvisning'}</p>`;
+                    return;
+                }
+                const data = await resp.json();
+                renderSlettForhandsvisning(data);
+            } catch (err) {
+                innhold.innerHTML = `<p class="text-red-600">Nettverksfeil: ${err.message}</p>`;
+            }
+        }
 
+        function renderSlettForhandsvisning(data) {
+            const innhold = document.getElementById('slettProveInnhold');
+            const c = data.sletteCounts;
+
+            // Bygg liste over hva som slettes — vis kun rader > 0 så listen ikke blir overveldende
+            const slettListe = [
+                ['Påmeldinger', c.pameldinger],
+                ['Avmeldinger', c.avmeldinger],
+                ['Partier', c.partier],
+                ['Parti-deltakere', c.parti_deltakere],
+                ['Venteliste', c.venteliste],
+                ['Kritikker', c.kritikker],
+                ['Dommer-tildelinger', c.dommer_tildelinger],
+                ['Dommer-forespørsler', c.dommer_foresporsler],
+                ['Dommer-oppgjør', c.dommer_oppgjor],
+                ['Dommer-notater', c.dommer_notater],
+                ['VK-bedømminger', c.vk_bedomming],
+                ['Rapport-versjoner', c.rapport_versjoner],
+                ['Parti-signaturer', c.parti_signaturer],
+                ['Prøve-dokumenter', c.prove_dokumenter],
+                ['DVK-kontroller', c.dvk_kontroller],
+                ['Meldinger', c.meldinger],
+                ['Team-roller', c.prove_team],
+                ['Fratatte aversjonsbevis', c.fratatte_aversjonsbevis]
+            ].filter(([_, n]) => n > 0);
+
+            const slettHtml = slettListe.length === 0
+                ? '<p class="text-bark-500 text-sm italic">Ingen relaterte data — kun selve prøven slettes.</p>'
+                : `<ul class="text-sm space-y-1">${slettListe.map(([navn, n]) =>
+                    `<li class="flex justify-between"><span class="text-bark-700">${navn}</span><span class="font-medium text-bark-900">${n}</span></li>`
+                ).join('')}</ul>`;
+
+            // Refusjons-blokkere
+            const refunderBoks = data.blokkert ? `
+                <div class="bg-red-50 border border-red-300 rounded-lg p-4 mb-4">
+                    <div class="flex items-start gap-2 mb-3">
+                        <svg class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <p class="font-bold text-red-900">Sletting blokkert</p>
+                            <p class="text-sm text-red-800">Følgende betalte beløp må refunderes før prøven kan slettes.</p>
+                        </div>
+                    </div>
+                    ${data.refusjon_kreves.vipps.length > 0 ? `
+                        <p class="text-xs font-semibold text-red-900 uppercase mt-3 mb-1">Vipps-betalinger</p>
+                        <ul class="space-y-2">
+                            ${data.refusjon_kreves.vipps.map(v => `
+                                <li class="flex items-center justify-between bg-white rounded px-3 py-2">
+                                    <span class="text-sm text-bark-800">${v.deltaker_navn} <span class="text-bark-500">— kr ${v.belop}</span></span>
+                                    <button onclick="apneRefunderModal('vipps', ${v.id}, ${v.belop}, '${(v.deltaker_navn || '').replace(/'/g, "\\'")}')" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded">
+                                        Marker som refundert
+                                    </button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    ` : ''}
+                    ${data.refusjon_kreves.jegermiddag.length > 0 ? `
+                        <p class="text-xs font-semibold text-red-900 uppercase mt-3 mb-1">Jegermiddag</p>
+                        <ul class="space-y-2">
+                            ${data.refusjon_kreves.jegermiddag.map(j => `
+                                <li class="flex items-center justify-between bg-white rounded px-3 py-2">
+                                    <span class="text-sm text-bark-800">${j.navn || j.bruker_telefon} <span class="text-bark-500">— kr ${j.belop || 0}</span></span>
+                                    <button onclick="apneRefunderModal('jegermiddag', ${j.id}, ${j.belop || 0}, '${(j.navn || j.bruker_telefon || '').replace(/'/g, "\\'")}')" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded">
+                                        Marker som refundert
+                                    </button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    ` : ''}
+                </div>
+            ` : '';
+
+            const kanselleresHtml = (data.kanselleres_ved_sletting.vipps_ventende > 0 || data.kanselleres_ved_sletting.sms_pending > 0) ? `
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-900">
+                    <p class="font-semibold mb-1">Kanselleres automatisk ved sletting:</p>
+                    <ul class="list-disc ml-5">
+                        ${data.kanselleres_ved_sletting.vipps_ventende > 0 ? `<li>${data.kanselleres_ved_sletting.vipps_ventende} ubetalt(e) vipps-forespørsler</li>` : ''}
+                        ${data.kanselleres_ved_sletting.sms_pending > 0 ? `<li>${data.kanselleres_ved_sletting.sms_pending} SMS i kø</li>` : ''}
+                    </ul>
+                </div>
+            ` : '';
+
+            const beholdesHtml = data.beholdes.sms_historikk > 0 ? `
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
+                    <p><strong>${data.beholdes.sms_historikk}</strong> SMS-loggrader beholdes (synlig i klubbens SMS-historikk med snapshot av prøvenavn).</p>
+                </div>
+            ` : '';
+
+            const navnInputHtml = data.blokkert ? '' : `
+                <div class="bg-bark-50 border border-bark-200 rounded-lg p-4 mb-4">
+                    <label class="block text-sm font-medium text-bark-800 mb-2">
+                        For å bekrefte permanent sletting, skriv inn prøvenavnet eksakt:
+                    </label>
+                    <p class="text-xs text-bark-500 mb-2 font-mono">${data.navn}</p>
+                    <input type="text" id="slettBekreftNavn" oninput="oppdaterSlettKnapp('${data.navn.replace(/'/g, "\\'")}')"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-red-500 focus:border-red-500 font-mono text-sm"
+                        placeholder="Skriv prøvenavn her" autocomplete="off">
+                </div>
+                <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-900">
+                    <strong>Sletting er permanent.</strong> Sensitive data (kritikker, betalinger, signaturer) går tapt. Kontakt systemansvarlig dersom du angrer kort tid etter.
+                </div>
+            `;
+
+            innhold.innerHTML = `
+                ${refunderBoks}
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-bark-800 mb-2">Følgende slettes:</p>
+                    ${slettHtml}
+                </div>
+                ${kanselleresHtml}
+                ${beholdesHtml}
+                ${navnInputHtml}
+                <div class="flex gap-2 justify-end">
+                    <button onclick="lukkSlettModal()" class="px-4 py-2 bg-bark-200 hover:bg-bark-300 text-bark-800 rounded font-medium">Avbryt</button>
+                    <button id="slettBekreftBtn" onclick="bekreftSlettProve()"
+                        class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium disabled:bg-red-300 disabled:cursor-not-allowed"
+                        disabled>${data.blokkert ? 'Refunder først' : 'Slett permanent'}</button>
+                </div>
+            `;
+        }
+
+        function oppdaterSlettKnapp(forventetNavn) {
+            const input = document.getElementById('slettBekreftNavn');
+            const btn = document.getElementById('slettBekreftBtn');
+            if (input && btn) {
+                btn.disabled = input.value !== forventetNavn;
+            }
+        }
+
+        async function bekreftSlettProve() {
+            const proveId = slettProveAktivId;
+            if (!proveId) return;
+            const navn = document.getElementById('slettBekreftNavn')?.value;
+            if (!navn) return;
+
+            const btn = document.getElementById('slettBekreftBtn');
+            btn.disabled = true;
+            btn.textContent = 'Sletter...';
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({ confirm_navn: navn })
+                });
                 if (resp.ok) {
+                    lukkSlettModal();
                     await lastTerminliste();
-                    if (valgtProveId === proveId) {
-                        avvalgProve();
-                    }
+                    if (valgtProveId === proveId) avvalgProve();
                 } else {
-                    const err = await resp.json();
+                    const err = await resp.json().catch(() => ({}));
                     alert(err.error || 'Kunne ikke slette prøve');
+                    btn.disabled = false;
+                    btn.textContent = 'Slett permanent';
                 }
             } catch (err) {
-                console.error('Feil ved sletting:', err);
-                alert('Kunne ikke slette prøve');
+                alert('Nettverksfeil: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Slett permanent';
+            }
+        }
+
+        function lukkSlettModal() {
+            document.getElementById('slettProveModal').classList.add('hidden');
+            slettProveAktivId = null;
+        }
+
+        // Refunder-modal — admin registrerer at en betaling er refundert utenfor systemet
+        let refunderAktiv = null; // { type, id, belop, navn }
+
+        function apneRefunderModal(type, id, belop, navn) {
+            refunderAktiv = { type, id, belop, navn };
+            document.getElementById('refunderTittel').textContent = `Refusjon for: ${navn}`;
+            document.getElementById('refunderOpprBelop').textContent = `kr ${belop}`;
+            document.getElementById('refunderBelop').value = belop;
+            document.getElementById('refunderDato').valueAsDate = new Date();
+            document.getElementById('refunderReferanse').value = '';
+            document.getElementById('refunderKommentar').value = '';
+            document.getElementById('refunderModal').classList.remove('hidden');
+        }
+
+        function lukkRefunderModal() {
+            document.getElementById('refunderModal').classList.add('hidden');
+            refunderAktiv = null;
+        }
+
+        async function bekreftRefunder() {
+            if (!refunderAktiv) return;
+            const body = {
+                refundert_belop: parseInt(document.getElementById('refunderBelop').value) || refunderAktiv.belop,
+                refundert_dato: document.getElementById('refunderDato').value || null,
+                refundert_referanse: document.getElementById('refunderReferanse').value.trim() || null,
+                refundert_kommentar: document.getElementById('refunderKommentar').value.trim() || null
+            };
+
+            const url = refunderAktiv.type === 'vipps'
+                ? `/api/vipps-mottakere/${refunderAktiv.id}/refunder`
+                : `/api/jegermiddag-pameldinger/${refunderAktiv.id}/refunder`;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(body)
+                });
+                if (resp.ok) {
+                    lukkRefunderModal();
+                    // Refresh forhåndsvisning så blokkering oppdateres
+                    if (slettProveAktivId) {
+                        const navn = document.querySelector('#slettProveTittel')?.textContent?.replace(/^Slett prøve:\s*/, '') || '';
+                        slettProve(slettProveAktivId, navn);
+                    }
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    alert(err.error || 'Kunne ikke registrere refusjon');
+                }
+            } catch (err) {
+                alert('Nettverksfeil: ' + err.message);
             }
         }
 
@@ -20527,6 +20762,56 @@
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slett prøve-modal: forhåndsvisning + skriv-navn-bekreftelse -->
+    <div id="slettProveModal" class="hidden fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-bark-200 bg-red-50">
+                <h2 id="slettProveTittel" class="text-lg font-bold text-red-900">Slett prøve</h2>
+            </div>
+            <div id="slettProveInnhold" class="px-6 py-5 overflow-y-auto flex-1">
+                <p class="text-bark-500 text-sm">Henter oversikt...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refunder-modal: admin registrerer at en betaling er refundert -->
+    <div id="refunderModal" class="hidden fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-bark-200">
+                <h2 id="refunderTittel" class="text-lg font-bold text-bark-900">Refusjon</h2>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <div>
+                    <p class="text-sm text-bark-600">Opprinnelig beløp: <span id="refunderOpprBelop" class="font-medium text-bark-900"></span></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Beløp refundert (kr)</label>
+                    <input type="number" id="refunderBelop" min="0"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Refusjonsdato</label>
+                    <input type="date" id="refunderDato"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Referanse <span class="text-bark-400 text-xs">(valgfri)</span></label>
+                    <input type="text" id="refunderReferanse" placeholder="F.eks. Vipps-ref eller bankoverføring"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Kommentar <span class="text-bark-400 text-xs">(valgfri)</span></label>
+                    <textarea id="refunderKommentar" rows="2"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500"></textarea>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-bark-200 flex justify-end gap-2">
+                <button onclick="lukkRefunderModal()" class="px-4 py-2 bg-bark-200 hover:bg-bark-300 text-bark-800 rounded font-medium">Avbryt</button>
+                <button onclick="bekreftRefunder()" class="px-4 py-2 bg-warm-600 hover:bg-warm-700 text-white rounded font-medium">Bekreft refusjon</button>
             </div>
         </div>
     </div>

@@ -19308,10 +19308,11 @@
                             <button onclick="event.stopPropagation(); velgProve('${prove.id}')" class="text-forest-600 hover:text-forest-800 font-medium text-sm mr-3">
                                 Administrer
                             </button>
-                            <button onclick="event.stopPropagation(); slettProve('${prove.id}', '${(prove.navn || prove.name || '').replace(/'/g, "\\'")}')" class="text-red-500 hover:text-red-700 text-sm">
-                                <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <button onclick="event.stopPropagation(); kansellerProve('${prove.id}', '${(prove.navn || prove.name || '').replace(/'/g, "\\'")}')" class="text-red-500 hover:text-red-700 text-sm flex items-center gap-1" title="Kanseller prøven">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                 </svg>
+                                <span>Kanseller</span>
                             </button>
                         </div>
                     </div>
@@ -19477,17 +19478,21 @@
             }, 100);
         }
 
-        // Slett prøve — åpner forhåndsvisning som krever eksplisitt
-        // bekreftelse (skriv prøvenavn) og blokkerer hvis det finnes
+        // Kanseller prøve — åpner forhåndsvisning som krever eksplisitt
+        // bekreftelse (skriv prøvenavn + årsak) og blokkerer hvis det finnes
         // betalte beløp som ikke er refundert.
         let slettProveAktivId = null;
 
-        async function slettProve(proveId, proveNavn) {
+        // Beholdt som alias så eksisterende kall (eks. fra refunder-modal som
+        // re-kaller for å oppdatere visning) fortsatt fungerer
+        function slettProve(proveId, proveNavn) { return kansellerProve(proveId, proveNavn); }
+
+        async function kansellerProve(proveId, proveNavn) {
             slettProveAktivId = proveId;
             const modal = document.getElementById('slettProveModal');
             const innhold = document.getElementById('slettProveInnhold');
             const tittel = document.getElementById('slettProveTittel');
-            tittel.textContent = `Slett prøve: ${proveNavn}`;
+            tittel.textContent = `Kanseller prøve: ${proveNavn}`;
             innhold.innerHTML = '<p class="text-bark-500 text-sm">Henter oversikt...</p>';
             modal.classList.remove('hidden');
 
@@ -19597,18 +19602,57 @@
                 </div>
             ` : '';
 
+            // Kritikk-arkiv-valg — kun synlig hvis prøven faktisk har kritikker
+            const harKritikker = (c.kritikker || 0) > 0;
+            const kritikkerValgHtml = harKritikker ? `
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <p class="text-sm font-semibold text-amber-900 mb-2">Prøven inneholder ${c.kritikker} kritikk${c.kritikker === 1 ? '' : 'er'}</p>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" id="kansBeholdKritikker" checked class="mt-1 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
+                        <span class="text-sm text-amber-900">
+                            <strong>Behold kritikkdata for klubbens historikk</strong><br>
+                            <span class="text-xs text-amber-800">Kritikkene arkiveres som dokument i klubbens dokumentarkiv (kun synlig for klubb-admin). Hvis ikke krysset av slettes alle kritikker permanent.</span>
+                        </span>
+                    </label>
+                </div>
+            ` : '';
+
+            // Årsaks-dropdown + kommentar — påkrevd for kansellering
+            const arsakHtml = data.blokkert ? '' : `
+                <div class="bg-bark-50 border border-bark-200 rounded-lg p-4 mb-4 space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-bark-800 mb-1">Årsak til kansellering *</label>
+                        <select id="kansArsak" onchange="oppdaterKansellerKnapp()" class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500 bg-white">
+                            <option value="">— Velg årsak —</option>
+                            <option value="avlyst_var">Avlyst pga. vær</option>
+                            <option value="avlyst_sykdom">Avlyst pga. sykdom</option>
+                            <option value="for_fa_pamelding">For få påmeldte</option>
+                            <option value="flyttet_ny_dato">Flyttet til ny dato</option>
+                            <option value="feilopprettet">Feilopprettet prøve</option>
+                            <option value="annet">Annet — beskriv i kommentar</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-bark-800 mb-1">Kommentar <span id="kansKommentarPaakrevdLabel" class="text-bark-400 text-xs font-normal">(valgfri)</span></label>
+                        <textarea id="kansKommentar" oninput="oppdaterKansellerKnapp()" rows="2"
+                            class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500"
+                            placeholder="Tilleggsinformasjon om kansellering..."></textarea>
+                    </div>
+                </div>
+            `;
+
             const navnInputHtml = data.blokkert ? '' : `
                 <div class="bg-bark-50 border border-bark-200 rounded-lg p-4 mb-4">
                     <label class="block text-sm font-medium text-bark-800 mb-2">
-                        For å bekrefte permanent sletting, skriv inn prøvenavnet eksakt:
+                        For å bekrefte permanent kansellering, skriv inn prøvenavnet eksakt:
                     </label>
                     <p class="text-xs text-bark-500 mb-2 font-mono">${data.navn}</p>
-                    <input type="text" id="slettBekreftNavn" oninput="oppdaterSlettKnapp('${data.navn.replace(/'/g, "\\'")}')"
+                    <input type="text" id="slettBekreftNavn" oninput="oppdaterKansellerKnapp()"
                         class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-red-500 focus:border-red-500 font-mono text-sm"
                         placeholder="Skriv prøvenavn her" autocomplete="off">
                 </div>
                 <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-900">
-                    <strong>Sletting er permanent.</strong> Sensitive data (kritikker, betalinger, signaturer) går tapt. Kontakt systemansvarlig dersom du angrer kort tid etter.
+                    <strong>Kansellering er permanent.</strong> Prøven og alt relatert data slettes. Kontakt systemansvarlig dersom du angrer kort tid etter.
                 </div>
             `;
 
@@ -19620,33 +19664,62 @@
                 </div>
                 ${kanselleresHtml}
                 ${beholdesHtml}
+                ${kritikkerValgHtml}
+                ${arsakHtml}
                 ${navnInputHtml}
                 <div class="flex gap-2 justify-end">
                     <button onclick="lukkSlettModal()" class="px-4 py-2 bg-bark-200 hover:bg-bark-300 text-bark-800 rounded font-medium">Avbryt</button>
-                    <button id="slettBekreftBtn" onclick="bekreftSlettProve()"
+                    <button id="slettBekreftBtn" onclick="bekreftKansellerProve()"
+                        data-forventet-navn="${data.navn.replace(/"/g, '&quot;')}"
                         class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium disabled:bg-red-300 disabled:cursor-not-allowed"
-                        disabled>${data.blokkert ? 'Refunder først' : 'Slett permanent'}</button>
+                        disabled>${data.blokkert ? 'Refunder først' : 'Kanseller permanent'}</button>
                 </div>
             `;
         }
 
-        function oppdaterSlettKnapp(forventetNavn) {
-            const input = document.getElementById('slettBekreftNavn');
+        // Aktiver Kanseller-knappen først når navn matcher OG årsak er valgt
+        // OG (hvis 'annet' valgt) kommentar er fylt ut.
+        function oppdaterKansellerKnapp() {
             const btn = document.getElementById('slettBekreftBtn');
-            if (input && btn) {
-                btn.disabled = input.value !== forventetNavn;
+            const navnInput = document.getElementById('slettBekreftNavn');
+            const arsakSel = document.getElementById('kansArsak');
+            const kommentar = document.getElementById('kansKommentar');
+            const paakrevdLabel = document.getElementById('kansKommentarPaakrevdLabel');
+            if (!btn) return;
+
+            const forventetNavn = btn.getAttribute('data-forventet-navn') || '';
+            const arsak = arsakSel?.value || '';
+            const kommentarVal = (kommentar?.value || '').trim();
+
+            // Oppdater paakrevd-label basert på årsak
+            if (paakrevdLabel) {
+                if (arsak === 'annet') {
+                    paakrevdLabel.textContent = '(påkrevd)';
+                    paakrevdLabel.className = 'text-red-600 text-xs font-medium';
+                } else {
+                    paakrevdLabel.textContent = '(valgfri)';
+                    paakrevdLabel.className = 'text-bark-400 text-xs font-normal';
+                }
             }
+
+            const navnOk = navnInput?.value === forventetNavn;
+            const arsakOk = arsak !== '';
+            const kommentarOk = arsak !== 'annet' || kommentarVal.length > 0;
+            btn.disabled = !(navnOk && arsakOk && kommentarOk);
         }
 
-        async function bekreftSlettProve() {
+        async function bekreftKansellerProve() {
             const proveId = slettProveAktivId;
             if (!proveId) return;
             const navn = document.getElementById('slettBekreftNavn')?.value;
-            if (!navn) return;
+            const arsak = document.getElementById('kansArsak')?.value;
+            const kommentar = (document.getElementById('kansKommentar')?.value || '').trim();
+            const beholdKritikker = document.getElementById('kansBeholdKritikker')?.checked || false;
+            if (!navn || !arsak) return;
 
             const btn = document.getElementById('slettBekreftBtn');
             btn.disabled = true;
-            btn.textContent = 'Sletter...';
+            btn.textContent = 'Kansellerer...';
 
             try {
                 const token = localStorage.getItem('fuglehund_token');
@@ -19656,7 +19729,12 @@
                         'Content-Type': 'application/json',
                         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                     },
-                    body: JSON.stringify({ confirm_navn: navn })
+                    body: JSON.stringify({
+                        confirm_navn: navn,
+                        arsak,
+                        kommentar: kommentar || null,
+                        behold_kritikker: beholdKritikker
+                    })
                 });
                 if (resp.ok) {
                     lukkSlettModal();
@@ -19664,14 +19742,14 @@
                     if (valgtProveId === proveId) avvalgProve();
                 } else {
                     const err = await resp.json().catch(() => ({}));
-                    alert(err.error || 'Kunne ikke slette prøve');
+                    alert(err.error || 'Kunne ikke kansellere prøve');
                     btn.disabled = false;
-                    btn.textContent = 'Slett permanent';
+                    btn.textContent = 'Kanseller permanent';
                 }
             } catch (err) {
                 alert('Nettverksfeil: ' + err.message);
                 btn.disabled = false;
-                btn.textContent = 'Slett permanent';
+                btn.textContent = 'Kanseller permanent';
             }
         }
 
@@ -20766,11 +20844,11 @@
         </div>
     </div>
 
-    <!-- Slett prøve-modal: forhåndsvisning + skriv-navn-bekreftelse -->
+    <!-- Kanseller prøve-modal: forhåndsvisning + årsak + skriv-navn-bekreftelse -->
     <div id="slettProveModal" class="hidden fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div class="px-6 py-4 border-b border-bark-200 bg-red-50">
-                <h2 id="slettProveTittel" class="text-lg font-bold text-red-900">Slett prøve</h2>
+                <h2 id="slettProveTittel" class="text-lg font-bold text-red-900">Kanseller prøve</h2>
             </div>
             <div id="slettProveInnhold" class="px-6 py-5 overflow-y-auto flex-1">
                 <p class="text-bark-500 text-sm">Henter oversikt...</p>

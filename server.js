@@ -1237,6 +1237,11 @@ const migrations = [
   "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_belop INTEGER DEFAULT NULL",
   "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_referanse TEXT DEFAULT NULL",
   "ALTER TABLE jegermiddag_pameldinger ADD COLUMN refundert_kommentar TEXT DEFAULT NULL",
+  // Prøve-livssyklus: fullført + kansellert med årsak. Status='fullfort'
+  // (låst, kan kun reverseres av superadmin) eller 'kansellert' (slettes,
+  // men en arkiv-rad legges i klubb_dokumenter med årsak).
+  "ALTER TABLE prover ADD COLUMN fullfort_dato TEXT DEFAULT NULL",
+  "ALTER TABLE prover ADD COLUMN fullfort_av TEXT DEFAULT NULL",
   // Forbedret fullmakt-matching med epost
   "ALTER TABLE ventende_fullmakter ADD COLUMN eier_epost TEXT DEFAULT NULL",
   "ALTER TABLE ventende_fullmakter ADD COLUMN forer_epost TEXT DEFAULT NULL",
@@ -8091,11 +8096,23 @@ app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAdmin, async (c) =>
   }
 });
 
-// Slett prøve — atomisk sletting av alle 28 prøve-relaterte tabeller pluss
-// kv_store-nøkler. Krever at admin skriver prøvenavnet for å bekrefte, og
-// blokkerer hvis det finnes betalte beløp som ikke er refundert.
+// Kanseller prøve — atomisk sletting av alle prøve-relaterte tabeller pluss
+// kv_store-nøkler. Krever at admin skriver prøvenavnet for å bekrefte og
+// blokkerer hvis det finnes betalte beløp som ikke er refundert. Krever
+// også at admin oppgir kanselleringsårsak (predefinerte alternativer eller
+// 'annet' med påkrevd kommentar). En arkiv-rad legges i klubb_dokumenter
+// så klubben beholder sporet av at prøven har eksistert + årsaken.
+//
+// Hvis prøven har kritikker, kan admin velge å beholde dem som arkiv-rad
+// i klubb_dokumenter (snapshot) før selve kritikker-tabellen tømmes.
+//
 // SMS-historikk og vipps/jegermiddag-historikk beholdes (med snapshot av
 // prøvenavn) så klubb beholder sporbarhet for økonomi og kommunikasjon.
+const KANSELLER_ARSAKER_GYLDIGE = new Set([
+  'avlyst_var', 'avlyst_sykdom', 'for_fa_pamelding',
+  'flyttet_ny_dato', 'feilopprettet', 'annet'
+]);
+
 app.delete("/api/prover/:id", requireAdmin, async (c) => {
   try {
     const id = c.req.param("id");
@@ -8108,9 +8125,19 @@ app.delete("/api/prover/:id", requireAdmin, async (c) => {
     // Krev at admin skriver eksakt prøvenavn for å bekrefte
     if (body.confirm_navn !== existing.navn) {
       return c.json({
-        error: "Bekreftelse mangler: skriv prøvenavnet eksakt for å slette",
+        error: "Bekreftelse mangler: skriv prøvenavnet eksakt for å kansellere",
         kreves_navn: existing.navn
       }, 400);
+    }
+
+    // Krev gyldig årsak; 'annet' krever kommentar
+    const arsak = body.arsak;
+    const kommentar = (body.kommentar || '').trim();
+    if (!arsak || !KANSELLER_ARSAKER_GYLDIGE.has(arsak)) {
+      return c.json({ error: "Kanselleringsårsak er påkrevd" }, 400);
+    }
+    if (arsak === 'annet' && !kommentar) {
+      return c.json({ error: "Når årsak er 'annet' må kommentar oppgis" }, 400);
     }
 
     // Blokker hvis det er betalte beløp som ikke er refundert
@@ -8126,16 +8153,67 @@ app.delete("/api/prover/:id", requireAdmin, async (c) => {
 
     if (ubetalteVipps > 0 || ubetalteJeger > 0) {
       return c.json({
-        error: "Sletting blokkert: det finnes betalte beløp som ikke er refundert",
+        error: "Kansellering blokkert: det finnes betalte beløp som ikke er refundert",
         ubetalte_vipps: ubetalteVipps,
         ubetalte_jegermiddag: ubetalteJeger
       }, 400);
     }
 
-    autoBackup("prove_slettet");
+    autoBackup("prove_kansellert");
 
     const klubbId = existing.klubb_id || null;
     const proveNavn = existing.navn;
+    const beholdKritikker = body.behold_kritikker === true;
+
+    // Snapshot kritikker hvis admin valgte å beholde dem
+    let kritikkArkivId = null;
+    if (beholdKritikker && klubbId) {
+      const kritikker = db.prepare(`
+        SELECT k.*, h.navn AS hund_navn, h.regnr AS hund_regnr,
+               b.fornavn || ' ' || b.etternavn AS dommer_navn
+        FROM kritikker k
+        LEFT JOIN hunder h ON h.id = k.hund_id
+        LEFT JOIN brukere b ON b.telefon = k.dommer_telefon
+        WHERE k.prove_id = ?
+      `).all(id);
+      if (kritikker.length > 0) {
+        const result = db.prepare(`
+          INSERT INTO klubb_dokumenter (klubb_id, dokument_type, tittel, beskrivelse, innhold_json, opprettet_av)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          klubbId,
+          'kritikk_arkiv',
+          `Kritikker — kansellert prøve: ${proveNavn}`,
+          `Snapshot av ${kritikker.length} kritikker tatt da prøven ble kansellert. Tilgjengelig kun for klubb-admin.`,
+          JSON.stringify({ prove_id: id, prove_navn: proveNavn, antall: kritikker.length, kritikker }),
+          bruker.telefon
+        );
+        kritikkArkivId = result.lastInsertRowid;
+      }
+    }
+
+    // Lagre kanselleringsbevis i klubb-dokumenter så klubben har spor av prøven
+    if (klubbId) {
+      db.prepare(`
+        INSERT INTO klubb_dokumenter (klubb_id, dokument_type, tittel, beskrivelse, innhold_json, opprettet_av)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        klubbId,
+        'prove_kansellert',
+        `Kansellert prøve: ${proveNavn}`,
+        `Kansellert ${new Date().toISOString().slice(0,10)}. Årsak: ${arsak}.${kommentar ? ' ' + kommentar : ''}`,
+        JSON.stringify({
+          prove_id: id, prove_navn: proveNavn,
+          start_dato: existing.start_dato, slutt_dato: existing.slutt_dato,
+          sted: existing.sted, prove_type: existing.prove_type,
+          arsak, kommentar: kommentar || null,
+          kansellert_dato: new Date().toISOString(),
+          kansellert_av: bruker.telefon,
+          behold_kritikker: beholdKritikker, kritikk_arkiv_id: kritikkArkivId
+        }),
+        bruker.telefon
+      );
+    }
 
     // Atomisk sletting i én transaksjon
     const slettAlt = db.transaction(() => {
@@ -8145,7 +8223,7 @@ app.delete("/api/prover/:id", requireAdmin, async (c) => {
       db.prepare("UPDATE jegermiddag_pameldinger SET prove_navn_snapshot = ?, klubb_id_snapshot = ? WHERE prove_id = ? AND prove_navn_snapshot IS NULL").run(proveNavn, klubbId, id);
 
       // 2) Cancel ventende SMS og vipps-forespørsler som ikke skal sendes/følges opp
-      db.prepare("UPDATE sms_queue SET status = 'cancelled', error_message = 'Prøve slettet' WHERE prove_id = ? AND status = 'pending'").run(id);
+      db.prepare("UPDATE sms_queue SET status = 'cancelled', error_message = 'Prøve kansellert' WHERE prove_id = ? AND status = 'pending'").run(id);
       db.prepare(`
         UPDATE vipps_mottakere SET status = 'kansellert'
         WHERE foresporsel_id IN (SELECT id FROM vipps_foresporsler WHERE prove_id = ?)
@@ -8166,8 +8244,7 @@ app.delete("/api/prover/:id", requireAdmin, async (c) => {
         db.prepare(`DELETE FROM ${tab} WHERE prove_id = ?`).run(id);
       }
 
-      // 4) Slett kv_store-nøkler med suffiks _${prove_id} (eks. praktiskInfo_<id>,
-      //    vkSamletListe_<id>, automatikkInnstillinger_<id> osv.)
+      // 4) Slett kv_store-nøkler med suffiks _${prove_id}
       db.prepare("DELETE FROM kv_store WHERE key LIKE ?").run(`%_${id}`);
 
       // 5) Selve prøven
@@ -8177,13 +8254,18 @@ app.delete("/api/prover/:id", requireAdmin, async (c) => {
     slettAlt();
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      "prove_slettet",
-      JSON.stringify({ id, navn: existing.navn, klubb_id: klubbId, slettet_av: bruker.telefon })
+      "prove_kansellert",
+      JSON.stringify({
+        id, navn: existing.navn, klubb_id: klubbId,
+        kansellert_av: bruker.telefon,
+        arsak, kommentar: kommentar || null,
+        behold_kritikker: beholdKritikker, kritikk_arkiv_id: kritikkArkivId
+      })
     );
 
-    return c.json({ success: true, message: "Prøve slettet" });
+    return c.json({ success: true, message: "Prøve kansellert" });
   } catch (err) {
-    console.error("Feil ved sletting av prøve:", err);
+    console.error("Feil ved kansellering av prøve:", err);
     return c.json({ error: err.message }, 500);
   }
 });

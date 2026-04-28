@@ -528,6 +528,20 @@
             </div>
         </div>
 
+        <!-- Reverser fullført prøve (superadmin) -->
+        <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-4 md:p-6">
+            <div class="mb-4 flex items-center justify-between">
+                <div>
+                    <h2 class="text-base md:text-lg font-serif font-bold text-bark-800">Reverser fullført prøve</h2>
+                    <p class="text-xs md:text-sm text-bark-500">Setter prøvens status tilbake til planlagt så klubb-admin kan jobbe med den igjen. Brukes kun ved feil.</p>
+                </div>
+                <button onclick="lastFullforteProver()" class="px-3 py-1.5 bg-bark-100 hover:bg-bark-200 text-bark-700 rounded text-xs font-medium">Oppdater liste</button>
+            </div>
+            <div id="fullforteProverListe" class="space-y-2">
+                <p class="text-bark-400 text-sm">Laster...</p>
+            </div>
+        </div>
+
         <!-- Dommer-registreringsstatus -->
         <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-4 md:p-6">
             <div class="mb-4">
@@ -3386,6 +3400,64 @@ fuglehundprove.no`;
         }
     }
 
+    // Last fullførte prøver (superadmin) — for reverserings-UI
+    async function lastFullforteProver() {
+        const container = document.getElementById('fullforteProverListe');
+        if (!container) return;
+        container.innerHTML = '<p class="text-bark-400 text-sm">Laster...</p>';
+        try {
+            const token = localStorage.getItem('fuglehund_token');
+            const resp = await fetch('/api/superadmin/prover/fullforte', {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (!resp.ok) {
+                container.innerHTML = '<p class="text-red-500 text-sm">Kunne ikke hente fullførte prøver.</p>';
+                return;
+            }
+            const prover = await resp.json();
+            if (!prover.length) {
+                container.innerHTML = '<p class="text-bark-400 text-sm italic">Ingen fullførte prøver.</p>';
+                return;
+            }
+            container.innerHTML = prover.map(p => {
+                const fullfortDato = p.fullfort_dato ? new Date(p.fullfort_dato).toLocaleDateString('no-NO') : '-';
+                const navnEsc = (p.navn || '').replace(/'/g, "\\'");
+                return `
+                    <div class="flex items-center justify-between bg-bark-50 border border-bark-200 rounded p-3">
+                        <div class="text-sm">
+                            <p class="font-medium text-bark-800">${p.navn || 'Uten navn'}</p>
+                            <p class="text-xs text-bark-500">${p.klubb_navn || 'Ukjent klubb'} · Fullført ${fullfortDato} av ${p.fullfort_av_navn || p.fullfort_av || '?'}</p>
+                        </div>
+                        <button onclick="reverserFullfortProve('${p.id}', '${navnEsc}')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded">Reverser</button>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            container.innerHTML = `<p class="text-red-500 text-sm">Feil: ${err.message}</p>`;
+        }
+    }
+
+    async function reverserFullfortProve(proveId, proveNavn) {
+        if (!confirm(`Reverser fullført-status på "${proveNavn}"?\n\nDette setter prøven tilbake til status='planlagt' og fjerner prøverapport-snapshotten fra klubbens dokumentarkiv.\n\nVK-bedømminger som ble låst ved fullføring forblir låst — admin må eventuelt endre dem manuelt.`)) return;
+        try {
+            const token = localStorage.getItem('fuglehund_token');
+            const resp = await fetch(`/api/superadmin/prover/${proveId}/reverser-fullfort`, {
+                method: 'POST',
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (resp.ok) {
+                alert('Fullført-status reversert.');
+                lastFullforteProver();
+                if (typeof loadProver === 'function') loadProver();
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                alert(err.error || 'Kunne ikke reversere');
+            }
+        } catch (err) {
+            alert('Nettverksfeil: ' + err.message);
+        }
+    }
+
     // ========================================
     // UTVIDET BRUKEROVERSIKT
     // ========================================
@@ -4926,6 +4998,7 @@ Med vennlig hilsen,
         loadSmsStats(),
         loadBackups(),
         loadProver(),
+        lastFullforteProver(),
         loadKlubberStats(),
         loadFkfDommere(),
         loadKlubbForesporsel(),

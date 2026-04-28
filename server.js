@@ -8391,6 +8391,80 @@ app.post("/api/prover/:id/fullfor", requireAdmin, async (c) => {
   }
 });
 
+// Reverser fullført prøve — KUN superadmin. Setter status tilbake til
+// 'planlagt', fjerner fullfort_dato/av, og sletter prøverapport-
+// snapshot fra klubb_dokumenter. VK-bedømminger som ble satt til
+// 'fullfort' ved fullføring forblir 'fullfort' — admin må eventuelt
+// endre dem manuelt hvis live-rangering skal startes på nytt.
+app.post("/api/superadmin/prover/:id/reverser-fullfort", requireAuth, async (c) => {
+  try {
+    const bruker = c.get("bruker");
+    if (!hasAnyRole(bruker.rolle, ["superadmin"])) {
+      return c.json({ error: "Krever superadmin-tilgang" }, 403);
+    }
+
+    const id = c.req.param("id");
+    const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+    if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+    if (prove.status !== 'fullfort') {
+      return c.json({ error: "Prøven er ikke markert som fullført" }, 400);
+    }
+
+    autoBackup("prove_reversert");
+
+    const reverser = db.transaction(() => {
+      db.prepare(`
+        UPDATE prover SET status = 'planlagt', fullfort_dato = NULL, fullfort_av = NULL
+        WHERE id = ?
+      `).run(id);
+
+      // Slett prøverapport-snapshot fra klubb_dokumenter
+      db.prepare(`
+        DELETE FROM klubb_dokumenter
+        WHERE klubb_id = ? AND dokument_type = 'prove_fullfort_snapshot'
+          AND innhold_json LIKE ?
+      `).run(prove.klubb_id, `%"prove_id":"${id}"%`);
+    });
+    reverser();
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "prove_fullfort_reversert",
+      JSON.stringify({
+        id, navn: prove.navn, klubb_id: prove.klubb_id,
+        reversert_av: bruker.telefon,
+        opprinnelig_fullfort_av: prove.fullfort_av,
+        opprinnelig_fullfort_dato: prove.fullfort_dato
+      })
+    );
+
+    return c.json({ success: true, message: "Fullført-status reversert" });
+  } catch (err) {
+    console.error("Feil ved reversering:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// List alle fullførte prøver — KUN superadmin (for reverserings-UI)
+app.get("/api/superadmin/prover/fullforte", requireAuth, (c) => {
+  const bruker = c.get("bruker");
+  if (!hasAnyRole(bruker.rolle, ["superadmin"])) {
+    return c.json({ error: "Krever superadmin-tilgang" }, 403);
+  }
+
+  const rows = db.prepare(`
+    SELECT p.id, p.navn, p.start_dato, p.slutt_dato, p.fullfort_dato, p.fullfort_av,
+           p.klubb_id, k.navn AS klubb_navn,
+           b.fornavn || ' ' || b.etternavn AS fullfort_av_navn
+    FROM prover p
+    LEFT JOIN klubber k ON k.id = p.klubb_id
+    LEFT JOIN brukere b ON b.telefon = p.fullfort_av
+    WHERE p.status = 'fullfort'
+    ORDER BY p.fullfort_dato DESC
+  `).all();
+
+  return c.json(rows);
+});
+
 // Kanseller prøve — atomisk sletting av alle prøve-relaterte tabeller pluss
 // kv_store-nøkler. Krever at admin skriver prøvenavnet for å bekrefte og
 // blokkerer hvis det finnes betalte beløp som ikke er refundert. Krever

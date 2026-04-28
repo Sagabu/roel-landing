@@ -7903,6 +7903,11 @@ app.put("/api/prover/:id", requireProveAdmin, async (c) => {
       return c.json({ error: "Prøve ikke funnet" }, 404);
     }
 
+    // Fullførte prøver er låst — admin må først reversere via superadmin
+    if (existing.status === 'fullfort') {
+      return c.json({ error: "Prøven er fullført — kan ikke endres" }, 400);
+    }
+
     const fields = ["navn", "sted", "start_dato", "slutt_dato", "klubb_id", "proveleder_telefon", "proveleder_navn", "nkkrep_telefon", "nkkrep_navn", "nkkvara_telefon", "nkkvara_navn", "dvk_telefon", "dvk_navn", "status", "prove_type", "arrangor_navn"];
     const sets = [];
     const vals = [];
@@ -8110,7 +8115,7 @@ app.get("/api/prover/:id/slett-forhandsvisning", requireProveAdmin, (c) => {
 
 // Marker en vipps-mottaker som refundert (admin har refundert utenfor systemet,
 // f.eks. via Vipps Merchant Portal eller bankoverføring)
-app.post("/api/vipps-mottakere/:id/refunder", requireAdmin, async (c) => {
+app.post("/api/vipps-mottakere/:id/refunder", requireAuth, async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const body = await c.req.json();
@@ -8123,6 +8128,9 @@ app.post("/api/vipps-mottakere/:id/refunder", requireAdmin, async (c) => {
       WHERE m.id = ?
     `).get(id);
     if (!mottaker) return c.json({ error: "Vipps-mottaker ikke funnet" }, 404);
+    if (!harProveAdmin(bruker, mottaker.prove_id)) {
+      return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+    }
     if (mottaker.status !== 'betalt') {
       return c.json({ error: "Kan kun refundere mottakere med status 'betalt'" }, 400);
     }
@@ -8161,7 +8169,7 @@ app.post("/api/vipps-mottakere/:id/refunder", requireAdmin, async (c) => {
 });
 
 // Marker en jegermiddag-påmelding som refundert
-app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAdmin, async (c) => {
+app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAuth, async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const body = await c.req.json();
@@ -8169,6 +8177,9 @@ app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAdmin, async (c) =>
 
     const pamelding = db.prepare("SELECT * FROM jegermiddag_pameldinger WHERE id = ?").get(id);
     if (!pamelding) return c.json({ error: "Jegermiddag-påmelding ikke funnet" }, 404);
+    if (!harProveAdmin(bruker, pamelding.prove_id)) {
+      return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+    }
     if (!pamelding.betalt) {
       return c.json({ error: "Kan kun refundere påmeldinger som er betalt" }, 400);
     }
@@ -8208,7 +8219,7 @@ app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAdmin, async (c) =>
 
 // Logg manuell betaling for en vipps-mottaker (deltakeren har betalt
 // utenfor Vipps-app: kontant, bank, vipps direkte mellom personer osv.)
-app.post("/api/vipps-mottakere/:id/manuell-betaling", requireAdmin, async (c) => {
+app.post("/api/vipps-mottakere/:id/manuell-betaling", requireAuth, async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const body = await c.req.json();
@@ -8221,6 +8232,9 @@ app.post("/api/vipps-mottakere/:id/manuell-betaling", requireAdmin, async (c) =>
       WHERE m.id = ?
     `).get(id);
     if (!mottaker) return c.json({ error: "Vipps-mottaker ikke funnet" }, 404);
+    if (!harProveAdmin(bruker, mottaker.prove_id)) {
+      return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+    }
     if (mottaker.status !== 'venter') {
       return c.json({ error: "Kan kun logge manuell betaling på status 'venter'" }, 400);
     }
@@ -8256,12 +8270,20 @@ app.post("/api/vipps-mottakere/:id/manuell-betaling", requireAdmin, async (c) =>
 });
 
 // Kanseller en vipps-mottaker (deltakeren skal ikke betale)
-app.post("/api/vipps-mottakere/:id/kanseller", requireAdmin, async (c) => {
+app.post("/api/vipps-mottakere/:id/kanseller", requireAuth, async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const bruker = c.get("bruker");
-    const m = db.prepare("SELECT id, status, foresporsel_id FROM vipps_mottakere WHERE id = ?").get(id);
+    const m = db.prepare(`
+      SELECT m.id, m.status, m.foresporsel_id, f.prove_id
+      FROM vipps_mottakere m
+      JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+      WHERE m.id = ?
+    `).get(id);
     if (!m) return c.json({ error: "Vipps-mottaker ikke funnet" }, 404);
+    if (!harProveAdmin(bruker, m.prove_id)) {
+      return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+    }
     if (m.status !== 'venter') return c.json({ error: "Kan kun kansellere status 'venter'" }, 400);
     db.prepare("UPDATE vipps_mottakere SET status = 'kansellert', notert_av = ? WHERE id = ?").run(bruker.telefon, id);
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
@@ -8274,13 +8296,16 @@ app.post("/api/vipps-mottakere/:id/kanseller", requireAdmin, async (c) => {
 });
 
 // Logg manuell betaling for jegermiddag
-app.post("/api/jegermiddag-pameldinger/:id/manuell-betaling", requireAdmin, async (c) => {
+app.post("/api/jegermiddag-pameldinger/:id/manuell-betaling", requireAuth, async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const body = await c.req.json();
     const bruker = c.get("bruker");
     const p = db.prepare("SELECT * FROM jegermiddag_pameldinger WHERE id = ?").get(id);
     if (!p) return c.json({ error: "Jegermiddag-påmelding ikke funnet" }, 404);
+    if (!harProveAdmin(bruker, p.prove_id)) {
+      return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+    }
     if (p.betalt) return c.json({ error: "Allerede betalt" }, 400);
 
     db.prepare(`
@@ -8306,12 +8331,15 @@ app.post("/api/jegermiddag-pameldinger/:id/manuell-betaling", requireAdmin, asyn
 });
 
 // Kanseller jegermiddag-påmelding (ikke møtt eller fritak)
-app.post("/api/jegermiddag-pameldinger/:id/kanseller", requireAdmin, async (c) => {
+app.post("/api/jegermiddag-pameldinger/:id/kanseller", requireAuth, async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const bruker = c.get("bruker");
     const p = db.prepare("SELECT * FROM jegermiddag_pameldinger WHERE id = ?").get(id);
     if (!p) return c.json({ error: "Jegermiddag-påmelding ikke funnet" }, 404);
+    if (!harProveAdmin(bruker, p.prove_id)) {
+      return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+    }
     db.prepare("UPDATE jegermiddag_pameldinger SET status = 'avmeldt', betalt_av_admin = ? WHERE id = ?").run(bruker.telefon, id);
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       "jegermiddag_kansellert", JSON.stringify({ pamelding_id: id, av: bruker.telefon, prove_id: p.prove_id })

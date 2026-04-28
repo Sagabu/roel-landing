@@ -19801,6 +19801,42 @@
         function renderFullforForhandsvisning(data) {
             const innhold = document.getElementById('fullforInnhold');
 
+            // Signatur-status — kun synlig ved digital bedømming. Hvis ufullstendig,
+            // blokkerer fullføring (server håndhever også).
+            const sig = data.signatur_status || {};
+            const signaturHtml = sig.kreves ? `
+                <div class="${data.blokkert ? 'bg-red-50 border-red-300' : 'bg-emerald-50 border-emerald-200'} border rounded-lg p-4 mb-4">
+                    <p class="font-semibold ${data.blokkert ? 'text-red-900' : 'text-emerald-900'} mb-2">
+                        Signatur-status: ${sig.partier_ferdig_signert} av ${sig.partier_totalt} partier ferdig signert
+                    </p>
+                    ${data.blokkert ? `
+                        <p class="text-sm text-red-800 mb-2">
+                            Alle partier må være signert av <strong>både dommer og NKK-rep</strong> før digital prøve kan fullføres.
+                        </p>
+                    ` : `
+                        <p class="text-sm text-emerald-800 mb-2">Alle partier er ferdig signert. Prøven kan fullføres.</p>
+                    `}
+                    ${(sig.detaljer || []).length > 0 ? `
+                        <ul class="text-xs space-y-1 mt-2 max-h-40 overflow-y-auto">
+                            ${sig.detaljer.map(d => `
+                                <li class="flex items-center gap-2">
+                                    <span class="${d.ferdig ? 'text-emerald-600' : 'text-red-600'} font-mono">${d.ferdig ? '✓' : '✗'}</span>
+                                    <span class="${d.ferdig ? 'text-bark-700' : 'text-red-900'}">${d.parti}</span>
+                                    <span class="text-bark-500 text-[10px]">
+                                        ${d.dommer_signert ? '🖊 dommer' : '○ dommer mangler'} ·
+                                        ${d.nkkrep_signert ? '🖊 NKK-rep' : '○ NKK-rep mangler'}
+                                    </span>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    ` : ''}
+                </div>
+            ` : `
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
+                    <p>Manuell bedømming — signatur-krav gjelder ikke (bedømming skjer utenfor systemet).</p>
+                </div>
+            `;
+
             const vippsHtml = data.vipps_ventende.length > 0 ? `
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
                     <p class="font-semibold text-amber-900 mb-2">${data.vipps_ventende.length} ventende vipps-betaling${data.vipps_ventende.length === 1 ? '' : 'er'}</p>
@@ -19863,13 +19899,15 @@
                 </div>
             ` : '';
 
-            const ingenOppgaver = data.vipps_ventende.length === 0 &&
+            const ingenOppgaver = !data.blokkert &&
+                                  data.vipps_ventende.length === 0 &&
                                   data.jegermiddag_ikke_betalt.length === 0 &&
                                   data.kritikk_utkast.length === 0 &&
                                   data.aktive_bedomminger.length === 0 &&
                                   data.partier_med_signert_rapport === data.partier_totalt;
 
             innhold.innerHTML = `
+                ${signaturHtml}
                 ${ingenOppgaver ? `
                     <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 text-sm text-emerald-900">
                         <p>✓ Ingen gjenstående oppgaver. Prøven kan fullføres uten videre handling.</p>
@@ -19885,7 +19923,10 @@
                 </div>
                 <div class="flex gap-2 justify-end">
                     <button onclick="lukkFullforModal()" class="px-4 py-2 bg-bark-200 hover:bg-bark-300 text-bark-800 rounded font-medium">Avbryt</button>
-                    <button onclick="bekreftFullforProve()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium">Marker som fullført</button>
+                    <button onclick="bekreftFullforProve()" ${data.blokkert ? 'disabled' : ''}
+                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium disabled:bg-emerald-300 disabled:cursor-not-allowed">
+                        ${data.blokkert ? 'Mangler signaturer' : 'Marker som fullført'}
+                    </button>
                 </div>
             `;
         }

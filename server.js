@@ -1796,6 +1796,55 @@ const requireAdmin = async (c, next) => {
   await next();
 };
 
+// Sjekk at innlogget bruker har admin-tilgang til en SPESIFIKK prøve.
+// Adminrettigheter er per prøve — en proveleder på prøve A har ikke
+// automatisk tilgang til prøve B selv om begge er i samme klubb.
+// Tilgang gis hvis brukeren er:
+//   1) superadmin (overstyrer alt)
+//   2) prøveleder, NKK-rep eller NKK-vara på den spesifikke prøven
+//   3) team-medlem med rolle 'admin' eller 'sekretariat' på den prøven
+function harProveAdmin(payload, proveId) {
+  if (!payload || !proveId) return false;
+  if (hasAnyRole(payload.rolle, ["superadmin"])) return true;
+  const prove = db.prepare(`
+    SELECT proveleder_telefon, nkkrep_telefon, nkkvara_telefon
+    FROM prover WHERE id = ?
+  `).get(proveId);
+  if (!prove) return false;
+  if (prove.proveleder_telefon === payload.telefon) return true;
+  if (prove.nkkrep_telefon === payload.telefon) return true;
+  if (prove.nkkvara_telefon === payload.telefon) return true;
+  const team = db.prepare(`
+    SELECT 1 FROM prove_team
+    WHERE prove_id = ? AND telefon = ? AND rolle IN ('admin', 'sekretariat')
+  `).get(proveId, payload.telefon);
+  return !!team;
+}
+
+// Middleware: krever per-prøve admin-tilgang. Henter prøve-ID fra
+// route-param 'id' eller 'proveId'. Avviser med 403 hvis brukeren ikke
+// har tilgang til akkurat den prøven (selv om de er admin på en annen).
+const requireProveAdmin = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+  }
+  const token = authHeader.slice(7);
+  const payload = verifyToken(token);
+  if (!payload) {
+    return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+  }
+  const proveId = c.req.param("id") || c.req.param("proveId");
+  if (!proveId) {
+    return c.json({ error: "Mangler prøve-ID i URL" }, 400);
+  }
+  if (!harProveAdmin(payload, proveId)) {
+    return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+  }
+  c.set("bruker", payload);
+  await next();
+};
+
 // Auth middleware - krever dommer-rolle
 const requireDommer = async (c, next) => {
   const authHeader = c.req.header("Authorization");
@@ -2243,7 +2292,7 @@ app.post("/api/sms/proveleder-invitasjon", async (c) => {
 // ============================================
 
 // Sjekk om SMS allerede er sendt for en rolle
-app.get("/api/prover/:id/rolle-sms/:rolle", requireAdmin, (c) => {
+app.get("/api/prover/:id/rolle-sms/:rolle", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
   const rolle = c.req.param("rolle");
 
@@ -2265,7 +2314,7 @@ app.get("/api/prover/:id/rolle-sms/:rolle", requireAdmin, (c) => {
 });
 
 // Hent alle sendte rolle-SMS for en prøve
-app.get("/api/prover/:id/rolle-sms", requireAdmin, (c) => {
+app.get("/api/prover/:id/rolle-sms", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   const sendte = db.prepare(`
@@ -2284,7 +2333,7 @@ app.get("/api/prover/:id/rolle-sms", requireAdmin, (c) => {
 });
 
 // Send SMS-varsling for en rolle
-app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
+app.post("/api/prover/:id/rolle-sms", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const user = c.get("user");
@@ -2371,7 +2420,7 @@ app.post("/api/prover/:id/rolle-sms", requireAdmin, async (c) => {
 // ============================================
 
 // Hent team-medlemmer for en prøve
-app.get("/api/prover/:id/team", requireAdmin, (c) => {
+app.get("/api/prover/:id/team", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   // Hent team-medlemmer fra prove_team tabellen
@@ -2444,7 +2493,7 @@ app.get("/api/prover/:id/team", requireAdmin, (c) => {
 });
 
 // Legg til team-medlem
-app.post("/api/prover/:id/team", requireAdmin, async (c) => {
+app.post("/api/prover/:id/team", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const user = c.get("user");
@@ -2519,7 +2568,7 @@ app.post("/api/prover/:id/team", requireAdmin, async (c) => {
 });
 
 // Fjern team-medlem
-app.delete("/api/prover/:id/team/:teamId", requireAdmin, (c) => {
+app.delete("/api/prover/:id/team/:teamId", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
   const teamId = c.req.param("teamId");
 
@@ -2535,7 +2584,7 @@ app.delete("/api/prover/:id/team/:teamId", requireAdmin, (c) => {
 });
 
 // Oppdater team-medlem rolle
-app.patch("/api/prover/:id/team/:teamId", requireAdmin, async (c) => {
+app.patch("/api/prover/:id/team/:teamId", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const teamId = c.req.param("teamId");
   const body = await c.req.json();
@@ -6814,7 +6863,7 @@ function validerLiveAdminRolle(proveId, parti) {
 }
 
 // Tildel dommer til parti
-app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
+app.post("/api/prover/:id/dommer-tildelinger", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const { parti, dommer_telefon, dommer_rolle, begrunnelse_type, begrunnelse } = body;
@@ -6889,7 +6938,7 @@ app.post("/api/prover/:id/dommer-tildelinger", requireAdmin, async (c) => {
 });
 
 // Fjern dommer-tildeling
-app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireAdmin, (c) => {
+app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
   const tildelingId = c.req.param("tildelingId");
   const result = db.prepare("DELETE FROM dommer_tildelinger WHERE id = ? AND prove_id = ?").run(tildelingId, proveId);
@@ -6954,7 +7003,7 @@ app.post("/api/dommere/opprett-manuelt", requireAdmin, async (c) => {
 });
 
 // Bulk-oppdater dommere for et parti (tillater tom array for å fjerne alle)
-app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireAdmin, async (c) => {
+app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const parti = c.req.param("parti");
   const body = await c.req.json();
@@ -7798,7 +7847,7 @@ app.post("/api/prover", requireAdmin, async (c) => {
 });
 
 // Oppdater prøve
-app.put("/api/prover/:id", requireAdmin, async (c) => {
+app.put("/api/prover/:id", requireProveAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
@@ -7935,7 +7984,7 @@ app.get("/api/prover/:id/logo", (c) => {
 // Forhåndsvisning før prøvesletting — teller alt som vil bli slettet,
 // flagger ubetalte vipps-forespørsler som blokkerer sletting.
 // Klubben kan se hva som forsvinner og hva som må refunderes først.
-app.get("/api/prover/:id/slett-forhandsvisning", requireAdmin, (c) => {
+app.get("/api/prover/:id/slett-forhandsvisning", requireProveAdmin, (c) => {
   const id = c.req.param("id");
   const prove = db.prepare("SELECT id, navn FROM prover WHERE id = ?").get(id);
   if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
@@ -8232,7 +8281,7 @@ app.post("/api/jegermiddag-pameldinger/:id/kanseller", requireAdmin, async (c) =
 // klubb-admin bør håndtere før prøven låses. Blokkerer ikke fullføring,
 // men oppfordrer til opprydding (vipps-betalinger, kritikk-utkast,
 // rapporter).
-app.get("/api/prover/:id/fullfor-forhandsvisning", requireAdmin, (c) => {
+app.get("/api/prover/:id/fullfor-forhandsvisning", requireProveAdmin, (c) => {
   const id = c.req.param("id");
   const prove = db.prepare("SELECT id, navn, status FROM prover WHERE id = ?").get(id);
   if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
@@ -8279,9 +8328,54 @@ app.get("/api/prover/:id/fullfor-forhandsvisning", requireAdmin, (c) => {
     WHERE prove_id = ? AND signed_at IS NOT NULL
   `).get(id)?.n || 0;
 
+  // Sjekk bedømmingsmodus — for digital bedømming kreves signaturer fra
+  // alle dommere og NKK-rep før prøven kan fullføres. Manuell bedømming
+  // har ikke samme krav siden bedømmingen skjer utenfor systemet.
+  const config = db.prepare("SELECT manuell_bedomming FROM prove_config WHERE prove_id = ?").get(id);
+  const erDigital = !(config?.manuell_bedomming === 1);
+
+  // Bygg signatur-status per parti (gjelder kun ved digital bedømming).
+  // Et parti er ferdig signert når det finnes minst én rad i parti_signaturer
+  // for partiet med BÅDE dommer_signert_at og nkkrep_signert_at satt.
+  let signaturStatus = null;
+  if (erDigital) {
+    const partiListe = db.prepare("SELECT navn FROM partier WHERE prove_id = ? ORDER BY navn").all(id);
+    const detaljer = partiListe.map(p => {
+      const sig = db.prepare(`
+        SELECT
+          MAX(CASE WHEN dommer_signert_at IS NOT NULL THEN 1 ELSE 0 END) AS dommer_signert,
+          MAX(CASE WHEN nkkrep_signert_at IS NOT NULL THEN 1 ELSE 0 END) AS nkkrep_signert
+        FROM parti_signaturer WHERE prove_id = ? AND parti = ?
+      `).get(id, p.navn);
+      return {
+        parti: p.navn,
+        dommer_signert: sig?.dommer_signert === 1,
+        nkkrep_signert: sig?.nkkrep_signert === 1,
+        ferdig: sig?.dommer_signert === 1 && sig?.nkkrep_signert === 1
+      };
+    });
+    const ferdig = detaljer.filter(d => d.ferdig).length;
+    signaturStatus = {
+      kreves: true,
+      partier_totalt: partiListe.length,
+      partier_ferdig_signert: ferdig,
+      detaljer
+    };
+  } else {
+    signaturStatus = { kreves: false };
+  }
+
+  // Blokker fullføring hvis digital og signaturer ikke er komplette
+  const blokkertAvSignaturer = signaturStatus.kreves &&
+    signaturStatus.partier_totalt > 0 &&
+    signaturStatus.partier_ferdig_signert < signaturStatus.partier_totalt;
+
   return c.json({
     id: prove.id,
     navn: prove.navn,
+    bedomming_digital: erDigital,
+    blokkert: blokkertAvSignaturer,
+    signatur_status: signaturStatus,
     vipps_ventende: vippsVentende,
     jegermiddag_ikke_betalt: jegerIkkeBetalt,
     kritikk_utkast: kritikkUtkast,
@@ -8294,7 +8388,7 @@ app.get("/api/prover/:id/fullfor-forhandsvisning", requireAdmin, (c) => {
 // Marker prøve som fullført — låser prøven, lagrer prøverapport-snapshot
 // i klubb_dokumenter, setter alle aktive vk_bedomming til 'fullfort' og
 // kansellerer pending SMS. Kan kun reverseres av superadmin.
-app.post("/api/prover/:id/fullfor", requireAdmin, async (c) => {
+app.post("/api/prover/:id/fullfor", requireProveAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     const bruker = c.get("bruker");
@@ -8302,6 +8396,34 @@ app.post("/api/prover/:id/fullfor", requireAdmin, async (c) => {
     const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
     if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
     if (prove.status === 'fullfort') return c.json({ error: "Prøven er allerede fullført" }, 409);
+
+    // Ved digital bedømming: krev at alle partier har komplett signatur
+    // (både dommer og NKK-rep). Manuell bedømming har ikke samme krav
+    // fordi bedømming skjer utenfor systemet og signering ikke er en
+    // del av flyten her.
+    const config = db.prepare("SELECT manuell_bedomming FROM prove_config WHERE prove_id = ?").get(id);
+    const erDigital = !(config?.manuell_bedomming === 1);
+    if (erDigital) {
+      const partiListe = db.prepare("SELECT navn FROM partier WHERE prove_id = ?").all(id);
+      const usignerte = [];
+      for (const p of partiListe) {
+        const sig = db.prepare(`
+          SELECT
+            MAX(CASE WHEN dommer_signert_at IS NOT NULL THEN 1 ELSE 0 END) AS dommer_signert,
+            MAX(CASE WHEN nkkrep_signert_at IS NOT NULL THEN 1 ELSE 0 END) AS nkkrep_signert
+          FROM parti_signaturer WHERE prove_id = ? AND parti = ?
+        `).get(id, p.navn);
+        if (!(sig?.dommer_signert === 1 && sig?.nkkrep_signert === 1)) {
+          usignerte.push(p.navn);
+        }
+      }
+      if (usignerte.length > 0) {
+        return c.json({
+          error: "Alle partier må være signert av både dommer og NKK-rep før digital prøve kan fullføres.",
+          usignerte_partier: usignerte
+        }, 400);
+      }
+    }
 
     autoBackup("prove_fullfort");
 
@@ -8490,7 +8612,7 @@ const KANSELLER_ARSAKER_GYLDIGE = new Set([
   'flyttet_ny_dato', 'feilopprettet', 'annet'
 ]);
 
-app.delete("/api/prover/:id", requireAdmin, async (c) => {
+app.delete("/api/prover/:id", requireProveAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     const bruker = c.get("bruker");
@@ -8498,6 +8620,15 @@ app.delete("/api/prover/:id", requireAdmin, async (c) => {
 
     const existing = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
     if (!existing) return c.json({ error: "Prøve ikke funnet" }, 404);
+
+    // Fullførte prøver kan ikke kanselleres — er endelig og bevares
+    // som klubbens historikk. Hvis prøven faktisk må fjernes (f.eks. i en
+    // ekstrem nødsituasjon) må superadmin først reversere fullført-status.
+    if (existing.status === 'fullfort') {
+      return c.json({
+        error: "Fullførte prøver kan ikke kanselleres. Prøven er låst som historikk for klubben."
+      }, 400);
+    }
 
     // Krev at admin skriver eksakt prøvenavn for å bekrefte
     if (body.confirm_navn !== existing.navn) {
@@ -8809,7 +8940,7 @@ app.get("/api/prover/:id/pameldinger", (c) => {
 // ============================================
 // MASSE-SMS TIL DELTAKERE
 // ============================================
-app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
+app.post("/api/prover/:id/sms/masse", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
@@ -8955,7 +9086,7 @@ app.post("/api/prover/:id/sms/masse", requireAdmin, async (c) => {
 });
 
 // Hent SMS-historikk for en prøve (for prøvedokumenter)
-app.get("/api/prover/:id/sms-historikk", requireAdmin, (c) => {
+app.get("/api/prover/:id/sms-historikk", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
   const rows = db.prepare(`
     SELECT id, retning, fra, til, type, melding, status, mottaker_navn, created_at
@@ -9384,7 +9515,7 @@ app.get("/api/prover/:proveId/avmeldinger", (c) => {
 });
 
 // Behandle avmelding (prøveledelse godkjenner/avviser refusjon)
-app.put("/api/prover/:proveId/avmeldinger/:id", requireAdmin, async (c) => {
+app.put("/api/prover/:proveId/avmeldinger/:id", requireProveAdmin, async (c) => {
   const proveId = c.req.param("proveId");
   const id = c.req.param("id");
   const body = await c.req.json();
@@ -9435,7 +9566,7 @@ app.get("/api/mine-pameldinger", requireAuth, (c) => {
 });
 
 // Oppdater påmelding (admin)
-app.put("/api/prover/:proveId/pameldinger/:id", requireAdmin, async (c) => {
+app.put("/api/prover/:proveId/pameldinger/:id", requireProveAdmin, async (c) => {
   const proveId = c.req.param("proveId");
   const id = c.req.param("id");
   const body = await c.req.json();
@@ -9510,7 +9641,7 @@ app.get("/api/prover/:id/config", (c) => {
 });
 
 // Oppdater prøve-konfigurasjon (admin)
-app.put("/api/prover/:id/config", requireAdmin, async (c) => {
+app.put("/api/prover/:id/config", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
 
@@ -9591,7 +9722,7 @@ app.get("/api/prover/:id/jegermiddag", (c) => {
 });
 
 // Oppdater jegermiddag-konfigurasjon (admin)
-app.put("/api/prover/:id/jegermiddag/config", requireAdmin, async (c) => {
+app.put("/api/prover/:id/jegermiddag/config", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
 
@@ -9622,7 +9753,7 @@ app.put("/api/prover/:id/jegermiddag/config", requireAdmin, async (c) => {
 });
 
 // Hent alle jegermiddag-påmeldinger for en prøve (admin)
-app.get("/api/prover/:id/jegermiddag/pameldinger", requireAdmin, (c) => {
+app.get("/api/prover/:id/jegermiddag/pameldinger", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   const pameldinger = db.prepare(`
@@ -9829,7 +9960,7 @@ app.get("/api/prover/:id/jegermiddag/min-pamelding", requireAuth, (c) => {
 });
 
 // Oppdater betalingsstatus for jegermiddag-påmelding (admin)
-app.put("/api/prover/:proveId/jegermiddag/pameldinger/:id/betaling", requireAdmin, async (c) => {
+app.put("/api/prover/:proveId/jegermiddag/pameldinger/:id/betaling", requireProveAdmin, async (c) => {
   const proveId = c.req.param("proveId");
   const id = c.req.param("id");
   const body = await c.req.json();
@@ -9858,7 +9989,7 @@ app.put("/api/prover/:proveId/jegermiddag/pameldinger/:id/betaling", requireAdmi
 });
 
 // Eksporter jegermiddag-liste til Excel (admin)
-app.get("/api/prover/:id/jegermiddag/eksport", requireAdmin, (c) => {
+app.get("/api/prover/:id/jegermiddag/eksport", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   const prove = db.prepare("SELECT navn FROM prover WHERE id = ?").get(proveId);
@@ -9906,7 +10037,7 @@ app.get("/api/prover/:id/jegermiddag/eksport", requireAdmin, (c) => {
 // ============================================
 
 // Registrer fratatt aversjonsbevis
-app.post("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, async (c) => {
+app.post("/api/prover/:id/fratatte-aversjonsbevis", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
@@ -9973,7 +10104,7 @@ app.post("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, async (c) => {
 });
 
 // Hent alle fratatte aversjonsbevis for en prøve
-app.get("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, (c) => {
+app.get("/api/prover/:id/fratatte-aversjonsbevis", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   const fratatte = db.prepare(`
@@ -9988,7 +10119,7 @@ app.get("/api/prover/:id/fratatte-aversjonsbevis", requireAdmin, (c) => {
 });
 
 // Slett registrering av fratatt aversjonsbevis
-app.delete("/api/prover/:proveId/fratatte-aversjonsbevis/:id", requireAdmin, (c) => {
+app.delete("/api/prover/:proveId/fratatte-aversjonsbevis/:id", requireProveAdmin, (c) => {
   const proveId = c.req.param("proveId");
   const id = c.req.param("id");
 
@@ -10012,7 +10143,7 @@ app.delete("/api/prover/:proveId/fratatte-aversjonsbevis/:id", requireAdmin, (c)
 });
 
 // Eksporter NJFF-rapport (Excel)
-app.get("/api/prover/:id/fratatte-aversjonsbevis/eksport", requireAdmin, (c) => {
+app.get("/api/prover/:id/fratatte-aversjonsbevis/eksport", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   const prove = db.prepare("SELECT navn, start_dato FROM prover WHERE id = ?").get(proveId);
@@ -10053,7 +10184,7 @@ app.get("/api/prover/:id/fratatte-aversjonsbevis/eksport", requireAdmin, (c) => 
 });
 
 // Marker som meldt til NJFF
-app.put("/api/prover/:proveId/fratatte-aversjonsbevis/:id/meldt", requireAdmin, async (c) => {
+app.put("/api/prover/:proveId/fratatte-aversjonsbevis/:id/meldt", requireProveAdmin, async (c) => {
   const proveId = c.req.param("proveId");
   const id = c.req.param("id");
 
@@ -10067,7 +10198,7 @@ app.put("/api/prover/:proveId/fratatte-aversjonsbevis/:id/meldt", requireAdmin, 
 });
 
 // Hent hunder med uønsket adferd fra kritikker (for NJFF-visning)
-app.get("/api/prover/:id/uonsket-adferd", requireAdmin, (c) => {
+app.get("/api/prover/:id/uonsket-adferd", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   // Hent kritikker med uønsket adferd fra denne prøven
@@ -10123,7 +10254,7 @@ app.get("/api/prover/:id/uonsket-adferd", requireAdmin, (c) => {
 // ============================================
 
 // Utfør trekning for en prøve
-app.post("/api/prover/:id/trekning", requireAdmin, async (c) => {
+app.post("/api/prover/:id/trekning", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
@@ -10303,7 +10434,7 @@ app.get("/api/prover/:id/partilister", (c) => {
 });
 
 // Admin-versjon med telefonnumre (krever autentisering)
-app.get("/api/prover/:id/partilister/admin", requireAdmin, (c) => {
+app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
 
   // Hent partier
@@ -10523,7 +10654,7 @@ function syncPameldingerForProve(proveId) {
 }
 
 // Lagre partilister (erstatter alle eksisterende for prøven)
-app.put("/api/prover/:id/partilister", requireAdmin, async (c) => {
+app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const { partier } = body;
@@ -10810,7 +10941,7 @@ app.get("/api/prover/:id/venteliste", (c) => {
 });
 
 // Lagre venteliste
-app.put("/api/prover/:id/venteliste", requireAdmin, async (c) => {
+app.put("/api/prover/:id/venteliste", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const { venteliste } = body;
@@ -15146,7 +15277,7 @@ app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
 });
 
 // Lagre/oppdater VK-bedømming
-app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
+app.put("/api/vk-bedomming/:proveId/:parti", requireAuth, async (c) => {
   try {
     // Blokker endring av VK-bedømming på fullført prøve. Dette er hoved-
     // endepunktet dommer-vk.html bruker for live-rangering — fullført låser
@@ -15263,7 +15394,7 @@ app.put("/api/vk-bedomming/:proveId/:parti", async (c) => {
 // Brukes av live_admin når partiet er ferdig "bedømt" for live-visningens
 // skyld. Setter vk_bedomming.status='avsluttet' og markerer evt. lagrede
 // kritikk-utkast som intern_kun=1 så de aldri kan sendes til NKK.
-app.post("/api/vk-bedomming/:proveId/:parti/avslutt", async (c) => {
+app.post("/api/vk-bedomming/:proveId/:parti/avslutt", requireAuth, async (c) => {
   try {
     const { proveId, parti } = c.req.param();
 
@@ -15313,7 +15444,7 @@ app.post("/api/vk-bedomming/:proveId/:parti/avslutt", async (c) => {
 });
 
 // Send inn VK-bedømming for godkjenning
-app.post("/api/vk-bedomming/:proveId/:parti/send-inn", async (c) => {
+app.post("/api/vk-bedomming/:proveId/:parti/send-inn", requireAuth, async (c) => {
   try {
     const { proveId, parti } = c.req.param();
 

@@ -19308,6 +19308,11 @@
                             <button onclick="event.stopPropagation(); velgProve('${prove.id}')" class="text-forest-600 hover:text-forest-800 font-medium text-sm mr-3">
                                 Administrer
                             </button>
+                            ${prove.status !== 'fullfort' ? `
+                            <button onclick="event.stopPropagation(); fullforProve('${prove.id}', '${(prove.navn || prove.name || '').replace(/'/g, "\\'")}')" class="text-emerald-600 hover:text-emerald-800 text-sm font-medium mr-3" title="Marker prøven som fullført">
+                                Fullfør
+                            </button>
+                            ` : `<span class="text-emerald-700 text-xs font-medium mr-3" title="Prøven er fullført">✓ Fullført</span>`}
                             <button onclick="event.stopPropagation(); kansellerProve('${prove.id}', '${(prove.navn || prove.name || '').replace(/'/g, "\\'")}')" class="text-red-500 hover:text-red-700 text-sm flex items-center gap-1" title="Kanseller prøven">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -19756,6 +19761,241 @@
         function lukkSlettModal() {
             document.getElementById('slettProveModal').classList.add('hidden');
             slettProveAktivId = null;
+        }
+
+        // Marker som fullført — viser forhåndsvisning av gjenstående oppgaver
+        // (vipps-betalinger, kritikk-utkast, aktive bedømminger). Blokkerer
+        // ikke fullføring, men oppfordrer til opprydding.
+        let fullforAktivId = null;
+
+        async function fullforProve(proveId, proveNavn) {
+            fullforAktivId = proveId;
+            const modal = document.getElementById('fullforModal');
+            const innhold = document.getElementById('fullforInnhold');
+            document.getElementById('fullforTittel').textContent = `Marker prøve som fullført: ${proveNavn}`;
+            innhold.innerHTML = '<p class="text-bark-500 text-sm">Henter status...</p>';
+            modal.classList.remove('hidden');
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/fullfor-forhandsvisning`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    innhold.innerHTML = `<p class="text-red-600">${err.error || 'Kunne ikke hente forhåndsvisning'}</p>`;
+                    return;
+                }
+                const data = await resp.json();
+                renderFullforForhandsvisning(data);
+            } catch (err) {
+                innhold.innerHTML = `<p class="text-red-600">Nettverksfeil: ${err.message}</p>`;
+            }
+        }
+
+        function renderFullforForhandsvisning(data) {
+            const innhold = document.getElementById('fullforInnhold');
+
+            const vippsHtml = data.vipps_ventende.length > 0 ? `
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <p class="font-semibold text-amber-900 mb-2">${data.vipps_ventende.length} ventende vipps-betaling${data.vipps_ventende.length === 1 ? '' : 'er'}</p>
+                    <p class="text-xs text-amber-800 mb-3">Du kan rydde dem nå eller markere prøven som fullført og rydde dem senere.</p>
+                    <ul class="space-y-2">
+                        ${data.vipps_ventende.map(v => `
+                            <li class="flex items-center justify-between bg-white rounded px-3 py-2">
+                                <span class="text-sm text-bark-800">${v.deltaker_navn} <span class="text-bark-500">— kr ${v.belop}</span></span>
+                                <div class="flex gap-1">
+                                    <button onclick="apneManuellBetalingModal('vipps', ${v.id}, ${v.belop}, '${(v.deltaker_navn || '').replace(/'/g, "\\'")}')" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded">Logg manuell betaling</button>
+                                    <button onclick="markerKansellert('vipps', ${v.id}, '${(v.deltaker_navn || '').replace(/'/g, "\\'")}')" class="px-2 py-1 bg-bark-500 hover:bg-bark-600 text-white text-xs rounded">Kansellert</button>
+                                </div>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            ` : '';
+
+            const jegerHtml = data.jegermiddag_ikke_betalt.length > 0 ? `
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <p class="font-semibold text-amber-900 mb-2">${data.jegermiddag_ikke_betalt.length} jegermiddag-påmelding${data.jegermiddag_ikke_betalt.length === 1 ? '' : 'er'} ikke betalt</p>
+                    <ul class="space-y-2">
+                        ${data.jegermiddag_ikke_betalt.map(j => `
+                            <li class="flex items-center justify-between bg-white rounded px-3 py-2">
+                                <span class="text-sm text-bark-800">${j.navn || j.bruker_telefon} <span class="text-bark-500">— kr ${j.belop || 0}</span></span>
+                                <div class="flex gap-1">
+                                    <button onclick="apneManuellBetalingModal('jegermiddag', ${j.id}, ${j.belop || 0}, '${(j.navn || j.bruker_telefon || '').replace(/'/g, "\\'")}')" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded">Logg manuell betaling</button>
+                                    <button onclick="markerKansellert('jegermiddag', ${j.id}, '${(j.navn || j.bruker_telefon || '').replace(/'/g, "\\'")}')" class="px-2 py-1 bg-bark-500 hover:bg-bark-600 text-white text-xs rounded">Ikke møtt / Kansellert</button>
+                                </div>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            ` : '';
+
+            const kritikkHtml = data.kritikk_utkast.length > 0 ? `
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm">
+                    <p class="font-semibold text-blue-900 mb-1">${data.kritikk_utkast.length} kritikk-utkast er ikke sendt inn</p>
+                    <p class="text-blue-800 text-xs mb-2">Disse låses ved fullføring og kan ikke endres etterpå. Kontakt dommer hvis de skal ferdigstilles før fullføring.</p>
+                    <ul class="text-xs text-blue-900 space-y-1 max-h-32 overflow-y-auto">
+                        ${data.kritikk_utkast.slice(0, 10).map(k =>
+                            `<li>${k.dommer_navn || k.dommer_telefon} — ${k.parti || '?'} — ${k.hund_navn || k.regnr || 'ukjent hund'}</li>`
+                        ).join('')}
+                        ${data.kritikk_utkast.length > 10 ? `<li class="italic">… og ${data.kritikk_utkast.length - 10} til</li>` : ''}
+                    </ul>
+                </div>
+            ` : '';
+
+            const bedommingHtml = data.aktive_bedomminger.length > 0 ? `
+                <div class="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4 text-sm text-orange-900">
+                    <p class="font-semibold mb-1">${data.aktive_bedomminger.length} aktiv${data.aktive_bedomminger.length === 1 ? '' : 'e'} VK-bedømming${data.aktive_bedomminger.length === 1 ? '' : 'er'}</p>
+                    <p class="text-xs">Disse låses (status='fullfort') ved fullføring. Live-rangering på offentlig partiliste avsluttes.</p>
+                </div>
+            ` : '';
+
+            const rapportHtml = data.partier_totalt > 0 ? `
+                <div class="bg-bark-50 border border-bark-200 rounded-lg p-3 mb-4 text-sm text-bark-700">
+                    <p>${data.partier_med_signert_rapport} av ${data.partier_totalt} partier har signert rapport.</p>
+                    ${data.partier_med_signert_rapport < data.partier_totalt ? `<p class="text-xs mt-1">Resterende rapporter kan genereres etter fullføring eller registreres som "gjennomført utenfor systemet".</p>` : ''}
+                </div>
+            ` : '';
+
+            const ingenOppgaver = data.vipps_ventende.length === 0 &&
+                                  data.jegermiddag_ikke_betalt.length === 0 &&
+                                  data.kritikk_utkast.length === 0 &&
+                                  data.aktive_bedomminger.length === 0 &&
+                                  data.partier_med_signert_rapport === data.partier_totalt;
+
+            innhold.innerHTML = `
+                ${ingenOppgaver ? `
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4 text-sm text-emerald-900">
+                        <p>✓ Ingen gjenstående oppgaver. Prøven kan fullføres uten videre handling.</p>
+                    </div>
+                ` : ''}
+                ${bedommingHtml}
+                ${vippsHtml}
+                ${jegerHtml}
+                ${kritikkHtml}
+                ${rapportHtml}
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-900">
+                    <p><strong>Fullført er permanent.</strong> Kun systemansvarlig (superadmin) kan reversere. Klubben kan fortsatt se all data som arkiv.</p>
+                </div>
+                <div class="flex gap-2 justify-end">
+                    <button onclick="lukkFullforModal()" class="px-4 py-2 bg-bark-200 hover:bg-bark-300 text-bark-800 rounded font-medium">Avbryt</button>
+                    <button onclick="bekreftFullforProve()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium">Marker som fullført</button>
+                </div>
+            `;
+        }
+
+        async function bekreftFullforProve() {
+            const proveId = fullforAktivId;
+            if (!proveId) return;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(`/api/prover/${proveId}/fullfor`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    }
+                });
+                if (resp.ok) {
+                    lukkFullforModal();
+                    await lastTerminliste();
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    alert(err.error || 'Kunne ikke fullføre prøve');
+                }
+            } catch (err) {
+                alert('Nettverksfeil: ' + err.message);
+            }
+        }
+
+        function lukkFullforModal() {
+            document.getElementById('fullforModal').classList.add('hidden');
+            fullforAktivId = null;
+        }
+
+        // Manuell betaling-modal (gjenbrukt for både vipps og jegermiddag,
+        // og fra både fullfør- og kanseller-flyten)
+        let manuellBetalingAktiv = null;
+
+        function apneManuellBetalingModal(type, id, belop, navn) {
+            manuellBetalingAktiv = { type, id, belop, navn };
+            document.getElementById('manuellBetalingTittel').textContent = `Logg manuell betaling for: ${navn}`;
+            document.getElementById('manuellBetalingOpprBelop').textContent = `kr ${belop}`;
+            document.getElementById('manuellBetalingBelop').value = belop;
+            document.getElementById('manuellBetalingDato').valueAsDate = new Date();
+            document.getElementById('manuellBetalingMetode').value = '';
+            document.getElementById('manuellBetalingReferanse').value = '';
+            document.getElementById('manuellBetalingKommentar').value = '';
+            document.getElementById('manuellBetalingModal').classList.remove('hidden');
+        }
+
+        function lukkManuellBetalingModal() {
+            document.getElementById('manuellBetalingModal').classList.add('hidden');
+            manuellBetalingAktiv = null;
+        }
+
+        async function bekreftManuellBetaling() {
+            if (!manuellBetalingAktiv) return;
+            const body = {
+                betalt_belop: parseInt(document.getElementById('manuellBetalingBelop').value) || manuellBetalingAktiv.belop,
+                betalt_dato: document.getElementById('manuellBetalingDato').value || null,
+                betalt_metode: document.getElementById('manuellBetalingMetode').value || null,
+                betalt_referanse: document.getElementById('manuellBetalingReferanse').value.trim() || null,
+                betalt_kommentar: document.getElementById('manuellBetalingKommentar').value.trim() || null
+            };
+            const url = manuellBetalingAktiv.type === 'vipps'
+                ? `/api/vipps-mottakere/${manuellBetalingAktiv.id}/manuell-betaling`
+                : `/api/jegermiddag-pameldinger/${manuellBetalingAktiv.id}/manuell-betaling`;
+
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(body)
+                });
+                if (resp.ok) {
+                    lukkManuellBetalingModal();
+                    if (fullforAktivId) {
+                        const navn = document.getElementById('fullforTittel')?.textContent?.replace(/^Marker prøve som fullført:\s*/, '') || '';
+                        fullforProve(fullforAktivId, navn);
+                    }
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    alert(err.error || 'Kunne ikke registrere betaling');
+                }
+            } catch (err) {
+                alert('Nettverksfeil: ' + err.message);
+            }
+        }
+
+        async function markerKansellert(type, id, navn) {
+            if (!confirm(`Marker som kansellert: ${navn}?\n\nDeltakeren skal ikke betale.`)) return;
+            const url = type === 'vipps'
+                ? `/api/vipps-mottakere/${id}/kanseller`
+                : `/api/jegermiddag-pameldinger/${id}/kanseller`;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                if (resp.ok) {
+                    if (fullforAktivId) {
+                        const tittelTxt = document.getElementById('fullforTittel')?.textContent?.replace(/^Marker prøve som fullført:\s*/, '') || '';
+                        fullforProve(fullforAktivId, tittelTxt);
+                    }
+                } else {
+                    const err = await resp.json().catch(() => ({}));
+                    alert(err.error || 'Kunne ikke markere som kansellert');
+                }
+            } catch (err) {
+                alert('Nettverksfeil: ' + err.message);
+            }
         }
 
         // Refunder-modal — admin registrerer at en betaling er refundert utenfor systemet
@@ -20852,6 +21092,67 @@
             </div>
             <div id="slettProveInnhold" class="px-6 py-5 overflow-y-auto flex-1">
                 <p class="text-bark-500 text-sm">Henter oversikt...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Marker som fullført-modal: oversikt over gjenstående oppgaver -->
+    <div id="fullforModal" class="hidden fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-bark-200 bg-emerald-50">
+                <h2 id="fullforTittel" class="text-lg font-bold text-emerald-900">Marker prøve som fullført</h2>
+            </div>
+            <div id="fullforInnhold" class="px-6 py-5 overflow-y-auto flex-1">
+                <p class="text-bark-500 text-sm">Henter status...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manuell betaling-modal: admin registrerer betaling utenfor Vipps-app -->
+    <div id="manuellBetalingModal" class="hidden fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-bark-200">
+                <h2 id="manuellBetalingTittel" class="text-lg font-bold text-bark-900">Logg manuell betaling</h2>
+            </div>
+            <div class="px-6 py-5 space-y-4">
+                <div>
+                    <p class="text-sm text-bark-600">Opprinnelig beløp: <span id="manuellBetalingOpprBelop" class="font-medium text-bark-900"></span></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Beløp betalt (kr)</label>
+                    <input type="number" id="manuellBetalingBelop" min="0"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Betalingsdato</label>
+                    <input type="date" id="manuellBetalingDato"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Betalingsmåte *</label>
+                    <select id="manuellBetalingMetode"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500 bg-white">
+                        <option value="">— Velg betalingsmåte —</option>
+                        <option value="vipps_direkte">Vipps direkte mellom personer</option>
+                        <option value="kontant">Kontant</option>
+                        <option value="bank">Bankoverføring</option>
+                        <option value="annet">Annet</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Referanse <span class="text-bark-400 text-xs">(valgfri)</span></label>
+                    <input type="text" id="manuellBetalingReferanse" placeholder="F.eks. transaksjons-ID eller kontonr"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-bark-700 mb-1">Kommentar <span class="text-bark-400 text-xs">(valgfri)</span></label>
+                    <textarea id="manuellBetalingKommentar" rows="2"
+                        class="w-full px-3 py-2 border border-bark-300 rounded focus:ring-2 focus:ring-warm-500 focus:border-warm-500"></textarea>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-bark-200 flex justify-end gap-2">
+                <button onclick="lukkManuellBetalingModal()" class="px-4 py-2 bg-bark-200 hover:bg-bark-300 text-bark-800 rounded font-medium">Avbryt</button>
+                <button onclick="bekreftManuellBetaling()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium">Bekreft betaling</button>
             </div>
         </div>
     </div>

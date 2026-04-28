@@ -1242,6 +1242,14 @@ const migrations = [
   // men en arkiv-rad legges i klubb_dokumenter med årsak).
   "ALTER TABLE prover ADD COLUMN fullfort_dato TEXT DEFAULT NULL",
   "ALTER TABLE prover ADD COLUMN fullfort_av TEXT DEFAULT NULL",
+  // Manuell betaling — admin har registrert betaling utenfor systemet
+  // (kontant/bank/Vipps direkte). Bruker eksisterende status='betalt' +
+  // notert_av, men trenger mer detalj for sporbarhet.
+  "ALTER TABLE vipps_mottakere ADD COLUMN betalt_metode TEXT DEFAULT NULL",
+  "ALTER TABLE vipps_mottakere ADD COLUMN betalt_kommentar TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN betalt_av_admin TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN betalt_metode TEXT DEFAULT NULL",
+  "ALTER TABLE jegermiddag_pameldinger ADD COLUMN betalt_kommentar TEXT DEFAULT NULL",
   // Forbedret fullmakt-matching med epost
   "ALTER TABLE ventende_fullmakter ADD COLUMN eier_epost TEXT DEFAULT NULL",
   "ALTER TABLE ventende_fullmakter ADD COLUMN forer_epost TEXT DEFAULT NULL",
@@ -8092,6 +8100,293 @@ app.post("/api/jegermiddag-pameldinger/:id/refunder", requireAdmin, async (c) =>
     return c.json({ success: true });
   } catch (err) {
     console.error("Refund jegermiddag error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Logg manuell betaling for en vipps-mottaker (deltakeren har betalt
+// utenfor Vipps-app: kontant, bank, vipps direkte mellom personer osv.)
+app.post("/api/vipps-mottakere/:id/manuell-betaling", requireAdmin, async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    const bruker = c.get("bruker");
+
+    const mottaker = db.prepare(`
+      SELECT m.*, f.belop AS opprinnelig_belop, f.prove_id
+      FROM vipps_mottakere m
+      JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+      WHERE m.id = ?
+    `).get(id);
+    if (!mottaker) return c.json({ error: "Vipps-mottaker ikke funnet" }, 404);
+    if (mottaker.status !== 'venter') {
+      return c.json({ error: "Kan kun logge manuell betaling på status 'venter'" }, 400);
+    }
+
+    db.prepare(`
+      UPDATE vipps_mottakere
+      SET status = 'betalt',
+          betalt_dato = ?,
+          notert_av = ?,
+          betalt_metode = ?,
+          betalt_kommentar = ?
+      WHERE id = ?
+    `).run(
+      body.betalt_dato || new Date().toISOString().slice(0, 10),
+      bruker.telefon,
+      body.betalt_metode || null,
+      [body.betalt_referanse, body.betalt_kommentar].filter(Boolean).join(' | ') || null,
+      id
+    );
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "manuell_betaling",
+      JSON.stringify({
+        type: "vipps", mottaker_id: id, belop: body.betalt_belop || mottaker.opprinnelig_belop,
+        metode: body.betalt_metode, av: bruker.telefon, prove_id: mottaker.prove_id
+      })
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Manuell betaling vipps error:", err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Kanseller en vipps-mottaker (deltakeren skal ikke betale)
+app.post("/api/vipps-mottakere/:id/kanseller", requireAdmin, async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const bruker = c.get("bruker");
+    const m = db.prepare("SELECT id, status, foresporsel_id FROM vipps_mottakere WHERE id = ?").get(id);
+    if (!m) return c.json({ error: "Vipps-mottaker ikke funnet" }, 404);
+    if (m.status !== 'venter') return c.json({ error: "Kan kun kansellere status 'venter'" }, 400);
+    db.prepare("UPDATE vipps_mottakere SET status = 'kansellert', notert_av = ? WHERE id = ?").run(bruker.telefon, id);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "vipps_kansellert", JSON.stringify({ mottaker_id: id, av: bruker.telefon })
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Logg manuell betaling for jegermiddag
+app.post("/api/jegermiddag-pameldinger/:id/manuell-betaling", requireAdmin, async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    const bruker = c.get("bruker");
+    const p = db.prepare("SELECT * FROM jegermiddag_pameldinger WHERE id = ?").get(id);
+    if (!p) return c.json({ error: "Jegermiddag-påmelding ikke funnet" }, 404);
+    if (p.betalt) return c.json({ error: "Allerede betalt" }, 400);
+
+    db.prepare(`
+      UPDATE jegermiddag_pameldinger
+      SET status = 'betalt', betalt = 1, betalt_dato = ?,
+          betalt_av_admin = ?, betalt_metode = ?, betalt_kommentar = ?
+      WHERE id = ?
+    `).run(
+      body.betalt_dato || new Date().toISOString().slice(0, 10),
+      bruker.telefon,
+      body.betalt_metode || null,
+      [body.betalt_referanse, body.betalt_kommentar].filter(Boolean).join(' | ') || null,
+      id
+    );
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "manuell_betaling",
+      JSON.stringify({ type: "jegermiddag", pamelding_id: id, av: bruker.telefon, prove_id: p.prove_id })
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Kanseller jegermiddag-påmelding (ikke møtt eller fritak)
+app.post("/api/jegermiddag-pameldinger/:id/kanseller", requireAdmin, async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const bruker = c.get("bruker");
+    const p = db.prepare("SELECT * FROM jegermiddag_pameldinger WHERE id = ?").get(id);
+    if (!p) return c.json({ error: "Jegermiddag-påmelding ikke funnet" }, 404);
+    db.prepare("UPDATE jegermiddag_pameldinger SET status = 'avmeldt', betalt_av_admin = ? WHERE id = ?").run(bruker.telefon, id);
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "jegermiddag_kansellert", JSON.stringify({ pamelding_id: id, av: bruker.telefon, prove_id: p.prove_id })
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// Forhåndsvisning før "Marker som fullført" — viser gjenstående oppgaver
+// klubb-admin bør håndtere før prøven låses. Blokkerer ikke fullføring,
+// men oppfordrer til opprydding (vipps-betalinger, kritikk-utkast,
+// rapporter).
+app.get("/api/prover/:id/fullfor-forhandsvisning", requireAdmin, (c) => {
+  const id = c.req.param("id");
+  const prove = db.prepare("SELECT id, navn, status FROM prover WHERE id = ?").get(id);
+  if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+  if (prove.status === 'fullfort') {
+    return c.json({ error: "Prøven er allerede fullført" }, 409);
+  }
+
+  // Vipps ventende — admin kan rydde via samme refund-modal/manuell-betaling-modal
+  const vippsVentende = db.prepare(`
+    SELECT m.id, m.deltaker_navn, m.deltaker_telefon, f.belop
+    FROM vipps_mottakere m
+    JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+    WHERE f.prove_id = ? AND m.status = 'venter'
+  `).all(id);
+
+  // Jegermiddag ikke betalt — admin kan logge manuell betaling eller markere kansellert
+  const jegerIkkeBetalt = db.prepare(`
+    SELECT j.id, b.fornavn || ' ' || b.etternavn AS navn, j.bruker_telefon,
+           j.belop, j.status
+    FROM jegermiddag_pameldinger j
+    LEFT JOIN brukere b ON b.telefon = j.bruker_telefon
+    WHERE j.prove_id = ? AND j.betalt = 0 AND j.status NOT IN ('avmeldt')
+  `).all(id);
+
+  // Kritikker i utkast — dommere har ikke sendt dem inn enda
+  const kritikkUtkast = db.prepare(`
+    SELECT k.id, k.dommer_telefon, b.fornavn || ' ' || b.etternavn AS dommer_navn,
+           h.navn AS hund_navn, h.regnr, k.parti, k.dato
+    FROM kritikker k
+    LEFT JOIN brukere b ON b.telefon = k.dommer_telefon
+    LEFT JOIN hunder h ON h.id = k.hund_id
+    WHERE k.prove_id = ? AND k.status = 'draft'
+  `).all(id);
+
+  const aktiveBedomminger = db.prepare(`
+    SELECT parti, dommer_telefon FROM vk_bedomming
+    WHERE prove_id = ? AND status = 'aktiv'
+  `).all(id);
+
+  // Rapport-status: hvor mange av prøvens partier har en signert rapport-versjon?
+  const partier = db.prepare("SELECT COUNT(*) n FROM partier WHERE prove_id = ?").get(id)?.n || 0;
+  const rapporter = db.prepare(`
+    SELECT COUNT(DISTINCT parti) n FROM rapport_versjoner
+    WHERE prove_id = ? AND signed_at IS NOT NULL
+  `).get(id)?.n || 0;
+
+  return c.json({
+    id: prove.id,
+    navn: prove.navn,
+    vipps_ventende: vippsVentende,
+    jegermiddag_ikke_betalt: jegerIkkeBetalt,
+    kritikk_utkast: kritikkUtkast,
+    aktive_bedomminger: aktiveBedomminger,
+    partier_totalt: partier,
+    partier_med_signert_rapport: rapporter
+  });
+});
+
+// Marker prøve som fullført — låser prøven, lagrer prøverapport-snapshot
+// i klubb_dokumenter, setter alle aktive vk_bedomming til 'fullfort' og
+// kansellerer pending SMS. Kan kun reverseres av superadmin.
+app.post("/api/prover/:id/fullfor", requireAdmin, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const bruker = c.get("bruker");
+
+    const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
+    if (!prove) return c.json({ error: "Prøve ikke funnet" }, 404);
+    if (prove.status === 'fullfort') return c.json({ error: "Prøven er allerede fullført" }, 409);
+
+    autoBackup("prove_fullfort");
+
+    const klubbId = prove.klubb_id || null;
+    const nooDato = new Date().toISOString();
+
+    // Bygg prøverapport-snapshot — sammendrag av prøven for klubbens historikk
+    const antallPameldte = db.prepare("SELECT COUNT(*) n FROM pameldinger WHERE prove_id = ? AND status != 'avmeldt'").get(id)?.n || 0;
+    const antallPartier = db.prepare("SELECT COUNT(*) n FROM partier WHERE prove_id = ?").get(id)?.n || 0;
+    const antallKritikker = db.prepare("SELECT COUNT(*) n FROM kritikker WHERE prove_id = ?").get(id)?.n || 0;
+    const dommere = db.prepare(`
+      SELECT DISTINCT dt.dommer_telefon, b.fornavn || ' ' || b.etternavn AS navn, dt.dommer_rolle
+      FROM dommer_tildelinger dt
+      LEFT JOIN brukere b ON b.telefon = dt.dommer_telefon
+      WHERE dt.prove_id = ?
+    `).all(id);
+    const premieFordeling = db.prepare(`
+      SELECT premie, COUNT(*) AS antall FROM kritikker
+      WHERE prove_id = ? AND premie != '' AND premie IS NOT NULL
+      GROUP BY premie
+    `).all(id);
+    const vippsTotal = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN m.status = 'betalt' THEN f.belop ELSE 0 END), 0) AS betalt,
+        COALESCE(SUM(CASE WHEN m.status = 'venter' THEN f.belop ELSE 0 END), 0) AS ventende,
+        COUNT(*) AS antall_mottakere
+      FROM vipps_mottakere m
+      JOIN vipps_foresporsler f ON f.id = m.foresporsel_id
+      WHERE f.prove_id = ?
+    `).get(id) || { betalt: 0, ventende: 0, antall_mottakere: 0 };
+
+    const snapshot = {
+      prove_id: id,
+      navn: prove.navn,
+      sted: prove.sted,
+      start_dato: prove.start_dato,
+      slutt_dato: prove.slutt_dato,
+      prove_type: prove.prove_type,
+      klubb_id: klubbId,
+      arrangor_navn: prove.arrangor_navn,
+      fullfort_dato: nooDato,
+      fullfort_av: bruker.telefon,
+      antall_pameldte: antallPameldte,
+      antall_partier: antallPartier,
+      antall_kritikker: antallKritikker,
+      dommere,
+      premie_fordeling: premieFordeling,
+      vipps_sammendrag: vippsTotal
+    };
+
+    const oppdater = db.transaction(() => {
+      db.prepare(`
+        UPDATE prover SET status = 'fullfort', fullfort_dato = ?, fullfort_av = ?
+        WHERE id = ?
+      `).run(nooDato, bruker.telefon, id);
+
+      // Lås aktive VK-bedømminger
+      db.prepare(`
+        UPDATE vk_bedomming SET status = 'fullfort', updated_at = datetime('now')
+        WHERE prove_id = ? AND status = 'aktiv'
+      `).run(id);
+
+      // Cancel pending SMS
+      db.prepare(`
+        UPDATE sms_queue SET status = 'cancelled', error_message = 'Prøve fullført'
+        WHERE prove_id = ? AND status = 'pending'
+      `).run(id);
+
+      // Lagre prøverapport-snapshot i klubb_dokumenter
+      if (klubbId) {
+        db.prepare(`
+          INSERT INTO klubb_dokumenter (klubb_id, dokument_type, tittel, beskrivelse, innhold_json, opprettet_av)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          klubbId,
+          'prove_fullfort_snapshot',
+          `Prøverapport: ${prove.navn}`,
+          `Snapshot av prøven ved fullføring ${nooDato.slice(0, 10)}.`,
+          JSON.stringify(snapshot),
+          bruker.telefon
+        );
+      }
+    });
+    oppdater();
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      "prove_fullfort",
+      JSON.stringify({ id, navn: prove.navn, klubb_id: klubbId, fullfort_av: bruker.telefon })
+    );
+
+    return c.json({ success: true, message: "Prøve markert som fullført" });
+  } catch (err) {
+    console.error("Feil ved fullføring av prøve:", err);
     return c.json({ error: err.message }, 500);
   }
 });

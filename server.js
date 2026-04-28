@@ -1788,7 +1788,11 @@ const requireAdmin = async (c, next) => {
     return c.json({ error: "Ugyldig eller utløpt token" }, 401);
   }
 
-  if (!hasAnyRole(payload.rolle, ["admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar"])) {
+  // NKK-rep og NKK-vara har admin-tilgang automatisk fordi de må kunne
+  // godkjenne kritikker og kontrollsignere rapporter. De har egen flyt
+  // (nkk-godkjenning), men disse handlingene krever requireAdmin. Legges
+  // automatisk inn her så vi slipper dobbelt-rolletildeling i DB.
+  if (!hasAnyRole(payload.rolle, ["admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar", "nkkrep", "nkkvara"])) {
     return c.json({ error: "Krever admin-tilgang" }, 403);
   }
 

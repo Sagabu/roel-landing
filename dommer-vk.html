@@ -620,6 +620,11 @@
             premietildelinger: {}, // { dogNr: 'premie' } - tildelte premier
             kvalifisertTilFinale: {}, // { dogNr: true/false } - hunder kvalifisert til finale (kun VK kval)
             judgingFinished: false, // Om bedømmingen er ferdig
+            // Prøveinfo for premie-tilpasning. Lastes asynkront ved init.
+            // erNm=true gir NM-spesifikke premier (1.VK NM kval/semi/finale).
+            // cacitInnvilget styrer om CACIT-valg vises på finale.
+            erNm: false,
+            cacitInnvilget: false,
         };
 
         // Hent proveId og parti fra URL-parametre
@@ -705,6 +710,10 @@
 
             // Finn vkSubType basert på partinavn (for å håndtere kval/semi/finale)
             await detectVkSubType();
+
+            // Last prøvetype og CACIT-status — bestemmer om NM-premier vises
+            // og om CACIT/RES.CACIT-valg er tilgjengelige
+            await loadProveKritikkContext();
 
             // Last partiliste fra server
             await loadPartyList();
@@ -4703,56 +4712,107 @@
             }
         }
 
-        // Hent premier basert på VK-type
-        function getPremierForType(vkType) {
+        // Hent premier basert på VK-type. erNm=true gir NM-spesifikke premier
+        // (1.VK NM kval/semi/finale). cacitInnvilget kontrollerer om
+        // CACIT/RES.CACIT-valg vises på finale (krever NKK-tildeling).
+        function getPremierForType(vkType, erNm = false, cacitInnvilget = false) {
+            // CACIT-varianter for finale — kun synlig når cacitInnvilget=true
+            const cacitFinale = cacitInnvilget ? [
+                { value: '1vk_cacit_finale', label: '1.VK m/CACIT finale' }
+            ] : [];
+            const resCacitFinale = cacitInnvilget ? [
+                { value: '2vk_rescacit_finale', label: '2.VK m/res.CACIT finale' }
+            ] : [];
+
             const premierByType = {
                 '1dag': [
-                    { value: '1vk', label: '1. VK' },
-                    { value: '1vk_ck', label: '1. VK m/CK' },
-                    { value: '2vk', label: '2. VK' },
-                    { value: '2vk_ck', label: '2. VK m/CK' },
-                    { value: '3vk', label: '3. VK' },
-                    { value: '4vk', label: '4. VK' },
-                    { value: '5vk', label: '5. VK' },
-                    { value: '6vk', label: '6. VK' },
+                    { value: '1vk', label: '1.VK' },
+                    { value: '1vk_ck', label: '1.VK m/CK' },
+                    ...(cacitInnvilget ? [{ value: '1vk_cacit', label: '1.VK m/CACIT' }] : []),
+                    { value: '2vk', label: '2.VK' },
+                    { value: '2vk_ck', label: '2.VK m/CK' },
+                    ...(cacitInnvilget ? [{ value: '2vk_rescacit', label: '2.VK m/res.CACIT' }] : []),
+                    { value: '3vk', label: '3.VK' },
+                    { value: '4vk', label: '4.VK' },
+                    { value: '5vk', label: '5.VK' },
+                    { value: '6vk', label: '6.VK' },
                     { value: 'ingen', label: 'Ingen premie' }
                 ],
                 'kval': [
-                    { value: '1vk_kval', label: '1. VK kval' },
-                    { value: '1vk_ck_kval', label: '1. VK m/CK kval' },
-                    { value: '2vk_kval', label: '2. VK kval' },
-                    { value: '2vk_ck_kval', label: '2. VK m/CK kval' },
-                    { value: '3vk_kval', label: '3. VK kval' },
-                    { value: '4vk_kval', label: '4. VK kval' },
-                    { value: '5vk_kval', label: '5. VK kval' },
-                    { value: '6vk_kval', label: '6. VK kval' },
+                    { value: '1vk_kval', label: '1.VK kval' },
+                    { value: '1vk_ck_kval', label: '1.VK m/CK kval' },
+                    { value: '2vk_kval', label: '2.VK kval' },
+                    { value: '2vk_ck_kval', label: '2.VK m/CK kval' },
+                    { value: '3vk_kval', label: '3.VK kval' },
+                    { value: '4vk_kval', label: '4.VK kval' },
+                    { value: '5vk_kval', label: '5.VK kval' },
+                    { value: '6vk_kval', label: '6.VK kval' },
                     { value: 'ingen', label: 'Ingen premie' }
                 ],
                 'semi': [
-                    { value: '1vk_semi', label: '1. VK semi' },
-                    { value: '1vk_ck_semi', label: '1. VK m/CK semi' },
-                    { value: '2vk_semi', label: '2. VK semi' },
-                    { value: '2vk_ck_semi', label: '2. VK m/CK semi' },
-                    { value: '3vk_semi', label: '3. VK semi' },
-                    { value: '4vk_semi', label: '4. VK semi' },
-                    { value: '5vk_semi', label: '5. VK semi' },
-                    { value: '6vk_semi', label: '6. VK semi' },
+                    { value: '1vk_semi', label: '1.VK semi' },
+                    { value: '1vk_ck_semi', label: '1.VK m/CK semi' },
+                    { value: '2vk_semi', label: '2.VK semi' },
+                    { value: '2vk_ck_semi', label: '2.VK m/CK semi' },
+                    { value: '3vk_semi', label: '3.VK semi' },
+                    { value: '4vk_semi', label: '4.VK semi' },
+                    { value: '5vk_semi', label: '5.VK semi' },
+                    { value: '6vk_semi', label: '6.VK semi' },
                     { value: 'ingen', label: 'Ingen premie' }
                 ],
                 'finale': [
-                    { value: '1vk_finale', label: '1. VK finale' },
-                    { value: '1vk_ck_finale', label: '1. VK finale m/CK' },
-                    { value: '1vk_cacit_finale', label: '1. VK finale m/CACIT' },
-                    { value: '2vk_finale', label: '2. VK finale' },
-                    { value: '2vk_ck_finale', label: '2. VK finale m/CK' },
-                    { value: '2vk_rescacit_finale', label: '2. VK finale m/res.CACIT' },
-                    { value: '3vk_finale', label: '3. VK finale' },
-                    { value: '4vk_finale', label: '4. VK finale' },
-                    { value: '5vk_finale', label: '5. VK finale' },
-                    { value: '6vk_finale', label: '6. VK finale' },
+                    { value: '1vk_finale', label: '1.VK finale' },
+                    { value: '1vk_ck_finale', label: '1.VK m/CK finale' },
+                    ...cacitFinale,
+                    { value: '2vk_finale', label: '2.VK finale' },
+                    { value: '2vk_ck_finale', label: '2.VK m/CK finale' },
+                    ...resCacitFinale,
+                    { value: '3vk_finale', label: '3.VK finale' },
+                    { value: '4vk_finale', label: '4.VK finale' },
+                    { value: '5vk_finale', label: '5.VK finale' },
+                    { value: '6vk_finale', label: '6.VK finale' },
                     { value: 'ingen', label: 'Ingen premie' }
                 ]
             };
+
+            // NM-prøver: bruk samme struktur men prefiks "NM" i runde-navnene
+            const nmPremier = {
+                'kval': [
+                    { value: '1vk_nm_kval', label: '1.VK NM kval' },
+                    { value: '2vk_nm_kval', label: '2.VK NM kval' },
+                    { value: '3vk_nm_kval', label: '3.VK NM kval' },
+                    { value: '4vk_nm_kval', label: '4.VK NM kval' },
+                    { value: '5vk_nm_kval', label: '5.VK NM kval' },
+                    { value: '6vk_nm_kval', label: '6.VK NM kval' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ],
+                'semi': [
+                    { value: '1vk_nm_semi', label: '1.VK NM semi' },
+                    { value: '1vk_ck_nm_semi', label: '1.VK m/CK NM semi' },
+                    { value: '2vk_nm_semi', label: '2.VK NM semi' },
+                    { value: '2vk_ck_nm_semi', label: '2.VK m/CK NM semi' },
+                    { value: '3vk_nm_semi', label: '3.VK NM semi' },
+                    { value: '4vk_nm_semi', label: '4.VK NM semi' },
+                    { value: '5vk_nm_semi', label: '5.VK NM semi' },
+                    { value: '6vk_nm_semi', label: '6.VK NM semi' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ],
+                'finale': [
+                    { value: '1vk_nm_finale', label: '1.VK NM finale' },
+                    { value: '1vk_ck_nm_finale', label: '1.VK m/CK NM finale' },
+                    ...(cacitInnvilget ? [{ value: '1vk_cacit_nm_finale', label: '1.VK m/CACIT NM finale' }] : []),
+                    { value: '2vk_nm_finale', label: '2.VK NM finale' },
+                    { value: '2vk_ck_nm_finale', label: '2.VK m/CK NM finale' },
+                    ...(cacitInnvilget ? [{ value: '2vk_rescacit_nm_finale', label: '2.VK m/res.CACIT NM finale' }] : []),
+                    { value: '3vk_nm_finale', label: '3.VK NM finale' },
+                    { value: '4vk_nm_finale', label: '4.VK NM finale' },
+                    { value: '5vk_nm_finale', label: '5.VK NM finale' },
+                    { value: '6vk_nm_finale', label: '6.VK NM finale' },
+                    { value: 'ingen', label: 'Ingen premie' }
+                ]
+            };
+
+            if (erNm && nmPremier[vkType]) return nmPremier[vkType];
             return premierByType[vkType] || premierByType['1dag'];
         }
 
@@ -4813,9 +4873,31 @@
             renderPremieRankingList();
         }
 
+        // Last prøvetype + CACIT-status så premie-listen kan tilpasses
+        // til NM-prøver (egne 1.VK NM kval/semi/finale-varianter) og
+        // ikke vise CACIT-valg når det ikke er innvilget av NKK.
+        async function loadProveKritikkContext() {
+            if (!proveId || proveId === 'demo') return;
+            try {
+                const [proveResp, configResp] = await Promise.all([
+                    fetch(`/api/prover/${proveId}`),
+                    fetch(`/api/prover/${proveId}/config`)
+                ]);
+                if (proveResp.ok) {
+                    const prove = await proveResp.json();
+                    const t = prove.prove_type || '';
+                    state.erNm = t === 'nm_hoyfjell_host' || t === 'nm_vinter';
+                }
+                if (configResp.ok) {
+                    const cfg = await configResp.json();
+                    state.cacitInnvilget = cfg.cacit_innvilget === 1;
+                }
+            } catch (e) { /* stille feil — premie-listen faller tilbake til standard */ }
+        }
+
         function renderPremieRankingList() {
             const container = document.getElementById('premieRankingList');
-            const premier = getPremierForType(state.vkType);
+            const premier = getPremierForType(state.vkType, state.erNm, state.cacitInnvilget);
             const isKval = state.vkType === 'kval';
             const isSemi = state.vkType === 'semi';
             const vkConfig = JSON.parse(localStorage.getItem('trialVkConfig') || '{}');

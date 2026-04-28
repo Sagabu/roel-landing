@@ -1217,6 +1217,10 @@ const migrations = [
   // arrangør basert på NKK-tildeling for det aktuelle året.
   "ALTER TABLE prove_config ADD COLUMN har_nm_lag INTEGER DEFAULT 0",
   "ALTER TABLE prove_config ADD COLUMN kongepokal_innvilget INTEGER DEFAULT 0",
+  // CACIT — søkes om hos NKK før prøven arrangeres. Kun hvis innvilget kan
+  // dommer dele ut CACIT/RES.CACIT på 1./2. plass i finalen ved fortjent
+  // prestasjon. Min. 31 startende i kvalifisering kreves for CACIT.
+  "ALTER TABLE prove_config ADD COLUMN cacit_innvilget INTEGER DEFAULT 0",
   // Trygg prøvesletting: snapshot av prøvenavn så historiske SMS, vipps-
   // og jegermiddag-poster forblir lesbare for klubben etter at prøven slettes.
   "ALTER TABLE sms_log ADD COLUMN prove_navn_snapshot TEXT DEFAULT NULL",
@@ -9735,7 +9739,8 @@ app.put("/api/prover/:id/config", requireProveAdmin, async (c) => {
     "krever_sauebevis", "krever_vaksinasjon", "krever_rabies",
     "manuell_bedomming", // 0=digital (default), 1=manuell — admin tildeler
                          // live_admin på VK for live rangering uten kritikk-flyt
-    "har_nm_lag", "kongepokal_innvilget" // NM-spesifikke flagg
+    "har_nm_lag", "kongepokal_innvilget", // NM-spesifikke flagg
+    "cacit_innvilget" // CACIT-status — søkt og innvilget av NKK før prøven
   ];
 
   const sets = [];

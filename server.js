@@ -1866,6 +1866,26 @@ const requireKlubbAdmin = async (c, next) => {
   await next();
 };
 
+// Middleware: krever superadmin-rolle. Brukes for system-administrasjon
+// (brukerliste, rolleendringer, GDPR-data, SMS-statistikk osv.) som ikke
+// skal være tilgjengelig for vanlige klubb-admins eller dommere.
+const requireSuperadmin = async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+  }
+  const token = authHeader.slice(7);
+  const payload = verifyToken(token);
+  if (!payload) {
+    return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+  }
+  if (!hasAnyRole(payload.rolle, ["superadmin"])) {
+    return c.json({ error: "Krever superadmin-tilgang" }, 403);
+  }
+  c.set("bruker", payload);
+  await next();
+};
+
 // Middleware: krever per-prøve admin-tilgang. Henter prøve-ID fra
 // route-param 'id' eller 'proveId'. Avviser med 403 hvis brukeren ikke
 // har tilgang til akkurat den prøven (selv om de er admin på en annen).
@@ -5693,7 +5713,7 @@ app.post("/api/klubb-foresporsel/:id/avslaa", async (c) => {
 // ============================================
 
 // Hent alle brukere (kun superadmin)
-app.get("/api/superadmin/brukere", (c) => {
+app.get("/api/superadmin/brukere", requireSuperadmin, (c) => {
   const search = c.req.query("search") || '';
   const rolle = c.req.query("rolle") || '';
   const limit = parseInt(c.req.query("limit") || '50');
@@ -5730,7 +5750,7 @@ app.get("/api/superadmin/brukere", (c) => {
 });
 
 // Hent alle hunder (kun superadmin)
-app.get("/api/superadmin/hunder", (c) => {
+app.get("/api/superadmin/hunder", requireSuperadmin, (c) => {
   const search = c.req.query("search") || '';
   const rase = c.req.query("rase") || '';
   const limit = parseInt(c.req.query("limit") || '50');
@@ -5776,7 +5796,7 @@ app.get("/api/superadmin/hunder", (c) => {
 });
 
 // Oppdater bruker-rolle (kun superadmin)
-app.put("/api/superadmin/brukere/:telefon/rolle", async (c) => {
+app.put("/api/superadmin/brukere/:telefon/rolle", requireSuperadmin, async (c) => {
   const telefon = c.req.param("telefon");
   const body = await c.req.json();
   const { rolle } = body;
@@ -5799,7 +5819,7 @@ app.put("/api/superadmin/brukere/:telefon/rolle", async (c) => {
 // ============================================
 
 // Hent SMS-samtykke statistikk
-app.get("/api/superadmin/sms-samtykke", (c) => {
+app.get("/api/superadmin/sms-samtykke", requireSuperadmin, (c) => {
   const total = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
   const medSamtykke = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE sms_samtykke = 1").get().n;
   const utenSamtykke = total - medSamtykke;
@@ -5824,7 +5844,7 @@ app.get("/api/superadmin/sms-samtykke", (c) => {
 });
 
 // Eksporter SMS-samtykke rapport til CSV
-app.get("/api/superadmin/sms-samtykke/export", (c) => {
+app.get("/api/superadmin/sms-samtykke/export", requireSuperadmin, (c) => {
   const brukere = db.prepare(`
     SELECT telefon, fornavn, etternavn, epost, sms_samtykke, sms_samtykke_tidspunkt, created_at
     FROM brukere
@@ -5859,7 +5879,7 @@ app.get("/api/superadmin/sms-samtykke/export", (c) => {
 
 // Hent samtykke-oversikt med søk og filter
 // Bruker sms_samtykke (settes ved registrering) som primært samtykke-felt
-app.get("/api/superadmin/samtykker", (c) => {
+app.get("/api/superadmin/samtykker", requireSuperadmin, (c) => {
   const search = c.req.query("search") || "";
   const filter = c.req.query("filter") || "alle";
   const limit = parseInt(c.req.query("limit") || "100");
@@ -5907,7 +5927,7 @@ app.get("/api/superadmin/samtykker", (c) => {
 });
 
 // GDPR Innsyn - hent all data for en bruker (GDPR Art. 15)
-app.get("/api/superadmin/innsyn/:telefon", (c) => {
+app.get("/api/superadmin/innsyn/:telefon", requireSuperadmin, (c) => {
   const telefon = c.req.param("telefon");
 
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
@@ -5942,7 +5962,7 @@ app.get("/api/superadmin/innsyn/:telefon", (c) => {
 });
 
 // Sett samtykke manuelt (superadmin)
-app.post("/api/superadmin/samtykke/:telefon", (c) => {
+app.post("/api/superadmin/samtykke/:telefon", requireSuperadmin, (c) => {
   const telefon = c.req.param("telefon");
 
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
@@ -5955,7 +5975,7 @@ app.post("/api/superadmin/samtykke/:telefon", (c) => {
 });
 
 // Trekk samtykke (superadmin)
-app.delete("/api/superadmin/samtykke/:telefon", (c) => {
+app.delete("/api/superadmin/samtykke/:telefon", requireSuperadmin, (c) => {
   const telefon = c.req.param("telefon");
 
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ?").get(telefon);
@@ -5967,7 +5987,7 @@ app.delete("/api/superadmin/samtykke/:telefon", (c) => {
 });
 
 // Eksporter samtykker til CSV
-app.get("/api/superadmin/samtykker/eksport", (c) => {
+app.get("/api/superadmin/samtykker/eksport", requireSuperadmin, (c) => {
   const brukere = db.prepare(`
     SELECT telefon, fornavn, etternavn, epost, rolle, sms_samtykke, sms_samtykke_tidspunkt, created_at
     FROM brukere
@@ -6000,7 +6020,7 @@ app.get("/api/superadmin/samtykker/eksport", (c) => {
 // ============================================
 
 // Hent SMS-statistikk med filtrering
-app.get("/api/superadmin/sms-stats", (c) => {
+app.get("/api/superadmin/sms-stats", requireSuperadmin, (c) => {
   const periode = c.req.query("periode") || "maaned";
   const type = c.req.query("type") || "alle";
   const klubb_id = c.req.query("klubb_id") || null;
@@ -6108,7 +6128,7 @@ app.get("/api/superadmin/sms-stats", (c) => {
 });
 
 // Hent SMS-kø status
-app.get("/api/superadmin/sms-queue", (c) => {
+app.get("/api/superadmin/sms-queue", requireSuperadmin, (c) => {
   const stats = getSmsQueueStats();
 
   // Hent de siste 20 køede/feilede
@@ -6131,13 +6151,13 @@ app.get("/api/superadmin/sms-queue", (c) => {
 });
 
 // Tøm feilede SMS fra kø
-app.delete("/api/superadmin/sms-queue/failed", (c) => {
+app.delete("/api/superadmin/sms-queue/failed", requireSuperadmin, (c) => {
   const result = db.prepare("DELETE FROM sms_queue WHERE status = 'failed'").run();
   return c.json({ deleted: result.changes });
 });
 
 // Retry feilede SMS
-app.post("/api/superadmin/sms-queue/retry-failed", (c) => {
+app.post("/api/superadmin/sms-queue/retry-failed", requireSuperadmin, (c) => {
   const result = db.prepare(`
     UPDATE sms_queue SET status = 'pending', attempts = 0, error_message = NULL
     WHERE status = 'failed'
@@ -6146,7 +6166,7 @@ app.post("/api/superadmin/sms-queue/retry-failed", (c) => {
 });
 
 // Hent alle klubber som har sendt/mottatt SMS
-app.get("/api/superadmin/sms-klubber", (c) => {
+app.get("/api/superadmin/sms-klubber", requireSuperadmin, (c) => {
   const klubber = db.prepare(`
     SELECT DISTINCT s.klubb_id, k.navn as klubb_navn
     FROM sms_log s
@@ -6159,7 +6179,7 @@ app.get("/api/superadmin/sms-klubber", (c) => {
 });
 
 // Eksporter SMS-log som CSV
-app.get("/api/superadmin/sms-export", (c) => {
+app.get("/api/superadmin/sms-export", requireSuperadmin, (c) => {
   const periode = c.req.query("periode") || "maaned";
   const type = c.req.query("type") || "alle";
 
@@ -8922,7 +8942,16 @@ app.delete("/api/prover/:id", requireProveAdmin, async (c) => {
       }
 
       // 4) Slett kv_store-nøkler med suffiks _${prove_id}
-      db.prepare("DELETE FROM kv_store WHERE key LIKE ?").run(`%_${id}`);
+      // Slett kv_store-nøkler med suffiks _<prove_id>. SQL-LIKE bruker
+      // '_' som wildcard for ETT vilkårlig tegn, og prøve-IDer inneholder
+      // alltid underscore (f.eks. "prove_1776184107994_d58b27ee"). Vi
+      // henter derfor alle nøkler og filtrerer i JS for sikker matching.
+      const suffix = `_${id}`;
+      const alleNokler = db.prepare("SELECT key FROM kv_store").all();
+      const slettStmt = db.prepare("DELETE FROM kv_store WHERE key = ?");
+      for (const row of alleNokler) {
+        if (row.key.endsWith(suffix)) slettStmt.run(row.key);
+      }
 
       // 5) Selve prøven
       db.prepare("DELETE FROM prover WHERE id = ?").run(id);
@@ -9814,6 +9843,10 @@ app.put("/api/prover/:id/config", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
 
+  if (proveErLast(proveId)) {
+    return c.json({ error: "Prøven er fullført — konfigurasjon kan ikke endres" }, 400);
+  }
+
   // Opprett hvis ikke eksisterer
   db.prepare("INSERT OR IGNORE INTO prove_config (prove_id) VALUES (?)").run(proveId);
 
@@ -10212,6 +10245,10 @@ app.post("/api/prover/:id/fratatte-aversjonsbevis", requireProveAdmin, async (c)
   const body = await c.req.json();
   const bruker = c.get("bruker");
 
+  if (proveErLast(proveId)) {
+    return c.json({ error: "Prøven er fullført — kan ikke endres" }, 400);
+  }
+
   const { hund_id, arsak, hendelsesdato, kommentar } = body;
 
   if (!hund_id || !arsak) {
@@ -10428,6 +10465,10 @@ app.post("/api/prover/:id/trekning", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const bruker = c.get("bruker");
+
+  if (proveErLast(proveId)) {
+    return c.json({ error: "Prøven er fullført — trekning kan ikke utføres" }, 400);
+  }
 
   const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(proveId);
   if (!prove) {
@@ -10827,6 +10868,11 @@ function syncPameldingerForProve(proveId) {
 app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
+
+  if (proveErLast(proveId)) {
+    return c.json({ error: "Prøven er fullført — partilister kan ikke endres" }, 400);
+  }
+
   const { partier } = body;
 
   if (!Array.isArray(partier)) {
@@ -11114,6 +11160,10 @@ app.get("/api/prover/:id/venteliste", (c) => {
 app.put("/api/prover/:id/venteliste", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
+
+  if (proveErLast(proveId)) {
+    return c.json({ error: "Prøven er fullført — venteliste kan ikke endres" }, 400);
+  }
   const { venteliste } = body;
 
   if (!venteliste || typeof venteliste !== 'object') {
@@ -14322,7 +14372,7 @@ app.delete("/api/backups/:name", (c) => {
 });
 
 // Slett bruker (telefon som nøkkel)
-app.delete("/api/superadmin/brukere/:telefon", (c) => {
+app.delete("/api/superadmin/brukere/:telefon", requireSuperadmin, (c) => {
   const telefon = c.req.param("telefon");
 
   try {
@@ -14349,7 +14399,7 @@ app.delete("/api/superadmin/brukere/:telefon", (c) => {
 // ==========================================
 
 // Sjekk status for testmodus
-app.get("/api/superadmin/testmodus/status", (c) => {
+app.get("/api/superadmin/testmodus/status", requireSuperadmin, (c) => {
   try {
     // Finn testprøver (de som starter med [TEST])
     const prove = db.prepare("SELECT * FROM prover WHERE navn LIKE '[TEST]%' ORDER BY created_at DESC LIMIT 1").get();
@@ -14378,7 +14428,7 @@ app.get("/api/superadmin/testmodus/status", (c) => {
 });
 
 // Opprett testprøve med fiktive data
-app.post("/api/superadmin/testmodus/opprett", (c) => {
+app.post("/api/superadmin/testmodus/opprett", requireSuperadmin, (c) => {
   try {
     // Sjekk om det allerede finnes en testprøve
     const eksisterende = db.prepare("SELECT id FROM prover WHERE navn LIKE '[TEST]%'").get();
@@ -14515,7 +14565,7 @@ app.post("/api/superadmin/testmodus/opprett", (c) => {
 });
 
 // Slett all testdata
-app.delete("/api/superadmin/testmodus/slett", (c) => {
+app.delete("/api/superadmin/testmodus/slett", requireSuperadmin, (c) => {
   try {
     // Finn alle testprøver
     const testProver = db.prepare("SELECT id FROM prover WHERE navn LIKE '[TEST]%'").all();
@@ -15449,15 +15499,28 @@ app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
 // Lagre/oppdater VK-bedømming
 app.put("/api/vk-bedomming/:proveId/:parti", requireAuth, async (c) => {
   try {
+    const { proveId, parti } = c.req.param();
+    const bruker = c.get("bruker");
+    const body = await c.req.json();
+
     // Blokker endring av VK-bedømming på fullført prøve. Dette er hoved-
     // endepunktet dommer-vk.html bruker for live-rangering — fullført låser
     // partilisten så live-rangerings-eier ikke kan pushe nye data.
-    const proveIdGuard = c.req.param("proveId");
-    if (proveErLast(proveIdGuard)) {
+    if (proveErLast(proveId)) {
       return c.json({ error: "Prøven er fullført — VK-bedømming kan ikke endres" }, 400);
     }
-    const { proveId, parti } = c.req.param();
-    const body = await c.req.json();
+
+    // Tilgangskontroll: kun dommere tildelt på partiet (eller live-admin
+    // eller per-prøve-admin) kan endre bedømming. Hindrer at en innlogget
+    // bruker fra annen klubb manipulerer rangeringen.
+    const erTildelt = !!db.prepare(`
+      SELECT 1 FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+    `).get(proveId, parti, bruker.telefon);
+    const erProveAdmin = harProveAdmin(bruker, proveId);
+    if (!erTildelt && !erProveAdmin) {
+      return c.json({ error: "Du er ikke tildelt dette partiet" }, 403);
+    }
 
     // Sjekk om det finnes fra før
     const existing = db.prepare(`

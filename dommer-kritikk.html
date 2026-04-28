@@ -540,9 +540,21 @@
             document.getElementById('judgeName').textContent = state.judgeName;
             document.getElementById('backLink').href = 'dommer-hjem.html';
 
-            // Load dogs - prøv nytt format først (dommerkort_ukak_), så gammelt (judgeData_)
-            const ukakKey = 'dommerkort_ukak_' + state.party;
-            const ukakSaved = localStorage.getItem(ukakKey);
+            // Load dogs - prøv nytt format først (dommerkort_ukak_), så gammelt (judgeData_).
+            // Begge nøkkel-formater er nå prøve-prefiksert for å hindre lekkasje
+            // mellom prøver med samme partinavn. Legacy-format støttes ved migrering.
+            const ukakKeyNy = `dommerkort_ukak_${proveId}_${state.party}`;
+            const ukakKeyLegacy = `dommerkort_ukak_${state.party}`;
+            let ukakSaved = localStorage.getItem(ukakKeyNy);
+            if (!ukakSaved) {
+                ukakSaved = localStorage.getItem(ukakKeyLegacy);
+                if (ukakSaved) {
+                    // Migrer
+                    localStorage.setItem(ukakKeyNy, ukakSaved);
+                    localStorage.removeItem(ukakKeyLegacy);
+                }
+            }
+            const ukakKey = ukakKeyNy;
 
             if (ukakSaved) {
                 // Nytt format fra dommer-ukak.html
@@ -596,8 +608,20 @@
                     });
                 }
             } else {
-                // Gammelt format
-                const saved = localStorage.getItem('judgeData_' + state.party);
+                // Prøve-spesifikt format først, så fallback til legacy.
+                // judgeData_<party>-nøkler uten prøve-id kunne lekke mellom
+                // prøver (samme partinavn på flere prøver).
+                const proveSpesifikkKey = `judgeData_${proveId}_${state.party}`;
+                const legacyKey = `judgeData_${state.party}`;
+                let saved = localStorage.getItem(proveSpesifikkKey);
+                if (!saved) {
+                    saved = localStorage.getItem(legacyKey);
+                    if (saved) {
+                        // Migrer til ny format og fjern gammel
+                        localStorage.setItem(proveSpesifikkKey, saved);
+                        localStorage.removeItem(legacyKey);
+                    }
+                }
                 if (saved) {
                     state.dogs = JSON.parse(saved);
                 }
@@ -1392,11 +1416,13 @@
             dog.critiqueSubmittedAt = new Date().toISOString();
             dog.critiqueSubmittedBy = state.judgeName;
 
-            // Save to localStorage - støtt begge formater
-            localStorage.setItem('judgeData_' + state.party, JSON.stringify(state.dogs));
+            // Save to localStorage. Bruker prøve-spesifikk nøkkel så data
+            // ikke lekker mellom prøver med samme partinavn.
+            const proveSpesifikkKey = `judgeData_${proveId}_${state.party}`;
+            localStorage.setItem(proveSpesifikkKey, JSON.stringify(state.dogs));
 
-            // Oppdater også dommerkort_ukak_ formatet hvis det brukes
-            const ukakKey = 'dommerkort_ukak_' + state.party;
+            // Oppdater også dommerkort_ukak_ formatet (også prøve-prefiks)
+            const ukakKey = `dommerkort_ukak_${proveId}_${state.party}`;
             const ukakSaved = localStorage.getItem(ukakKey);
             if (ukakSaved) {
                 const ukakData = JSON.parse(ukakSaved);

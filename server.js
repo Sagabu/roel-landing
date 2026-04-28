@@ -3947,16 +3947,43 @@ app.post("/api/admin-lock/verify", async (c) => {
 
 // --- localStorage bridge API ---
 // Storage-lesing er åpen (trengs for shim å hente initial data)
+// Storage-shim har en hvitliste av tillatte nøkkel-prefikser slik at
+// brukere ikke kan overskrive vilkårlig system-state via tampering.
+// Pre-eksisterende svakhet: før denne sjekken kunne hvilken som helst
+// innlogget bruker overskrive hvilken som helst kv_store-nøkkel.
+const STORAGE_KEY_PREFIKSER = [
+  'userProfile', 'userDogs', 'userTrials', 'userMandates',
+  'judgeSession', 'clubLogo', 'currentTrialId',
+  'judgeData_', 'trialParties_', 'dommerkort_',
+  'praktiskInfo_', 'automatikkInnstillinger_',
+  'vkResultater_', 'vkSamletListe_', 'vkTrekning_',
+  'manuellSemiTrekning_', 'manuellFinaleTrekning_', 'manuellKvalifisering_',
+  'trialVkType_', 'trialVkType', 'trialVkConfig_',
+  'ukakDeltakerlister_',
+  'partiSignaturer_', 'dommerSignaturer_', 'nkkSignaturer_',
+  'siteSettings'
+];
+function erTillattStorageKey(key) {
+  if (!key || typeof key !== 'string') return false;
+  return STORAGE_KEY_PREFIKSER.some(p => key === p || key.startsWith(p));
+}
+
 app.get("/api/storage/:key", (c) => {
   const key = c.req.param("key");
+  if (!erTillattStorageKey(key)) {
+    return c.json({ error: "Ugyldig storage-nøkkel" }, 400);
+  }
   const row = db.prepare("SELECT value FROM kv_store WHERE key = ?").get(key);
   if (!row) return c.json({ value: null });
   return c.json({ value: JSON.parse(row.value) });
 });
 
-// Storage-skriving krever innlogging
+// Storage-skriving krever innlogging og at nøkkelen er på hvitlisten
 app.put("/api/storage/:key", requireAuth, async (c) => {
   const key = c.req.param("key");
+  if (!erTillattStorageKey(key)) {
+    return c.json({ error: "Ugyldig storage-nøkkel" }, 400);
+  }
   const body = await c.req.json();
   const value = JSON.stringify(body.value);
   db.prepare("INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, datetime('now'))").run(key, value);

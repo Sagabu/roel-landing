@@ -349,7 +349,32 @@
             }
         }
 
-        // Last og vis klubb-administratorer
+        // Skjul "Klubb-administratorer"-seksjonen og lås endrings-knapper
+        // for brukere som ikke er klubb-admin. Klubbinfo forblir lesbar.
+        function skjulKlubbAdminUI() {
+            // Finn "Klubb-administratorer"-card via overskriften
+            const adminListContainer = document.getElementById('klubbAdminListe');
+            if (adminListContainer) {
+                const adminCard = adminListContainer.closest('.bg-white.rounded-2xl');
+                if (adminCard) adminCard.classList.add('hidden');
+            }
+            // Lås endrings-knapper og innstillinger
+            const lagreBtn = document.querySelector('[onclick="saveClubSettings()"]');
+            if (lagreBtn) lagreBtn.classList.add('hidden');
+            const opprettProveBtn = document.querySelector('[onclick="createNewTrial()"]');
+            if (opprettProveBtn) opprettProveBtn.classList.add('hidden');
+            // Gjør input-felt readonly
+            ['settingsNavn', 'settingsEpost', 'settingsTelefon', 'settingsNettside',
+             'settingsAdresse', 'settingsVipps'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.readOnly = true;
+            });
+        }
+
+        // Last og vis klubb-administratorer.
+        // Hele "Klubb-administratorer"-seksjonen og endrings-knappene skjules
+        // hvis brukeren ikke er klubb-admin (server returnerer 403). Klubbinfo
+        // forblir leselig — kun endringer er låst.
         async function loadKlubbAdmins(klubbId) {
             const container = document.getElementById('klubbAdminListe');
             if (!container) return;
@@ -359,6 +384,12 @@
                 const resp = await fetch(`/api/klubber/${klubbId}/admins`, {
                     headers: token ? { 'Authorization': `Bearer ${token}` } : {}
                 });
+                if (resp.status === 403 || resp.status === 401) {
+                    // Ikke klubb-admin — skjul admin-seksjon + lås
+                    // endrings-knapper. Klubbinfo forblir synlig som lesemodus.
+                    skjulKlubbAdminUI();
+                    return;
+                }
                 if (!resp.ok) {
                     container.innerHTML = '<p class="text-red-500 text-sm">Kunne ikke laste administratorer.</p>';
                     return;

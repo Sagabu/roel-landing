@@ -1107,7 +1107,8 @@
                             <div id="nmSettingsAdmin" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                                 <p class="text-xs font-semibold text-amber-900 uppercase">NM-innstillinger</p>
                                 <label class="flex items-start gap-2 cursor-pointer">
-                                    <input type="checkbox" id="adminHarNmLag" onchange="autoLagreNmFlag('har_nm_lag', this.checked)"
+                                    <input type="checkbox" id="adminHarNmLag" data-felt="har_nm_lag"
+                                        onchange="autoLagreNmFlag(this.dataset.felt, this.checked)"
                                         class="mt-0.5 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
                                     <span class="text-sm text-bark-800">
                                         <strong>Arranger NM Lag</strong> —
@@ -1115,7 +1116,8 @@
                                     </span>
                                 </label>
                                 <label class="flex items-start gap-2 cursor-pointer">
-                                    <input type="checkbox" id="adminKongepokalInnvilget" onchange="autoLagreNmFlag('kongepokal_innvilget', this.checked)"
+                                    <input type="checkbox" id="adminKongepokalInnvilget" data-felt="kongepokal_innvilget"
+                                        onchange="autoLagreNmFlag(this.dataset.felt, this.checked)"
                                         class="mt-0.5 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
                                     <span class="text-sm text-bark-800">
                                         <strong>Kongepokal er innvilget</strong> —
@@ -1129,7 +1131,8 @@
                                  også for vanlige høyfjell/lavland/skogsfugl-prøver.
                                  Auto-lagres ved klikk. -->
                             <label class="flex items-start gap-2 cursor-pointer mt-2 p-2 bg-bark-50 border border-bark-200 rounded">
-                                <input type="checkbox" id="adminCacitInnvilget" onchange="autoLagreNmFlag('cacit_innvilget', this.checked)"
+                                <input type="checkbox" id="adminCacitInnvilget" data-felt="cacit_innvilget"
+                                    onchange="autoLagreNmFlag(this.dataset.felt, this.checked)"
                                     class="mt-0.5 w-4 h-4 text-warm-600 border-bark-300 rounded focus:ring-warm-500">
                                 <span class="text-sm text-bark-800">
                                     <strong>CACIT er innvilget</strong> —
@@ -4404,6 +4407,29 @@
             return urlParams.get('trial') || localStorage.getItem('currentTrialId') || '';
         }
 
+        // Cleanup av gamle localStorage-nøkler uten prøve-ID-prefiks som
+        // kunne forårsake LEKKASJE mellom prøver (f.eks. "judgeData_VK Finale"
+        // lagret av prøve A, lest av prøve B siden samme partinavn brukes på
+        // tvers av prøver). Sletter nøkler som matcher gamle mønstre men
+        // IKKE inneholder gjeldende prøve-id i nøkkelen.
+        function ryddOpplagretLekkasje() {
+            const proveId = getCurrentTrialId();
+            if (!proveId) return;
+            const lekkasjePrefikser = ['judgeData_', 'dommerkort_ukak_'];
+            const slettListe = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key) continue;
+                if (lekkasjePrefikser.some(p => key.startsWith(p)) && !key.includes(proveId)) {
+                    slettListe.push(key);
+                }
+            }
+            slettListe.forEach(k => localStorage.removeItem(k));
+            if (slettListe.length > 0) {
+                console.log(`[Lekkasje-rens] Slettet ${slettListe.length} localStorage-nøkler uten matchende prøve-id:`, slettListe);
+            }
+        }
+
         // Auto-lagring av et enkelt praktiskInfo-felt — laster eksisterende
         // praktiskInfo først, oppdaterer kun det ene feltet, og lagrer
         // tilbake. Hindrer at andre felter overskrives med tomme verdier
@@ -4493,12 +4519,10 @@
                     if (window.FuglehundToast) {
                         FuglehundToast.error('Kunne ikke lagre NM-flagg: ' + (err.error || resp.status));
                     }
-                    // Reverser sjekkboksen siden lagring feilet
-                    const cbId = felt === 'har_nm_lag' ? 'adminHarNmLag'
-                        : felt === 'kongepokal_innvilget' ? 'adminKongepokalInnvilget'
-                        : felt === 'cacit_innvilget' ? 'adminCacitInnvilget'
-                        : null;
-                    const cb = cbId ? document.getElementById(cbId) : null;
+                    // Reverser sjekkboksen siden lagring feilet — bruker
+                    // data-felt-attributt for fleksibel matching uavhengig av
+                    // hvilke felt som finnes (slipper hardkodet ID-mapping)
+                    const cb = document.querySelector(`[data-felt="${felt}"]`);
                     if (cb) cb.checked = !krysset;
                     return;
                 }
@@ -19569,6 +19593,11 @@
         async function velgProve(proveId) {
             valgtProveId = proveId;
             localStorage.setItem('currentTrialId', proveId);
+
+            // Slett localStorage-nøkler som tilhører ANDRE prøver — hindrer
+            // at f.eks. judgeData_VK_Finale fra forrige prøve leses som
+            // gjeldende prøves data (parti-navn gjentas på tvers av prøver).
+            ryddOpplagretLekkasje();
 
             const prove = alleProver.find(p => p.id === proveId);
             if (!prove) return;

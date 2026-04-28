@@ -1122,15 +1122,20 @@
                                         <span class="text-bark-600 text-xs">kun hvis NKK har tildelt kongepokal for året</span>
                                     </span>
                                 </label>
-                                <label class="flex items-start gap-2 cursor-pointer">
-                                    <input type="checkbox" id="adminCacitInnvilget" onchange="autoLagreNmFlag('cacit_innvilget', this.checked)"
-                                        class="mt-0.5 w-4 h-4 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
-                                    <span class="text-sm text-bark-800">
-                                        <strong>CACIT er innvilget</strong> —
-                                        <span class="text-bark-600 text-xs">kun hvis NKK har tildelt CACIT (krever min. 31 startende i kval)</span>
-                                    </span>
-                                </label>
                             </div>
+
+                            <!-- CACIT-flagget gjelder for ALLE VK-prøver (ikke kun NM).
+                                 Plasseres utenfor NM-seksjonen så det er tilgjengelig
+                                 også for vanlige høyfjell/lavland/skogsfugl-prøver.
+                                 Auto-lagres ved klikk. -->
+                            <label class="flex items-start gap-2 cursor-pointer mt-2 p-2 bg-bark-50 border border-bark-200 rounded">
+                                <input type="checkbox" id="adminCacitInnvilget" onchange="autoLagreNmFlag('cacit_innvilget', this.checked)"
+                                    class="mt-0.5 w-4 h-4 text-warm-600 border-bark-300 rounded focus:ring-warm-500">
+                                <span class="text-sm text-bark-800">
+                                    <strong>CACIT er innvilget</strong> —
+                                    <span class="text-bark-600 text-xs">kun hvis NKK har tildelt CACIT (krever min. 31 startende i kvalifiseringen). Gjelder for alle VK-prøver.</span>
+                                </span>
+                            </label>
                         </div>
                     </div>
 
@@ -4405,12 +4410,11 @@
         // mønster som oppdaterBedomMethod → savePraktiskInfo (som allerede
         // er etablert som auto-save-pattern i systemet).
         // Sender PUT med kun det ene feltet som endret seg.
-        let _autoLagreUnderveis = false;
+        // Samtidige kall er trygge — PUT-er på ulike felt påvirker ikke
+        // hverandre, så vi kjører dem parallelt uten lås.
         async function autoLagreProverFelt(felt, verdi) {
             const proveId = getCurrentTrialId();
             if (!proveId) return; // Ny prøve — krever opprettelse via "Lagre detaljer"-knappen
-            if (_autoLagreUnderveis) return; // Hindre overlappende kall
-            _autoLagreUnderveis = true;
             try {
                 const resp = await fetch(`/api/prover/${proveId}`, {
                     method: 'PUT',
@@ -4432,8 +4436,6 @@
                 if (window.FuglehundToast) FuglehundToast.success('Lagret', 1500);
             } catch (err) {
                 if (window.FuglehundToast) FuglehundToast.error('Nettverksfeil ved lagring');
-            } finally {
-                _autoLagreUnderveis = false;
             }
         }
 
@@ -4467,7 +4469,8 @@
             }
         }
 
-        // Når prøvetypen endres: auto-lagre + vis/skjul NM-seksjonen
+        // Når prøvetypen endres: auto-lagre + vis/skjul NM-seksjonen.
+        // CACIT-checkbox er utenfor NM-seksjonen og forblir synlig uansett.
         async function onProveTypeChange() {
             const sel = document.getElementById('proveType');
             const ny = sel?.value || '';
@@ -4475,10 +4478,10 @@
             const nmSection = document.getElementById('nmSettingsAdmin');
             if (nmSection) nmSection.classList.toggle('hidden', !erNm);
             await autoLagreProverFelt('prove_type', ny);
-            // Last NM-flagger fra config hvis NM-prøve, ellers nullstill UI
-            if (erNm) {
-                await lastNmFlagger();
-            }
+            // Last alle config-flagg (NM-flagger oppdaterer UI selv om
+            // NM-seksjonen er skjult — så ved bytte tilbake til NM vises
+            // riktige verdier)
+            await lastNmFlagger();
         }
 
         // Last NM-flagger (har_nm_lag, kongepokal_innvilget) fra prove_config
@@ -19567,15 +19570,18 @@
             // Vis livssyklus-knapper (Marker som fullført / Kanseller prøve)
             oppdaterLivssyklusKnapper();
 
-            // Sett prøvetype-dropdown til lagret verdi og vis/skjul NM-seksjon
+            // Sett prøvetype-dropdown til lagret verdi og vis/skjul NM-seksjon.
+            // CACIT-checkbox er utenfor NM-seksjonen og må lastes uansett type.
             const proveTypeEl = document.getElementById('proveType');
             if (proveTypeEl && prove.prove_type) {
                 proveTypeEl.value = prove.prove_type;
                 const erNm = prove.prove_type === 'nm_hoyfjell_host' || prove.prove_type === 'nm_vinter';
                 const nmSection = document.getElementById('nmSettingsAdmin');
                 if (nmSection) nmSection.classList.toggle('hidden', !erNm);
-                if (erNm) lastNmFlagger();
             }
+            // Last alltid alle config-flagg (CACIT gjelder for alle VK-prøver,
+            // NM-flaggene leses inn men er kun synlige hvis NM-seksjonen er åpen)
+            lastNmFlagger();
 
             // Sett arrangør-feltet
             const orgEl = document.getElementById('organizerName');

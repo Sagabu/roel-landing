@@ -4538,13 +4538,9 @@ app.get("/api/brukere/:telefon/hunder", (c) => {
         JOIN prover pr ON pr.id = kr.prove_id
         WHERE kr.hund_id = h.id
           AND pr.prove_type IN ('nm_hoyfjell_host', 'nm_vinter')
-          AND (
-            kr.premie LIKE '1vk_nm_finale%'
-            OR kr.premie LIKE '1vk_ck_nm_finale%'
-            OR kr.premie LIKE '1vk_cacit_nm_finale%'
-            OR kr.premie LIKE '1.VK NM finale%'
-            OR kr.premie LIKE '1.VK m/CK NM finale%'
-            OR kr.premie LIKE '1.VK m/CACIT NM finale%'
+          AND kr.premie IN (
+            '1vk_nm_finale', '1vk_ck_nm_finale', '1vk_cacit_nm_finale',
+            '1.VK NM finale', '1.VK m/CK NM finale', '1.VK m/CACIT NM finale'
           )
       ) AS har_norgesmester_tittel
     FROM hunder h
@@ -4574,13 +4570,9 @@ app.get("/api/hunder", (c) => {
         JOIN prover pr ON pr.id = kr.prove_id
         WHERE kr.hund_id = h.id
           AND pr.prove_type IN ('nm_hoyfjell_host', 'nm_vinter')
-          AND (
-            kr.premie LIKE '1vk_nm_finale%'
-            OR kr.premie LIKE '1vk_ck_nm_finale%'
-            OR kr.premie LIKE '1vk_cacit_nm_finale%'
-            OR kr.premie LIKE '1.VK NM finale%'
-            OR kr.premie LIKE '1.VK m/CK NM finale%'
-            OR kr.premie LIKE '1.VK m/CACIT NM finale%'
+          AND kr.premie IN (
+            '1vk_nm_finale', '1vk_ck_nm_finale', '1vk_cacit_nm_finale',
+            '1.VK NM finale', '1.VK m/CK NM finale', '1.VK m/CACIT NM finale'
           )
       ) AS har_norgesmester_tittel
     FROM hunder h
@@ -4815,13 +4807,9 @@ function byggHundTitler(hundId) {
     LEFT JOIN brukere be ON be.telefon = h.eier_telefon
     WHERE k.hund_id = ?
       AND p.prove_type IN ('nm_hoyfjell_host', 'nm_vinter')
-      AND (
-        k.premie LIKE '1vk_nm_finale%'
-        OR k.premie LIKE '1vk_ck_nm_finale%'
-        OR k.premie LIKE '1vk_cacit_nm_finale%'
-        OR k.premie LIKE '1.VK NM finale%'
-        OR k.premie LIKE '1.VK m/CK NM finale%'
-        OR k.premie LIKE '1.VK m/CACIT NM finale%'
+      AND k.premie IN (
+        '1vk_nm_finale', '1vk_ck_nm_finale', '1vk_cacit_nm_finale',
+        '1.VK NM finale', '1.VK m/CK NM finale', '1.VK m/CACIT NM finale'
       )
     ORDER BY COALESCE(p.start_dato, k.dato) DESC
   `).all(hundId);
@@ -8726,12 +8714,15 @@ app.post("/api/superadmin/prover/:id/reverser-fullfort", requireAuth, async (c) 
         WHERE id = ?
       `).run(id);
 
-      // Slett prøverapport-snapshot fra klubb_dokumenter
+      // Slett prøverapport-snapshot fra klubb_dokumenter. Bruker
+      // json_extract for presis matching mot prove_id-feltet — LIKE
+      // ville matchet andre prøver med lignende ID hvis ID-en
+      // inneholdt SQL wildcard-tegn ('_' eller '%').
       db.prepare(`
         DELETE FROM klubb_dokumenter
         WHERE klubb_id = ? AND dokument_type = 'prove_fullfort_snapshot'
-          AND innhold_json LIKE ?
-      `).run(prove.klubb_id, `%"prove_id":"${id}"%`);
+          AND json_extract(innhold_json, '$.prove_id') = ?
+      `).run(prove.klubb_id, id);
     });
     reverser();
 

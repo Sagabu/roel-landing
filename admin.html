@@ -12871,10 +12871,24 @@
                 doc.setTextColor(...darkText);
                 doc.setFont('helvetica', 'bold');
 
-                const colX = [17, 27, 65, 95, 135, 170];
-                const headers = ['Nr', 'Fører', 'Hund', 'Reg.nr', 'Rase', 'Klasse'];
+                // Kolonne-x-posisjoner (mm) — re-fordelt så Hund får
+                // mest plass (lange hundenavn er vanlig). Reg.nr og Klasse
+                // er smalere siden de har korte verdier (12 tegn / 2-3 tegn).
+                // Tilgjengelig bredde: 17-195 = 178 mm
+                const colX = [17, 27, 65, 117, 143, 178];
+                const colWidth = [10, 38, 52, 26, 35, 14]; // brukes til klipping av lange verdier
+                const headers = ['Nr', 'Fører', 'Hund', 'Reg.nr', 'Rase', 'Kl.'];
                 headers.forEach((h, i) => doc.text(h, colX[i], yPos + 5));
                 yPos += 9;
+
+                // Helper: klipp tekst til kolonne-bredde for å hindre at lange
+                // navn renner over i neste kolonne. doc.splitTextToSize gir
+                // array — vi tar første linje (vi viser ikke flerlinje-rader).
+                const klipp = (tekst, maxBredde) => {
+                    if (!tekst) return '';
+                    const linjer = doc.splitTextToSize(String(tekst), maxBredde - 2);
+                    return linjer[0] || '';
+                };
 
                 // Table rows
                 doc.setFont('helvetica', 'normal');
@@ -12892,8 +12906,8 @@
 
                     doc.setTextColor(...darkText);
                     doc.text(String(dog.nr), colX[0], yPos + 3);
-                    doc.text(dog.forer, colX[1], yPos + 3);
-                    doc.text(dog.hund, colX[2], yPos + 3);
+                    doc.text(klipp(dog.forer, colWidth[1]), colX[1], yPos + 3);
+                    doc.text(klipp(dog.hund, colWidth[2]), colX[2], yPos + 3);
                     doc.setFontSize(7);
                     doc.text(dog.regnr, colX[3], yPos + 3);
                     doc.setFontSize(8);

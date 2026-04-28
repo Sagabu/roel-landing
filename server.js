@@ -1799,21 +1799,21 @@ const requireAdmin = async (c, next) => {
 // Sjekk at innlogget bruker har admin-tilgang til en SPESIFIKK prøve.
 // Adminrettigheter er per prøve — en proveleder på prøve A har ikke
 // automatisk tilgang til prøve B selv om begge er i samme klubb.
+// NKK-rep og NKK-vara er ikke administratorer; de er tildelte roller
+// på lik linje med dommere og har egen flyt (nkk-godkjenning) for
+// kritikk-godkjenning og rapport-kontrollsignering.
 // Tilgang gis hvis brukeren er:
 //   1) superadmin (overstyrer alt)
-//   2) prøveleder, NKK-rep eller NKK-vara på den spesifikke prøven
+//   2) prøveleder på den spesifikke prøven
 //   3) team-medlem med rolle 'admin' eller 'sekretariat' på den prøven
 function harProveAdmin(payload, proveId) {
   if (!payload || !proveId) return false;
   if (hasAnyRole(payload.rolle, ["superadmin"])) return true;
   const prove = db.prepare(`
-    SELECT proveleder_telefon, nkkrep_telefon, nkkvara_telefon
-    FROM prover WHERE id = ?
+    SELECT proveleder_telefon FROM prover WHERE id = ?
   `).get(proveId);
   if (!prove) return false;
   if (prove.proveleder_telefon === payload.telefon) return true;
-  if (prove.nkkrep_telefon === payload.telefon) return true;
-  if (prove.nkkvara_telefon === payload.telefon) return true;
   const team = db.prepare(`
     SELECT 1 FROM prove_team
     WHERE prove_id = ? AND telefon = ? AND rolle IN ('admin', 'sekretariat')

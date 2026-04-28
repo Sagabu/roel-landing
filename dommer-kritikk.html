@@ -524,6 +524,24 @@
             dommerTelefon = sessionData.phone || null;
             proveId = sessionData.assignedProve || localStorage.getItem('currentTrialId') || null;
 
+            // Slett gamle localStorage-nøkler uten prøve-id-prefiks så vi
+            // ikke leser data fra andre prøver (samme partinavn på tvers).
+            if (proveId) {
+                const lekkasjePrefikser = ['judgeData_', 'dommerkort_ukak_'];
+                const slettListe = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (!key) continue;
+                    if (lekkasjePrefikser.some(p => key.startsWith(p)) && !key.includes(proveId)) {
+                        slettListe.push(key);
+                    }
+                }
+                slettListe.forEach(k => localStorage.removeItem(k));
+                if (slettListe.length > 0) {
+                    console.log(`[Lekkasje-rens] Slettet ${slettListe.length} localStorage-nøkler fra andre prøver`);
+                }
+            }
+
             // Get party from URL
             const urlParams = new URLSearchParams(window.location.search);
             state.party = urlParams.get('party') || sessionData.assignedParty;

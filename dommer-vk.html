@@ -699,8 +699,32 @@
         }
         window.avsluttLiveRangering = avsluttLiveRangering;
 
+        // Slett gamle localStorage-nøkler uten prøve-id-prefiks som kunne
+        // forårsake LEKKASJE mellom prøver (samme partinavn på tvers av
+        // prøver). Beholder kun nøkler som inneholder gjeldende prove-id.
+        function ryddOpplagretLekkasje() {
+            if (!proveId || proveId === 'demo') return;
+            const lekkasjePrefikser = ['judgeData_', 'dommerkort_ukak_'];
+            const slettListe = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key) continue;
+                if (lekkasjePrefikser.some(p => key.startsWith(p)) && !key.includes(proveId)) {
+                    slettListe.push(key);
+                }
+            }
+            slettListe.forEach(k => localStorage.removeItem(k));
+            if (slettListe.length > 0) {
+                console.log(`[Lekkasje-rens] Slettet ${slettListe.length} localStorage-nøkler uten matchende prøve-id`);
+            }
+        }
+
         // Initialize
         async function init() {
+            // Slett localStorage-nøkler fra andre prøver så de ikke leses
+            // som om de tilhørte denne prøven (samme partinavn lekker ellers)
+            ryddOpplagretLekkasje();
+
             // Sett header-tittel til partinavnet (f.eks. "VK Kval 1")
             // umiddelbart så brukeren ser hvilket parti hen er på.
             const partiTitleEl = document.getElementById('partiHeaderTitle');

@@ -6446,9 +6446,17 @@ app.put("/api/vipps-foresporsler/:id/mottakere/:telefon", async (c) => {
 });
 
 // Slett én mottaker fra en Vipps-forespørsel
-app.delete("/api/vipps-foresporsler/:id/mottakere/:telefon", (c) => {
+app.delete("/api/vipps-foresporsler/:id/mottakere/:telefon", requireAuth, (c) => {
   const foresporselId = c.req.param("id");
   const telefon = c.req.param("telefon");
+  const bruker = c.get("bruker");
+
+  // Slå opp prove_id og verifiser admin-tilgang før sletting
+  const f = db.prepare("SELECT prove_id FROM vipps_foresporsler WHERE id = ?").get(foresporselId);
+  if (!f) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+  if (!harProveAdmin(bruker, f.prove_id)) {
+    return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+  }
 
   // Sjekk om det er flere mottakere igjen
   const count = db.prepare("SELECT COUNT(*) as count FROM vipps_mottakere WHERE foresporsel_id = ?").get(foresporselId);
@@ -6464,9 +6472,15 @@ app.delete("/api/vipps-foresporsler/:id/mottakere/:telefon", (c) => {
   return c.json({ success: true });
 });
 
-// Slett en Vipps-forespørsel
-app.delete("/api/vipps-foresporsler/:id", (c) => {
+// Slett en Vipps-forespørsel — krever per-prøve-admin på prøven forespørselen tilhører
+app.delete("/api/vipps-foresporsler/:id", requireAuth, (c) => {
   const id = c.req.param("id");
+  const bruker = c.get("bruker");
+  const f = db.prepare("SELECT prove_id FROM vipps_foresporsler WHERE id = ?").get(id);
+  if (!f) return c.json({ error: "Forespørsel ikke funnet" }, 404);
+  if (!harProveAdmin(bruker, f.prove_id)) {
+    return c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403);
+  }
   db.prepare("DELETE FROM vipps_foresporsler WHERE id = ?").run(id);
   return c.json({ success: true });
 });
@@ -13197,6 +13211,25 @@ app.post("/api/parse-participants", async (c) => {
   }
 
   let participants = [];
+  // NKK-fil kan inneholde prøve-ID/referansenummer i metadata. Hvis funnet,
+  // returneres dette så klienten kan oppdatere prøvens ID til NKK-referansen
+  // (vår systemgenererte ID erstattes). Hvis ingen ID i filen, beholdes
+  // systemets ID. Mønstre som forsøkes matchet på første 10 linjer/celler:
+  //   "Prøve:", "Prøvenummer:", "NKK ref:", "Referansenr:" osv.
+  let proveIdFraFil = null;
+  function leitForProveId(tekst) {
+    if (!tekst || proveIdFraFil) return;
+    const t = String(tekst);
+    const monstre = [
+      /pr[øo]vens?[\s_-]*(?:id|nummer|ref)[:\s]+([A-Z0-9_\-\/]{4,40})/i,
+      /(?:nkk|fkf)[\s_-]*ref[\.:\s]+([A-Z0-9_\-\/]{4,40})/i,
+      /referansenr[\.:\s]+([A-Z0-9_\-\/]{4,40})/i
+    ];
+    for (const re of monstre) {
+      const m = t.match(re);
+      if (m) { proveIdFraFil = m[1].trim(); return; }
+    }
+  }
 
   try {
     if (fileName.endsWith(".pdf")) {
@@ -13266,6 +13299,9 @@ app.post("/api/parse-participants", async (c) => {
       const text = buffer.toString("utf-8");
       const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
+      // Forsøk å finne prøve-id i metadata (første 10 linjer)
+      lines.slice(0, 10).forEach(leitForProveId);
+
       // Skip header
       const dataLines = lines.slice(1);
 
@@ -13293,6 +13329,11 @@ app.post("/api/parse-participants", async (c) => {
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      // Forsøk å finne prøve-id i metadata (første 10 rader, alle celler)
+      data.slice(0, 10).forEach(row => {
+        if (Array.isArray(row)) row.forEach(leitForProveId);
+      });
 
       // Skip header row
       const dataRows = data.slice(1);
@@ -13363,6 +13404,7 @@ app.post("/api/parse-participants", async (c) => {
     return c.json({
       success: true,
       total: participants.length,
+      prove_id_fra_fil: proveIdFraFil, // null hvis ikke funnet — admin beholder systemets ID
       byClass: {
         UK1: byClass.UK1.length,
         UK2: byClass.UK2.length,

@@ -1299,7 +1299,9 @@ const migrations = [
   // Versjons-marker for partilister: tidsstempel som bumpes hver gang
   // partilister, ikke-mott, eller relaterte data endres. Frontend-poller
   // bruker dette til å oppdage endringer og refreshe uten side-reload.
-  "ALTER TABLE prover ADD COLUMN partilister_endret_at TEXT DEFAULT (datetime('now'))",
+  // SQLite tillater bare konstant DEFAULT i ALTER TABLE, så vi bruker NULL
+  // og lar bumpPartilisterVersjon sette første verdi ved første endring.
+  "ALTER TABLE prover ADD COLUMN partilister_endret_at TEXT DEFAULT NULL",
   // Stavefiks for prove_type — fjerner ø-tegnet i 'høyfjell_*' så verdiene
   // er konsistent med kode-vennlig "hoyfjell_*" (samme mønster som NM-typene
   // 'nm_hoyfjell_host'). Tidligere brukte ulike steder (opprett-prove vs

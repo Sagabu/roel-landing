@@ -9856,9 +9856,14 @@ app.put("/api/prover/:proveId/avmeldinger/:id", requireProveAdmin, async (c) => 
 // fortsatt gå lørdag. Hunden forsvinner fra partilister, dommer-flater
 // og kritikk-skjemaet for den dagen, og dukker opp i forfall-oversikten
 // med markering. Erstatter fra venteliste håndteres i Stage 2.
+//
+// Endepunktene bruker stabile identifikatorer (prove_id + hund_regnr +
+// parti_navn) i stedet for parti_deltakere.id, fordi PUT /partilister
+// sletter og gjenoppretter alle parti_deltakere-rader (med nye IDer)
+// hver gang admin lagrer parti-listen — typisk i bakgrunnen som auto-
+// save. Stabil lookup overlever den syklusen.
 
-// Hjelpefunksjon: hent parti_deltakere-rad + parti og verifiser admin-tilgang.
-function hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId) {
+function hentPartiDeltakerStabil(c, proveId, hundRegnr, partiNavn) {
   const authHeader = c.req.header("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return { error: c.json({ error: "Mangler token" }, 401) };
@@ -9867,28 +9872,33 @@ function hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId) {
   if (!payload) {
     return { error: c.json({ error: "Ugyldig eller utløpt token" }, 401) };
   }
+  if (!harProveAdmin(payload, proveId)) {
+    return { error: c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403) };
+  }
+  if (proveErLast(proveId)) {
+    return { error: c.json({ error: "Prøven er fullført — kan ikke endres" }, 409) };
+  }
+  if (!hundRegnr || !partiNavn) {
+    return { error: c.json({ error: "Mangler hund_regnr eller parti_navn" }, 400) };
+  }
   const rad = db.prepare(`
     SELECT pd.*, p.navn AS parti_navn, p.dato AS parti_dato, p.type AS parti_type
       FROM parti_deltakere pd
       JOIN partier p ON p.id = pd.parti_id
-     WHERE pd.id = ?
-  `).get(partiDeltakerId);
+     WHERE pd.prove_id = ? AND pd.hund_regnr = ? AND p.navn = ?
+  `).get(proveId, hundRegnr, partiNavn);
   if (!rad) {
     return { error: c.json({ error: "Parti-deltaker ikke funnet" }, 404) };
-  }
-  if (!harProveAdmin(payload, rad.prove_id)) {
-    return { error: c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403) };
-  }
-  if (proveErLast(rad.prove_id)) {
-    return { error: c.json({ error: "Prøven er fullført — kan ikke endres" }, 409) };
   }
   return { rad, payload };
 }
 
-// Marker parti-deltaker som ikke møtt (per dag)
-app.post("/api/parti-deltakere/:id/ikke-mott", async (c) => {
-  const partiDeltakerId = parseInt(c.req.param("id"), 10);
-  const { rad, payload, error } = hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId);
+// Marker parti-deltaker som ikke møtt (per dag) — stabile identifikatorer i body
+app.post("/api/prover/:proveId/ikke-mott", async (c) => {
+  const proveId = c.req.param("proveId");
+  const body = await c.req.json().catch(() => ({}));
+  const { hund_regnr, parti_navn } = body;
+  const { rad, payload, error } = hentPartiDeltakerStabil(c, proveId, hund_regnr, parti_navn);
   if (error) return error;
 
   if (rad.status === 'ikke_mott') {
@@ -9905,15 +9915,15 @@ app.post("/api/parti-deltakere/:id/ikke-mott", async (c) => {
              ikke_mott_at = datetime('now'),
              ikke_mott_av_telefon = ?
        WHERE id = ?
-    `).run(payload.telefon, partiDeltakerId);
+    `).run(payload.telefon, rad.id);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       'parti_deltaker_ikke_mott',
       JSON.stringify({
-        parti_deltaker_id: partiDeltakerId,
-        prove_id: rad.prove_id,
-        hund_regnr: rad.hund_regnr,
-        parti_navn: rad.parti_navn,
+        parti_deltaker_id: rad.id,
+        prove_id: proveId,
+        hund_regnr,
+        parti_navn,
         parti_dato: rad.parti_dato,
         markert_av: payload.telefon
       })
@@ -9925,9 +9935,11 @@ app.post("/api/parti-deltakere/:id/ikke-mott", async (c) => {
 });
 
 // Angre ikke-møtt-markering (hund dukket likevel opp, eller markert ved feil)
-app.post("/api/parti-deltakere/:id/angre-ikke-mott", async (c) => {
-  const partiDeltakerId = parseInt(c.req.param("id"), 10);
-  const { rad, payload, error } = hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId);
+app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
+  const proveId = c.req.param("proveId");
+  const body = await c.req.json().catch(() => ({}));
+  const { hund_regnr, parti_navn } = body;
+  const { rad, payload, error } = hentPartiDeltakerStabil(c, proveId, hund_regnr, parti_navn);
   if (error) return error;
 
   if (rad.status !== 'ikke_mott') {
@@ -9941,13 +9953,15 @@ app.post("/api/parti-deltakere/:id/angre-ikke-mott", async (c) => {
              ikke_mott_at = NULL,
              ikke_mott_av_telefon = NULL
        WHERE id = ?
-    `).run(partiDeltakerId);
+    `).run(rad.id);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       'parti_deltaker_angre_ikke_mott',
       JSON.stringify({
-        parti_deltaker_id: partiDeltakerId,
-        prove_id: rad.prove_id,
+        parti_deltaker_id: rad.id,
+        prove_id: proveId,
+        hund_regnr,
+        parti_navn,
         utfort_av: payload.telefon
       })
     );

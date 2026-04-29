@@ -5148,9 +5148,11 @@
         // Knapp i partilister åpner bekreftelses-modal. Etter bekreftelse markeres
         // hunden som ikke møtt på serveren (synkron POST + 200-svar før DOM oppdateres).
         // Hunden forsvinner fra partilisten og dukker opp i forfall-seksjonen.
-        function apneIkkeMottBekreftelse(partiDeltakerId, hundenavn, regnr) {
+        function apneIkkeMottBekreftelse(regnr, partiNavn, hundenavn) {
             const navn = (hundenavn || '').replace(/[<>]/g, '');
             const reg = (regnr || '').replace(/[<>]/g, '');
+            const regJs = (regnr || '').replace(/'/g, "\\'");
+            const partiJs = (partiNavn || '').replace(/'/g, "\\'");
             const dialogHtml =
                 '<div id="ikkeMottBekreftDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">' +
                     '<div class="bg-white rounded-2xl shadow-xl max-w-md w-full">' +
@@ -5167,25 +5169,27 @@
                         '</div>' +
                         '<div class="px-6 py-4 bg-bark-50 border-t border-bark-100 rounded-b-2xl flex items-center justify-end gap-2">' +
                             '<button onclick="document.getElementById(\'ikkeMottBekreftDialog\').remove()" class="px-4 py-2 rounded-xl bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 font-medium transition">Avbryt</button>' +
-                            '<button id="ikkeMottBekreftKnapp" onclick="bekreftIkkeMott(' + partiDeltakerId + ')" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium transition shadow-sm">Ja, ikke møtt</button>' +
+                            '<button id="ikkeMottBekreftKnapp" onclick="bekreftIkkeMott(\'' + regJs + '\', \'' + partiJs + '\')" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium transition shadow-sm">Ja, ikke møtt</button>' +
                         '</div>' +
                     '</div>' +
                 '</div>';
             document.body.insertAdjacentHTML('beforeend', dialogHtml);
         }
 
-        async function bekreftIkkeMott(partiDeltakerId) {
+        async function bekreftIkkeMott(hundRegnr, partiNavn) {
             const knapp = document.getElementById('ikkeMottBekreftKnapp');
             if (knapp) { knapp.disabled = true; knapp.textContent = 'Lagrer …'; }
             try {
+                const proveId = getCurrentTrialId();
+                if (!proveId) throw new Error('Ingen prøve valgt');
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch('/api/parti-deltakere/' + partiDeltakerId + '/ikke-mott', {
+                const resp = await fetch('/api/prover/' + encodeURIComponent(proveId) + '/ikke-mott', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': token ? 'Bearer ' + token : ''
                     },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({ hund_regnr: hundRegnr, parti_navn: partiNavn })
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
@@ -5195,11 +5199,8 @@
                 if (dlg) dlg.remove();
 
                 // Refetch partilister + forfall-oversikt så DOM speiler server
-                const proveId = getCurrentTrialId();
-                if (proveId) {
-                    const parties = await loadPartiesFromServer(proveId);
-                    if (parties && parties.length > 0) renderAllParties(parties);
-                }
+                const parties = await loadPartiesFromServer(proveId);
+                if (parties && parties.length > 0) renderAllParties(parties);
                 lastForfallOversikt();
                 if (typeof FuglehundToast !== 'undefined') {
                     FuglehundToast.success('Hund markert som ikke møtt');
@@ -5210,27 +5211,26 @@
             }
         }
 
-        async function angreIkkeMott(partiDeltakerId) {
+        async function angreIkkeMott(hundRegnr, partiNavn) {
             if (!confirm('Angre ikke-møtt-markering? Hunden settes tilbake i partiet.')) return;
             try {
+                const proveId = getCurrentTrialId();
+                if (!proveId) throw new Error('Ingen prøve valgt');
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch('/api/parti-deltakere/' + partiDeltakerId + '/angre-ikke-mott', {
+                const resp = await fetch('/api/prover/' + encodeURIComponent(proveId) + '/angre-ikke-mott', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': token ? 'Bearer ' + token : ''
                     },
-                    body: JSON.stringify({})
+                    body: JSON.stringify({ hund_regnr: hundRegnr, parti_navn: partiNavn })
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
                     throw new Error(err.error || 'HTTP ' + resp.status);
                 }
-                const proveId = getCurrentTrialId();
-                if (proveId) {
-                    const parties = await loadPartiesFromServer(proveId);
-                    if (parties && parties.length > 0) renderAllParties(parties);
-                }
+                const parties = await loadPartiesFromServer(proveId);
+                if (parties && parties.length > 0) renderAllParties(parties);
                 lastForfallOversikt();
                 if (typeof FuglehundToast !== 'undefined') {
                     FuglehundToast.success('Markering angret');
@@ -5324,7 +5324,7 @@
                         '</div>' +
                     '</div>' +
                     (erIkkeMott
-                        ? '<button onclick="angreIkkeMott(' + item.parti_deltaker_id + ')" class="ml-2 px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm whitespace-nowrap">Angre</button>'
+                        ? '<button onclick="angreIkkeMott(\'' + (item.hund_regnr || '').replace(/\'/g, "\\\'") + '\', \'' + (item.parti_navn || '').replace(/\'/g, "\\\'") + '\')" class="ml-2 px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm whitespace-nowrap">Angre</button>'
                         : '') +
                 '</div>';
             }).join('');
@@ -8033,11 +8033,14 @@
                 : (dog.rase || '–');
             var raseFull = dog.rase || '';
 
-            // Ikke møtt-knapp: krever parti_deltaker_id (kommer fra /partilister/admin-
-            // endepunktet) — markeringen er PER-DAG, ikke per-prøve. Hvis ID mangler
-            // (f.eks. data fra eldre cache), vises ingen knapp.
-            var ikkeMottBtn = (dog.parti_deltaker_id) ?
-                '<button onclick="apneIkkeMottBekreftelse(' + dog.parti_deltaker_id + ', \'' + (dog.hundenavn || '').replace(/'/g, "\\'") + '\', \'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
+            // Ikke møtt-knapp: bruker stabile identifikatorer (regnr + parti-navn) i
+            // stedet for parti_deltakere.id, fordi auto-save av partilister kan re-
+            // generere IDer mellom marker og angre. Krever at hund har regnr + at vi
+            // kjenner partiet.
+            var partiNavnEsc = (party.name || '').replace(/'/g, "\\'");
+            var hundenavnEsc = (dog.hundenavn || '').replace(/'/g, "\\'");
+            var ikkeMottBtn = (dog.regnr && party.name) ?
+                '<button onclick="apneIkkeMottBekreftelse(\'' + regnrEsc + '\', \'' + partiNavnEsc + '\', \'' + hundenavnEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
                 : '';
 
             // Eier på linje 1, fører på linje 2 — text-xs så raden ikke vokser i høyde.

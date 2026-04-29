@@ -1278,6 +1278,13 @@ const migrations = [
   // Uønsket adferd i kritikker (for NJFF-rapportering)
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd INTEGER DEFAULT 0",
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
+  // Sporbarhet for ikke-møtt-markering: når ble den satt og av hvem.
+  // Selve status='ikke_mott' ligger allerede i CHECK-constraint på pameldinger.status.
+  "ALTER TABLE pameldinger ADD COLUMN ikke_mott_at TEXT DEFAULT NULL",
+  "ALTER TABLE pameldinger ADD COLUMN ikke_mott_av_telefon TEXT DEFAULT NULL",
+  // Når en hund hentes inn fra venteliste for å erstatte en ikke-møtt hund,
+  // peker dette feltet på den nye hundens påmelding tilbake til den ikke-møttes.
+  "ALTER TABLE pameldinger ADD COLUMN erstatter_pamelding_id INTEGER DEFAULT NULL",
   // Stavefiks for prove_type — fjerner ø-tegnet i 'høyfjell_*' så verdiene
   // er konsistent med kode-vennlig "hoyfjell_*" (samme mønster som NM-typene
   // 'nm_hoyfjell_host'). Tidligere brukte ulike steder (opprett-prove vs
@@ -9796,6 +9803,205 @@ app.put("/api/prover/:proveId/avmeldinger/:id", requireProveAdmin, async (c) => 
   return c.json({ ok: true, avmelding: oppdatert });
 });
 
+// ============================================
+// IKKE MØTT — opprop på prøve-dag
+// ============================================
+// Brukes av prøveledelsen ved morgen-opprop. Hunder som ikke møter
+// markeres som 'ikke_mott' og forsvinner fra partilister, dommer-flater
+// og kritikk-skjemaet. Hunden vises i forfall-oversikten med markering.
+// Erstatter fra venteliste håndteres i Stage 2 (eget endepunkt).
+
+// Hjelpefunksjon: hent pamelding + sjekk admin-tilgang. Returnerer
+// {pamelding, error} der error er en c.json-respons hvis tilgang nektes.
+function hentPameldingMedAdminTilgang(c, pameldingId) {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { error: c.json({ error: "Mangler token" }, 401) };
+  }
+  const payload = verifyToken(authHeader.slice(7));
+  if (!payload) {
+    return { error: c.json({ error: "Ugyldig eller utløpt token" }, 401) };
+  }
+  const pamelding = db.prepare("SELECT * FROM pameldinger WHERE id = ?").get(pameldingId);
+  if (!pamelding) {
+    return { error: c.json({ error: "Påmelding ikke funnet" }, 404) };
+  }
+  if (!harProveAdmin(payload, pamelding.prove_id)) {
+    return { error: c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403) };
+  }
+  if (proveErLast(pamelding.prove_id)) {
+    return { error: c.json({ error: "Prøven er fullført — kan ikke endres" }, 409) };
+  }
+  return { pamelding, payload };
+}
+
+// Marker hund som ikke møtt
+app.post("/api/pameldinger/:id/ikke-mott", async (c) => {
+  const pameldingId = parseInt(c.req.param("id"), 10);
+  const { pamelding, payload, error } = hentPameldingMedAdminTilgang(c, pameldingId);
+  if (error) return error;
+
+  if (pamelding.status === 'ikke_mott') {
+    return c.json({ error: "Hunden er allerede markert som ikke møtt" }, 400);
+  }
+  if (pamelding.status === 'avmeldt') {
+    return c.json({ error: "Hunden er avmeldt — kan ikke markeres som ikke møtt" }, 400);
+  }
+  if (pamelding.status === 'venteliste') {
+    return c.json({ error: "Hund på venteliste kan ikke markeres som ikke møtt" }, 400);
+  }
+
+  // Atomisk: oppdater status + sporbarhet i én transaksjon
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE pameldinger
+         SET status = 'ikke_mott',
+             ikke_mott_at = datetime('now'),
+             ikke_mott_av_telefon = ?,
+             updated_at = datetime('now')
+       WHERE id = ?
+    `).run(payload.telefon, pameldingId);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      'pamelding_ikke_mott',
+      JSON.stringify({
+        pamelding_id: pameldingId,
+        prove_id: pamelding.prove_id,
+        hund_id: pamelding.hund_id,
+        markert_av: payload.telefon
+      })
+    );
+  });
+  tx();
+
+  const oppdatert = db.prepare(`
+    SELECT p.*, b.fornavn AS markert_av_fornavn, b.etternavn AS markert_av_etternavn
+      FROM pameldinger p
+      LEFT JOIN brukere b ON b.telefon = p.ikke_mott_av_telefon
+     WHERE p.id = ?
+  `).get(pameldingId);
+
+  return c.json({ ok: true, pamelding: oppdatert });
+});
+
+// Angre ikke-møtt-markering (hund dukket likevel opp, eller markert ved feil)
+app.post("/api/pameldinger/:id/angre-ikke-mott", async (c) => {
+  const pameldingId = parseInt(c.req.param("id"), 10);
+  const { pamelding, payload, error } = hentPameldingMedAdminTilgang(c, pameldingId);
+  if (error) return error;
+
+  if (pamelding.status !== 'ikke_mott') {
+    return c.json({ error: "Hunden er ikke markert som ikke møtt" }, 400);
+  }
+
+  // Tilbake til 'bekreftet' hvis parti er tildelt, ellers 'pameldt'
+  const nyStatus = pamelding.parti ? 'bekreftet' : 'pameldt';
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE pameldinger
+         SET status = ?,
+             ikke_mott_at = NULL,
+             ikke_mott_av_telefon = NULL,
+             updated_at = datetime('now')
+       WHERE id = ?
+    `).run(nyStatus, pameldingId);
+
+    db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
+      'pamelding_angre_ikke_mott',
+      JSON.stringify({
+        pamelding_id: pameldingId,
+        prove_id: pamelding.prove_id,
+        ny_status: nyStatus,
+        utfort_av: payload.telefon
+      })
+    );
+  });
+  tx();
+
+  const oppdatert = db.prepare("SELECT * FROM pameldinger WHERE id = ?").get(pameldingId);
+  return c.json({ ok: true, pamelding: oppdatert });
+});
+
+// Forfall-oversikt: kombinerer avmeldinger og ikke-møtt-hunder for prøven.
+// Hver rad har 'type'-feltet ('forfall' eller 'ikke_mott') så frontend kan
+// vise distinkt markering.
+app.get("/api/prover/:proveId/forfall-oversikt", requireProveAdmin, (c) => {
+  const proveId = c.req.param("proveId");
+
+  // Avmeldinger (forfall)
+  const forfall = db.prepare(`
+    SELECT
+      'forfall' AS type,
+      a.id AS avmelding_id,
+      a.pamelding_id,
+      a.arsak,
+      a.arsak_beskrivelse,
+      a.dokumentasjon,
+      a.status AS avmelding_status,
+      a.refusjon_belop,
+      a.refusjon_prosent,
+      a.refusjon_utbetalt,
+      a.opprykk_pamelding_id,
+      a.created_at AS hendelse_at,
+      NULL AS markert_av_telefon,
+      NULL AS markert_av_fornavn,
+      NULL AS markert_av_etternavn,
+      p.klasse, p.dag, p.parti, p.startnummer,
+      h.id AS hund_id, h.navn AS hund_navn, h.regnr AS hund_regnr, h.rase AS hund_rase,
+      p.forer_telefon,
+      bf.fornavn AS forer_fornavn, bf.etternavn AS forer_etternavn,
+      h.eier_telefon,
+      be.fornavn AS eier_fornavn, be.etternavn AS eier_etternavn
+    FROM avmeldinger a
+    JOIN pameldinger p ON p.id = a.pamelding_id
+    JOIN hunder h ON h.id = a.hund_id
+    LEFT JOIN brukere bf ON bf.telefon = p.forer_telefon
+    LEFT JOIN brukere be ON be.telefon = h.eier_telefon
+    WHERE a.prove_id = ?
+  `).all(proveId);
+
+  // Ikke møtt
+  const ikkeMott = db.prepare(`
+    SELECT
+      'ikke_mott' AS type,
+      NULL AS avmelding_id,
+      p.id AS pamelding_id,
+      NULL AS arsak,
+      NULL AS arsak_beskrivelse,
+      NULL AS dokumentasjon,
+      NULL AS avmelding_status,
+      0 AS refusjon_belop,
+      0 AS refusjon_prosent,
+      0 AS refusjon_utbetalt,
+      NULL AS opprykk_pamelding_id,
+      p.ikke_mott_at AS hendelse_at,
+      p.ikke_mott_av_telefon AS markert_av_telefon,
+      bm.fornavn AS markert_av_fornavn,
+      bm.etternavn AS markert_av_etternavn,
+      p.klasse, p.dag, p.parti, p.startnummer,
+      h.id AS hund_id, h.navn AS hund_navn, h.regnr AS hund_regnr, h.rase AS hund_rase,
+      p.forer_telefon,
+      bf.fornavn AS forer_fornavn, bf.etternavn AS forer_etternavn,
+      h.eier_telefon,
+      be.fornavn AS eier_fornavn, be.etternavn AS eier_etternavn
+    FROM pameldinger p
+    JOIN hunder h ON h.id = p.hund_id
+    LEFT JOIN brukere bf ON bf.telefon = p.forer_telefon
+    LEFT JOIN brukere be ON be.telefon = h.eier_telefon
+    LEFT JOIN brukere bm ON bm.telefon = p.ikke_mott_av_telefon
+    WHERE p.prove_id = ? AND p.status = 'ikke_mott'
+  `).all(proveId);
+
+  const items = [...forfall, ...ikkeMott].sort((a, b) => {
+    const ta = a.hendelse_at || '';
+    const tb = b.hendelse_at || '';
+    return tb.localeCompare(ta); // nyeste først
+  });
+
+  return c.json({ items, count: items.length });
+});
+
 // Hent mine aktive påmeldinger (for avmeldings-UI)
 app.get("/api/mine-pameldinger", requireAuth, (c) => {
   const bruker = c.get("bruker");
@@ -10657,6 +10863,16 @@ app.get("/api/prover/:id/partilister", (c) => {
     ORDER BY pd.startnummer
   `).all(proveId);
 
+  // Sett av regnrs som er markert ikke-møtt — disse skjules fra partilisten
+  // (men fortsatt synlige i forfall-oversikten for admin).
+  const ikkeMottRegnrs = new Set(
+    db.prepare(`
+      SELECT h.regnr FROM pameldinger pa
+      JOIN hunder h ON h.id = pa.hund_id
+      WHERE pa.prove_id = ? AND pa.status = 'ikke_mott'
+    `).all(proveId).map(r => r.regnr)
+  );
+
   const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
   const startDato = prove?.start_dato || (partier.map(p => p.dato).filter(Boolean).sort()[0] || null);
   const computeDay = (dato) => {
@@ -10668,6 +10884,7 @@ app.get("/api/prover/:id/partilister", (c) => {
   // Bygg opp struktur som matcher localStorage-formatet
   // GDPR: Telefonnumre fjernes fra offentlig API
   // Trukne hunder (status='trukket') ekskluderes helt fra offentlig API
+  // Ikke-møtt-hunder skjules også
   const result = partier.map(parti => ({
     id: parti.id,
     name: parti.navn,
@@ -10678,7 +10895,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
-      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket')
+      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket' && !ikkeMottRegnrs.has(d.hund_regnr))
       .map(d => ({
         regnr: d.hund_regnr,
         hundenavn: d.hund_navn,
@@ -10716,6 +10933,17 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     ORDER BY pd.startnummer
   `).all(proveId);
 
+  // Set av regnrs markert ikke-møtt + lookup av påmelding-id per regnr
+  // (admin-frontend trenger pamelding_id for å kalle ikke-mott-endepunktet).
+  const pameldingerForProve = db.prepare(`
+    SELECT pa.id AS pamelding_id, pa.status AS pamelding_status, h.regnr
+    FROM pameldinger pa
+    JOIN hunder h ON h.id = pa.hund_id
+    WHERE pa.prove_id = ?
+  `).all(proveId);
+  const pameldingByRegnr = new Map(pameldingerForProve.map(r => [r.regnr, r]));
+  const ikkeMottRegnrs = new Set(pameldingerForProve.filter(r => r.pamelding_status === 'ikke_mott').map(r => r.regnr));
+
   const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
   const startDato = prove?.start_dato || (partier.map(p => p.dato).filter(Boolean).sort()[0] || null);
   const computeDay = (dato) => {
@@ -10725,21 +10953,27 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
   };
 
   // Full versjon med telefonnumre for admin
-  // dogs[] = aktive hunder (status != 'trukket'), trukne[] = hunder som meldt forfall
-  const mapDog = (d) => ({
-    regnr: d.hund_regnr,
-    hundenavn: d.hund_navn,
-    rase: d.rase,
-    kjonn: d.kjonn,
-    klasse: d.klasse,
-    eier: d.eier_navn,
-    eierTelefon: d.eier_telefon,
-    forer: d.forer_navn,
-    forerTelefon: d.forer_telefon,
-    startnummer: d.startnummer,
-    confirmed: d.bekreftet === 1,
-    status: d.status
-  });
+  // dogs[] = aktive hunder (status != 'trukket' og ikke ikke-møtt)
+  // trukne[] = hunder som er trukket fra parti
+  // Ikke-møtt-hunder eksponeres ikke her — de ligger i forfall-oversikten.
+  const mapDog = (d) => {
+    const pa = pameldingByRegnr.get(d.hund_regnr);
+    return {
+      regnr: d.hund_regnr,
+      hundenavn: d.hund_navn,
+      rase: d.rase,
+      kjonn: d.kjonn,
+      klasse: d.klasse,
+      eier: d.eier_navn,
+      eierTelefon: d.eier_telefon,
+      forer: d.forer_navn,
+      forerTelefon: d.forer_telefon,
+      startnummer: d.startnummer,
+      confirmed: d.bekreftet === 1,
+      status: d.status,
+      pamelding_id: pa ? pa.pamelding_id : null
+    };
+  };
   const result = partier.map(parti => ({
     id: parti.id,
     name: parti.navn,
@@ -10750,7 +10984,7 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
-      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket')
+      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket' && !ikkeMottRegnrs.has(d.hund_regnr))
       .map(mapDog),
     trukne: deltakere
       .filter(d => d.parti_id === parti.id && d.status === 'trukket')
@@ -10826,6 +11060,9 @@ function syncPameldingerForProve(proveId) {
     if (r.pd_status !== 'trukket') agg.alleTrukket = false;
   }
 
+  // status preserveres når den allerede er 'ikke_mott' — denne settes manuelt
+  // av prøveadmin via opprop-flyten og må ikke overskrives når broen kjører
+  // som følge av andre parti-endringer.
   const upsert = db.prepare(`
     INSERT INTO pameldinger (
       prove_id, hund_id, forer_telefon, klasse, dag, status,
@@ -10834,7 +11071,7 @@ function syncPameldingerForProve(proveId) {
     ON CONFLICT(prove_id, hund_id) DO UPDATE SET
       klasse = excluded.klasse,
       dag = excluded.dag,
-      status = excluded.status,
+      status = CASE WHEN pameldinger.status = 'ikke_mott' THEN pameldinger.status ELSE excluded.status END,
       parti = excluded.parti,
       updated_at = datetime('now')
   `);
@@ -10894,23 +11131,25 @@ function syncPameldingerForProve(proveId) {
     const vPh = ventelisteHundIds.map(() => '?').join(',');
     const vr = db.prepare(`
       UPDATE pameldinger SET status = 'venteliste', updated_at = datetime('now')
-      WHERE prove_id = ? AND hund_id IN (${vPh}) AND status NOT IN ('venteliste', 'bekreftet', 'pameldt')
+      WHERE prove_id = ? AND hund_id IN (${vPh}) AND status NOT IN ('venteliste', 'bekreftet', 'pameldt', 'ikke_mott')
     `).run(proveId, ...ventelisteHundIds);
     venteliste_markert = vr.changes;
   }
 
+  // Hunder som ikke lenger er i parti_deltakere settes til 'avmeldt' — UNNTATT
+  // de som er manuelt markert 'ikke_mott' av prøveadmin (opprop-flyten).
   const alleAktiveIds = [...activeHundIds, ...ventelisteHundIds];
   if (alleAktiveIds.length > 0) {
     const placeholders = alleAktiveIds.map(() => '?').join(',');
     const r = db.prepare(`
       UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
-      WHERE prove_id = ? AND hund_id NOT IN (${placeholders}) AND status != 'avmeldt'
+      WHERE prove_id = ? AND hund_id NOT IN (${placeholders}) AND status NOT IN ('avmeldt', 'ikke_mott')
     `).run(proveId, ...alleAktiveIds);
     avmeldt = r.changes;
   } else {
     const r = db.prepare(`
       UPDATE pameldinger SET status = 'avmeldt', updated_at = datetime('now')
-      WHERE prove_id = ? AND status != 'avmeldt'
+      WHERE prove_id = ? AND status NOT IN ('avmeldt', 'ikke_mott')
     `).run(proveId);
     avmeldt = r.changes;
   }

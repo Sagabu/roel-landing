@@ -2882,6 +2882,19 @@
                     </div>
                 </section>
 
+                <!-- Forfall-oversikt: kombinerer meldte forfall (avmeldinger) og hunder markert ikke-møtt på prøve-dagen -->
+                <section id="forfallSection" class="hidden space-y-4 w-full">
+                    <div class="bg-white rounded-2xl shadow-md border border-rose-200 overflow-hidden w-full">
+                        <div class="bg-gradient-to-r from-rose-50 to-rose-100 px-6 py-5 border-b border-rose-200 flex items-center justify-between">
+                            <div>
+                                <h2 class="text-xl font-bold font-serif text-rose-900">Forfall og ikke møtt</h2>
+                                <p class="text-sm text-rose-700 mt-1" id="forfallCount">Laster …</p>
+                            </div>
+                        </div>
+                        <div id="forfallContent" class="px-4 py-3"></div>
+                    </div>
+                </section>
+
                 <!-- Meldinger - kombinert send og innboks -->
                 <section id="meldinger" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
                     <div class="section-bg-arrangor px-6 py-4 border-b border-bark-100">
@@ -5072,6 +5085,205 @@
             section.querySelector('[data-trukket-content]').innerHTML = rows;
             const teller = section.querySelector('[data-trukket-count]');
             if (teller) teller.textContent = total + ' hunder trukket';
+        }
+
+        // ============================================
+        // IKKE MØTT — opprop på prøve-dag
+        // ============================================
+        // Knapp i partilister åpner bekreftelses-modal. Etter bekreftelse markeres
+        // hunden som ikke møtt på serveren (synkron POST + 200-svar før DOM oppdateres).
+        // Hunden forsvinner fra partilisten og dukker opp i forfall-seksjonen.
+        function apneIkkeMottBekreftelse(pameldingId, hundenavn, regnr) {
+            const navn = (hundenavn || '').replace(/[<>]/g, '');
+            const reg = (regnr || '').replace(/[<>]/g, '');
+            const dialogHtml =
+                '<div id="ikkeMottBekreftDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">' +
+                    '<div class="bg-white rounded-2xl shadow-xl max-w-md w-full">' +
+                        '<div class="px-6 py-4 border-b border-bark-100 bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl">' +
+                            '<h3 class="text-lg font-bold font-serif text-orange-900">Marker som ikke møtt</h3>' +
+                        '</div>' +
+                        '<div class="p-6">' +
+                            '<p class="text-bark-800 mb-2">Er du sikker på at følgende hund <strong>ikke har møtt</strong>?</p>' +
+                            '<div class="bg-bark-50 border border-bark-200 rounded-lg p-3 mb-4">' +
+                                '<div class="font-semibold text-bark-900">' + navn + '</div>' +
+                                '<div class="text-xs text-bark-500">' + reg + '</div>' +
+                            '</div>' +
+                            '<p class="text-sm text-bark-600">Hunden flyttes til <em>Forfall og ikke møtt</em>-listen og blir skjult fra partilister, dommere og kritikk-skjemaet. Du kan angre fra forfall-listen.</p>' +
+                        '</div>' +
+                        '<div class="px-6 py-4 bg-bark-50 border-t border-bark-100 rounded-b-2xl flex items-center justify-end gap-2">' +
+                            '<button onclick="document.getElementById(\'ikkeMottBekreftDialog\').remove()" class="px-4 py-2 rounded-xl bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 font-medium transition">Avbryt</button>' +
+                            '<button id="ikkeMottBekreftKnapp" onclick="bekreftIkkeMott(' + pameldingId + ')" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium transition shadow-sm">Ja, ikke møtt</button>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        async function bekreftIkkeMott(pameldingId) {
+            const knapp = document.getElementById('ikkeMottBekreftKnapp');
+            if (knapp) { knapp.disabled = true; knapp.textContent = 'Lagrer …'; }
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/pameldinger/' + pameldingId + '/ikke-mott', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? 'Bearer ' + token : ''
+                    },
+                    body: JSON.stringify({})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || 'HTTP ' + resp.status);
+                }
+                const dlg = document.getElementById('ikkeMottBekreftDialog');
+                if (dlg) dlg.remove();
+
+                // Refetch partilister + forfall-oversikt så DOM speiler server
+                const proveId = getCurrentTrialId();
+                if (proveId) {
+                    const parties = await loadPartiesFromServer(proveId);
+                    if (parties && parties.length > 0) renderAllParties(parties);
+                }
+                lastForfallOversikt();
+                if (typeof FuglehundToast !== 'undefined') {
+                    FuglehundToast.success('Hund markert som ikke møtt');
+                }
+            } catch (e) {
+                if (knapp) { knapp.disabled = false; knapp.textContent = 'Ja, ikke møtt'; }
+                alert('Kunne ikke markere ikke møtt: ' + (e.message || e));
+            }
+        }
+
+        async function angreIkkeMott(pameldingId) {
+            if (!confirm('Angre ikke-møtt-markering? Hunden settes tilbake i partilisten.')) return;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/pameldinger/' + pameldingId + '/angre-ikke-mott', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? 'Bearer ' + token : ''
+                    },
+                    body: JSON.stringify({})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || 'HTTP ' + resp.status);
+                }
+                const proveId = getCurrentTrialId();
+                if (proveId) {
+                    const parties = await loadPartiesFromServer(proveId);
+                    if (parties && parties.length > 0) renderAllParties(parties);
+                }
+                lastForfallOversikt();
+                if (typeof FuglehundToast !== 'undefined') {
+                    FuglehundToast.success('Markering angret');
+                }
+            } catch (e) {
+                alert('Kunne ikke angre: ' + (e.message || e));
+            }
+        }
+
+        async function lastForfallOversikt() {
+            const proveId = getCurrentTrialId();
+            const section = document.getElementById('forfallSection');
+            if (!proveId || !section) return;
+            try {
+                const token = localStorage.getItem('fuglehund_token');
+                const resp = await fetch('/api/prover/' + proveId + '/forfall-oversikt', {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                renderForfallOversikt(data.items || []);
+            } catch (e) {
+                console.warn('Kunne ikke laste forfall-oversikt:', e);
+            }
+        }
+
+        function renderForfallOversikt(items) {
+            const section = document.getElementById('forfallSection');
+            const content = document.getElementById('forfallContent');
+            const counter = document.getElementById('forfallCount');
+            if (!section || !content) return;
+
+            if (!items || items.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            // Vis kun når partilister-fanen er aktiv (samme logikk som trukket-seksjonen)
+            const partilisterSection = document.getElementById('partilister');
+            const isPartilisterActive = partilisterSection && !partilisterSection.classList.contains('hidden');
+            if (isPartilisterActive) {
+                section.classList.remove('hidden');
+            } else {
+                section.classList.add('hidden');
+                return;
+            }
+
+            const ikkeMottAntall = items.filter(i => i.type === 'ikke_mott').length;
+            const forfallAntall = items.filter(i => i.type === 'forfall').length;
+            if (counter) counter.textContent =
+                ikkeMottAntall + ' ikke møtt · ' + forfallAntall + ' meldt forfall';
+
+            const formaterDag = (d) => {
+                if (!d) return '';
+                if (typeof d === 'string') {
+                    try {
+                        const arr = JSON.parse(d);
+                        if (Array.isArray(arr) && arr.length > 0) return 'dag ' + arr.join(', ');
+                    } catch (_) {}
+                    return 'dag ' + d;
+                }
+                return 'dag ' + d;
+            };
+            const formaterTidspunkt = (ts) => {
+                if (!ts) return '';
+                try {
+                    const dt = new Date(ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z');
+                    return dt.toLocaleString('nb-NO', { dateStyle: 'short', timeStyle: 'short' });
+                } catch (_) { return ts; }
+            };
+
+            content.innerHTML = items.map(item => {
+                const erIkkeMott = item.type === 'ikke_mott';
+                const badgeBg = erIkkeMott
+                    ? 'bg-orange-100 text-orange-800 border-orange-300'
+                    : 'bg-rose-100 text-rose-800 border-rose-300';
+                const badgeTxt = erIkkeMott ? 'IKKE MØTT' : 'FORFALL';
+                const klasseTekst = (item.klasse || '') + ' · ' + formaterDag(item.dag);
+                const eierForer =
+                    [(item.eier_fornavn || '') + ' ' + (item.eier_etternavn || '')].join(' ').trim() ||
+                    item.forer_telefon || '–';
+                const forer =
+                    [(item.forer_fornavn || '') + ' ' + (item.forer_etternavn || '')].join(' ').trim() || '';
+                const markertAv = erIkkeMott
+                    ? ((item.markert_av_fornavn || '') + ' ' + (item.markert_av_etternavn || '')).trim()
+                    : '';
+                const arsakTekst = !erIkkeMott && item.arsak ? ({
+                    'sykdom_hund': 'Sykdom hund',
+                    'sykdom_forer': 'Sykdom fører',
+                    'lopetid': 'Løpetid',
+                    'annet': 'Annen årsak'
+                }[item.arsak] || item.arsak) : '';
+
+                return '<div class="flex items-center justify-between py-2 px-3 border-b border-rose-100 last:border-b-0">' +
+                    '<div class="flex-1 min-w-0 flex items-start gap-3">' +
+                        '<span class="px-2 py-0.5 rounded text-xs font-bold border ' + badgeBg + ' whitespace-nowrap mt-0.5">' + badgeTxt + '</span>' +
+                        '<div class="min-w-0">' +
+                            '<div class="font-medium text-bark-900 truncate">' + (item.hund_navn || '') + ' <span class="text-xs text-bark-500 font-normal">(' + (item.hund_regnr || '') + ')</span></div>' +
+                            '<div class="text-xs text-bark-500">' + klasseTekst + ' · Eier: ' + eierForer + (forer && forer !== eierForer ? ' · Fører: ' + forer : '') + '</div>' +
+                            (markertAv ? '<div class="text-xs text-bark-400 mt-0.5">Markert av ' + markertAv + ' · ' + formaterTidspunkt(item.hendelse_at) + '</div>' : '') +
+                            (arsakTekst ? '<div class="text-xs text-bark-400 mt-0.5">' + arsakTekst + (item.arsak_beskrivelse ? ' — ' + item.arsak_beskrivelse : '') + '</div>' : '') +
+                        '</div>' +
+                    '</div>' +
+                    (erIkkeMott
+                        ? '<button onclick="angreIkkeMott(' + item.pamelding_id + ')" class="ml-2 px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm whitespace-nowrap">Angre</button>'
+                        : '') +
+                '</div>';
+            }).join('');
         }
 
         // Synkroniser venteliste til server — samme serialisering som
@@ -7777,6 +7989,12 @@
                 : (dog.rase || '–');
             var raseFull = dog.rase || '';
 
+            // Ikke møtt-knapp: krever pamelding_id (kommer fra /partilister/admin-endepunktet).
+            // Hvis den mangler (f.eks. data fra eldre cache), vises ingen knapp.
+            var ikkeMottBtn = (dog.pamelding_id) ?
+                '<button onclick="apneIkkeMottBekreftelse(' + dog.pamelding_id + ', \'' + (dog.hundenavn || '').replace(/'/g, "\\'") + '\', \'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
+                : '';
+
             return '<div class="partilister-row ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
                 '<div class="py-2 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
                 '<div class="pl-1 pr-2 py-2 min-w-0"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
@@ -7787,6 +8005,7 @@
                 '<div class="px-2 py-2 text-center flex items-center justify-center gap-1 flex-wrap">' +
                     upBtn + downBtn +
                     '<button onclick="openMoveDialog(\'' + regnrEsc + '\', \'' + partyNameEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt</button>' +
+                    ikkeMottBtn +
                     '<button onclick="trekkHund(\'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-700 border border-red-300 text-xs font-medium transition shadow-sm" title="Trekk påmeldingen">Trekk</button>' +
                 '</div>' +
             '</div>';
@@ -8110,6 +8329,9 @@
                     }
                     // Render trukket-liste uavhengig av venteliste (kan ha innhold selv om venteliste er tom)
                     if (typeof renderTrukketListe === 'function') renderTrukketListe();
+
+                    // Last forfall-oversikt (forfall + ikke-møtt)
+                    if (typeof lastForfallOversikt === 'function') lastForfallOversikt();
 
                     // Oppdater statistikk-kortene
                     updateStatsFromStorage();
@@ -19224,6 +19446,10 @@
                     if (waitlistBody && waitlistBody.innerHTML.trim()) {
                         ventelisteSection.classList.remove('hidden');
                     }
+                }
+                // Last forfall-oversikt (forfall + ikke-møtt) når brukeren går til partilister
+                if (typeof lastForfallOversikt === 'function') {
+                    lastForfallOversikt();
                 }
             }
 

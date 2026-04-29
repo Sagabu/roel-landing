@@ -5275,7 +5275,7 @@
             const regnrJs = (hundRegnr || '').replace(/'/g, "\\'");
             const partiJs = (partiNavn || '').replace(/'/g, "\\'");
 
-            const lagKandidatRad = (k, kryss) => {
+            const lagKandidatRad = (k, kryss, idx) => {
                 const navn = (k.hund_navn || '').replace(/[<>]/g, '');
                 const reg = (k.hund_regnr || '').replace(/[<>]/g, '');
                 const eier = (k.eier_navn || '').replace(/[<>]/g, '');
@@ -5284,9 +5284,20 @@
                 const krysseLabel = kryss ?
                     '<span class="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">Kryss-klasse — ' + k.klasse + '</span>' :
                     '<span class="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">' + k.klasse + '</span>';
-                return '<div class="flex items-center justify-between py-2 px-3 border-b border-bark-100 last:border-b-0">' +
+                // Posisjon på ventelisten — viktig signal til admin om at
+                // listen IKKE er tilfeldig. #1 markeres ekstra med "Anbefalt".
+                const erTopp = idx === 0;
+                const nrSirkel = erTopp
+                    ? '<span class="inline-flex w-7 h-7 rounded-full bg-orange-600 text-white items-center justify-center text-xs font-bold shadow-sm">' + (idx + 1) + '</span>'
+                    : '<span class="inline-flex w-7 h-7 rounded-full bg-bark-100 text-bark-700 items-center justify-center text-xs font-bold">' + (idx + 1) + '</span>';
+                const anbefaltLabel = erTopp
+                    ? '<span class="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800 border border-orange-300">Anbefalt</span>'
+                    : '';
+                const radBg = erTopp ? 'bg-orange-50/60' : '';
+                return '<div class="flex items-center justify-between gap-2 py-2 px-3 border-b border-bark-100 last:border-b-0 ' + radBg + '">' +
+                    nrSirkel +
                     '<div class="flex-1 min-w-0">' +
-                        '<div class="font-medium text-bark-900 truncate">' + navn + krysseLabel + '</div>' +
+                        '<div class="font-medium text-bark-900 truncate">' + navn + krysseLabel + anbefaltLabel + '</div>' +
                         '<div class="text-xs text-bark-500 truncate">' + reg + (forer ? ' · ' + forer : (eier ? ' · ' + eier : '')) + '</div>' +
                     '</div>' +
                     '<button onclick="velgErstatterOgMarker(\'' + regnrJs + '\', \'' + partiJs + '\', \'' + kandRegnrJs + '\')" class="ml-2 px-3 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium transition shadow-sm">Hent inn</button>' +
@@ -5297,17 +5308,18 @@
             if ((kand.same_class || []).length > 0) {
                 sameHtml = '<div class="mb-4">' +
                     '<h4 class="text-sm font-semibold text-bark-700 mb-2">Naturlig erstatter (samme klasse)</h4>' +
+                    '<div class="text-xs text-bark-500 mb-2">Listen er sortert etter venteliste-prioritet — øverst er nr. 1.</div>' +
                     '<div class="bg-bark-50 border border-bark-200 rounded-lg overflow-hidden">' +
-                        kand.same_class.map(k => lagKandidatRad(k, false)).join('') +
+                        kand.same_class.map((k, i) => lagKandidatRad(k, false, i)).join('') +
                     '</div></div>';
             }
             let crossHtml = '';
             if ((kand.cross_class || []).length > 0) {
                 crossHtml = '<div class="mb-4">' +
                     '<h4 class="text-sm font-semibold text-bark-700 mb-2">Kryss-klasse (ingen i samme klasse på venteliste)</h4>' +
-                    '<div class="text-xs text-bark-500 mb-2">Hunden går inn i sin egen klasse i partiet — UK står øverst, AK under.</div>' +
+                    '<div class="text-xs text-bark-500 mb-2">Hunden går inn i sin egen klasse i partiet — UK står øverst, AK under. Sortert etter venteliste-prioritet.</div>' +
                     '<div class="bg-bark-50 border border-bark-200 rounded-lg overflow-hidden">' +
-                        kand.cross_class.map(k => lagKandidatRad(k, true)).join('') +
+                        kand.cross_class.map((k, i) => lagKandidatRad(k, true, i)).join('') +
                     '</div></div>';
             }
 

@@ -9910,10 +9910,77 @@ function hentPartiDeltakerStabil(c, proveId, hundRegnr, partiNavn) {
 }
 
 // Marker parti-deltaker som ikke møtt (per dag) — stabile identifikatorer i body
+// Erstatningskandidater fra venteliste for en ikke-møtt-hund.
+// Returnerer to lister:
+//   same_class — hunder på venteliste i samme klasse + samme dag (foretrukket)
+//   cross_class — hunder i motsatt klasse (UK↔AK), kun hvis same_class er tom.
+//   For VK returneres kun same_class — VK kan aldri krysses med UK/AK.
+app.get("/api/prover/:proveId/erstatningskandidater", requireProveAdmin, (c) => {
+  const proveId = c.req.param("proveId");
+  const regnr = c.req.query("regnr");
+  const partiNavn = c.req.query("parti_navn");
+
+  if (!regnr || !partiNavn) {
+    return c.json({ error: "Mangler regnr eller parti_navn" }, 400);
+  }
+
+  const radIkkeMott = db.prepare(`
+    SELECT pd.*, p.navn AS parti_navn, p.dato AS parti_dato, p.type AS parti_type
+      FROM parti_deltakere pd
+      JOIN partier p ON p.id = pd.parti_id
+     WHERE pd.prove_id = ? AND pd.hund_regnr = ? AND p.navn = ?
+  `).get(proveId, regnr, partiNavn);
+  if (!radIkkeMott) {
+    return c.json({ error: "Fant ikke hunden i partiet" }, 404);
+  }
+
+  const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+  const startDato = prove?.start_dato || null;
+  let dag = null;
+  if (radIkkeMott.parti_dato && startDato) {
+    dag = Math.round((new Date(radIkkeMott.parti_dato) - new Date(startDato)) / 86400000) + 1;
+  }
+  const klasse = (radIkkeMott.klasse || '').toUpperCase();
+
+  let sameClass = [];
+  let crossClass = [];
+
+  if (klasse === 'VK') {
+    sameClass = db.prepare(`
+      SELECT * FROM venteliste
+       WHERE prove_id = ? AND klasse = 'VK' AND dag IS NULL
+       ORDER BY prioritet, hund_navn
+    `).all(proveId);
+  } else if ((klasse === 'UK' || klasse === 'AK') && dag) {
+    sameClass = db.prepare(`
+      SELECT * FROM venteliste
+       WHERE prove_id = ? AND klasse = ? AND dag = ?
+       ORDER BY prioritet, hund_navn
+    `).all(proveId, klasse, dag);
+    if (sameClass.length === 0) {
+      const motsatt = klasse === 'UK' ? 'AK' : 'UK';
+      crossClass = db.prepare(`
+        SELECT * FROM venteliste
+         WHERE prove_id = ? AND klasse = ? AND dag = ?
+         ORDER BY prioritet, hund_navn
+      `).all(proveId, motsatt, dag);
+    }
+  }
+
+  return c.json({
+    parti_navn: partiNavn,
+    parti_dato: radIkkeMott.parti_dato,
+    dag,
+    klasse_til_ikke_mott: klasse,
+    same_class: sameClass,
+    cross_class: crossClass
+  });
+});
+
 app.post("/api/prover/:proveId/ikke-mott", async (c) => {
   const proveId = c.req.param("proveId");
   const body = await c.req.json().catch(() => ({}));
-  const { hund_regnr, parti_navn } = body;
+  const { hund_regnr, parti_navn, erstatter } = body;
   const { rad, payload, error } = hentPartiDeltakerStabil(c, proveId, hund_regnr, parti_navn);
   if (error) return error;
 
@@ -9924,6 +9991,65 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
     return c.json({ error: "Hunden er trukket — kan ikke markeres som ikke møtt" }, 400);
   }
 
+  // Hvis bedømming har startet på partiet, blokker — vi skal ikke endre
+  // partilisten under aktiv bedømming.
+  if (erBedommingStartet(proveId, parti_navn)) {
+    return c.json({ error: "Bedømming har startet på partiet — kan ikke endres" }, 409);
+  }
+
+  // Validér erstatter-data hvis sendt
+  let ventelisteRad = null;
+  let erstatterStartnummer = null;
+  let erstatterErKryssklasse = false;
+  if (erstatter && erstatter.hund_regnr) {
+    const klasseIkkeMott = (rad.klasse || '').toUpperCase();
+    const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+    const startDato = prove?.start_dato || null;
+    let dag = null;
+    if (rad.parti_dato && startDato) {
+      dag = Math.round((new Date(rad.parti_dato) - new Date(startDato)) / 86400000) + 1;
+    }
+
+    // Hent venteliste-raden — må finnes på samme dag (UK/AK) eller dag IS NULL (VK)
+    if (klasseIkkeMott === 'VK') {
+      ventelisteRad = db.prepare(`
+        SELECT * FROM venteliste WHERE prove_id = ? AND hund_regnr = ? AND klasse = 'VK' AND dag IS NULL
+      `).get(proveId, erstatter.hund_regnr);
+    } else {
+      ventelisteRad = db.prepare(`
+        SELECT * FROM venteliste WHERE prove_id = ? AND hund_regnr = ? AND dag = ? AND klasse IN ('UK','AK')
+      `).get(proveId, erstatter.hund_regnr, dag);
+    }
+    if (!ventelisteRad) {
+      return c.json({ error: "Erstatter-hund finnes ikke på venteliste for samme dag/klasse" }, 400);
+    }
+
+    // VK kan aldri krysses
+    if (klasseIkkeMott === 'VK' && ventelisteRad.klasse !== 'VK') {
+      return c.json({ error: "VK-plass kan ikke fylles av UK/AK-hund" }, 400);
+    }
+    if (ventelisteRad.klasse === 'VK' && klasseIkkeMott !== 'VK') {
+      return c.json({ error: "VK-hund kan ikke fylle UK/AK-plass" }, 400);
+    }
+
+    erstatterErKryssklasse = (ventelisteRad.klasse !== klasseIkkeMott);
+
+    // Beregn startnummer for erstatter:
+    //   Samme klasse: arver original sin startnummer
+    //   Kryss-klasse: havner sist i sitt eget klasse-blokk (max+1 for klassen)
+    if (!erstatterErKryssklasse) {
+      erstatterStartnummer = rad.startnummer;
+    } else {
+      const maks = db.prepare(`
+        SELECT MAX(startnummer) AS m FROM parti_deltakere
+         WHERE parti_id = ? AND klasse = ? AND status != 'trukket'
+      `).get(rad.parti_id, ventelisteRad.klasse);
+      erstatterStartnummer = (maks?.m || 0) + 1;
+    }
+  }
+
+  // Atomisk transaksjon: marker original + ev. sett inn erstatter + slett
+  // venteliste-rad + re-sekvenser startnumre i partiet
   const tx = db.transaction(() => {
     db.prepare(`
       UPDATE parti_deltakere
@@ -9941,13 +10067,55 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
         hund_regnr,
         parti_navn,
         parti_dato: rad.parti_dato,
-        markert_av: payload.telefon
+        markert_av: payload.telefon,
+        erstatter: ventelisteRad ? ventelisteRad.hund_regnr : null,
+        kryssklasse: erstatterErKryssklasse
       })
     );
+
+    if (ventelisteRad) {
+      db.prepare(`
+        INSERT INTO parti_deltakere (
+          parti_id, prove_id, hund_regnr, hund_navn, rase, kjonn, klasse,
+          eier_navn, eier_telefon, forer_navn, forer_telefon,
+          startnummer, bekreftet, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'aktiv')
+      `).run(
+        rad.parti_id, proveId, ventelisteRad.hund_regnr,
+        ventelisteRad.hund_navn || '', ventelisteRad.rase || '', '',
+        ventelisteRad.klasse,
+        ventelisteRad.eier_navn || '', '', ventelisteRad.forer_navn || '', '',
+        erstatterStartnummer
+      );
+      db.prepare("DELETE FROM venteliste WHERE id = ?").run(ventelisteRad.id);
+
+      // Re-sekvenser startnummer for aktive rader i partiet, UK først, AK etter,
+      // andre klasser sist. Bevarer eksisterende relativ rekkefølge innenfor
+      // hver klasse. Ikke-møtt og trukne får ikke nye numre — de er filtrert
+      // ut uansett, men beholder sin gamle plass for historikk.
+      const aktive = db.prepare(`
+        SELECT id, klasse FROM parti_deltakere
+         WHERE parti_id = ? AND status NOT IN ('trukket', 'ikke_mott')
+         ORDER BY
+           CASE UPPER(COALESCE(klasse,'')) WHEN 'UK' THEN 1 WHEN 'AK' THEN 2 ELSE 3 END,
+           startnummer, id
+      `).all(rad.parti_id);
+      const updNummer = db.prepare("UPDATE parti_deltakere SET startnummer = ? WHERE id = ?");
+      let n = 1;
+      for (const a of aktive) updNummer.run(n++, a.id);
+    }
   });
   tx();
 
-  return c.json({ ok: true });
+  return c.json({
+    ok: true,
+    erstatter: ventelisteRad ? {
+      hund_regnr: ventelisteRad.hund_regnr,
+      hund_navn: ventelisteRad.hund_navn,
+      klasse: ventelisteRad.klasse,
+      kryssklasse: erstatterErKryssklasse
+    } : null
+  });
 });
 
 // Angre ikke-møtt-markering (hund dukket likevel opp, eller markert ved feil)

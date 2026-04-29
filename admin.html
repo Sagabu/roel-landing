@@ -5178,36 +5178,164 @@
 
         async function bekreftIkkeMott(hundRegnr, partiNavn) {
             const knapp = document.getElementById('ikkeMottBekreftKnapp');
-            if (knapp) { knapp.disabled = true; knapp.textContent = 'Lagrer …'; }
+            if (knapp) { knapp.disabled = true; knapp.textContent = 'Sjekker venteliste …'; }
             try {
                 const proveId = getCurrentTrialId();
                 if (!proveId) throw new Error('Ingen prøve valgt');
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch('/api/prover/' + encodeURIComponent(proveId) + '/ikke-mott', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': token ? 'Bearer ' + token : ''
-                    },
-                    body: JSON.stringify({ hund_regnr: hundRegnr, parti_navn: partiNavn })
+
+                // Hent erstatningskandidater FØR vi markerer — slik at admin
+                // kan velge erstatter (eller bare bekrefte uten) i én flyt.
+                const kandUrl = '/api/prover/' + encodeURIComponent(proveId) +
+                    '/erstatningskandidater?regnr=' + encodeURIComponent(hundRegnr) +
+                    '&parti_navn=' + encodeURIComponent(partiNavn);
+                const kandResp = await fetch(kandUrl, {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
                 });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    throw new Error(err.error || 'HTTP ' + resp.status);
-                }
+                const kand = kandResp.ok ? await kandResp.json() : { same_class: [], cross_class: [] };
+
                 const dlg = document.getElementById('ikkeMottBekreftDialog');
                 if (dlg) dlg.remove();
 
-                // Refetch partilister + forfall-oversikt så DOM speiler server
-                const parties = await loadPartiesFromServer(proveId);
-                if (parties && parties.length > 0) renderAllParties(parties);
-                lastForfallOversikt();
-                if (typeof FuglehundToast !== 'undefined') {
-                    FuglehundToast.success('Hund markert som ikke møtt');
+                const harKandidater = (kand.same_class || []).length > 0 ||
+                                      (kand.cross_class || []).length > 0;
+                if (harKandidater) {
+                    apneErstatterModal(hundRegnr, partiNavn, kand);
+                } else {
+                    // Ingen kandidater på venteliste — bare marker
+                    await sendIkkeMott(hundRegnr, partiNavn, null);
                 }
             } catch (e) {
                 if (knapp) { knapp.disabled = false; knapp.textContent = 'Ja, ikke møtt'; }
                 alert('Kunne ikke markere ikke møtt: ' + (e.message || e));
+            }
+        }
+
+        // Selve POST-en — kalles fra både no-kandidater-flyten og fra
+        // erstatter-modalen etter at admin har valgt (eller hoppet over).
+        async function sendIkkeMott(hundRegnr, partiNavn, erstatter) {
+            const proveId = getCurrentTrialId();
+            const token = localStorage.getItem('fuglehund_token');
+            const resp = await fetch('/api/prover/' + encodeURIComponent(proveId) + '/ikke-mott', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? 'Bearer ' + token : ''
+                },
+                body: JSON.stringify({
+                    hund_regnr: hundRegnr,
+                    parti_navn: partiNavn,
+                    erstatter: erstatter || undefined
+                })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || 'HTTP ' + resp.status);
+            }
+            const data = await resp.json().catch(() => ({}));
+
+            // Refetch partilister, venteliste og forfall — DOM speiler server
+            const parties = await loadPartiesFromServer(proveId);
+            if (parties && parties.length > 0) renderAllParties(parties);
+            const ventelisteData = await loadVentelisteFromServer(proveId);
+            if (ventelisteData) renderVenteliste(ventelisteData);
+            lastForfallOversikt();
+
+            if (typeof FuglehundToast !== 'undefined') {
+                if (data.erstatter) {
+                    const kryss = data.erstatter.kryssklasse ? ' (' + data.erstatter.klasse + ' i kryss-klasse)' : '';
+                    FuglehundToast.success('Hund markert ikke møtt — ' + (data.erstatter.hund_navn || data.erstatter.hund_regnr) + ' hentet inn' + kryss);
+                } else {
+                    FuglehundToast.success('Hund markert som ikke møtt');
+                }
+            }
+        }
+
+        // Modal med erstatningskandidater fra venteliste. Same-class ligger øverst
+        // (foretrukket); kryss-klasse vises kun hvis same_class er tom (UK/AK kan
+        // krysses, VK aldri).
+        function apneErstatterModal(hundRegnr, partiNavn, kand) {
+            const dagInfo = kand.dag ? 'dag ' + kand.dag : (kand.klasse_til_ikke_mott === 'VK' ? 'VK' : '');
+            const klasseTekst = kand.klasse_til_ikke_mott + (dagInfo ? ' · ' + dagInfo : '');
+            const regnrJs = (hundRegnr || '').replace(/'/g, "\\'");
+            const partiJs = (partiNavn || '').replace(/'/g, "\\'");
+
+            const lagKandidatRad = (k, kryss) => {
+                const navn = (k.hund_navn || '').replace(/[<>]/g, '');
+                const reg = (k.hund_regnr || '').replace(/[<>]/g, '');
+                const eier = (k.eier_navn || '').replace(/[<>]/g, '');
+                const forer = (k.forer_navn || '').replace(/[<>]/g, '');
+                const kandRegnrJs = (k.hund_regnr || '').replace(/'/g, "\\'");
+                const krysseLabel = kryss ?
+                    '<span class="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">Kryss-klasse — ' + k.klasse + '</span>' :
+                    '<span class="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">' + k.klasse + '</span>';
+                return '<div class="flex items-center justify-between py-2 px-3 border-b border-bark-100 last:border-b-0">' +
+                    '<div class="flex-1 min-w-0">' +
+                        '<div class="font-medium text-bark-900 truncate">' + navn + krysseLabel + '</div>' +
+                        '<div class="text-xs text-bark-500 truncate">' + reg + (forer ? ' · ' + forer : (eier ? ' · ' + eier : '')) + '</div>' +
+                    '</div>' +
+                    '<button onclick="velgErstatterOgMarker(\'' + regnrJs + '\', \'' + partiJs + '\', \'' + kandRegnrJs + '\')" class="ml-2 px-3 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium transition shadow-sm">Hent inn</button>' +
+                '</div>';
+            };
+
+            let sameHtml = '';
+            if ((kand.same_class || []).length > 0) {
+                sameHtml = '<div class="mb-4">' +
+                    '<h4 class="text-sm font-semibold text-bark-700 mb-2">Naturlig erstatter (samme klasse)</h4>' +
+                    '<div class="bg-bark-50 border border-bark-200 rounded-lg overflow-hidden">' +
+                        kand.same_class.map(k => lagKandidatRad(k, false)).join('') +
+                    '</div></div>';
+            }
+            let crossHtml = '';
+            if ((kand.cross_class || []).length > 0) {
+                crossHtml = '<div class="mb-4">' +
+                    '<h4 class="text-sm font-semibold text-bark-700 mb-2">Kryss-klasse (ingen i samme klasse på venteliste)</h4>' +
+                    '<div class="text-xs text-bark-500 mb-2">Hunden går inn i sin egen klasse i partiet — UK står øverst, AK under.</div>' +
+                    '<div class="bg-bark-50 border border-bark-200 rounded-lg overflow-hidden">' +
+                        kand.cross_class.map(k => lagKandidatRad(k, true)).join('') +
+                    '</div></div>';
+            }
+
+            const dialogHtml =
+                '<div id="erstatterDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">' +
+                    '<div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto">' +
+                        '<div class="px-6 py-4 border-b border-bark-100 bg-gradient-to-r from-orange-50 to-orange-100 rounded-t-2xl sticky top-0">' +
+                            '<h3 class="text-lg font-bold font-serif text-orange-900">Hent erstatter fra venteliste?</h3>' +
+                            '<p class="text-xs text-orange-700 mt-1">Plassen i ' + partiNavn + ' (' + klasseTekst + ') er ledig.</p>' +
+                        '</div>' +
+                        '<div class="p-6">' +
+                            sameHtml + crossHtml +
+                        '</div>' +
+                        '<div class="px-6 py-4 bg-bark-50 border-t border-bark-100 rounded-b-2xl flex items-center justify-end gap-2 sticky bottom-0">' +
+                            '<button onclick="document.getElementById(\'erstatterDialog\').remove()" class="px-4 py-2 rounded-xl bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 font-medium transition">Avbryt</button>' +
+                            '<button onclick="markerUtenErstatter(\'' + regnrJs + '\', \'' + partiJs + '\')" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium transition shadow-sm">Marker uten erstatter</button>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            document.body.insertAdjacentHTML('beforeend', dialogHtml);
+        }
+
+        async function velgErstatterOgMarker(hundRegnr, partiNavn, erstatterRegnr) {
+            const dlg = document.getElementById('erstatterDialog');
+            if (dlg) dlg.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            try {
+                await sendIkkeMott(hundRegnr, partiNavn, { hund_regnr: erstatterRegnr });
+                if (dlg) dlg.remove();
+            } catch (e) {
+                if (dlg) dlg.querySelectorAll('button').forEach(b => { b.disabled = false; });
+                alert('Kunne ikke fullføre: ' + (e.message || e));
+            }
+        }
+
+        async function markerUtenErstatter(hundRegnr, partiNavn) {
+            const dlg = document.getElementById('erstatterDialog');
+            if (dlg) dlg.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            try {
+                await sendIkkeMott(hundRegnr, partiNavn, null);
+                if (dlg) dlg.remove();
+            } catch (e) {
+                if (dlg) dlg.querySelectorAll('button').forEach(b => { b.disabled = false; });
+                alert('Kunne ikke fullføre: ' + (e.message || e));
             }
         }
 

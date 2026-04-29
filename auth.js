@@ -727,4 +727,80 @@ window.handleApiError = function(error, customMessage) {
   }
 })();
 
+// Partilister-poller: lett mekanisme som oppdager at admin har gjort
+// endringer (ikke-møtt, trekk, partifordeling, venteliste) og lar siden
+// silent-refreshe sin egen DOM uten side-reload. Fronten sider kan abonnere
+// via window.FuglehundPartilisterPoller.start(proveId, onChange).
+//
+// Pauser automatisk når tab-en er skjult (visibilitychange) for å unngå
+// unødig nettverk når admin minimerer eller bytter fane.
+if (typeof window.FuglehundPartilisterPoller === 'undefined') {
+  window.FuglehundPartilisterPoller = (function() {
+    const POLL_INTERVAL_MS = 15000;
+    const aktive = new Map(); // proveId -> { lastEndret, intervalId, onChange, sjekk }
+
+    async function sjekk(proveId, state) {
+      try {
+        const resp = await fetch('/api/prover/' + encodeURIComponent(proveId) + '/partilister/version', {
+          cache: 'no-store'
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (state.lastEndret !== null && data.endret_at !== state.lastEndret) {
+          try {
+            await state.onChange(data.endret_at, state.lastEndret);
+          } catch (e) {
+            console.warn('[poller] onChange feilet:', e);
+          }
+        }
+        state.lastEndret = data.endret_at;
+      } catch (e) {
+        // Stille — nettverksfeil retries ved neste tick
+      }
+    }
+
+    function start(proveId, onChange) {
+      if (!proveId || typeof onChange !== 'function') return () => {};
+      stop(proveId); // Sikrer kun én aktiv poller per proveId
+      const state = { lastEndret: null, intervalId: null, onChange, sjekk: null };
+      state.sjekk = () => sjekk(proveId, state);
+      // Initial fetch — setter baseline uten å trigge onChange
+      state.sjekk();
+      state.intervalId = setInterval(state.sjekk, POLL_INTERVAL_MS);
+      aktive.set(proveId, state);
+      return () => stop(proveId);
+    }
+
+    function stop(proveId) {
+      const state = aktive.get(proveId);
+      if (state?.intervalId) clearInterval(state.intervalId);
+      aktive.delete(proveId);
+    }
+
+    function stopAll() {
+      for (const [proveId] of aktive) stop(proveId);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        for (const state of aktive.values()) {
+          if (state.intervalId) {
+            clearInterval(state.intervalId);
+            state.intervalId = null;
+          }
+        }
+      } else {
+        for (const state of aktive.values()) {
+          if (!state.intervalId && state.sjekk) {
+            state.sjekk(); // Umiddelbar sjekk når tab kommer tilbake
+            state.intervalId = setInterval(state.sjekk, POLL_INTERVAL_MS);
+          }
+        }
+      }
+    });
+
+    return { start, stop, stopAll };
+  })();
+}
+
 } // end if (typeof window.FuglehundAuth === 'undefined')

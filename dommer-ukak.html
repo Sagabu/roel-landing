@@ -870,6 +870,22 @@
             loadDogData(2);
             updateTotals();
             setupDictation();
+
+            // Partilister-poller: oppdager ikke-møtt-markering, erstatter-flyt og
+            // andre admin-endringer på partilisten, og refresher silent.
+            const urlParams = new URLSearchParams(window.location.search);
+            const proveId = urlParams.get('prove');
+            if (proveId && window.FuglehundPartilisterPoller) {
+                window.FuglehundPartilisterPoller.start(proveId, async () => {
+                    try {
+                        await loadPartyList();
+                        populateDogSelectors();
+                        updateDogDisplays();
+                    } catch (e) {
+                        console.warn('[poller] kunne ikke refreshe partiliste:', e);
+                    }
+                });
+            }
         }
 
         async function loadPartyList() {

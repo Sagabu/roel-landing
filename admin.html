@@ -5450,6 +5450,29 @@
             });
         }
 
+        // Polling-oppdatering på partilister-fanen — fanger endringer fra andre
+        // admin-økter (eller medadmin på telefonen) uten at brukeren må refreshe.
+        let _aktivPoller = null;
+        function startAdminPartilisterPoller() {
+            const proveId = getCurrentTrialId();
+            if (!proveId || !window.FuglehundPartilisterPoller) return;
+            stoppAdminPartilisterPoller();
+            _aktivPoller = window.FuglehundPartilisterPoller.start(proveId, async () => {
+                try {
+                    const parties = await loadPartiesFromServer(proveId);
+                    if (parties && parties.length > 0) renderAllParties(parties);
+                    const venteliste = await loadVentelisteFromServer(proveId);
+                    if (venteliste) renderVenteliste(venteliste);
+                    if (typeof lastForfallOversikt === 'function') lastForfallOversikt();
+                } catch (e) {
+                    console.warn('[poller] kunne ikke refreshe partilister:', e);
+                }
+            });
+        }
+        function stoppAdminPartilisterPoller() {
+            if (_aktivPoller) { _aktivPoller(); _aktivPoller = null; }
+        }
+
         async function lastForfallOversikt() {
             const proveId = getCurrentTrialId();
             const section = document.getElementById('forfallSection');
@@ -19723,6 +19746,13 @@
                 if (typeof lastForfallOversikt === 'function') {
                     lastForfallOversikt();
                 }
+                // Start polling så endringer fra andre admin-økter slår igjennom
+                // uten manuell refresh.
+                startAdminPartilisterPoller();
+            } else {
+                // Stoppe polling når vi forlater partilister-fanen — andre seksjoner
+                // bryr seg ikke om partilister-oppdateringer.
+                stoppAdminPartilisterPoller();
             }
 
             // Oppdater parti-mottakere når brukeren går til Meldinger (frisk cache hver gang)

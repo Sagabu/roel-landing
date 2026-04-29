@@ -769,6 +769,23 @@
 
             // Start polling for ikke-eiere (hvis eier allerede er valgt)
             startLiveRangeringPolling();
+
+            // Partilister-poller: når admin markerer ikke-møtt, henter inn
+            // erstatter eller endrer partilister, oppdateres dommerens
+            // visning silent (uten manuell refresh).
+            if (proveId && proveId !== 'demo' && window.FuglehundPartilisterPoller) {
+                window.FuglehundPartilisterPoller.start(proveId, async () => {
+                    try {
+                        await loadPartyList();
+                        populateDogSelectors();
+                        updateDogDisplays();
+                        renderPartyLists();
+                        renderRankings();
+                    } catch (e) {
+                        console.warn('[poller] kunne ikke refreshe partiliste:', e);
+                    }
+                });
+            }
         }
 
         // Finn vkSubType basert på partinavn og trialParties

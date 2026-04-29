@@ -664,6 +664,20 @@
             renderDogList();
             updateProgress();
             document.body.classList.remove('auth-loading');
+
+            // Partilister-poller: oppdager ikke-møtt-markering og erstatter-flyt
+            // fra admin og refresher dommerens hundeliste silent.
+            if (proveId && window.FuglehundPartilisterPoller) {
+                window.FuglehundPartilisterPoller.start(proveId, async () => {
+                    try {
+                        await loadDogInfoFromAPI();
+                        renderDogList();
+                        updateProgress();
+                    } catch (e) {
+                        console.warn('[poller] kunne ikke refreshe hundeliste:', e);
+                    }
+                });
+            }
         })();
 
         // Hent dommere i partiet for meddommer-bekreftelse

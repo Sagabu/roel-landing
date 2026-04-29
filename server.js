@@ -1296,6 +1296,10 @@ const migrations = [
   // ikke-møtt-hund, peker dette feltet på parti_deltakere.id til den ikke-møtte.
   // Brukes av angre-flyten til å sende erstatteren tilbake til venteliste.
   "ALTER TABLE parti_deltakere ADD COLUMN erstatter_for_pd_id INTEGER DEFAULT NULL",
+  // Versjons-marker for partilister: tidsstempel som bumpes hver gang
+  // partilister, ikke-mott, eller relaterte data endres. Frontend-poller
+  // bruker dette til å oppdage endringer og refreshe uten side-reload.
+  "ALTER TABLE prover ADD COLUMN partilister_endret_at TEXT DEFAULT (datetime('now'))",
   // Stavefiks for prove_type — fjerner ø-tegnet i 'høyfjell_*' så verdiene
   // er konsistent med kode-vennlig "hoyfjell_*" (samme mønster som NM-typene
   // 'nm_hoyfjell_host'). Tidligere brukte ulike steder (opprett-prove vs
@@ -1841,6 +1845,22 @@ const requireAuth = async (c, next) => {
 function proveErLast(proveId) {
   const row = db.prepare("SELECT status FROM prover WHERE id = ?").get(proveId);
   return row?.status === 'fullfort';
+}
+
+// Bumper partilister_endret_at for prøven. Frontend-pollere bruker dette til
+// å oppdage at partier, hund-status eller venteliste har endret seg, og
+// refresher silent uten å laste hele siden.
+function bumpPartilisterVersjon(proveId) {
+  try {
+    db.prepare(`
+      UPDATE prover SET partilister_endret_at = datetime('now', 'subsec') WHERE id = ?
+    `).run(proveId);
+  } catch (e) {
+    // datetime('now','subsec') støttes ikke i alle SQLite-versjoner — fallback
+    db.prepare(`
+      UPDATE prover SET partilister_endret_at = datetime('now') WHERE id = ?
+    `).run(proveId);
+  }
 }
 
 // Hjelpefunksjon for å sjekke rolle (støtter komma-separerte roller)
@@ -10152,6 +10172,7 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
     }
   });
   tx();
+  bumpPartilisterVersjon(proveId);
 
   return c.json({
     ok: true,
@@ -10287,6 +10308,7 @@ app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
     );
   });
   tx();
+  bumpPartilisterVersjon(proveId);
 
   return c.json({
     ok: true,
@@ -11299,6 +11321,20 @@ app.get("/api/prover/:id/partilister", (c) => {
   return c.json(result);
 });
 
+// Versjons-marker: lett endepunkt som frontend-pollere kan kalle hvert
+// 15. sek for å oppdage at partilister, ikke-møtt eller venteliste har
+// endret seg. Returnerer kun timestamp så vi unngår å sende hele lasten.
+// Ingen auth — partilister er offentlig data, og dette er bare et
+// "har det skjedd noe?"-signal som lekker minimalt.
+app.get("/api/prover/:id/partilister/version", (c) => {
+  const proveId = c.req.param("id");
+  const row = db.prepare(`
+    SELECT partilister_endret_at FROM prover WHERE id = ?
+  `).get(proveId);
+  if (!row) return c.json({ error: "Prøve ikke funnet" }, 404);
+  return c.json({ endret_at: row.partilister_endret_at || null });
+});
+
 // Admin-versjon med telefonnumre (krever autentisering)
 app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
   const proveId = c.req.param("id");
@@ -11799,6 +11835,8 @@ app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
       (broResultat ? ` (bro: ${broResultat.synkronisert} synk, ${broResultat.avmeldt} avmeldt)` : '')
     );
 
+    bumpPartilisterVersjon(proveId);
+
     return c.json({
       success: true,
       partier: partier.length,
@@ -11938,6 +11976,8 @@ app.put("/api/prover/:id/venteliste", requireProveAdmin, async (c) => {
       "venteliste_lagret",
       `Lagret venteliste med ${total} hunder for prøve ${proveId}${skipped > 0 ? ` (hoppet over ${skipped} som allerede står i parti)` : ''}`
     );
+
+    bumpPartilisterVersjon(proveId);
 
     return c.json({ success: true, total, skipped });
 

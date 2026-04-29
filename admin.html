@@ -2425,12 +2425,11 @@
 
                     <!-- Populated state - vises etter opplasting (hidden by default) -->
                     <div id="partyListsContent" class="hidden space-y-6">
-                        <!-- Filtrering + tilbakestill-knapp -->
+                        <!-- View-toggle (Partilister | Ventelister) + tilbakestill-knapp -->
                         <div class="flex gap-2 flex-wrap items-center justify-between">
-                            <div class="flex gap-2 flex-wrap">
-                                <button onclick="setPartyFilter('all')" class="bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium border border-warm-300" id="filterAllClasses">Alle klasser</button>
-                                <button onclick="setPartyFilter('ukak')" class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterUKAK">UK/AK</button>
-                                <button onclick="setPartyFilter('vk')" class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterVK">VK</button>
+                            <div class="inline-flex rounded-xl border border-bark-200 bg-white p-1 shadow-sm">
+                                <button onclick="setPartyView('partilister')" id="viewPartilister" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-warm-100 text-warm-800 border border-warm-300">Partilister</button>
+                                <button onclick="setPartyView('venteliste')" id="viewVenteliste" class="px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition ml-1">Ventelister</button>
                             </div>
                             <button onclick="tilbakestillTilDeltakerlister()" class="text-bark-500 hover:text-amber-700 px-3 py-1.5 rounded-xl text-xs font-medium border border-bark-200 hover:border-amber-300 hover:bg-amber-50 transition flex items-center gap-1.5">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2439,6 +2438,12 @@
                                 Tilbakestill UK/AK til deltakerlister
                             </button>
                         </div>
+
+                        <!-- Dag-tabs (auto-rendered fra data) -->
+                        <div id="dagTabs" class="flex gap-2 flex-wrap"></div>
+
+                        <!-- Klasse-tabs (kun klasser som finnes for valgt dag) -->
+                        <div id="klasseTabs" class="flex gap-2 flex-wrap"></div>
 
                         <!-- Deltakerlister (skjult som standard, vises ved tilbakestilling) -->
                         <div id="deltakerlisteSeksjon" class="hidden space-y-4"></div>
@@ -8497,49 +8502,199 @@
             '</div>';
         }
 
-        // Render alle partier fra data
-        // Gjeldende klasse-filter for partilister ('all' | 'ukak' | 'vk')
+        // ============================================
+        // Parti- og ventelister: view + dag + klasse-filter
+        // ============================================
+        // Tre nivåer av filter (top→ned):
+        //   currentPartyView   — 'partilister' | 'venteliste' (top-toggle)
+        //   currentPartyDay    — 1, 2, 3, 4 (dag-tabs, auto-detektert fra data)
+        //   currentPartyFilter — 'all' | 'ukak' | 'vk' (kun klasser som finnes
+        //                        på valgt dag vises som knapp)
+        let currentPartyView = 'partilister';
+        let currentPartyDay = null;       // settes av renderDagTabs ved første render
         let currentPartyFilter = 'all';
+
+        // Bytt mellom Partilister-visning og Venteliste-visning
+        function setPartyView(view) {
+            if (view !== 'partilister' && view !== 'venteliste') return;
+            currentPartyView = view;
+            ['viewPartilister', 'viewVenteliste'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const erAktiv = (id === 'viewPartilister' && view === 'partilister') ||
+                                (id === 'viewVenteliste' && view === 'venteliste');
+                if (erAktiv) {
+                    el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium bg-warm-100 text-warm-800 border border-warm-300';
+                } else {
+                    el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition ml-1';
+                }
+            });
+            // Re-render tabs (klasse-tabs avhenger av view + dag)
+            renderDagTabs();
+            renderKlasseTabs();
+            // Vis riktig innhold
+            anvendPartiSynlighet();
+        }
+
+        // Bytt aktiv prøvedag
+        function setPartyDay(day) {
+            currentPartyDay = day;
+            // Hvis valgt klasse ikke finnes på ny dag, fall tilbake til 'all'
+            const tilgjengelige = klasserPaaDag(day);
+            if (currentPartyFilter !== 'all' && !tilgjengelige.has(currentPartyFilter)) {
+                currentPartyFilter = 'all';
+            }
+            renderDagTabs();
+            renderKlasseTabs();
+            anvendPartiSynlighet();
+        }
+
+        // Hvilke klasser ('ukak'/'vk') finnes på en gitt dag basert på partier
+        // og venteliste? Brukes til å bygge dynamisk klasse-tab-rad.
+        function klasserPaaDag(dag) {
+            const klasser = new Set();
+            const parties = getTrialParties();
+            for (const p of parties) {
+                if ((p.day || 1) !== dag) continue;
+                if (p.type === 'ukak') klasser.add('ukak');
+                else if (p.type === 'vk' || (p.type || '').startsWith('vk')) klasser.add('vk');
+            }
+            const vl = getTrialVenteliste() || {};
+            const dagKey = `dag${dag}`;
+            if ((vl[dagKey]?.uk?.length || 0) > 0 || (vl[dagKey]?.ak?.length || 0) > 0) klasser.add('ukak');
+            if ((vl.vk?.length || 0) > 0) klasser.add('vk');
+            return klasser;
+        }
+
+        // Hvilke dager har partier eller venteliste? Returnerer sortert array.
+        function tilgjengeligeDager() {
+            const dager = new Set();
+            for (const p of getTrialParties()) {
+                if (p.day) dager.add(p.day);
+            }
+            const vl = getTrialVenteliste() || {};
+            for (let d = 1; d <= 4; d++) {
+                if ((vl[`dag${d}`]?.uk?.length || 0) > 0 || (vl[`dag${d}`]?.ak?.length || 0) > 0) {
+                    dager.add(d);
+                }
+            }
+            return [...dager].sort((a, b) => a - b);
+        }
+
+        // Konverter dag-nummer til ukedag-navn basert på prøvens startdato
+        function dagNavnForDag(dag) {
+            const startEl = document.getElementById('trialDateFrom');
+            if (!startEl?.value) return 'Dag ' + dag;
+            const d = new Date(startEl.value + 'T12:00:00');
+            d.setDate(d.getDate() + (dag - 1));
+            const dager = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
+            const navn = dager[d.getDay()] || ('Dag ' + dag);
+            return navn.charAt(0).toUpperCase() + navn.slice(1);
+        }
+
+        // Default-dag: hvis i dag er en prøvedag, velg den. Ellers første dag med data.
+        function defaultDag() {
+            const tilgjengelige = tilgjengeligeDager();
+            if (tilgjengelige.length === 0) return 1;
+            const startEl = document.getElementById('trialDateFrom');
+            if (startEl?.value) {
+                const start = new Date(startEl.value + 'T12:00:00');
+                const i_dag = new Date();
+                i_dag.setHours(12, 0, 0, 0);
+                const diff = Math.round((i_dag - start) / 86400000);
+                const dag = diff + 1;
+                if (tilgjengelige.includes(dag)) return dag;
+            }
+            return tilgjengelige[0];
+        }
+
+        // Render dag-tabs basert på data
+        function renderDagTabs() {
+            const container = document.getElementById('dagTabs');
+            if (!container) return;
+            const dager = tilgjengeligeDager();
+            if (dager.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            if (!currentPartyDay || !dager.includes(currentPartyDay)) {
+                currentPartyDay = defaultDag();
+            }
+            container.innerHTML = dager.map(d => {
+                const aktiv = d === currentPartyDay;
+                const klass = aktiv
+                    ? 'bg-warm-100 text-warm-800 px-4 py-1.5 rounded-xl text-sm font-medium border border-warm-300'
+                    : 'bg-white text-bark-600 px-4 py-1.5 rounded-xl text-sm border border-bark-100 hover:border-warm-200 transition';
+                return `<button onclick="setPartyDay(${d})" class="${klass}">${dagNavnForDag(d)}</button>`;
+            }).join('');
+        }
+
+        // Render klasse-tabs basert på hva som faktisk finnes på valgt dag
+        function renderKlasseTabs() {
+            const container = document.getElementById('klasseTabs');
+            if (!container) return;
+            if (!currentPartyDay) {
+                container.innerHTML = '';
+                return;
+            }
+            const tilgjengelige = klasserPaaDag(currentPartyDay);
+            // Hvis ingenting finnes på dagen, ingen klasse-tab-rad
+            if (tilgjengelige.size === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            const knapper = [];
+            const lagKnapp = (key, tekst) => {
+                const aktiv = currentPartyFilter === key;
+                const klass = aktiv
+                    ? 'bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium border border-warm-300'
+                    : 'bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100 hover:border-warm-200 transition';
+                knapper.push(`<button onclick="setPartyFilter('${key}')" class="${klass}">${tekst}</button>`);
+            };
+            // "Alle" vises bare når det er flere klasser å filtrere mellom
+            if (tilgjengelige.size > 1) lagKnapp('all', 'Alle klasser');
+            if (tilgjengelige.has('ukak')) lagKnapp('ukak', 'UK/AK');
+            if (tilgjengelige.has('vk')) lagKnapp('vk', 'VK');
+            container.innerHTML = knapper.join('');
+        }
 
         function setPartyFilter(filter) {
             currentPartyFilter = filter;
+            renderKlasseTabs();
+            anvendPartiSynlighet();
+        }
 
-            // Oppdater knappestyling
-            const btns = {
-                all: document.getElementById('filterAllClasses'),
-                ukak: document.getElementById('filterUKAK'),
-                vk: document.getElementById('filterVK')
-            };
-            Object.entries(btns).forEach(([key, btn]) => {
-                if (!btn) return;
-                if (key === filter) {
-                    btn.className = 'bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium border border-warm-300';
-                } else {
-                    btn.className = 'bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100 hover:border-warm-200 transition';
-                }
-            });
+        // Anvend gjeldende view+dag+klasse — bytter synlighet og re-rendrer.
+        function anvendPartiSynlighet() {
+            const partyContent = document.getElementById('partyListsContainer');
+            const ventelisteSection = document.getElementById('venteliste');
 
-            // Re-render alle deler av Parti- og ventelister med nytt filter
+            // Re-render selv om noen seksjoner skjules — så de er klare når brukeren bytter view
             renderAllParties(getTrialParties());
+            renderVenteliste(getTrialVenteliste());
 
-            // Ventelister
-            const venteliste = getTrialVenteliste();
-            renderVenteliste(venteliste);
-
-            // UK/AK-deltakerlister (hvis lastet)
-            const proveId = getCurrentTrialId();
-            if (proveId) {
-                try {
-                    const dlData = JSON.parse(localStorage.getItem(`ukakDeltakerlister_${proveId}`) || '{}');
-                    if (typeof renderUkakDeltakerlister === 'function') {
-                        renderUkakDeltakerlister(dlData);
-                    }
-                } catch (e) {}
+            if (currentPartyView === 'partilister') {
+                if (partyContent) partyContent.classList.remove('hidden');
+                if (ventelisteSection) ventelisteSection.classList.add('hidden');
+            } else {
+                if (partyContent) partyContent.classList.add('hidden');
+                if (ventelisteSection) {
+                    // renderVenteliste kontrollerer .hidden basert på om det er data;
+                    // tving den synlig her hvis vi er på venteliste-view.
+                    const hasContent = (document.getElementById('waitlistTableBody')?.innerHTML || '').trim().length > 0;
+                    if (hasContent) ventelisteSection.classList.remove('hidden');
+                }
             }
 
-            // VK-deltakerliste
-            if (typeof renderVkDeltakerliste === 'function') {
-                renderVkDeltakerliste().catch(() => {});
+            // UK/AK-deltakerlister og VK-deltakerliste — fortsatt synlige som
+            // "før-fordeling"-flyt på partilister-view.
+            const proveId = getCurrentTrialId();
+            if (currentPartyView === 'partilister' && proveId) {
+                try {
+                    const dlData = JSON.parse(localStorage.getItem(`ukakDeltakerlister_${proveId}`) || '{}');
+                    if (typeof renderUkakDeltakerlister === 'function') renderUkakDeltakerlister(dlData);
+                } catch (e) {}
+                if (typeof renderVkDeltakerliste === 'function') renderVkDeltakerliste().catch(() => {});
             }
         }
 
@@ -8553,15 +8708,23 @@
             document.getElementById('partyListsEmptyState').classList.add('hidden');
             document.getElementById('partyListsContent').classList.remove('hidden');
 
-            // Filtrer etter klasse
+            // Sørg for at dag-tabs er bygd og default-dag er valgt
+            if (typeof renderDagTabs === 'function') renderDagTabs();
+            if (typeof renderKlasseTabs === 'function') renderKlasseTabs();
+
+            // Filtrer etter dag og klasse
             let filtered = parties;
+            if (currentPartyDay) {
+                filtered = filtered.filter(p => (p.day || 1) === currentPartyDay);
+            }
             if (currentPartyFilter === 'ukak') {
-                filtered = parties.filter(p => p.type === 'ukak');
+                filtered = filtered.filter(p => p.type === 'ukak');
             } else if (currentPartyFilter === 'vk') {
-                filtered = parties.filter(p => p.type === 'vk' || p.type === 'vk_kval' || p.type === 'vk_semi' || p.type === 'vk_finale');
+                filtered = filtered.filter(p => p.type === 'vk' || p.type === 'vk_kval' || p.type === 'vk_semi' || p.type === 'vk_finale');
             }
 
-            // Grupper partier etter dato
+            // Grupper partier etter dato (alltid bare én dato pga. dag-filteret,
+            // men beholder mønsteret så renderDayGlobal kan brukes som før)
             const partiesByDay = {};
             filtered.forEach(party => {
                 const key = party.date;
@@ -8574,8 +8737,11 @@
             const sortedDates = Object.keys(partiesByDay).sort();
 
             if (sortedDates.length === 0) {
-                const filterNavn = currentPartyFilter === 'ukak' ? 'UK/AK' : 'VK';
-                container.innerHTML = '<div class="p-8 text-center text-bark-400 bg-white rounded-xl border border-bark-100"><p>Ingen ' + filterNavn + '-partier satt opp ennå</p></div>';
+                let melding;
+                if (currentPartyFilter === 'ukak') melding = 'Ingen UK/AK-partier på valgt dag';
+                else if (currentPartyFilter === 'vk') melding = 'Ingen VK-partier på valgt dag';
+                else melding = 'Ingen partier på valgt dag';
+                container.innerHTML = '<div class="p-8 text-center text-bark-400 bg-white rounded-xl border border-bark-100"><p>' + melding + '</p></div>';
             } else {
                 container.innerHTML = sortedDates.map(function(dateStr, dayIndex) {
                     return renderDayGlobal(dateStr, dayIndex, partiesByDay[dateStr]);
@@ -12938,13 +13104,19 @@
                 totalVenteliste += vkHunder.length;
             }
 
-            // Filtrer etter klasse-filter (satt av UK/AK/VK/Alle-knappene)
+            // Filtrer etter dag (satt av dag-tabs) + klasse-filter
             const filter = (typeof currentPartyFilter !== 'undefined') ? currentPartyFilter : 'all';
+            const valgtDag = (typeof currentPartyDay !== 'undefined' && currentPartyDay) ? currentPartyDay : null;
             let filtrerteGrupper = grupper;
+            if (valgtDag) {
+                // VK-venteliste er ikke dag-spesifikk — vises kun når valgt klasse er VK
+                // (eller "alle" og admin er på en dag der VK eksisterer).
+                filtrerteGrupper = grupper.filter(g => g.dag === valgtDag || g.klasse === 'VK');
+            }
             if (filter === 'ukak') {
-                filtrerteGrupper = grupper.filter(g => g.klasse === 'UK' || g.klasse === 'AK');
+                filtrerteGrupper = filtrerteGrupper.filter(g => g.klasse === 'UK' || g.klasse === 'AK');
             } else if (filter === 'vk') {
-                filtrerteGrupper = grupper.filter(g => g.klasse === 'VK');
+                filtrerteGrupper = filtrerteGrupper.filter(g => g.klasse === 'VK');
             }
             const filtrertTotal = filtrerteGrupper.reduce((s, g) => s + g.hunder.length, 0);
 
@@ -19741,16 +19913,14 @@
                 activeSection.classList.remove('hidden');
             }
 
-            // Når partilister vises, vis også venteliste-seksjonen (den er i DOM men uten egen menu-oppføring)
+            // Når partilister vises, oppdater dag-tabs/klasse-tabs og synkroniser
+            // synlighet mellom partilister-view og venteliste-view via
+            // anvendPartiSynlighet (kalles via setPartyView).
             if (sectionId === 'partilister') {
-                const ventelisteSection = document.getElementById('venteliste');
-                if (ventelisteSection) {
-                    // renderVenteliste() styrer selv om venteliste har data; vi fjerner hidden her
-                    // slik at den vises sammen med partilister hvis den har innhold
-                    const waitlistBody = document.getElementById('waitlistTableBody');
-                    if (waitlistBody && waitlistBody.innerHTML.trim()) {
-                        ventelisteSection.classList.remove('hidden');
-                    }
+                if (typeof renderDagTabs === 'function') renderDagTabs();
+                if (typeof renderKlasseTabs === 'function') renderKlasseTabs();
+                if (typeof setPartyView === 'function') {
+                    setPartyView(currentPartyView || 'partilister');
                 }
                 // Last forfall-oversikt (forfall + ikke-møtt) når brukeren går til partilister
                 if (typeof lastForfallOversikt === 'function') {

@@ -4080,6 +4080,20 @@ app.put("/api/storage/:key", requireAuth, async (c) => {
   const body = await c.req.json();
   const value = JSON.stringify(body.value);
   db.prepare("INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, datetime('now'))").run(key, value);
+
+  // Bump partilister-versjon når nøkkelen påvirker offentlig partilist eller
+  // dommer-visning (praktisk info, terreng, VK-liste osv.). Sjekker om
+  // nøkkelen inneholder en proveId og er av en relevant prefiks.
+  const relevantePrefikser = [
+    'praktiskInfo_', 'terrengInfo_', 'vkSamletListe_',
+    'trialVkType_', 'trialVkConfig_', 'vkResultater_',
+    'vkRangering_', 'vkTrekning_', 'liveRangering_'
+  ];
+  if (relevantePrefikser.some(p => key.startsWith(p))) {
+    const m = key.match(/(prove_[A-Za-z0-9_]+)/);
+    if (m) bumpPartilisterVersjon(m[1]);
+  }
+
   return c.json({ ok: true });
 });
 
@@ -7236,6 +7250,7 @@ app.post("/api/prover/:id/dommer-tildelinger", requireProveAdmin, async (c) => {
       erLiveAdmin ? "live_admin_tildelt" : "dommer_tildelt",
       `${erLiveAdmin ? 'Live-admin' : 'Dommer'} ${dommer_telefon} tildelt ${parti} på prøve ${proveId}` + (!erLiveAdmin && !erFkf ? ` [manuell: ${begrunnelse_type}]` : '')
     );
+    bumpPartilisterVersjon(proveId);
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);
@@ -7249,6 +7264,7 @@ app.delete("/api/prover/:id/dommer-tildelinger/:tildelingId", requireProveAdmin,
   const result = db.prepare("DELETE FROM dommer_tildelinger WHERE id = ? AND prove_id = ?").run(tildelingId, proveId);
   if (result.changes === 0) return c.json({ error: "Tildeling ikke funnet" }, 404);
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run("dommer_fjernet", `Tildeling ${tildelingId} fjernet fra prøve ${proveId}`);
+  bumpPartilisterVersjon(proveId);
   return c.json({ success: true });
 });
 
@@ -7374,6 +7390,7 @@ app.put("/api/prover/:id/dommer-tildelinger/parti/:parti", requireProveAdmin, as
       "dommer_parti_oppdatert",
       `${parti}: ${dommere.length > 0 ? dommere.map(d => (d.rolle === 'live_admin' ? '[live] ' : '') + d.telefon + (d.rolle === 'live_admin' ? '' : (erFkfKoblet(d.telefon) ? '' : ' [manuell:' + (d.begrunnelse_type || '?') + ']'))).join(', ') : '(fjernet alle)'}`
     );
+    bumpPartilisterVersjon(proveId);
     return c.json({ success: true });
   } catch (err) {
     return c.json({ error: err.message }, 500);
@@ -8203,6 +8220,11 @@ app.put("/api/prover/:id", requireProveAdmin, async (c) => {
         "prove_oppdatert",
         JSON.stringify({ id, endringer: Object.keys(body), endret_av: bruker.telefon })
       );
+
+      // Bump versjon så offentlig partilist og dommere oppdaterer seg
+      // automatisk når admin endrer prøvedetaljer (navn, dato, sted,
+      // dommere, NKK-rep, opprop osv.).
+      bumpPartilisterVersjon(id);
     }
 
     const updated = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
@@ -10550,6 +10572,7 @@ app.put("/api/prover/:id/config", requireProveAdmin, async (c) => {
   if (sets.length > 0) {
     sets.push("updated_at = datetime('now')");
     db.prepare(`UPDATE prove_config SET ${sets.join(", ")} WHERE prove_id = ?`).run(...vals, proveId);
+    bumpPartilisterVersjon(proveId);
   }
 
   const config = db.prepare("SELECT * FROM prove_config WHERE prove_id = ?").get(proveId);

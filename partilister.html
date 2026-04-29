@@ -1778,12 +1778,22 @@
             setInterval(updateTimestamp, 30000);
 
             // Versjons-basert polling: refresh kun når server signaliserer
-            // at partilister/venteliste/ikke-mott har endret seg. Erstatter
-            // den gamle "reload hvert 60. sek"-logikken med en lett endret_at-
-            // sjekk hvert 15. sek (pauset når tab er skjult).
+            // at partilister/venteliste/praktisk-info eller andre admin-endringer
+            // har skjedd. Erstatter "reload hvert 60. sek"-logikken med en lett
+            // endret_at-sjekk hvert 15. sek (pauset når tab er skjult).
+            // Refresher ALL admin-relevant data så hver endring slår igjennom
+            // umiddelbart — ikke bare hund-listen.
             if (proveId && window.FuglehundPartilisterPoller) {
-                window.FuglehundPartilisterPoller.start(proveId, () => {
-                    loadParties();
+                window.FuglehundPartilisterPoller.start(proveId, async () => {
+                    try {
+                        await loadProveConfig();
+                        loadTrialInfo();
+                        loadParties();
+                        loadPraktiskInfo();
+                        updateTimestamp();
+                    } catch (e) {
+                        console.warn('[poller] kunne ikke refreshe partilist:', e);
+                    }
                 });
             } else {
                 // Fallback hvis poller ikke er tilgjengelig

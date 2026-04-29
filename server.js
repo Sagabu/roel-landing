@@ -11703,6 +11703,20 @@ app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
     // (ikke_mott_at + ikke_mott_av_telefon).
     const trukneSnapshot = fullSnapshot.filter(r => r.status === 'trukket');
     const ikkeMottSnapshot = fullSnapshot.filter(r => r.status === 'ikke_mott');
+    // Erstatter-link snapshot: erstatter-rader peker på ikke-mott-rader via
+    // erstatter_for_pd_id. Etter DELETE+INSERT får både erstatter og original
+    // nye id-er, så vi må gjenopprette FK-en. Vi tar vare på (erstatter_regnr,
+    // original_old_id, parti_navn) og bygger linken på nytt etter at rader er
+    // gjeninnsatt — ellers ville angre-flyten miste sporet av erstatteren og
+    // partiet kunne overskride 14-makskapen.
+    const erstatterLinks = fullSnapshot
+      .filter(r => r.erstatter_for_pd_id != null)
+      .map(r => ({
+        erstatter_regnr: r.hund_regnr,
+        original_old_id: r.erstatter_for_pd_id,
+        parti_navn: r.parti_navn
+      }));
+    const snapshotById = new Map(fullSnapshot.map(r => [r.id, r]));
 
     // Slett eksisterende partier og deltakere for denne prøven
     db.prepare("DELETE FROM parti_deltakere WHERE prove_id = ?").run(proveId);
@@ -11842,6 +11856,29 @@ app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
       );
       updateIkkeMottMeta.run(im.ikke_mott_at, im.ikke_mott_av_telefon, res.lastInsertRowid);
       gjeninnsatt++;
+    }
+
+    // Gjenopprett erstatter_for_pd_id-linker. Etter DELETE+INSERT har både
+    // erstatter (aktiv) og original (ikke_mott) fått nye id-er. Finn ny id
+    // til originalen via dens hund_regnr + parti_navn, og oppdater
+    // erstatterens link. Uten dette ville angre-flyten miste sporet av
+    // erstatteren og parti kunne overskride 14-makskapen.
+    const updErstatterLink = db.prepare(`
+      UPDATE parti_deltakere SET erstatter_for_pd_id = ?
+       WHERE parti_id = ? AND hund_regnr = ?
+    `);
+    for (const link of erstatterLinks) {
+      const original = snapshotById.get(link.original_old_id);
+      if (!original) continue;
+      const nyttPartiId = navnTilNyParti.get(link.parti_navn);
+      if (!nyttPartiId) continue;
+      const nyOriginal = db.prepare(`
+        SELECT id FROM parti_deltakere
+         WHERE parti_id = ? AND hund_regnr = ? AND status = 'ikke_mott'
+         LIMIT 1
+      `).get(nyttPartiId, original.hund_regnr);
+      if (!nyOriginal) continue;
+      updErstatterLink.run(nyOriginal.id, nyttPartiId, link.erstatter_regnr);
     }
 
     db.exec("COMMIT");

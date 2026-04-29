@@ -1307,6 +1307,10 @@ for (const sql of migrations) {
 // Engangs-flytt: tidligere markerte vi ikke-møtt på pameldinger-nivå (per prøve).
 // Det er nå per dag (parti_deltakere-rader). Flytt eventuelle eksisterende
 // markeringer over slik at de fortsatt vises korrekt i forfall-oversikten.
+// Atomic: hele flyttingen er én transaksjon. Hvis en hund ikke har en
+// matchende parti_deltakere-rad (f.eks. fordi den har blitt fjernet fra
+// partiet siden v1-markeringen), beholdes pameldinger-markeringen så
+// vi ikke mister sporet.
 try {
   const ikkeMottPameldinger = db.prepare(`
     SELECT p.id AS pamelding_id, p.prove_id, p.hund_id, p.ikke_mott_at, p.ikke_mott_av_telefon
@@ -1329,13 +1333,25 @@ try {
                              updated_at = datetime('now')
        WHERE id = ?
     `);
-    for (const im of ikkeMottPameldinger) {
-      const hund = findRegnr.get(im.hund_id);
-      if (!hund?.regnr) continue;
-      updPdAktiv.run(im.ikke_mott_at, im.ikke_mott_av_telefon, im.prove_id, hund.regnr);
-      resetPamelding.run(im.pamelding_id);
-    }
-    console.log(`[migration] flyttet ${ikkeMottPameldinger.length} ikke-møtt-markeringer fra pameldinger til parti_deltakere`);
+    let flyttet = 0, foreldreloese = 0;
+    const tx = db.transaction(() => {
+      for (const im of ikkeMottPameldinger) {
+        const hund = findRegnr.get(im.hund_id);
+        if (!hund?.regnr) { foreldreloese++; continue; }
+        const res = updPdAktiv.run(im.ikke_mott_at, im.ikke_mott_av_telefon, im.prove_id, hund.regnr);
+        if (res.changes > 0) {
+          resetPamelding.run(im.pamelding_id);
+          flyttet++;
+        } else {
+          // Ingen aktiv parti_deltakere-rad — la pameldinger.status stå så vi
+          // ikke mister markeringen. Admin kan rydde manuelt eller en senere
+          // re-import vil treffe parti_deltakere som da kan flyttes.
+          foreldreloese++;
+        }
+      }
+    });
+    tx();
+    console.log(`[migration] ikke-møtt: flyttet ${flyttet}, lot ${foreldreloese} stå (ingen aktiv parti_deltakere-rad)`);
   }
 } catch (e) {
   console.warn('[migration] kunne ikke flytte ikke-møtt-markeringer:', e.message);
@@ -11280,7 +11296,10 @@ app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
     if (fullSnapshot.length > 0) {
       // Sammenlign med innkommende data — advar hvis mer enn 10% av hundene
       // forsvinner (kan indikere bug eller ufullstendig PDF-import).
-      const gammelAktiv = fullSnapshot.filter(r => (r.status || 'aktiv') !== 'trukket').length;
+      const gammelAktiv = fullSnapshot.filter(r => {
+        const s = r.status || 'aktiv';
+        return s !== 'trukket' && s !== 'ikke_mott';
+      }).length;
       const nyAktiv = partier.reduce((s, p) => s + (Array.isArray(p.dogs) ? p.dogs.length : 0), 0);
       const drop = gammelAktiv - nyAktiv;
 

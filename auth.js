@@ -737,7 +737,7 @@ window.handleApiError = function(error, customMessage) {
 if (typeof window.FuglehundPartilisterPoller === 'undefined') {
   window.FuglehundPartilisterPoller = (function() {
     const POLL_INTERVAL_MS = 15000;
-    const aktive = new Map(); // proveId -> { lastEndret, intervalId, onChange, sjekk }
+    const aktive = new Map(); // proveId -> { lastEndret, baseline, intervalId, onChange, sjekk }
 
     async function sjekk(proveId, state) {
       try {
@@ -746,7 +746,13 @@ if (typeof window.FuglehundPartilisterPoller === 'undefined') {
         });
         if (!resp.ok) return;
         const data = await resp.json();
-        if (state.lastEndret !== null && data.endret_at !== state.lastEndret) {
+        // Første fetch: bare sett baseline (ikke fyr onChange).
+        // Senere: fyr onChange ved enhver endring i endret_at — også
+        // overgangen NULL → første timestamp (typisk for prøver som
+        // aldri tidligere har hatt en bump).
+        if (!state.baseline) {
+          state.baseline = true;
+        } else if (data.endret_at !== state.lastEndret) {
           try {
             await state.onChange(data.endret_at, state.lastEndret);
           } catch (e) {
@@ -762,7 +768,7 @@ if (typeof window.FuglehundPartilisterPoller === 'undefined') {
     function start(proveId, onChange) {
       if (!proveId || typeof onChange !== 'function') return () => {};
       stop(proveId); // Sikrer kun én aktiv poller per proveId
-      const state = { lastEndret: null, intervalId: null, onChange, sjekk: null };
+      const state = { lastEndret: null, baseline: false, intervalId: null, onChange, sjekk: null };
       state.sjekk = () => sjekk(proveId, state);
       // Initial fetch — setter baseline uten å trigge onChange
       state.sjekk();

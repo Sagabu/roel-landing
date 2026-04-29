@@ -11359,6 +11359,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     day: computeDay(parti.dato),
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
+    bedomming_aktiv: bedommingErAktiv(proveId, parti.navn),
     dogs: deltakere
       .filter(d => d.parti_id === parti.id && aktivStatus(d.status))
       .map(d => ({
@@ -11454,6 +11455,7 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     day: computeDay(parti.dato),
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
+    bedomming_aktiv: bedommingErAktiv(proveId, parti.navn),
     dogs: deltakere
       .filter(d => d.parti_id === parti.id && aktivStatus(d.status))
       .map(mapDog),
@@ -11473,6 +11475,31 @@ function erBedommingStartet(proveId, partiNavn) {
   if (k) return true;
   const v = db.prepare("SELECT 1 FROM vk_bedomming WHERE prove_id = ? AND parti = ? LIMIT 1").get(proveId, partiNavn);
   return !!v;
+}
+
+// Er bedømming AKTIV nå? Brukes til "Bedømming pågår"-badgen så den
+// forsvinner når dommerne er ferdige (digital: status innsendt/godkjent;
+// manuell live-admin: status fullfort) og det ikke ligger igjen draft-
+// kritikker. erBedommingStartet beholdes uendret — den sier "har det
+// vært bedømt i det hele tatt" og brukes til å låse parti-rekkefølge.
+function bedommingErAktiv(proveId, partiNavn) {
+  // Aktiv VK-bedømming = vk_bedomming.status='aktiv' (verken fullfort,
+  // innsendt eller godkjent). Live-admin "Avslutt"-knappen setter
+  // 'fullfort'; digital "Send inn"-flyten setter 'innsendt'/'godkjent'.
+  const v = db.prepare(`
+    SELECT 1 FROM vk_bedomming
+    WHERE prove_id = ? AND parti = ? AND status = 'aktiv'
+    LIMIT 1
+  `).get(proveId, partiNavn);
+  if (v) return true;
+  // Aktive UK/AK-kritikker = minst én med status 'draft' (ikke sendt inn) eller
+  // 'returned' (NKK-rep har sendt tilbake til dommer for retting).
+  const k = db.prepare(`
+    SELECT 1 FROM kritikker
+    WHERE prove_id = ? AND parti = ? AND COALESCE(status, 'draft') IN ('draft', 'returned')
+    LIMIT 1
+  `).get(proveId, partiNavn);
+  return !!k;
 }
 
 // Bro fra Bok B (parti_deltakere) til Bok A (pameldinger).
@@ -13709,6 +13736,9 @@ app.put("/api/kritikker/:id/submit", requireDommer, async (c) => {
   const id = c.req.param("id");
   const bruker = c.get("bruker");
 
+  // Hent prove_id før status-oppdatering så vi kan bumpe versjon etter
+  const kr = db.prepare("SELECT prove_id FROM kritikker WHERE id = ?").get(id);
+
   const result = db.prepare(`
     UPDATE kritikker SET status = 'submitted', submitted_at = datetime('now'), submitted_by = ?, updated_at = datetime('now')
     WHERE id = ?
@@ -13719,6 +13749,7 @@ app.put("/api/kritikker/:id/submit", requireDommer, async (c) => {
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
     "kritikk_submitted", `Kritikk ${id} sendt til NKK-rep av ${bruker.telefon}`
   );
+  if (kr?.prove_id) bumpPartilisterVersjon(kr.prove_id);
   return c.json({ success: true });
 });
 
@@ -13754,6 +13785,7 @@ app.put("/api/kritikker/:id/godkjenn", requireAuth, async (c) => {
       prove_id: kritikk.prove_id
     })
   );
+  bumpPartilisterVersjon(kritikk.prove_id);
   return c.json({ success: true, overstyring: erOverstyring });
 });
 
@@ -13786,6 +13818,7 @@ app.put("/api/kritikker/:id/returner", requireAuth, async (c) => {
   db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
     "kritikk_returnert", `Kritikk ${id} returnert av ${bruker.telefon}: ${body.nkk_comment || ''}`
   );
+  bumpPartilisterVersjon(kritikk.prove_id);
 
   // Send SMS til dommer om returnert kritikk
   if (kritikk.dommer_telefon) {
@@ -16576,6 +16609,7 @@ app.post("/api/vk-bedomming/:proveId/:parti/avslutt", requireAuth, async (c) => 
     );
 
     autoBackup("vk-bedomming-live-avsluttet");
+    bumpPartilisterVersjon(proveId);
     return c.json({ success: true, message: "Live rangering avsluttet" });
   } catch (err) {
     console.error("VK-bedomming avslutt error:", err);
@@ -16639,6 +16673,7 @@ app.post("/api/vk-bedomming/:proveId/:parti/send-inn", requireAuth, async (c) =>
     }
 
     autoBackup("vk-bedomming-innsendt");
+    bumpPartilisterVersjon(proveId);
     return c.json({ success: true, message: "VK-bedømming sendt inn for godkjenning" });
   } catch (err) {
     console.error("VK-bedomming send-inn error:", err);
@@ -16672,6 +16707,7 @@ app.post("/api/vk-bedomming/:proveId/:parti/godkjenn", requireAdmin, async (c) =
     `).run(user?.telefon || 'admin', proveId, parti);
 
     autoBackup("vk-bedomming-godkjent");
+    bumpPartilisterVersjon(proveId);
     return c.json({ success: true, message: "VK-bedømming godkjent" });
   } catch (err) {
     console.error("VK-bedomming godkjenn error:", err);

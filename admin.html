@@ -8278,10 +8278,10 @@
             var lastTitle = reorderLast ? 'Låst — dommer har startet bedømming' : 'Kan ikke flyttes forbi annen klasse';
 
             var upBtn = canUp
-                ? '<button onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'up\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm" title="Flytt opp">↑</button>'
+                ? '<button type="button" onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'up\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm cursor-pointer" title="Flytt opp">↑</button>'
                 : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="' + lastTitle + '">↑</span>';
             var downBtn = canDown
-                ? '<button onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'down\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm" title="Flytt ned">↓</button>'
+                ? '<button type="button" onclick="moveDogInParty(\'' + partyNameEsc + '\', \'' + regnrEsc + '\', \'down\')" class="px-1.5 py-1 rounded-lg bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 text-xs font-medium transition shadow-sm cursor-pointer" title="Flytt ned">↓</button>'
                 : '<span class="px-1.5 py-1 rounded-lg bg-bark-50 text-bark-300 border border-bark-200 text-xs" title="' + lastTitle + '">↓</span>';
 
             // Rase: vis kun forkortelse (f.eks. "ES" for Engelsk Setter) så
@@ -8298,28 +8298,35 @@
             var partiNavnEsc = (party.name || '').replace(/'/g, "\\'");
             var hundenavnEsc = (dog.hundenavn || '').replace(/'/g, "\\'");
             var ikkeMottBtn = (dog.regnr && party.name) ?
-                '<button onclick="apneIkkeMottBekreftelse(\'' + regnrEsc + '\', \'' + partiNavnEsc + '\', \'' + hundenavnEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
+                '<button type="button" onclick="apneIkkeMottBekreftelse(\'' + regnrEsc + '\', \'' + partiNavnEsc + '\', \'' + hundenavnEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm cursor-pointer" title="Marker som ikke møtt">Ikke møtt</button>'
                 : '';
 
             // Eier på linje 1, fører på linje 2 — text-xs så raden ikke vokser i høyde.
-            // Dette frigjør bredde til Ikke møtt-knappen i Handling-kolonnen.
+            // flex flex-col justify-center sentrer cellen vertikalt når den er
+            // mindre enn rad-høyden (items-stretch på raden gjør at hver celle
+            // strekkes til full radhøyde).
             var eierForerCelle =
-                '<div class="px-2 py-2 min-w-0">' +
+                '<div class="px-2 py-2 min-w-0 flex flex-col justify-center">' +
                     '<div class="text-xs text-bark-700 truncate" title="Eier: ' + (dog.eier || '').replace(/"/g, '&quot;') + '">' + (dog.eier || '–') + '</div>' +
                     '<div class="text-xs text-bark-500 truncate" title="Fører: ' + (dog.forer || '').replace(/"/g, '&quot;') + '">' + (dog.forer || '–') + '</div>' +
                 '</div>';
 
-            return '<div class="partilister-row ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
-                '<div class="py-2 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
-                '<div class="pl-1 pr-2 py-2 min-w-0"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
-                '<div class="py-2 text-sm text-bark-700 hidden md:block text-center font-medium" title="' + raseFull + '">' + raseForkort + '</div>' +
+            // Knappene i Handling-cellen får relative+z-index så de ALDRI
+            // overstyres av søsken-cellers padding eller en hover-bakgrunn.
+            // self-stretch + flex+items-center sørger for at cellens click-area
+            // dekker hele radhøyden (slik at admin treffer knappen visuelt
+            // der den faktisk er).
+            return '<div class="partilister-row ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-stretch" data-regnr="' + (dog.regnr || '') + '">' +
+                '<div class="py-2 text-center flex items-center justify-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
+                '<div class="pl-1 pr-2 py-2 min-w-0 flex flex-col justify-center"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
+                '<div class="py-2 text-sm text-bark-700 hidden md:flex md:items-center md:justify-center font-medium" title="' + raseFull + '">' + raseForkort + '</div>' +
                 eierForerCelle +
-                '<div class="py-2 text-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
-                '<div class="pl-4 pr-2 py-2 flex items-center justify-start gap-2 flex-wrap">' +
+                '<div class="py-2 text-center flex items-center justify-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
+                '<div class="pl-4 pr-2 py-2 flex items-center justify-start gap-2 flex-wrap relative z-10">' +
                     upBtn + downBtn +
-                    '<button onclick="openMoveDialog(\'' + regnrEsc + '\', \'' + partyNameEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm">Flytt</button>' +
+                    '<button type="button" onclick="openMoveDialog(\'' + regnrEsc + '\', \'' + partyNameEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm cursor-pointer">Flytt</button>' +
                     ikkeMottBtn +
-                    '<button onclick="trekkHund(\'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-700 border border-red-300 text-xs font-medium transition shadow-sm" title="Trekk påmeldingen">Trekk</button>' +
+                    '<button type="button" onclick="trekkHund(\'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-red-50 text-red-700 border border-red-300 text-xs font-medium transition shadow-sm cursor-pointer" title="Trekk påmeldingen">Trekk</button>' +
                 '</div>' +
             '</div>';
         }

@@ -2425,10 +2425,11 @@
 
                     <!-- Populated state - vises etter opplasting (hidden by default) -->
                     <div id="partyListsContent" class="hidden space-y-6">
-                        <!-- View-toggle (Partilister | Ventelister) + tilbakestill-knapp -->
+                        <!-- View-toggle (Alle | Partilister | Ventelister) + tilbakestill-knapp -->
                         <div class="flex gap-2 flex-wrap items-center justify-between">
                             <div class="inline-flex rounded-xl border border-bark-200 bg-white p-1 shadow-sm">
-                                <button onclick="setPartyView('partilister')" id="viewPartilister" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-warm-100 text-warm-800 border border-warm-300">Partilister</button>
+                                <button onclick="setPartyView('alle')" id="viewAlle" class="px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition">Alle</button>
+                                <button onclick="setPartyView('partilister')" id="viewPartilister" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-warm-100 text-warm-800 border border-warm-300 ml-1">Partilister</button>
                                 <button onclick="setPartyView('venteliste')" id="viewVenteliste" class="px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition ml-1">Ventelister</button>
                             </div>
                             <button onclick="tilbakestillTilDeltakerlister()" class="text-bark-500 hover:text-amber-700 px-3 py-1.5 rounded-xl text-xs font-medium border border-bark-200 hover:border-amber-300 hover:bg-amber-50 transition flex items-center gap-1.5">
@@ -2439,7 +2440,7 @@
                             </button>
                         </div>
 
-                        <!-- Dag-tabs (auto-rendered fra data) -->
+                        <!-- Dag-tabs (auto-rendered fra data; skjules på 1-dags prøver) -->
                         <div id="dagTabs" class="flex gap-2 flex-wrap"></div>
 
                         <!-- Deltakerlister (skjult som standard, vises ved tilbakestilling) -->
@@ -8502,35 +8503,42 @@
         // ============================================
         // Parti- og ventelister: view + dag-filter
         // ============================================
-        // To nivåer av filter (top→ned):
-        //   currentPartyView   — 'partilister' | 'venteliste' (top-toggle)
-        //   currentPartyDay    — 1, 2, 3, 4 (dag-tabs, auto-detektert fra data)
-        // currentPartyFilter beholdes som 'all' for bakoverkompatibilitet med
-        // funksjoner som leser den (renderAllParties, renderVenteliste).
+        // To uavhengige dimensjoner:
+        //   currentPartyView — 'alle' | 'partilister' | 'venteliste'
+        //                      'alle' viser begge seksjonene samtidig
+        //   currentPartyDay  — null (alle dager) | 1..4 (spesifikk dag)
+        //                      Default: dagens dato hvis prøvedag, ellers
+        //                      første dag med data.
+        // currentPartyFilter er fjernet som UI-valg, men beholdes som
+        // 'all' for bakoverkompatibilitet i renderAllParties/renderVenteliste.
         let currentPartyView = 'partilister';
-        let currentPartyDay = null;       // settes av renderDagTabs ved første render
+        let currentPartyDay = null;
         let currentPartyFilter = 'all';
 
-        // Bytt mellom Partilister-visning og Venteliste-visning
         function setPartyView(view) {
-            if (view !== 'partilister' && view !== 'venteliste') return;
+            if (!['alle', 'partilister', 'venteliste'].includes(view)) return;
             currentPartyView = view;
-            ['viewPartilister', 'viewVenteliste'].forEach(id => {
+            const idTilView = {
+                viewAlle: 'alle',
+                viewPartilister: 'partilister',
+                viewVenteliste: 'venteliste'
+            };
+            Object.entries(idTilView).forEach(([id, v], idx) => {
                 const el = document.getElementById(id);
                 if (!el) return;
-                const erAktiv = (id === 'viewPartilister' && view === 'partilister') ||
-                                (id === 'viewVenteliste' && view === 'venteliste');
+                const erAktiv = view === v;
+                const ml = idx > 0 ? ' ml-1' : '';
                 if (erAktiv) {
-                    el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium bg-warm-100 text-warm-800 border border-warm-300';
+                    el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium bg-warm-100 text-warm-800 border border-warm-300' + ml;
                 } else {
-                    el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition ml-1';
+                    el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition' + ml;
                 }
             });
             renderDagTabs();
             anvendPartiSynlighet();
         }
 
-        // Bytt aktiv prøvedag
+        // Bytt aktiv prøvedag. day = null betyr "Alle dager".
         function setPartyDay(day) {
             currentPartyDay = day;
             renderDagTabs();
@@ -8579,56 +8587,81 @@
             return tilgjengelige[0];
         }
 
-        // Render dag-tabs basert på data
+        // Render dag-tabs basert på data. Skjules på 1-dags prøver siden
+        // valg-raden ikke gir noen verdi der.
         function renderDagTabs() {
             const container = document.getElementById('dagTabs');
             if (!container) return;
             const dager = tilgjengeligeDager();
             if (dager.length === 0) {
                 container.innerHTML = '';
+                container.classList.add('hidden');
                 return;
             }
-            if (!currentPartyDay || !dager.includes(currentPartyDay)) {
+            // 1-dagsprøve: skjul hele raden og force currentPartyDay til den ene dagen
+            if (dager.length === 1) {
+                container.innerHTML = '';
+                container.classList.add('hidden');
+                currentPartyDay = dager[0];
+                return;
+            }
+            container.classList.remove('hidden');
+
+            // Sett default-dag hvis ikke gyldig: dagens dato hvis prøvedag,
+            // ellers første dag. currentPartyDay = null betyr "Alle dager"
+            // (eksplisitt valg fra brukeren) — la den stå som null da.
+            if (currentPartyDay !== null && !dager.includes(currentPartyDay)) {
                 currentPartyDay = defaultDag();
             }
-            container.innerHTML = dager.map(d => {
-                const aktiv = d === currentPartyDay;
+
+            const knapper = [];
+            const lagKnapp = (verdi, tekst) => {
+                const aktiv = currentPartyDay === verdi;
                 const klass = aktiv
                     ? 'bg-warm-100 text-warm-800 px-4 py-1.5 rounded-xl text-sm font-medium border border-warm-300'
                     : 'bg-white text-bark-600 px-4 py-1.5 rounded-xl text-sm border border-bark-100 hover:border-warm-200 transition';
-                return `<button onclick="setPartyDay(${d})" class="${klass}">${dagNavnForDag(d)}</button>`;
-            }).join('');
+                const arg = verdi === null ? 'null' : verdi;
+                knapper.push(`<button onclick="setPartyDay(${arg})" class="${klass}">${tekst}</button>`);
+            };
+            lagKnapp(null, 'Alle dager');
+            for (const d of dager) lagKnapp(d, dagNavnForDag(d));
+            container.innerHTML = knapper.join('');
         }
 
         // Render klasse-tabs basert på hva som faktisk finnes på valgt dag
         // i gjeldende view (partilister-view: kun klasser med partier; venteliste-
         // view: kun klasser med venteliste-data).
         // Anvend gjeldende view + dag — bytter synlighet og re-rendrer.
+        // view='alle' viser BÅDE partier og venteliste samtidig.
         function anvendPartiSynlighet() {
             const partyContent = document.getElementById('partyListsContainer');
             const ventelisteSection = document.getElementById('venteliste');
+            const visParti = currentPartyView === 'alle' || currentPartyView === 'partilister';
+            const visVenteliste = currentPartyView === 'alle' || currentPartyView === 'venteliste';
 
-            // Re-render selv om noen seksjoner skjules — så de er klare når brukeren bytter view
+            // Re-render selv om noen seksjoner skjules — så data er klart ved view-bytte
             renderAllParties(getTrialParties());
             renderVenteliste(getTrialVenteliste());
 
-            if (currentPartyView === 'partilister') {
-                if (partyContent) partyContent.classList.remove('hidden');
-                if (ventelisteSection) ventelisteSection.classList.add('hidden');
-            } else {
-                if (partyContent) partyContent.classList.add('hidden');
-                if (ventelisteSection) {
-                    // renderVenteliste kontrollerer .hidden basert på om det er data;
-                    // tving den synlig her hvis vi er på venteliste-view.
+            if (partyContent) {
+                if (visParti) partyContent.classList.remove('hidden');
+                else partyContent.classList.add('hidden');
+            }
+            if (ventelisteSection) {
+                if (visVenteliste) {
+                    // renderVenteliste kontrollerer egen .hidden basert på om data finnes;
+                    // tving synlig her hvis vi er på venteliste-relevant view OG data finnes.
                     const hasContent = (document.getElementById('waitlistTableBody')?.innerHTML || '').trim().length > 0;
                     if (hasContent) ventelisteSection.classList.remove('hidden');
+                } else {
+                    ventelisteSection.classList.add('hidden');
                 }
             }
 
             // UK/AK-deltakerlister og VK-deltakerliste — fortsatt synlige som
-            // "før-fordeling"-flyt på partilister-view.
+            // "før-fordeling"-flyt på partilister-relevante view.
             const proveId = getCurrentTrialId();
-            if (currentPartyView === 'partilister' && proveId) {
+            if (visParti && proveId) {
                 try {
                     const dlData = JSON.parse(localStorage.getItem(`ukakDeltakerlister_${proveId}`) || '{}');
                     if (typeof renderUkakDeltakerlister === 'function') renderUkakDeltakerlister(dlData);

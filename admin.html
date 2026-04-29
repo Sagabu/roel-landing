@@ -8572,9 +8572,37 @@
         //                      første dag med data.
         // currentPartyFilter er fjernet som UI-valg, men beholdes som
         // 'all' for bakoverkompatibilitet i renderAllParties/renderVenteliste.
+        // Valgene persisteres per-prøve i localStorage så hard-refresh
+        // beholder admin sin kontekst (f.eks. "Partilister + Søndag").
         let currentPartyView = 'partilister';
         let currentPartyDay = null;
         let currentPartyFilter = 'all';
+
+        function partilisterValgKey() {
+            const proveId = getCurrentTrialId();
+            return proveId ? 'partilisterValg_' + proveId : null;
+        }
+        function lagrePartilisterValg() {
+            const key = partilisterValgKey();
+            if (!key) return;
+            try {
+                localStorage.setItem(key, JSON.stringify({
+                    view: currentPartyView,
+                    day: currentPartyDay  // null lagres som null
+                }));
+            } catch (e) {}
+        }
+        function hentLagretPartilisterValg() {
+            const key = partilisterValgKey();
+            if (!key) return null;
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return null;
+                const v = JSON.parse(raw);
+                if (!v || typeof v !== 'object') return null;
+                return v;
+            } catch (e) { return null; }
+        }
 
         function setPartyView(view) {
             if (!['alle', 'partilister', 'venteliste'].includes(view)) return;
@@ -8595,6 +8623,7 @@
                     el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition' + ml;
                 }
             });
+            lagrePartilisterValg();
             renderDagTabs();
             anvendPartiSynlighet();
         }
@@ -8602,6 +8631,7 @@
         // Bytt aktiv prøvedag. day = null betyr "Alle dager".
         function setPartyDay(day) {
             currentPartyDay = day;
+            lagrePartilisterValg();
             renderDagTabs();
             anvendPartiSynlighet();
         }
@@ -19947,8 +19977,28 @@
 
             // Når partilister vises, oppdater dag-tabs/klasse-tabs og synkroniser
             // synlighet mellom partilister-view og venteliste-view via
-            // anvendPartiSynlighet (kalles via setPartyView).
+            // anvendPartiSynlighet (kalles via setPartyView). Restorer
+            // sist valgte view+dag fra localStorage så hard-refresh holder
+            // admin sin kontekst (f.eks. "Partilister + Søndag").
             if (sectionId === 'partilister') {
+                if (typeof hentLagretPartilisterValg === 'function') {
+                    const lagret = hentLagretPartilisterValg();
+                    if (lagret) {
+                        if (['alle', 'partilister', 'venteliste'].includes(lagret.view)) {
+                            currentPartyView = lagret.view;
+                        }
+                        // day kan være null (alle dager) eller et tall — restore begge.
+                        // Fersk lagret valg overstyrer initial null-state.
+                        if (lagret.day === null || (Number.isInteger(lagret.day) && lagret.day >= 1)) {
+                            currentPartyDay = lagret.day;
+                        }
+                    } else if (currentPartyDay == null && typeof defaultDag === 'function') {
+                        // Ingen lagret valg + fersk state → default til dagens dato
+                        // hvis prøvedag, ellers første dag med data (i stedet for å
+                        // bli stående på "alle dager" som er initial null-verdi).
+                        currentPartyDay = defaultDag();
+                    }
+                }
                 if (typeof renderDagTabs === 'function') renderDagTabs();
                 if (typeof setPartyView === 'function') {
                     setPartyView(currentPartyView || 'partilister');

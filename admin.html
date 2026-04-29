@@ -4788,17 +4788,23 @@
                             const dagNr = p.day || 1;
                             const dagKey = 'dag' + dagNr;
                             for (const d of p.trukne) {
+                                // Bevar opprinnelig parti og posisjon (startnummer er 1-basert
+                                // i serveren) så angreTrekking kan sette hunden tilbake i
+                                // riktig parti og samme plass — også etter sideoppdatering.
+                                const meta = {
+                                    trukket_fra: 'parti ' + (p.displayName || p.name),
+                                    _original_parti_navn: p.name,
+                                    _original_idx: typeof d.startnummer === 'number' && d.startnummer > 0
+                                        ? d.startnummer - 1
+                                        : null
+                                };
                                 const isVK = p.type === 'vk' || (d.klasse || '').toUpperCase() === 'VK';
                                 if (isVK) {
-                                    trukket.vk.push(Object.assign({}, d, {
-                                        trukket_fra: 'parti ' + (p.displayName || p.name)
-                                    }));
+                                    trukket.vk.push(Object.assign({}, d, meta));
                                 } else if (trukket[dagKey]) {
                                     const klKey = (d.klasse || 'AK').toLowerCase();
                                     if (!trukket[dagKey][klKey]) trukket[dagKey][klKey] = [];
-                                    trukket[dagKey][klKey].push(Object.assign({}, d, {
-                                        trukket_fra: 'parti ' + (p.displayName || p.name)
-                                    }));
+                                    trukket[dagKey][klKey].push(Object.assign({}, d, meta));
                                 }
                             }
                         }
@@ -4905,12 +4911,18 @@
             const trukket = getTrialTrukket();
             let fraKilde = null;  // "parti <navn>", "venteliste dag X UK/AK", "venteliste VK"
             let dog = null;
+            // Brukes av angreTrekking til å sette hunden tilbake til samme parti
+            // og posisjon hvis admin angrer.
+            let originalPartiNavn = null;
+            let originalIdx = null;
 
             // Søk i partier
             for (const party of parties) {
                 const idx = party.dogs.findIndex(d => d.regnr === regnr);
                 if (idx >= 0) {
                     dog = party.dogs[idx];
+                    originalPartiNavn = party.name;
+                    originalIdx = idx;
                     party.dogs.splice(idx, 1);
                     if (dog.klasse === 'UK' && party.ukCount > 0) party.ukCount--;
                     else if (dog.klasse === 'AK' && party.akCount > 0) party.akCount--;
@@ -4950,11 +4962,15 @@
                 return;
             }
 
-            // Legg til trukket — bevar dag-info
+            // Legg til trukket — bevar dag-info + opprinnelig parti og posisjon
+            // (begge brukt av angreTrekking for å sette hunden tilbake til
+            // samme parti og samme plass).
             const isVK = dog.klasse === 'VK';
             const trukketEntry = Object.assign({}, dog, {
                 trukket_dato: new Date().toISOString(),
-                trukket_fra: fraKilde
+                trukket_fra: fraKilde,
+                _original_parti_navn: originalPartiNavn,
+                _original_idx: originalIdx
             });
             if (isVK) {
                 trukket.vk.push(trukketEntry);
@@ -4977,29 +4993,31 @@
             }
         }
 
-        // Flytt hund tilbake fra trukket til venteliste (angre trekking)
+        // Flytt hund tilbake fra trukket-lista til opprinnelig parti og posisjon.
+        // Hvis hunden ble trukket fra venteliste (eller savner _original_parti_navn
+        // fordi data er fra før denne funksjonen lagret feltet), faller vi tilbake
+        // til ventelisten.
         function angreTrekking(regnr) {
             if (!regnr) return;
             const trukket = getTrialTrukket();
             const venteliste = getTrialVenteliste();
             let dog = null;
+            let funnetIDag = null;       // 'dag1'..'dag4'
+            let funnetIKlasse = null;    // 'uk'|'ak'
+            let funnetIVK = false;
 
-            for (let d = 1; d <= 4; d++) {
+            for (let d = 1; d <= 4 && !dog; d++) {
                 for (const kl of ['uk', 'ak']) {
                     const list = trukket[`dag${d}`]?.[kl] || [];
                     const idx = list.findIndex(x => x.regnr === regnr);
                     if (idx >= 0) {
                         dog = list[idx];
                         list.splice(idx, 1);
-                        // Legg tilbake på venteliste for samme dag+klasse
-                        if (!venteliste[`dag${d}`]) venteliste[`dag${d}`] = { uk: [], ak: [] };
-                        if (!venteliste[`dag${d}`][kl]) venteliste[`dag${d}`][kl] = [];
-                        delete dog.trukket_dato; delete dog.trukket_fra;
-                        venteliste[`dag${d}`][kl].push(dog);
+                        funnetIDag = `dag${d}`;
+                        funnetIKlasse = kl;
                         break;
                     }
                 }
-                if (dog) break;
             }
             if (!dog) {
                 const vkList = trukket.vk || [];
@@ -5007,23 +5025,65 @@
                 if (idx >= 0) {
                     dog = vkList[idx];
                     vkList.splice(idx, 1);
-                    if (!venteliste.vk) venteliste.vk = [];
-                    delete dog.trukket_dato; delete dog.trukket_fra;
-                    venteliste.vk.push(dog);
+                    funnetIVK = true;
                 }
             }
-
             if (!dog) {
                 alert('Fant ikke hunden i trukket-lista.');
                 return;
             }
 
+            // Rens trukket-metadata før hunden settes tilbake i datastrukturen
+            const originalPartiNavn = dog._original_parti_navn;
+            const originalIdx = typeof dog._original_idx === 'number' ? dog._original_idx : null;
+            delete dog.trukket_dato;
+            delete dog.trukket_fra;
+            delete dog._original_parti_navn;
+            delete dog._original_idx;
+
+            // Foretrukken: tilbake til opprinnelig parti og plass.
+            let restoredToParti = false;
+            if (originalPartiNavn) {
+                const parties = getTrialParties();
+                const party = parties.find(p => p.name === originalPartiNavn);
+                if (party && Array.isArray(party.dogs)) {
+                    const insertIdx = originalIdx == null
+                        ? party.dogs.length
+                        : Math.min(Math.max(0, originalIdx), party.dogs.length);
+                    party.dogs.splice(insertIdx, 0, dog);
+                    if (dog.klasse === 'UK') party.ukCount = (party.ukCount || 0) + 1;
+                    else if (dog.klasse === 'AK') party.akCount = (party.akCount || 0) + 1;
+                    setTrialParties(parties);
+                    renderAllParties(parties);
+                    restoredToParti = true;
+                }
+            }
+
+            // Fallback: legg tilbake på ventelisten der hunden ble funnet.
+            // Dekker (a) hunder trukket fra venteliste, (b) gamle trukket-rader
+            // uten _original_parti_navn, og (c) tilfellet der opprinnelig parti
+            // er slettet siden trekket.
+            if (!restoredToParti) {
+                if (funnetIVK) {
+                    if (!venteliste.vk) venteliste.vk = [];
+                    venteliste.vk.push(dog);
+                } else if (funnetIDag && funnetIKlasse) {
+                    if (!venteliste[funnetIDag]) venteliste[funnetIDag] = { uk: [], ak: [] };
+                    if (!venteliste[funnetIDag][funnetIKlasse]) venteliste[funnetIDag][funnetIKlasse] = [];
+                    venteliste[funnetIDag][funnetIKlasse].push(dog);
+                }
+                setTrialVenteliste(venteliste);
+                renderVenteliste(venteliste);
+            }
+
             setTrialTrukket(trukket);
-            setTrialVenteliste(venteliste);
-            renderVenteliste(venteliste);
             renderTrukketListe(trukket);
             updateStatsFromStorage();
-            alert('Hunden er flyttet tilbake til ventelisten.');
+            if (typeof FuglehundToast !== 'undefined') {
+                FuglehundToast.success(restoredToParti
+                    ? 'Hund tilbake i parti på opprinnelig plass'
+                    : 'Hund tilbake på venteliste');
+            }
         }
 
         // Render trukket-liste (vises kun for admin, aldri på offentlig partiliste)

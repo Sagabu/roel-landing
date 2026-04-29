@@ -9914,11 +9914,21 @@ function hentPartiDeltakerStabil(c, proveId, hundRegnr, partiNavn) {
 }
 
 // Marker parti-deltaker som ikke møtt (per dag) — stabile identifikatorer i body
+// Returnerer true hvis partiet er VK semi eller VK finale. NKK-regelen sier at
+// erstatter fra venteliste KUN er tillatt i UK/AK og VK kval — ikke i semi/finale,
+// fordi disse er bygget på resultatene fra forrige runde.
+function erVkSemiEllerFinale(partiNavn, partiType) {
+  if ((partiType || '') !== 'vk') return false;
+  const n = (partiNavn || '').toLowerCase();
+  return n.includes('semi') || n.includes('finale');
+}
+
 // Erstatningskandidater fra venteliste for en ikke-møtt-hund.
 // Returnerer to lister:
 //   same_class — hunder på venteliste i samme klasse + samme dag (foretrukket)
 //   cross_class — hunder i motsatt klasse (UK↔AK), kun hvis same_class er tom.
-//   For VK returneres kun same_class — VK kan aldri krysses med UK/AK.
+//   For VK kval returneres kun same_class — VK kan aldri krysses med UK/AK.
+//   For VK semi og VK finale returneres tomme lister (erstatter ikke tillatt).
 app.get("/api/prover/:proveId/erstatningskandidater", requireProveAdmin, (c) => {
   const proveId = c.req.param("proveId");
   const regnr = c.req.query("regnr");
@@ -9948,8 +9958,10 @@ app.get("/api/prover/:proveId/erstatningskandidater", requireProveAdmin, (c) => 
 
   let sameClass = [];
   let crossClass = [];
+  const erSemiEllerFinale = erVkSemiEllerFinale(partiNavn, radIkkeMott.parti_type);
 
-  if (klasse === 'VK') {
+  if (klasse === 'VK' && !erSemiEllerFinale) {
+    // VK kval: erstatter tillatt fra venteliste
     sameClass = db.prepare(`
       SELECT * FROM venteliste
        WHERE prove_id = ? AND klasse = 'VK' AND dag IS NULL
@@ -9977,7 +9989,12 @@ app.get("/api/prover/:proveId/erstatningskandidater", requireProveAdmin, (c) => 
     dag,
     klasse_til_ikke_mott: klasse,
     same_class: sameClass,
-    cross_class: crossClass
+    cross_class: crossClass,
+    // Når dette er satt, vil frontend skjule erstatter-modalen og bare
+    // vise melding om at erstatter ikke er tillatt for denne parti-typen.
+    erstatter_blokkert_grunn: erSemiEllerFinale
+      ? 'VK semi/finale tillater ikke erstatter fra venteliste'
+      : null
   });
 });
 
@@ -10006,6 +10023,14 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
   let erstatterStartnummer = null;
   let erstatterErKryssklasse = false;
   if (erstatter && erstatter.hund_regnr) {
+    // VK semi og VK finale tillater ikke erstatter fra venteliste — disse
+    // partiene er bygget på resultatene fra forrige runde og kan ikke utvides.
+    if (erVkSemiEllerFinale(parti_navn, rad.parti_type)) {
+      return c.json({
+        error: "VK semi og VK finale tillater ikke erstatter fra venteliste — disse partiene er bygget på resultatene fra forrige runde."
+      }, 400);
+    }
+
     const klasseIkkeMott = (rad.klasse || '').toUpperCase();
     const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
     const startDato = prove?.start_dato || null;

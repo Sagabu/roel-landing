@@ -1280,11 +1280,18 @@ const migrations = [
   "ALTER TABLE kritikker ADD COLUMN uonsket_adferd_tekst TEXT DEFAULT ''",
   // Sporbarhet for ikke-møtt-markering: når ble den satt og av hvem.
   // Selve status='ikke_mott' ligger allerede i CHECK-constraint på pameldinger.status.
+  // (Beholdes for bakoverkompatibilitet — selve markeringen ligger nå på
+  // parti_deltakere-nivå så den er per-dag, ikke per-prøve.)
   "ALTER TABLE pameldinger ADD COLUMN ikke_mott_at TEXT DEFAULT NULL",
   "ALTER TABLE pameldinger ADD COLUMN ikke_mott_av_telefon TEXT DEFAULT NULL",
   // Når en hund hentes inn fra venteliste for å erstatte en ikke-møtt hund,
   // peker dette feltet på den nye hundens påmelding tilbake til den ikke-møttes.
   "ALTER TABLE pameldinger ADD COLUMN erstatter_pamelding_id INTEGER DEFAULT NULL",
+  // Per-dag ikke-møtt: parti_deltakere-rad markeres for spesifikk prøvedag,
+  // slik at en hund som er påmeldt fredag+lørdag og ikke møter fredag fortsatt
+  // går lørdag. Eksisterende status-felt (TEXT) får 'ikke_mott' som ny verdi.
+  "ALTER TABLE parti_deltakere ADD COLUMN ikke_mott_at TEXT DEFAULT NULL",
+  "ALTER TABLE parti_deltakere ADD COLUMN ikke_mott_av_telefon TEXT DEFAULT NULL",
   // Stavefiks for prove_type — fjerner ø-tegnet i 'høyfjell_*' så verdiene
   // er konsistent med kode-vennlig "hoyfjell_*" (samme mønster som NM-typene
   // 'nm_hoyfjell_host'). Tidligere brukte ulike steder (opprett-prove vs
@@ -1295,6 +1302,43 @@ const migrations = [
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists */ }
+}
+
+// Engangs-flytt: tidligere markerte vi ikke-møtt på pameldinger-nivå (per prøve).
+// Det er nå per dag (parti_deltakere-rader). Flytt eventuelle eksisterende
+// markeringer over slik at de fortsatt vises korrekt i forfall-oversikten.
+try {
+  const ikkeMottPameldinger = db.prepare(`
+    SELECT p.id AS pamelding_id, p.prove_id, p.hund_id, p.ikke_mott_at, p.ikke_mott_av_telefon
+    FROM pameldinger p
+    WHERE p.status = 'ikke_mott'
+  `).all();
+  if (ikkeMottPameldinger.length > 0) {
+    const findRegnr = db.prepare("SELECT regnr FROM hunder WHERE id = ?");
+    const updPdAktiv = db.prepare(`
+      UPDATE parti_deltakere
+         SET status = 'ikke_mott',
+             ikke_mott_at = COALESCE(ikke_mott_at, ?),
+             ikke_mott_av_telefon = COALESCE(ikke_mott_av_telefon, ?)
+       WHERE prove_id = ? AND hund_regnr = ? AND (status IS NULL OR status = 'aktiv')
+    `);
+    const resetPamelding = db.prepare(`
+      UPDATE pameldinger SET status = 'bekreftet',
+                             ikke_mott_at = NULL,
+                             ikke_mott_av_telefon = NULL,
+                             updated_at = datetime('now')
+       WHERE id = ?
+    `);
+    for (const im of ikkeMottPameldinger) {
+      const hund = findRegnr.get(im.hund_id);
+      if (!hund?.regnr) continue;
+      updPdAktiv.run(im.ikke_mott_at, im.ikke_mott_av_telefon, im.prove_id, hund.regnr);
+      resetPamelding.run(im.pamelding_id);
+    }
+    console.log(`[migration] flyttet ${ikkeMottPameldinger.length} ikke-møtt-markeringer fra pameldinger til parti_deltakere`);
+  }
+} catch (e) {
+  console.warn('[migration] kunne ikke flytte ikke-møtt-markeringer:', e.message);
 }
 
 // Create indexes that depend on migrated columns
@@ -9804,16 +9848,17 @@ app.put("/api/prover/:proveId/avmeldinger/:id", requireProveAdmin, async (c) => 
 });
 
 // ============================================
-// IKKE MØTT — opprop på prøve-dag
+// IKKE MØTT — opprop på prøve-dag (per parti, per dag)
 // ============================================
 // Brukes av prøveledelsen ved morgen-opprop. Hunder som ikke møter
-// markeres som 'ikke_mott' og forsvinner fra partilister, dommer-flater
-// og kritikk-skjemaet. Hunden vises i forfall-oversikten med markering.
-// Erstatter fra venteliste håndteres i Stage 2 (eget endepunkt).
+// markeres på den spesifikke parti_deltakere-raden, slik at en hund
+// påmeldt fredag+lørdag kan markeres ikke-møtt KUN for fredag og
+// fortsatt gå lørdag. Hunden forsvinner fra partilister, dommer-flater
+// og kritikk-skjemaet for den dagen, og dukker opp i forfall-oversikten
+// med markering. Erstatter fra venteliste håndteres i Stage 2.
 
-// Hjelpefunksjon: hent pamelding + sjekk admin-tilgang. Returnerer
-// {pamelding, error} der error er en c.json-respons hvis tilgang nektes.
-function hentPameldingMedAdminTilgang(c, pameldingId) {
+// Hjelpefunksjon: hent parti_deltakere-rad + parti og verifiser admin-tilgang.
+function hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId) {
   const authHeader = c.req.header("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return { error: c.json({ error: "Mangler token" }, 401) };
@@ -9822,119 +9867,118 @@ function hentPameldingMedAdminTilgang(c, pameldingId) {
   if (!payload) {
     return { error: c.json({ error: "Ugyldig eller utløpt token" }, 401) };
   }
-  const pamelding = db.prepare("SELECT * FROM pameldinger WHERE id = ?").get(pameldingId);
-  if (!pamelding) {
-    return { error: c.json({ error: "Påmelding ikke funnet" }, 404) };
+  const rad = db.prepare(`
+    SELECT pd.*, p.navn AS parti_navn, p.dato AS parti_dato, p.type AS parti_type
+      FROM parti_deltakere pd
+      JOIN partier p ON p.id = pd.parti_id
+     WHERE pd.id = ?
+  `).get(partiDeltakerId);
+  if (!rad) {
+    return { error: c.json({ error: "Parti-deltaker ikke funnet" }, 404) };
   }
-  if (!harProveAdmin(payload, pamelding.prove_id)) {
+  if (!harProveAdmin(payload, rad.prove_id)) {
     return { error: c.json({ error: "Du har ikke admin-tilgang til denne prøven" }, 403) };
   }
-  if (proveErLast(pamelding.prove_id)) {
+  if (proveErLast(rad.prove_id)) {
     return { error: c.json({ error: "Prøven er fullført — kan ikke endres" }, 409) };
   }
-  return { pamelding, payload };
+  return { rad, payload };
 }
 
-// Marker hund som ikke møtt
-app.post("/api/pameldinger/:id/ikke-mott", async (c) => {
-  const pameldingId = parseInt(c.req.param("id"), 10);
-  const { pamelding, payload, error } = hentPameldingMedAdminTilgang(c, pameldingId);
+// Marker parti-deltaker som ikke møtt (per dag)
+app.post("/api/parti-deltakere/:id/ikke-mott", async (c) => {
+  const partiDeltakerId = parseInt(c.req.param("id"), 10);
+  const { rad, payload, error } = hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId);
   if (error) return error;
 
-  if (pamelding.status === 'ikke_mott') {
+  if (rad.status === 'ikke_mott') {
     return c.json({ error: "Hunden er allerede markert som ikke møtt" }, 400);
   }
-  if (pamelding.status === 'avmeldt') {
-    return c.json({ error: "Hunden er avmeldt — kan ikke markeres som ikke møtt" }, 400);
-  }
-  if (pamelding.status === 'venteliste') {
-    return c.json({ error: "Hund på venteliste kan ikke markeres som ikke møtt" }, 400);
+  if (rad.status === 'trukket') {
+    return c.json({ error: "Hunden er trukket — kan ikke markeres som ikke møtt" }, 400);
   }
 
-  // Atomisk: oppdater status + sporbarhet i én transaksjon
   const tx = db.transaction(() => {
     db.prepare(`
-      UPDATE pameldinger
+      UPDATE parti_deltakere
          SET status = 'ikke_mott',
              ikke_mott_at = datetime('now'),
-             ikke_mott_av_telefon = ?,
-             updated_at = datetime('now')
+             ikke_mott_av_telefon = ?
        WHERE id = ?
-    `).run(payload.telefon, pameldingId);
+    `).run(payload.telefon, partiDeltakerId);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      'pamelding_ikke_mott',
+      'parti_deltaker_ikke_mott',
       JSON.stringify({
-        pamelding_id: pameldingId,
-        prove_id: pamelding.prove_id,
-        hund_id: pamelding.hund_id,
+        parti_deltaker_id: partiDeltakerId,
+        prove_id: rad.prove_id,
+        hund_regnr: rad.hund_regnr,
+        parti_navn: rad.parti_navn,
+        parti_dato: rad.parti_dato,
         markert_av: payload.telefon
       })
     );
   });
   tx();
 
-  const oppdatert = db.prepare(`
-    SELECT p.*, b.fornavn AS markert_av_fornavn, b.etternavn AS markert_av_etternavn
-      FROM pameldinger p
-      LEFT JOIN brukere b ON b.telefon = p.ikke_mott_av_telefon
-     WHERE p.id = ?
-  `).get(pameldingId);
-
-  return c.json({ ok: true, pamelding: oppdatert });
+  return c.json({ ok: true });
 });
 
 // Angre ikke-møtt-markering (hund dukket likevel opp, eller markert ved feil)
-app.post("/api/pameldinger/:id/angre-ikke-mott", async (c) => {
-  const pameldingId = parseInt(c.req.param("id"), 10);
-  const { pamelding, payload, error } = hentPameldingMedAdminTilgang(c, pameldingId);
+app.post("/api/parti-deltakere/:id/angre-ikke-mott", async (c) => {
+  const partiDeltakerId = parseInt(c.req.param("id"), 10);
+  const { rad, payload, error } = hentPartiDeltakerMedAdminTilgang(c, partiDeltakerId);
   if (error) return error;
 
-  if (pamelding.status !== 'ikke_mott') {
+  if (rad.status !== 'ikke_mott') {
     return c.json({ error: "Hunden er ikke markert som ikke møtt" }, 400);
   }
 
-  // Tilbake til 'bekreftet' hvis parti er tildelt, ellers 'pameldt'
-  const nyStatus = pamelding.parti ? 'bekreftet' : 'pameldt';
-
   const tx = db.transaction(() => {
     db.prepare(`
-      UPDATE pameldinger
-         SET status = ?,
+      UPDATE parti_deltakere
+         SET status = 'aktiv',
              ikke_mott_at = NULL,
-             ikke_mott_av_telefon = NULL,
-             updated_at = datetime('now')
+             ikke_mott_av_telefon = NULL
        WHERE id = ?
-    `).run(nyStatus, pameldingId);
+    `).run(partiDeltakerId);
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
-      'pamelding_angre_ikke_mott',
+      'parti_deltaker_angre_ikke_mott',
       JSON.stringify({
-        pamelding_id: pameldingId,
-        prove_id: pamelding.prove_id,
-        ny_status: nyStatus,
+        parti_deltaker_id: partiDeltakerId,
+        prove_id: rad.prove_id,
         utfort_av: payload.telefon
       })
     );
   });
   tx();
 
-  const oppdatert = db.prepare("SELECT * FROM pameldinger WHERE id = ?").get(pameldingId);
-  return c.json({ ok: true, pamelding: oppdatert });
+  return c.json({ ok: true });
 });
 
-// Forfall-oversikt: kombinerer avmeldinger og ikke-møtt-hunder for prøven.
-// Hver rad har 'type'-feltet ('forfall' eller 'ikke_mott') så frontend kan
-// vise distinkt markering.
+// Forfall-oversikt: kombinerer avmeldinger (per prøve) og ikke-møtt-rader
+// (per dag, fra parti_deltakere). Hver rad har 'type'-feltet ('forfall' eller
+// 'ikke_mott') så frontend kan vise distinkt markering.
 app.get("/api/prover/:proveId/forfall-oversikt", requireProveAdmin, (c) => {
   const proveId = c.req.param("proveId");
 
-  // Avmeldinger (forfall)
+  // Hent prøvens startdato for å regne ut "dag X"
+  const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+  const startDato = prove?.start_dato || null;
+  const beregnDag = (dato) => {
+    if (!dato || !startDato) return null;
+    const diff = Math.round((new Date(dato) - new Date(startDato)) / 86400000);
+    return diff >= 0 ? diff + 1 : null;
+  };
+
+  // Avmeldinger (forfall — gjelder hele prøven)
   const forfall = db.prepare(`
     SELECT
       'forfall' AS type,
       a.id AS avmelding_id,
       a.pamelding_id,
+      NULL AS parti_deltaker_id,
       a.arsak,
       a.arsak_beskrivelse,
       a.dokumentasjon,
@@ -9944,15 +9988,13 @@ app.get("/api/prover/:proveId/forfall-oversikt", requireProveAdmin, (c) => {
       a.refusjon_utbetalt,
       a.opprykk_pamelding_id,
       a.created_at AS hendelse_at,
-      NULL AS markert_av_telefon,
       NULL AS markert_av_fornavn,
       NULL AS markert_av_etternavn,
-      p.klasse, p.dag, p.parti, p.startnummer,
+      p.klasse, p.dag AS pamelding_dag, p.parti AS parti_navn,
+      NULL AS parti_dato, NULL AS startnummer,
       h.id AS hund_id, h.navn AS hund_navn, h.regnr AS hund_regnr, h.rase AS hund_rase,
-      p.forer_telefon,
-      bf.fornavn AS forer_fornavn, bf.etternavn AS forer_etternavn,
-      h.eier_telefon,
-      be.fornavn AS eier_fornavn, be.etternavn AS eier_etternavn
+      COALESCE(NULLIF(TRIM(bf.fornavn || ' ' || bf.etternavn), ''), p.forer_telefon) AS forer_navn,
+      COALESCE(NULLIF(TRIM(be.fornavn || ' ' || be.etternavn), ''), h.eier_telefon) AS eier_navn
     FROM avmeldinger a
     JOIN pameldinger p ON p.id = a.pamelding_id
     JOIN hunder h ON h.id = a.hund_id
@@ -9961,12 +10003,16 @@ app.get("/api/prover/:proveId/forfall-oversikt", requireProveAdmin, (c) => {
     WHERE a.prove_id = ?
   `).all(proveId);
 
-  // Ikke møtt
-  const ikkeMott = db.prepare(`
+  // Ikke møtt (per parti_deltakere-rad — gjelder spesifikk dag)
+  // Bruker pd.eier_navn / pd.forer_navn direkte (kanonisk fra NKK-import) i
+  // stedet for å gå via pameldinger+brukere, som ville fanget NKK_IMPORT-
+  // sentinelen i stedet for faktiske navn.
+  const ikkeMottRader = db.prepare(`
     SELECT
       'ikke_mott' AS type,
       NULL AS avmelding_id,
-      p.id AS pamelding_id,
+      NULL AS pamelding_id,
+      pd.id AS parti_deltaker_id,
       NULL AS arsak,
       NULL AS arsak_beskrivelse,
       NULL AS dokumentasjon,
@@ -9975,23 +10021,26 @@ app.get("/api/prover/:proveId/forfall-oversikt", requireProveAdmin, (c) => {
       0 AS refusjon_prosent,
       0 AS refusjon_utbetalt,
       NULL AS opprykk_pamelding_id,
-      p.ikke_mott_at AS hendelse_at,
-      p.ikke_mott_av_telefon AS markert_av_telefon,
+      pd.ikke_mott_at AS hendelse_at,
       bm.fornavn AS markert_av_fornavn,
       bm.etternavn AS markert_av_etternavn,
-      p.klasse, p.dag, p.parti, p.startnummer,
-      h.id AS hund_id, h.navn AS hund_navn, h.regnr AS hund_regnr, h.rase AS hund_rase,
-      p.forer_telefon,
-      bf.fornavn AS forer_fornavn, bf.etternavn AS forer_etternavn,
-      h.eier_telefon,
-      be.fornavn AS eier_fornavn, be.etternavn AS eier_etternavn
-    FROM pameldinger p
-    JOIN hunder h ON h.id = p.hund_id
-    LEFT JOIN brukere bf ON bf.telefon = p.forer_telefon
-    LEFT JOIN brukere be ON be.telefon = h.eier_telefon
-    LEFT JOIN brukere bm ON bm.telefon = p.ikke_mott_av_telefon
-    WHERE p.prove_id = ? AND p.status = 'ikke_mott'
+      pd.klasse, NULL AS pamelding_dag, pa.navn AS parti_navn,
+      pa.dato AS parti_dato, pd.startnummer,
+      h.id AS hund_id, pd.hund_navn, pd.hund_regnr, pd.rase AS hund_rase,
+      COALESCE(NULLIF(pd.forer_navn, ''), pd.forer_telefon, '') AS forer_navn,
+      COALESCE(NULLIF(pd.eier_navn, ''), pd.eier_telefon, '') AS eier_navn
+    FROM parti_deltakere pd
+    JOIN partier pa ON pa.id = pd.parti_id
+    LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
+    LEFT JOIN brukere bm ON bm.telefon = pd.ikke_mott_av_telefon
+    WHERE pd.prove_id = ? AND pd.status = 'ikke_mott'
   `).all(proveId);
+
+  // Beregn dag-nummer fra parti_dato for ikke-møtt-rader
+  const ikkeMott = ikkeMottRader.map(r => ({
+    ...r,
+    dag: beregnDag(r.parti_dato)
+  }));
 
   const items = [...forfall, ...ikkeMott].sort((a, b) => {
     const ta = a.hendelse_at || '';
@@ -10863,16 +10912,6 @@ app.get("/api/prover/:id/partilister", (c) => {
     ORDER BY pd.startnummer
   `).all(proveId);
 
-  // Sett av regnrs som er markert ikke-møtt — disse skjules fra partilisten
-  // (men fortsatt synlige i forfall-oversikten for admin).
-  const ikkeMottRegnrs = new Set(
-    db.prepare(`
-      SELECT h.regnr FROM pameldinger pa
-      JOIN hunder h ON h.id = pa.hund_id
-      WHERE pa.prove_id = ? AND pa.status = 'ikke_mott'
-    `).all(proveId).map(r => r.regnr)
-  );
-
   const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
   const startDato = prove?.start_dato || (partier.map(p => p.dato).filter(Boolean).sort()[0] || null);
   const computeDay = (dato) => {
@@ -10883,8 +10922,12 @@ app.get("/api/prover/:id/partilister", (c) => {
 
   // Bygg opp struktur som matcher localStorage-formatet
   // GDPR: Telefonnumre fjernes fra offentlig API
-  // Trukne hunder (status='trukket') ekskluderes helt fra offentlig API
-  // Ikke-møtt-hunder skjules også
+  // Trukne hunder (status='trukket') OG ikke-møtt-hunder (status='ikke_mott')
+  // ekskluderes helt fra offentlig API.
+  const aktivStatus = (s) => {
+    const v = s || 'aktiv';
+    return v !== 'trukket' && v !== 'ikke_mott';
+  };
   const result = partier.map(parti => ({
     id: parti.id,
     name: parti.navn,
@@ -10895,7 +10938,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
-      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket' && !ikkeMottRegnrs.has(d.hund_regnr))
+      .filter(d => d.parti_id === parti.id && aktivStatus(d.status))
       .map(d => ({
         regnr: d.hund_regnr,
         hundenavn: d.hund_navn,
@@ -10933,17 +10976,6 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     ORDER BY pd.startnummer
   `).all(proveId);
 
-  // Set av regnrs markert ikke-møtt + lookup av påmelding-id per regnr
-  // (admin-frontend trenger pamelding_id for å kalle ikke-mott-endepunktet).
-  const pameldingerForProve = db.prepare(`
-    SELECT pa.id AS pamelding_id, pa.status AS pamelding_status, h.regnr
-    FROM pameldinger pa
-    JOIN hunder h ON h.id = pa.hund_id
-    WHERE pa.prove_id = ?
-  `).all(proveId);
-  const pameldingByRegnr = new Map(pameldingerForProve.map(r => [r.regnr, r]));
-  const ikkeMottRegnrs = new Set(pameldingerForProve.filter(r => r.pamelding_status === 'ikke_mott').map(r => r.regnr));
-
   const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
   const startDato = prove?.start_dato || (partier.map(p => p.dato).filter(Boolean).sort()[0] || null);
   const computeDay = (dato) => {
@@ -10952,27 +10984,30 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     return diff >= 0 ? diff + 1 : null;
   };
 
-  // Full versjon med telefonnumre for admin
-  // dogs[] = aktive hunder (status != 'trukket' og ikke ikke-møtt)
-  // trukne[] = hunder som er trukket fra parti
-  // Ikke-møtt-hunder eksponeres ikke her — de ligger i forfall-oversikten.
-  const mapDog = (d) => {
-    const pa = pameldingByRegnr.get(d.hund_regnr);
-    return {
-      regnr: d.hund_regnr,
-      hundenavn: d.hund_navn,
-      rase: d.rase,
-      kjonn: d.kjonn,
-      klasse: d.klasse,
-      eier: d.eier_navn,
-      eierTelefon: d.eier_telefon,
-      forer: d.forer_navn,
-      forerTelefon: d.forer_telefon,
-      startnummer: d.startnummer,
-      confirmed: d.bekreftet === 1,
-      status: d.status,
-      pamelding_id: pa ? pa.pamelding_id : null
-    };
+  // Full versjon med telefonnumre for admin.
+  // dogs[] = aktive hunder (status verken 'trukket' eller 'ikke_mott').
+  // trukne[] = hunder som er trukket fra parti.
+  // Ikke-møtt-rader vises ikke her — de ligger i forfall-oversikten.
+  // mapDog inkluderer parti_deltaker_id (pd.id) som frontend bruker når
+  // admin klikker "Ikke møtt"-knappen på en hund i et spesifikt parti.
+  const mapDog = (d) => ({
+    regnr: d.hund_regnr,
+    hundenavn: d.hund_navn,
+    rase: d.rase,
+    kjonn: d.kjonn,
+    klasse: d.klasse,
+    eier: d.eier_navn,
+    eierTelefon: d.eier_telefon,
+    forer: d.forer_navn,
+    forerTelefon: d.forer_telefon,
+    startnummer: d.startnummer,
+    confirmed: d.bekreftet === 1,
+    status: d.status,
+    parti_deltaker_id: d.id
+  });
+  const aktivStatus = (s) => {
+    const v = s || 'aktiv';
+    return v !== 'trukket' && v !== 'ikke_mott';
   };
   const result = partier.map(parti => ({
     id: parti.id,
@@ -10984,7 +11019,7 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     dogs: deltakere
-      .filter(d => d.parti_id === parti.id && (d.status || 'aktiv') !== 'trukket' && !ikkeMottRegnrs.has(d.hund_regnr))
+      .filter(d => d.parti_id === parti.id && aktivStatus(d.status))
       .map(mapDog),
     trukne: deltakere
       .filter(d => d.parti_id === parti.id && d.status === 'trukket')
@@ -11256,11 +11291,13 @@ app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
       `).run(proveId, proveId);
     }
 
-    // Bevar trukne parti_deltakere-rader! Klienten sender kun aktive, så en
-    // naiv DELETE-alt ville slette alle hunder som har meldt forfall — og
-    // sletter dermed hele historikken. Samler disse opp per (parti-navn, regnr)
-    // så vi kan gjeninnsette dem etter parti-rekreering.
+    // Bevar trukne OG ikke-møtt parti_deltakere-rader! Klienten sender kun
+    // aktive, så en naiv DELETE-alt ville slette historikken. Samler begge
+    // opp per (parti-navn, regnr) så vi kan gjeninnsette dem etter at nye
+    // parti-rader er på plass. Ikke-møtt bevarer også sporbarhet
+    // (ikke_mott_at + ikke_mott_av_telefon).
     const trukneSnapshot = fullSnapshot.filter(r => r.status === 'trukket');
+    const ikkeMottSnapshot = fullSnapshot.filter(r => r.status === 'ikke_mott');
 
     // Slett eksisterende partier og deltakere for denne prøven
     db.prepare("DELETE FROM parti_deltakere WHERE prove_id = ?").run(proveId);
@@ -11377,6 +11414,28 @@ app.put("/api/prover/:id/partilister", requireProveAdmin, async (c) => {
         t.eier_navn, t.eier_telefon, t.forer_navn, t.forer_telefon,
         t.startnummer || 99, t.bekreftet || 0, 'trukket'
       );
+      gjeninnsatt++;
+    }
+
+    // Gjeninnsett ikke-møtt-rader på samme måte, men oppdater også
+    // sporbarhetskolonnene (ikke_mott_at + ikke_mott_av_telefon) etterpå.
+    const updateIkkeMottMeta = db.prepare(`
+      UPDATE parti_deltakere SET ikke_mott_at = ?, ikke_mott_av_telefon = ? WHERE id = ?
+    `);
+    for (const im of ikkeMottSnapshot) {
+      const nyId = navnTilNyParti.get(im.parti_navn);
+      if (!nyId) continue;
+      const finnes = db.prepare(`
+        SELECT 1 FROM parti_deltakere
+        WHERE parti_id = ? AND hund_regnr = ? LIMIT 1
+      `).get(nyId, im.hund_regnr);
+      if (finnes) continue;
+      const res = insertDeltaker.run(
+        nyId, proveId, im.hund_regnr, im.hund_navn, im.rase, im.kjonn, im.klasse,
+        im.eier_navn, im.eier_telefon, im.forer_navn, im.forer_telefon,
+        im.startnummer || 99, im.bekreftet || 0, 'ikke_mott'
+      );
+      updateIkkeMottMeta.run(im.ikke_mott_at, im.ikke_mott_av_telefon, res.lastInsertRowid);
       gjeninnsatt++;
     }
 

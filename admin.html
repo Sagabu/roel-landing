@@ -5148,7 +5148,7 @@
         // Knapp i partilister åpner bekreftelses-modal. Etter bekreftelse markeres
         // hunden som ikke møtt på serveren (synkron POST + 200-svar før DOM oppdateres).
         // Hunden forsvinner fra partilisten og dukker opp i forfall-seksjonen.
-        function apneIkkeMottBekreftelse(pameldingId, hundenavn, regnr) {
+        function apneIkkeMottBekreftelse(partiDeltakerId, hundenavn, regnr) {
             const navn = (hundenavn || '').replace(/[<>]/g, '');
             const reg = (regnr || '').replace(/[<>]/g, '');
             const dialogHtml =
@@ -5163,23 +5163,23 @@
                                 '<div class="font-semibold text-bark-900">' + navn + '</div>' +
                                 '<div class="text-xs text-bark-500">' + reg + '</div>' +
                             '</div>' +
-                            '<p class="text-sm text-bark-600">Hunden flyttes til <em>Forfall og ikke møtt</em>-listen og blir skjult fra partilister, dommere og kritikk-skjemaet. Du kan angre fra forfall-listen.</p>' +
+                            '<p class="text-sm text-bark-600">Hunden fjernes fra dette partiet og dukker opp i <em>Forfall og ikke møtt</em>-listen. Andre dager hunden er påmeldt påvirkes ikke. Du kan angre fra forfall-listen.</p>' +
                         '</div>' +
                         '<div class="px-6 py-4 bg-bark-50 border-t border-bark-100 rounded-b-2xl flex items-center justify-end gap-2">' +
                             '<button onclick="document.getElementById(\'ikkeMottBekreftDialog\').remove()" class="px-4 py-2 rounded-xl bg-white hover:bg-bark-100 text-bark-700 border border-bark-300 font-medium transition">Avbryt</button>' +
-                            '<button id="ikkeMottBekreftKnapp" onclick="bekreftIkkeMott(' + pameldingId + ')" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium transition shadow-sm">Ja, ikke møtt</button>' +
+                            '<button id="ikkeMottBekreftKnapp" onclick="bekreftIkkeMott(' + partiDeltakerId + ')" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium transition shadow-sm">Ja, ikke møtt</button>' +
                         '</div>' +
                     '</div>' +
                 '</div>';
             document.body.insertAdjacentHTML('beforeend', dialogHtml);
         }
 
-        async function bekreftIkkeMott(pameldingId) {
+        async function bekreftIkkeMott(partiDeltakerId) {
             const knapp = document.getElementById('ikkeMottBekreftKnapp');
             if (knapp) { knapp.disabled = true; knapp.textContent = 'Lagrer …'; }
             try {
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch('/api/pameldinger/' + pameldingId + '/ikke-mott', {
+                const resp = await fetch('/api/parti-deltakere/' + partiDeltakerId + '/ikke-mott', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -5210,11 +5210,11 @@
             }
         }
 
-        async function angreIkkeMott(pameldingId) {
-            if (!confirm('Angre ikke-møtt-markering? Hunden settes tilbake i partilisten.')) return;
+        async function angreIkkeMott(partiDeltakerId) {
+            if (!confirm('Angre ikke-møtt-markering? Hunden settes tilbake i partiet.')) return;
             try {
                 const token = localStorage.getItem('fuglehund_token');
-                const resp = await fetch('/api/pameldinger/' + pameldingId + '/angre-ikke-mott', {
+                const resp = await fetch('/api/parti-deltakere/' + partiDeltakerId + '/angre-ikke-mott', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -5283,17 +5283,6 @@
             if (counter) counter.textContent =
                 ikkeMottAntall + ' ikke møtt · ' + forfallAntall + ' meldt forfall';
 
-            const formaterDag = (d) => {
-                if (!d) return '';
-                if (typeof d === 'string') {
-                    try {
-                        const arr = JSON.parse(d);
-                        if (Array.isArray(arr) && arr.length > 0) return 'dag ' + arr.join(', ');
-                    } catch (_) {}
-                    return 'dag ' + d;
-                }
-                return 'dag ' + d;
-            };
             const formaterTidspunkt = (ts) => {
                 if (!ts) return '';
                 try {
@@ -5308,12 +5297,12 @@
                     ? 'bg-orange-100 text-orange-800 border-orange-300'
                     : 'bg-rose-100 text-rose-800 border-rose-300';
                 const badgeTxt = erIkkeMott ? 'IKKE MØTT' : 'FORFALL';
-                const klasseTekst = (item.klasse || '') + ' · ' + formaterDag(item.dag);
-                const eierForer =
-                    [(item.eier_fornavn || '') + ' ' + (item.eier_etternavn || '')].join(' ').trim() ||
-                    item.forer_telefon || '–';
-                const forer =
-                    [(item.forer_fornavn || '') + ' ' + (item.forer_etternavn || '')].join(' ').trim() || '';
+                // Dag-tekst: ikke-møtt har spesifikk dag (item.dag fra server),
+                // forfall (avmelding) er per-prøve og gjelder generelt — vis ikke dag.
+                const dagTekst = erIkkeMott && item.dag ? ' · dag ' + item.dag : '';
+                const klasseTekst = (item.klasse || '') + dagTekst;
+                const eier = (item.eier_navn || '').trim() || '–';
+                const forer = (item.forer_navn || '').trim() || '';
                 const markertAv = erIkkeMott
                     ? ((item.markert_av_fornavn || '') + ' ' + (item.markert_av_etternavn || '')).trim()
                     : '';
@@ -5329,13 +5318,13 @@
                         '<span class="px-2 py-0.5 rounded text-xs font-bold border ' + badgeBg + ' whitespace-nowrap mt-0.5">' + badgeTxt + '</span>' +
                         '<div class="min-w-0">' +
                             '<div class="font-medium text-bark-900 truncate">' + (item.hund_navn || '') + ' <span class="text-xs text-bark-500 font-normal">(' + (item.hund_regnr || '') + ')</span></div>' +
-                            '<div class="text-xs text-bark-500">' + klasseTekst + ' · Eier: ' + eierForer + (forer && forer !== eierForer ? ' · Fører: ' + forer : '') + '</div>' +
+                            '<div class="text-xs text-bark-500">' + klasseTekst + ' · Eier: ' + eier + (forer && forer !== eier ? ' · Fører: ' + forer : '') + '</div>' +
                             (markertAv ? '<div class="text-xs text-bark-400 mt-0.5">Markert av ' + markertAv + ' · ' + formaterTidspunkt(item.hendelse_at) + '</div>' : '') +
                             (arsakTekst ? '<div class="text-xs text-bark-400 mt-0.5">' + arsakTekst + (item.arsak_beskrivelse ? ' — ' + item.arsak_beskrivelse : '') + '</div>' : '') +
                         '</div>' +
                     '</div>' +
                     (erIkkeMott
-                        ? '<button onclick="angreIkkeMott(' + item.pamelding_id + ')" class="ml-2 px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm whitespace-nowrap">Angre</button>'
+                        ? '<button onclick="angreIkkeMott(' + item.parti_deltaker_id + ')" class="ml-2 px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm whitespace-nowrap">Angre</button>'
                         : '') +
                 '</div>';
             }).join('');
@@ -8044,10 +8033,11 @@
                 : (dog.rase || '–');
             var raseFull = dog.rase || '';
 
-            // Ikke møtt-knapp: krever pamelding_id (kommer fra /partilister/admin-endepunktet).
-            // Hvis den mangler (f.eks. data fra eldre cache), vises ingen knapp.
-            var ikkeMottBtn = (dog.pamelding_id) ?
-                '<button onclick="apneIkkeMottBekreftelse(' + dog.pamelding_id + ', \'' + (dog.hundenavn || '').replace(/'/g, "\\'") + '\', \'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
+            // Ikke møtt-knapp: krever parti_deltaker_id (kommer fra /partilister/admin-
+            // endepunktet) — markeringen er PER-DAG, ikke per-prøve. Hvis ID mangler
+            // (f.eks. data fra eldre cache), vises ingen knapp.
+            var ikkeMottBtn = (dog.parti_deltaker_id) ?
+                '<button onclick="apneIkkeMottBekreftelse(' + dog.parti_deltaker_id + ', \'' + (dog.hundenavn || '').replace(/'/g, "\\'") + '\', \'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
                 : '';
 
             // Eier på linje 1, fører på linje 2 — text-xs så raden ikke vokser i høyde.
@@ -19861,8 +19851,13 @@
             return typeMap[proveType] || proveType || 'Høyfjell';
         }
 
-        // Velg prøve for administrasjon
-        async function velgProve(proveId) {
+        // Velg prøve for administrasjon.
+        // options.gaTilProvedetaljer styrer om vi skal hoppe til prøvedetaljer-
+        // seksjonen til slutt. Default true (klikk fra terminlisten). Settes
+        // false når funksjonen kalles automatisk ved sideoppstart, slik at
+        // hard-refresh respekterer URL-hashen (f.eks. #partilister).
+        async function velgProve(proveId, options = {}) {
+            const { gaTilProvedetaljer = true } = options;
             valgtProveId = proveId;
             localStorage.setItem('currentTrialId', proveId);
 
@@ -19927,8 +19922,11 @@
             const orgEl = document.getElementById('organizerName');
             if (orgEl && prove.arrangor_navn !== undefined) orgEl.value = prove.arrangor_navn || '';
 
-            // Gå til prøvedetaljer
-            showSection('provedetaljer');
+            // Gå til prøvedetaljer kun ved eksplisitt user-handling (klikk fra
+            // terminliste); sideoppstart respekterer URL-hashen.
+            if (gaTilProvedetaljer) {
+                showSection('provedetaljer');
+            }
         }
 
         // Avvelg prøve (tilbake til terminliste)
@@ -20656,12 +20654,14 @@
 
             // Sjekk om det er en valgt prøve fra før — kall full velgProve
             // så alle felter (navn, dato, sted, type, arrangør, NM-flagger)
-            // fylles ut korrekt etter hard-refresh.
+            // fylles ut korrekt etter hard-refresh. Hopp ikke til prøvedetaljer
+            // — la URL-hashen (#partilister, #meldinger osv.) styre hvor brukeren
+            // havner, slik at hard-refresh holder seg på samme seksjon.
             const savedTrialId = localStorage.getItem('currentTrialId');
             if (savedTrialId) {
                 const prove = alleProver.find(p => p.id === savedTrialId);
                 if (prove && typeof velgProve === 'function') {
-                    await velgProve(savedTrialId);
+                    await velgProve(savedTrialId, { gaTilProvedetaljer: false });
                 }
             }
 

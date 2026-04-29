@@ -2442,9 +2442,6 @@
                         <!-- Dag-tabs (auto-rendered fra data) -->
                         <div id="dagTabs" class="flex gap-2 flex-wrap"></div>
 
-                        <!-- Klasse-tabs (kun klasser som finnes for valgt dag) -->
-                        <div id="klasseTabs" class="flex gap-2 flex-wrap"></div>
-
                         <!-- Deltakerlister (skjult som standard, vises ved tilbakestilling) -->
                         <div id="deltakerlisteSeksjon" class="hidden space-y-4"></div>
 
@@ -8503,13 +8500,13 @@
         }
 
         // ============================================
-        // Parti- og ventelister: view + dag + klasse-filter
+        // Parti- og ventelister: view + dag-filter
         // ============================================
-        // Tre nivåer av filter (top→ned):
+        // To nivåer av filter (top→ned):
         //   currentPartyView   — 'partilister' | 'venteliste' (top-toggle)
         //   currentPartyDay    — 1, 2, 3, 4 (dag-tabs, auto-detektert fra data)
-        //   currentPartyFilter — 'all' | 'ukak' | 'vk' (kun klasser som finnes
-        //                        på valgt dag vises som knapp)
+        // currentPartyFilter beholdes som 'all' for bakoverkompatibilitet med
+        // funksjoner som leser den (renderAllParties, renderVenteliste).
         let currentPartyView = 'partilister';
         let currentPartyDay = null;       // settes av renderDagTabs ved første render
         let currentPartyFilter = 'all';
@@ -8529,60 +8526,15 @@
                     el.className = 'px-4 py-1.5 rounded-lg text-sm font-medium text-bark-600 hover:bg-bark-50 transition ml-1';
                 }
             });
-            // Klasse-tabs er view-avhengige (partilister teller bare partier;
-            // venteliste teller bare venteliste-rader). Normaliser filteret.
-            normaliserPartyFilter();
             renderDagTabs();
-            renderKlasseTabs();
             anvendPartiSynlighet();
         }
 
         // Bytt aktiv prøvedag
         function setPartyDay(day) {
             currentPartyDay = day;
-            normaliserPartyFilter();
             renderDagTabs();
-            renderKlasseTabs();
             anvendPartiSynlighet();
-        }
-
-        // Når dag eller view skifter må currentPartyFilter passe på den nye
-        // konteksten. Regler:
-        //   - Hvis valgt filter ikke finnes på dagen: fall tilbake til 'all'
-        //   - Hvis bare én klasse finnes (f.eks. ren UK/AK-dag): force det
-        //     filteret så knappen blir tydelig markert
-        function normaliserPartyFilter() {
-            const tilgjengelige = klasserPaaDag(currentPartyDay, currentPartyView);
-            if (tilgjengelige.size === 1) {
-                currentPartyFilter = [...tilgjengelige][0];
-            } else if (currentPartyFilter !== 'all' && !tilgjengelige.has(currentPartyFilter)) {
-                currentPartyFilter = 'all';
-            }
-        }
-
-        // Hvilke klasser ('ukak'/'vk') finnes på en gitt dag — view-spesifikt:
-        //   partilister-view: bare klasser som har faktiske partier på dagen
-        //   venteliste-view: klasser med venteliste-rader for dagen (UK/AK pr dag,
-        //                    VK på tvers, kun hvis VK-venteliste har data)
-        function klasserPaaDag(dag, view) {
-            const klasser = new Set();
-            const v = view || currentPartyView || 'partilister';
-            if (v === 'partilister') {
-                const parties = getTrialParties();
-                for (const p of parties) {
-                    if ((p.day || 1) !== dag) continue;
-                    if (p.type === 'ukak') klasser.add('ukak');
-                    else if (p.type === 'vk' || (p.type || '').startsWith('vk')) klasser.add('vk');
-                }
-            } else {
-                const vl = getTrialVenteliste() || {};
-                const dagKey = `dag${dag}`;
-                if ((vl[dagKey]?.uk?.length || 0) > 0 || (vl[dagKey]?.ak?.length || 0) > 0) klasser.add('ukak');
-                // VK-venteliste er ikke dag-spesifikk; vis kun når data finnes,
-                // og bare i venteliste-view (siden partilister-view er pr dag).
-                if ((vl.vk?.length || 0) > 0) klasser.add('vk');
-            }
-            return klasser;
         }
 
         // Hvilke dager har partier eller venteliste? Returnerer sortert array.
@@ -8651,40 +8603,7 @@
         // Render klasse-tabs basert på hva som faktisk finnes på valgt dag
         // i gjeldende view (partilister-view: kun klasser med partier; venteliste-
         // view: kun klasser med venteliste-data).
-        function renderKlasseTabs() {
-            const container = document.getElementById('klasseTabs');
-            if (!container) return;
-            if (!currentPartyDay) {
-                container.innerHTML = '';
-                return;
-            }
-            const tilgjengelige = klasserPaaDag(currentPartyDay, currentPartyView);
-            if (tilgjengelige.size === 0) {
-                container.innerHTML = '';
-                return;
-            }
-            const knapper = [];
-            const lagKnapp = (key, tekst) => {
-                const aktiv = currentPartyFilter === key;
-                const klass = aktiv
-                    ? 'bg-warm-100 text-warm-800 px-3 py-1 rounded-xl text-sm font-medium border border-warm-300'
-                    : 'bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100 hover:border-warm-200 transition';
-                knapper.push(`<button onclick="setPartyFilter('${key}')" class="${klass}">${tekst}</button>`);
-            };
-            // "Alle" vises bare når det er flere klasser å filtrere mellom
-            if (tilgjengelige.size > 1) lagKnapp('all', 'Alle klasser');
-            if (tilgjengelige.has('ukak')) lagKnapp('ukak', 'UK/AK');
-            if (tilgjengelige.has('vk')) lagKnapp('vk', 'VK');
-            container.innerHTML = knapper.join('');
-        }
-
-        function setPartyFilter(filter) {
-            currentPartyFilter = filter;
-            renderKlasseTabs();
-            anvendPartiSynlighet();
-        }
-
-        // Anvend gjeldende view+dag+klasse — bytter synlighet og re-rendrer.
+        // Anvend gjeldende view + dag — bytter synlighet og re-rendrer.
         function anvendPartiSynlighet() {
             const partyContent = document.getElementById('partyListsContainer');
             const ventelisteSection = document.getElementById('venteliste');
@@ -8730,7 +8649,6 @@
 
             // Sørg for at dag-tabs er bygd og default-dag er valgt
             if (typeof renderDagTabs === 'function') renderDagTabs();
-            if (typeof renderKlasseTabs === 'function') renderKlasseTabs();
 
             // Filtrer etter dag og klasse
             let filtered = parties;
@@ -19938,7 +19856,6 @@
             // anvendPartiSynlighet (kalles via setPartyView).
             if (sectionId === 'partilister') {
                 if (typeof renderDagTabs === 'function') renderDagTabs();
-                if (typeof renderKlasseTabs === 'function') renderKlasseTabs();
                 if (typeof setPartyView === 'function') {
                     setPartyView(currentPartyView || 'partilister');
                 }

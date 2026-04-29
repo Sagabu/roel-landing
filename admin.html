@@ -45,9 +45,9 @@
             display: grid;
             gap: 0;
         }
-        /* Mobile: vis kun 5 kolonner (Rase + Eier skjult via .hidden) */
+        /* Mobile: 5 kolonner (Rase skjult via .hidden) — Eier/Fører stacket i én kolonne */
         .partilister-row {
-            grid-template-columns: 2rem minmax(0, 2fr) minmax(0, 1fr) 3rem auto;
+            grid-template-columns: 2rem minmax(0, 2fr) minmax(0, 1.4fr) 3rem auto;
         }
         @media (min-width: 768px) {
             .partilister-row {
@@ -55,19 +55,7 @@
                     2.5rem               /* Nr */
                     minmax(0, 2fr)       /* Hund */
                     2.75rem              /* Rase forkortelse */
-                    minmax(0, 1.3fr)     /* Fører */
-                    3.5rem               /* Klasse */
-                    auto;                /* Handling */
-            }
-        }
-        @media (min-width: 1024px) {
-            .partilister-row {
-                grid-template-columns:
-                    2.5rem               /* Nr */
-                    minmax(0, 1.9fr)     /* Hund */
-                    2.75rem              /* Rase forkortelse */
-                    minmax(0, 1.3fr)     /* Eier */
-                    minmax(0, 1.3fr)     /* Fører */
+                    minmax(0, 1.8fr)     /* Eier (linje 1) + Fører (linje 2) — stacket */
                     3.5rem               /* Klasse */
                     auto;                /* Handling */
             }
@@ -7995,12 +7983,19 @@
                 '<button onclick="apneIkkeMottBekreftelse(' + dog.pamelding_id + ', \'' + (dog.hundenavn || '').replace(/'/g, "\\'") + '\', \'' + regnrEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-orange-50 text-orange-700 border border-orange-300 text-xs font-medium transition shadow-sm" title="Marker som ikke møtt">Ikke møtt</button>'
                 : '';
 
+            // Eier på linje 1, fører på linje 2 — text-xs så raden ikke vokser i høyde.
+            // Dette frigjør bredde til Ikke møtt-knappen i Handling-kolonnen.
+            var eierForerCelle =
+                '<div class="px-2 py-2 min-w-0">' +
+                    '<div class="text-xs text-bark-700 truncate" title="Eier: ' + (dog.eier || '').replace(/"/g, '&quot;') + '">' + (dog.eier || '–') + '</div>' +
+                    '<div class="text-xs text-bark-500 truncate" title="Fører: ' + (dog.forer || '').replace(/"/g, '&quot;') + '">' + (dog.forer || '–') + '</div>' +
+                '</div>';
+
             return '<div class="partilister-row ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center" data-regnr="' + (dog.regnr || '') + '">' +
                 '<div class="py-2 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
                 '<div class="pl-1 pr-2 py-2 min-w-0"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
                 '<div class="py-2 text-sm text-bark-700 hidden md:block text-center font-medium" title="' + raseFull + '">' + raseForkort + '</div>' +
-                '<div class="px-2 py-2 text-sm text-bark-700 hidden lg:block truncate">' + (dog.eier || '–') + '</div>' +
-                '<div class="px-2 py-2 text-sm text-bark-700 truncate">' + (dog.forer || '–') + '</div>' +
+                eierForerCelle +
                 '<div class="py-2 text-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
                 '<div class="px-2 py-2 text-center flex items-center justify-center gap-1 flex-wrap">' +
                     upBtn + downBtn +
@@ -8137,8 +8132,7 @@
                     '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>' +
                     '<div class="pl-1 pr-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>' +
                     '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center hidden md:block">Rase</div>' +
-                    '<div class="px-2 py-3 text-xs font-bold text-bark-700 uppercase text-left hidden lg:block">Eier</div>' +
-                    '<div class="px-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Fører</div>' +
+                    '<div class="px-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Eier / Fører</div>' +
                     '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center">Klasse</div>' +
                     '<div class="px-2 py-3 text-xs font-bold text-bark-700 uppercase text-center">Handling</div>' +
                 '</div>' +
@@ -12695,11 +12689,19 @@
                     var isLast = i === gruppe.hunder.length - 1;
                     var regnrEsc = (dog.regnr || '').replace(/'/g, "\\'");
 
+                    // Eier på linje 1, fører på linje 2 — text-xs så raden ikke vokser i høyde.
+                    var eier = dog.eier || '–';
+                    var forer = dog.forer || '–';
+                    var eierForerCelle =
+                        '<div class="px-3 py-3 min-w-0">' +
+                            '<div class="text-xs text-bark-700 truncate" title="Eier: ' + eier.replace(/"/g, '&quot;') + '">' + eier + '</div>' +
+                            '<div class="text-xs text-bark-500 truncate" title="Fører: ' + forer.replace(/"/g, '&quot;') + '">' + forer + '</div>' +
+                        '</div>';
                     return '<div class="grid grid-cols-5 md:grid-cols-6 gap-0 ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-center">' +
                         '<div class="px-3 py-3 text-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-600">' + (i + 1) + '</span></div>' +
                         '<div class="px-3 py-3"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
                         '<div class="px-3 py-3 text-sm text-bark-700 hidden md:block truncate">' + (dog.rase || '–') + '</div>' +
-                        '<div class="px-3 py-3 text-sm text-bark-700 truncate">' + (dog.forer || dog.eier || '–') + '</div>' +
+                        eierForerCelle +
                         '<div class="px-2 py-3 text-center flex items-center justify-center gap-1">' +
                             '<button ' + (isFirst ? 'disabled' : '') + ' onclick="flyttVenteliste(\'' + dagKey + '\',\'' + klasseKey + '\',' + i + ',-1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-bark-500 ' + (isFirst ? 'opacity-30 cursor-not-allowed' : 'hover:bg-bark-200 hover:text-bark-800') + ' transition" title="Flytt opp">▲</button>' +
                             '<button ' + (isLast ? 'disabled' : '') + ' onclick="flyttVenteliste(\'' + dagKey + '\',\'' + klasseKey + '\',' + i + ',1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-bark-500 ' + (isLast ? 'opacity-30 cursor-not-allowed' : 'hover:bg-bark-200 hover:text-bark-800') + ' transition" title="Flytt ned">▼</button>' +
@@ -12720,7 +12722,7 @@
                         '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>' +
                         '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>' +
                         '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left hidden md:block">Rase</div>' +
-                        '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Fører</div>' +
+                        '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-left">Eier / Fører</div>' +
                         '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-center">Flytt</div>' +
                         '<div class="px-3 py-2.5 text-xs font-bold text-bark-700 uppercase text-center">Parti</div>' +
                     '</div>' +

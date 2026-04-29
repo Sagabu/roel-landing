@@ -10138,15 +10138,25 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
   }
 
   // Atomisk transaksjon: marker original + ev. sett inn erstatter + slett
-  // venteliste-rad + re-sekvenser startnumre i partiet
+  // venteliste-rad + re-sekvenser startnumre i partiet.
+  // Status-aware UPDATE (status='aktiv') hindrer race der to admins markerer
+  // samme hund samtidig — kun førstemann får changes>0, andre kaster.
+  let raceAvvist = false;
   const tx = db.transaction(() => {
-    db.prepare(`
+    const upd = db.prepare(`
       UPDATE parti_deltakere
          SET status = 'ikke_mott',
              ikke_mott_at = datetime('now'),
              ikke_mott_av_telefon = ?
-       WHERE id = ?
+       WHERE id = ? AND (status IS NULL OR status = 'aktiv')
     `).run(payload.telefon, rad.id);
+    if (upd.changes === 0) {
+      // En annen samtidig sesjon kom oss i forkjøpet (status er allerede
+      // ikke_mott eller trukket). Avbryt transaksjonen ved å throwe og
+      // returner 409 til klienten. better-sqlite3 ruller automatisk tilbake.
+      raceAvvist = true;
+      throw new Error('RACE_AVVIST');
+    }
 
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       'parti_deltaker_ikke_mott',
@@ -10195,7 +10205,14 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
       for (const a of aktive) updNummer.run(n++, a.id);
     }
   });
-  tx();
+  try {
+    tx();
+  } catch (e) {
+    if (raceAvvist) {
+      return c.json({ error: "Hunden er allerede markert (av en annen sesjon) — last siden på nytt" }, 409);
+    }
+    throw e;
+  }
   bumpPartilisterVersjon(proveId);
 
   return c.json({
@@ -10254,15 +10271,21 @@ app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
     }
   }
 
+  // Status-aware UPDATE hindrer race der to admins angrer samme markering.
+  let raceAvvistAngre = false;
   const tx = db.transaction(() => {
-    // Reverser ikke-mott-status på original
-    db.prepare(`
+    // Reverser ikke-mott-status på original — kun hvis fortsatt 'ikke_mott'
+    const upd = db.prepare(`
       UPDATE parti_deltakere
          SET status = 'aktiv',
              ikke_mott_at = NULL,
              ikke_mott_av_telefon = NULL
-       WHERE id = ?
+       WHERE id = ? AND status = 'ikke_mott'
     `).run(rad.id);
+    if (upd.changes === 0) {
+      raceAvvistAngre = true;
+      throw new Error('RACE_AVVIST');
+    }
 
     if (erstatter) {
       // Send erstatteren tilbake til toppen av ventelisten i sin opprinnelige
@@ -10331,7 +10354,14 @@ app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
       })
     );
   });
-  tx();
+  try {
+    tx();
+  } catch (e) {
+    if (raceAvvistAngre) {
+      return c.json({ error: "Markeringen er allerede angret (av en annen sesjon) — last siden på nytt" }, 409);
+    }
+    throw e;
+  }
   bumpPartilisterVersjon(proveId);
 
   return c.json({
@@ -11226,6 +11256,10 @@ app.post("/api/prover/:id/trekning", requireProveAdmin, async (c) => {
     "trekning_utfort",
     JSON.stringify({ prove_id: proveId, klasse, antall_partier: antallPartier, antall_hunder: pameldinger.length, utfort_av: bruker.telefon })
   );
+
+  // Bump versjon — trekning endrer parti-tildeling for alle hunder i klassen,
+  // og dommer-/offentlig partilist må vise det umiddelbart.
+  bumpPartilisterVersjon(proveId);
 
   return c.json({
     ok: true,

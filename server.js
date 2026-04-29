@@ -12682,7 +12682,8 @@ app.get("/api/partiliste/:partyId", (c) => {
     JOIN partier pt ON pt.id = pd.parti_id
     LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
     LEFT JOIN pameldinger pm ON pm.prove_id = pd.prove_id AND pm.hund_id = h.id
-    WHERE pd.prove_id = ? AND pt.navn = ? AND COALESCE(pd.status, 'aktiv') != 'trukket'
+    WHERE pd.prove_id = ? AND pt.navn = ?
+      AND COALESCE(pd.status, 'aktiv') NOT IN ('trukket', 'ikke_mott')
     ORDER BY pd.startnummer
   `).all(prove.id, partyId);
 
@@ -13062,6 +13063,22 @@ app.post("/api/kritikker", requireDommer, async (c) => {
     } catch (e) {
       // Hund finnes kanskje allerede, ignorer feil
       console.log('Kunne ikke opprette hund:', e.message);
+    }
+  }
+
+  // IKKE-MØTT-BLOKK: Hvis hunden er markert ikke_mott på det aktuelle partiet
+  // skal kritikk avvises. Sjekkes både i parti_deltakere (kanonisk) og
+  // pameldinger (legacy, for migrert/edge-data).
+  if (body.prove_id && body.hund_regnr && body.parti) {
+    const ikkeMottRad = db.prepare(`
+      SELECT pd.id FROM parti_deltakere pd
+      JOIN partier pt ON pt.id = pd.parti_id
+      WHERE pd.prove_id = ? AND pd.hund_regnr = ? AND pt.navn = ? AND pd.status = 'ikke_mott'
+    `).get(body.prove_id, body.hund_regnr, body.parti);
+    if (ikkeMottRad) {
+      return c.json({
+        error: "Hunden er markert ikke møtt på dette partiet — kritikk kan ikke registreres. Angre markeringen i forfall-listen først hvis hunden likevel deltok."
+      }, 409);
     }
   }
 
@@ -16258,7 +16275,8 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
       FROM parti_deltakere pd
       JOIN partier pt ON pt.id = pd.parti_id
       LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
-      WHERE pd.prove_id = ? AND pt.navn = ? AND COALESCE(pd.status, 'aktiv') != 'trukket'
+      WHERE pd.prove_id = ? AND pt.navn = ?
+        AND COALESCE(pd.status, 'aktiv') NOT IN ('trukket', 'ikke_mott')
       ORDER BY pd.startnummer
     `).all(proveId, parti);
 
@@ -16270,7 +16288,7 @@ app.get("/api/vk-rangering/:proveId/:parti", (c) => {
         FROM pameldinger p
         JOIN hunder h ON p.hund_id = h.id
         LEFT JOIN brukere b ON p.forer_telefon = b.telefon
-        WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status != 'avmeldt'
+        WHERE p.prove_id = ? AND p.parti = ? AND p.klasse = 'VK' AND p.status NOT IN ('avmeldt', 'ikke_mott')
         ORDER BY COALESCE(p.startnummer, 999), p.id
       `).all(proveId, parti);
     }
@@ -16420,7 +16438,8 @@ app.get("/api/vk-partiliste/:proveId/:parti", (c) => {
       FROM parti_deltakere pd
       JOIN partier pt ON pt.id = pd.parti_id
       LEFT JOIN hunder h ON h.regnr = pd.hund_regnr
-      WHERE pd.prove_id = ? AND pt.navn = ? AND COALESCE(pd.status, 'aktiv') != 'trukket'
+      WHERE pd.prove_id = ? AND pt.navn = ?
+        AND COALESCE(pd.status, 'aktiv') NOT IN ('trukket', 'ikke_mott')
       ORDER BY pd.startnummer
     `).all(proveId, parti);
 

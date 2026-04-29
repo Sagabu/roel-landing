@@ -744,32 +744,42 @@ if (typeof window.FuglehundPartilisterPoller === 'undefined') {
         const resp = await fetch('/api/prover/' + encodeURIComponent(proveId) + '/partilister/version', {
           cache: 'no-store'
         });
-        if (!resp.ok) return;
+        if (!resp.ok) {
+          console.warn('[poller] version-endpoint returnerte', resp.status);
+          return;
+        }
         const data = await resp.json();
         // Første fetch: bare sett baseline (ikke fyr onChange).
         // Senere: fyr onChange ved enhver endring i endret_at — også
         // overgangen NULL → første timestamp (typisk for prøver som
         // aldri tidligere har hatt en bump).
         if (!state.baseline) {
+          console.log('[poller] baseline satt:', data.endret_at);
           state.baseline = true;
         } else if (data.endret_at !== state.lastEndret) {
+          console.log('[poller] endring oppdaget:', state.lastEndret, '→', data.endret_at);
           try {
             await state.onChange(data.endret_at, state.lastEndret);
+            console.log('[poller] onChange ferdig');
           } catch (e) {
             console.warn('[poller] onChange feilet:', e);
           }
         }
         state.lastEndret = data.endret_at;
       } catch (e) {
-        // Stille — nettverksfeil retries ved neste tick
+        console.warn('[poller] sjekk feilet:', e);
       }
     }
 
     function start(proveId, onChange) {
-      if (!proveId || typeof onChange !== 'function') return () => {};
+      if (!proveId || typeof onChange !== 'function') {
+        console.warn('[poller] start() avvist — proveId eller onChange mangler');
+        return () => {};
+      }
       stop(proveId); // Sikrer kun én aktiv poller per proveId
       const state = { lastEndret: null, baseline: false, intervalId: null, onChange, sjekk: null };
       state.sjekk = () => sjekk(proveId, state);
+      console.log('[poller] starter for prove', proveId, '(intervall', POLL_INTERVAL_MS, 'ms)');
       // Initial fetch — setter baseline uten å trigge onChange
       state.sjekk();
       state.intervalId = setInterval(state.sjekk, POLL_INTERVAL_MS);

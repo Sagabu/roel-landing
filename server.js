@@ -1292,6 +1292,10 @@ const migrations = [
   // går lørdag. Eksisterende status-felt (TEXT) får 'ikke_mott' som ny verdi.
   "ALTER TABLE parti_deltakere ADD COLUMN ikke_mott_at TEXT DEFAULT NULL",
   "ALTER TABLE parti_deltakere ADD COLUMN ikke_mott_av_telefon TEXT DEFAULT NULL",
+  // Erstatter-link: når en hund hentes inn fra venteliste for å erstatte en
+  // ikke-møtt-hund, peker dette feltet på parti_deltakere.id til den ikke-møtte.
+  // Brukes av angre-flyten til å sende erstatteren tilbake til venteliste.
+  "ALTER TABLE parti_deltakere ADD COLUMN erstatter_for_pd_id INTEGER DEFAULT NULL",
   // Stavefiks for prove_type — fjerner ø-tegnet i 'høyfjell_*' så verdiene
   // er konsistent med kode-vennlig "hoyfjell_*" (samme mønster som NM-typene
   // 'nm_hoyfjell_host'). Tidligere brukte ulike steder (opprett-prove vs
@@ -10034,6 +10038,22 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
 
     erstatterErKryssklasse = (ventelisteRad.klasse !== klasseIkkeMott);
 
+    // 14-makskap for UK/AK-partier (NKK-regelen: max 14 hunder per parti).
+    // Etter ikke-mott-markering går original ut av aktiv-tellingen, så ny hund
+    // som tar plassen bør ikke pushe oss over taket. (Original.status->ikke_mott
+    // i samme transaksjon, så vi teller mot tilstanden ETTER markeringen.)
+    if ((rad.parti_type || '') !== 'vk') {
+      const aktiveEtterMarkering = db.prepare(`
+        SELECT COUNT(*) AS n FROM parti_deltakere
+         WHERE parti_id = ? AND status NOT IN ('trukket', 'ikke_mott') AND id != ?
+      `).get(rad.parti_id, rad.id);
+      if ((aktiveEtterMarkering?.n || 0) + 1 > 14) {
+        return c.json({
+          error: "Partiet ville overskridd 14 hunder med erstatter — kan ikke hentes inn"
+        }, 409);
+      }
+    }
+
     // Beregn startnummer for erstatter:
     //   Samme klasse: arver original sin startnummer
     //   Kryss-klasse: havner sist i sitt eget klasse-blokk (max+1 for klassen)
@@ -10078,14 +10098,15 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
         INSERT INTO parti_deltakere (
           parti_id, prove_id, hund_regnr, hund_navn, rase, kjonn, klasse,
           eier_navn, eier_telefon, forer_navn, forer_telefon,
-          startnummer, bekreftet, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'aktiv')
+          startnummer, bekreftet, status, erstatter_for_pd_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'aktiv', ?)
       `).run(
         rad.parti_id, proveId, ventelisteRad.hund_regnr,
         ventelisteRad.hund_navn || '', ventelisteRad.rase || '', '',
         ventelisteRad.klasse,
         ventelisteRad.eier_navn || '', '', ventelisteRad.forer_navn || '', '',
-        erstatterStartnummer
+        erstatterStartnummer,
+        rad.id
       );
       db.prepare("DELETE FROM venteliste WHERE id = ?").run(ventelisteRad.id);
 
@@ -10118,11 +10139,15 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
   });
 });
 
-// Angre ikke-møtt-markering (hund dukket likevel opp, eller markert ved feil)
+// Angre ikke-møtt-markering (hund dukket likevel opp, eller markert ved feil).
+// Hvis hunden hadde en erstatter (innhentet fra venteliste i Stage 2-flyten),
+// må erstatteren tilbake til ventelisten — ellers ville partiet bli større
+// enn maks. Hvis erstatter finnes, returnerer endepunktet 409 og frontend
+// må bekrefte med flytt_erstatter_til_venteliste:true før vi gjennomfører.
 app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
   const proveId = c.req.param("proveId");
   const body = await c.req.json().catch(() => ({}));
-  const { hund_regnr, parti_navn } = body;
+  const { hund_regnr, parti_navn, flytt_erstatter_til_venteliste } = body;
   const { rad, payload, error } = hentPartiDeltakerStabil(c, proveId, hund_regnr, parti_navn);
   if (error) return error;
 
@@ -10130,7 +10155,37 @@ app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
     return c.json({ error: "Hunden er ikke markert som ikke møtt" }, 400);
   }
 
+  // Sjekk om en erstatter ble hentet inn for denne ikke-møtt-raden
+  const erstatter = db.prepare(`
+    SELECT pd.* FROM parti_deltakere pd
+    WHERE pd.erstatter_for_pd_id = ? AND pd.status = 'aktiv'
+  `).get(rad.id);
+
+  if (erstatter && !flytt_erstatter_til_venteliste) {
+    // Krev bekreftelse: frontend må vise modal som forklarer at erstatter
+    // sendes tilbake til ventelisten, og post på nytt med flagget satt.
+    return c.json({
+      requires_confirmation: true,
+      erstatter: {
+        hund_regnr: erstatter.hund_regnr,
+        hund_navn: erstatter.hund_navn,
+        klasse: erstatter.klasse
+      }
+    }, 409);
+  }
+
+  // Beregn dag (for å sette tilbake erstatter på riktig sted i venteliste)
+  let dag = null;
+  if (erstatter) {
+    const prove = db.prepare("SELECT start_dato FROM prover WHERE id = ?").get(proveId);
+    const startDato = prove?.start_dato || null;
+    if (rad.parti_dato && startDato) {
+      dag = Math.round((new Date(rad.parti_dato) - new Date(startDato)) / 86400000) + 1;
+    }
+  }
+
   const tx = db.transaction(() => {
+    // Reverser ikke-mott-status på original
     db.prepare(`
       UPDATE parti_deltakere
          SET status = 'aktiv',
@@ -10139,6 +10194,61 @@ app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
        WHERE id = ?
     `).run(rad.id);
 
+    if (erstatter) {
+      // Send erstatteren tilbake til toppen av ventelisten i sin opprinnelige
+      // klasse (UK/AK eller VK). Eksisterende venteliste-rader for samme
+      // (klasse, dag) skyves ned ett hakk — slik blir den ny øverst.
+      const erstatterDag = erstatter.klasse === 'VK' ? null : dag;
+      db.prepare(`
+        UPDATE venteliste
+           SET prioritet = prioritet + 1
+         WHERE prove_id = ? AND klasse = ?
+           AND ((? IS NULL AND dag IS NULL) OR dag = ?)
+      `).run(proveId, erstatter.klasse, erstatterDag, erstatterDag);
+
+      try {
+        db.prepare(`
+          INSERT INTO venteliste (
+            prove_id, hund_regnr, hund_navn, rase, klasse, dag,
+            eier_navn, forer_navn, prioritet
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+        `).run(
+          proveId,
+          erstatter.hund_regnr,
+          erstatter.hund_navn || '',
+          erstatter.rase || '',
+          erstatter.klasse,
+          erstatterDag,
+          erstatter.eier_navn || '',
+          erstatter.forer_navn || ''
+        );
+      } catch (e) {
+        // UNIQUE(prove_id, hund_regnr, dag) — hvis hunden allerede står på
+        // venteliste (uventet edge), oppdater til prioritet 0 i stedet.
+        db.prepare(`
+          UPDATE venteliste SET prioritet = 0
+           WHERE prove_id = ? AND hund_regnr = ?
+             AND ((? IS NULL AND dag IS NULL) OR dag = ?)
+        `).run(proveId, erstatter.hund_regnr, erstatterDag, erstatterDag);
+      }
+
+      // Fjern erstatter-raden fra parti_deltakere
+      db.prepare("DELETE FROM parti_deltakere WHERE id = ?").run(erstatter.id);
+    }
+
+    // Re-sekvenser startnumre i partiet — original har nå sin gamle plass
+    // tilbake (rad.startnummer), erstatter er borte. UK først, AK under.
+    const aktive = db.prepare(`
+      SELECT id, klasse FROM parti_deltakere
+       WHERE parti_id = ? AND status NOT IN ('trukket', 'ikke_mott')
+       ORDER BY
+         CASE UPPER(COALESCE(klasse,'')) WHEN 'UK' THEN 1 WHEN 'AK' THEN 2 ELSE 3 END,
+         startnummer, id
+    `).all(rad.parti_id);
+    const updNummer = db.prepare("UPDATE parti_deltakere SET startnummer = ? WHERE id = ?");
+    let n = 1;
+    for (const a of aktive) updNummer.run(n++, a.id);
+
     db.prepare("INSERT INTO admin_log (action, detail) VALUES (?, ?)").run(
       'parti_deltaker_angre_ikke_mott',
       JSON.stringify({
@@ -10146,13 +10256,21 @@ app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
         prove_id: proveId,
         hund_regnr,
         parti_navn,
-        utfort_av: payload.telefon
+        utfort_av: payload.telefon,
+        erstatter_tilbake_til_venteliste: erstatter ? erstatter.hund_regnr : null
       })
     );
   });
   tx();
 
-  return c.json({ ok: true });
+  return c.json({
+    ok: true,
+    erstatter_tilbake: erstatter ? {
+      hund_regnr: erstatter.hund_regnr,
+      hund_navn: erstatter.hund_navn,
+      klasse: erstatter.klasse
+    } : null
+  });
 });
 
 // Forfall-oversikt: kombinerer avmeldinger (per prøve) og ikke-møtt-rader

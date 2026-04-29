@@ -11360,6 +11360,7 @@ app.get("/api/prover/:id/partilister", (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     bedomming_aktiv: bedommingErAktiv(proveId, parti.navn),
+    bedomming_aktiv_type: bedommingAktivType(proveId, parti.navn),
     dogs: deltakere
       .filter(d => d.parti_id === parti.id && aktivStatus(d.status))
       .map(d => ({
@@ -11456,6 +11457,7 @@ app.get("/api/prover/:id/partilister/admin", requireProveAdmin, (c) => {
     klasse: parti.klasse,
     bedomming_startet: erBedommingStartet(proveId, parti.navn),
     bedomming_aktiv: bedommingErAktiv(proveId, parti.navn),
+    bedomming_aktiv_type: bedommingAktivType(proveId, parti.navn),
     dogs: deltakere
       .filter(d => d.parti_id === parti.id && aktivStatus(d.status))
       .map(mapDog),
@@ -11500,6 +11502,23 @@ function bedommingErAktiv(proveId, partiNavn) {
     LIMIT 1
   `).get(proveId, partiNavn);
   return !!k;
+}
+
+// Detaljert type aktiv bedømming, så frontend kan vise riktig avslutt-handling.
+// Returnerer 'live_rangering' | 'digital_vk' | 'kritikker' | null
+function bedommingAktivType(proveId, partiNavn) {
+  const v = db.prepare(`
+    SELECT live_modus FROM vk_bedomming
+    WHERE prove_id = ? AND parti = ? AND status = 'aktiv'
+    LIMIT 1
+  `).get(proveId, partiNavn);
+  if (v) return v.live_modus === 1 ? 'live_rangering' : 'digital_vk';
+  const k = db.prepare(`
+    SELECT 1 FROM kritikker
+    WHERE prove_id = ? AND parti = ? AND COALESCE(status, 'draft') IN ('draft', 'returned')
+    LIMIT 1
+  `).get(proveId, partiNavn);
+  return k ? 'kritikker' : null;
 }
 
 // Bro fra Bok B (parti_deltakere) til Bok A (pameldinger).

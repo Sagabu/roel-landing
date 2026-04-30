@@ -1310,8 +1310,32 @@ const migrations = [
   // ingenting.
   "UPDATE prover SET prove_type = REPLACE(REPLACE(prove_type, 'høyfjell_', 'hoyfjell_'), 'høyfjell-', 'hoyfjell-')",
 ];
+// Migrations er idempotente: ALTER TABLE ADD COLUMN på en kolonne som
+// allerede finnes feiler med "duplicate column name", som er forventet og
+// trygt å ignorere. ALLE andre feil (skriverettigheter, ugyldig SQL, FK-
+// problemer, etc.) må logges synlig så vi ikke ender opp med en tabell-
+// struktur som drift'er fra schema definert i koden.
+const EXPECTED_MIGRATION_ERROR_PATTERNS = [
+  /duplicate column name/i,           // ALTER TABLE ADD COLUMN på eksisterende kolonne
+  /already exists/i,                  // CREATE TABLE/INDEX uten IF NOT EXISTS
+  /no such column/i,                  // UPDATE-migration som refererer til kolonne som ikke finnes ennå (kjører-rekkefølge)
+  /no such table/i,                   // ALTER på tabell som ennå ikke er opprettet (f.eks. lazily-created tabeller). Trygt fordi CREATE TABLE-blokken senere i koden har full schema.
+];
+function isExpectedMigrationError(err) {
+  const msg = (err && err.message) || '';
+  return EXPECTED_MIGRATION_ERROR_PATTERNS.some(re => re.test(msg));
+}
 for (const sql of migrations) {
-  try { db.exec(sql); } catch (e) { /* column already exists */ }
+  try {
+    db.exec(sql);
+  } catch (e) {
+    if (!isExpectedMigrationError(e)) {
+      // Logg første 80 tegn av SQL så vi vet hvilken migration som feilet,
+      // uten å spamme loggen med hele tabell-definisjoner.
+      const preview = sql.replace(/\s+/g, ' ').trim().slice(0, 80);
+      console.error(`❌ Migration feilet (uventet): ${e.message}\n   SQL: ${preview}${sql.length > 80 ? '...' : ''}`);
+    }
+  }
 }
 
 // Engangs-flytt: tidligere markerte vi ikke-møtt på pameldinger-nivå (per prøve).

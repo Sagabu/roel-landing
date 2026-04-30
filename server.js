@@ -4603,6 +4603,23 @@ app.get("/api/brukere/sok", requireAuth, (c) => {
 // Hent én bruker på telefon - ALDRI eksponer passord_hash
 app.get("/api/brukere/:telefon", (c) => {
   const telefon = c.req.param("telefon");
+
+  // Sjekk auth-kontekst (uten å avvise — endpoint er semi-public).
+  // Eier eller admin får full profil; andre får kun public-felt
+  // (navn, profilbilde, klubb-tilhørighet) som er nødvendig for at
+  // f.eks. partilister og dommer-info kan vises offentlig.
+  let payload = null;
+  let canSeeFull = false;
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    payload = verifyToken(authHeader.slice(7));
+    if (payload) {
+      const erSegSelv = payload.telefon === telefon;
+      const erAdmin = hasAnyRole(payload.rolle, ["admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar"]);
+      canSeeFull = erSegSelv || erAdmin;
+    }
+  }
+
   const row = db.prepare(`
     SELECT telefon, fornavn, etternavn, epost, adresse, postnummer, sted,
            rolle, medlem_siden, profilbilde, samtykke_gitt, created_at, updated_at,
@@ -4622,7 +4639,20 @@ app.get("/api/brukere/:telefon", (c) => {
   // Bakoverkompatibilitet: klubbAdmin = første klubb (eller null)
   const klubbAdmin = klubbAdmins.length > 0 ? klubbAdmins[0] : null;
 
-  return c.json({ ...row, klubbAdmin, klubbAdmins });
+  if (canSeeFull) {
+    return c.json({ ...row, klubbAdmin, klubbAdmins });
+  }
+  // Public-subset: skjul personlige felt (epost, adresse, samtykke-historikk,
+  // siste_innlogging) og rolle/sms-status som kunne brukes til admin-discovery.
+  return c.json({
+    telefon: row.telefon,
+    fornavn: row.fornavn,
+    etternavn: row.etternavn,
+    profilbilde: row.profilbilde,
+    medlem_siden: row.medlem_siden,
+    klubbAdmin,
+    klubbAdmins
+  });
 });
 
 // Opprett eller oppdater bruker.

@@ -196,16 +196,18 @@
                         <div>
                             <label class="block text-sm font-medium text-bark-700 mb-3 text-center">Verifiseringskode (4 siffer)</label>
                             <div class="flex justify-center gap-3">
-                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                <input type="text" maxlength="1" inputmode="numeric" class="code-input rounded-xl border-2 border-bark-200"
                                     id="code1" oninput="handleCodeInput(this, 'code2')" onkeydown="handleCodeKeydown(event, null, 'code2')">
-                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                <input type="text" maxlength="1" inputmode="numeric" class="code-input rounded-xl border-2 border-bark-200"
                                     id="code2" oninput="handleCodeInput(this, 'code3')" onkeydown="handleCodeKeydown(event, 'code1', 'code3')">
-                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                <input type="text" maxlength="1" inputmode="numeric" class="code-input rounded-xl border-2 border-bark-200"
                                     id="code3" oninput="handleCodeInput(this, 'code4')" onkeydown="handleCodeKeydown(event, 'code2', 'code4')">
-                                <input type="text" maxlength="1" class="code-input rounded-xl border-2 border-bark-200"
+                                <input type="text" maxlength="1" inputmode="numeric" class="code-input rounded-xl border-2 border-bark-200"
                                     id="code4" oninput="handleCodeInput(this, null)" onkeydown="handleCodeKeydown(event, 'code3', null)">
                             </div>
                             <p id="codeError" class="text-red-500 text-sm text-center mt-2 hidden"></p>
+                            <p id="codeCountdown" class="text-bark-500 text-sm text-center mt-2 hidden">Koden utløper om <span id="codeCountdownTime" class="font-medium text-bark-700">5:00</span></p>
+                            <p id="codeExpired" class="text-amber-700 text-sm text-center mt-2 hidden">Koden har utløpt — be om en ny.</p>
                         </div>
 
                         <button onclick="verifyReverification()" id="verifyBtn" class="w-full bg-warm-500 hover:bg-warm-600 text-white font-semibold py-4 rounded-xl text-lg transition flex items-center justify-center gap-2">
@@ -1085,6 +1087,7 @@
                     document.getElementById('step2').classList.remove('hidden');
                     document.getElementById('displayPhone').textContent = '+47 ' + input.value;
                     document.getElementById('code1').focus();
+                    startCodeCountdown();
 
                     btn.disabled = false;
                     text.textContent = 'Logg inn';
@@ -1157,7 +1160,8 @@
                     throw new Error(data.error || 'Verifisering feilet');
                 }
 
-                // Vellykket - lagre JWT token
+                // Vellykket - lagre JWT token + stopp countdown
+                stopCodeCountdown();
                 localStorage.setItem('fuglehund_token', data.token);
                 localStorage.setItem('fuglehund_user', JSON.stringify(data.bruker));
                 localStorage.setItem('userProfile', JSON.stringify(data.bruker));
@@ -1220,6 +1224,40 @@
                    document.getElementById('code2').value +
                    document.getElementById('code3').value +
                    document.getElementById('code4').value;
+        }
+
+        // SMS-OTP utløper etter 5 min på server. Vis nedtelling så bruker
+        // ikke lurer på hvorfor "Ugyldig eller utløpt kode" plutselig kommer.
+        let codeCountdownInterval = null;
+        function startCodeCountdown() {
+            stopCodeCountdown();
+            const countdownEl = document.getElementById('codeCountdown');
+            const timeEl = document.getElementById('codeCountdownTime');
+            const expiredEl = document.getElementById('codeExpired');
+            if (!countdownEl || !timeEl || !expiredEl) return;
+            countdownEl.classList.remove('hidden');
+            expiredEl.classList.add('hidden');
+            let secondsLeft = 5 * 60; // 5 minutter
+            const tick = () => {
+                if (secondsLeft <= 0) {
+                    stopCodeCountdown();
+                    countdownEl.classList.add('hidden');
+                    expiredEl.classList.remove('hidden');
+                    return;
+                }
+                const m = Math.floor(secondsLeft / 60);
+                const s = secondsLeft % 60;
+                timeEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+                secondsLeft -= 1;
+            };
+            tick();
+            codeCountdownInterval = setInterval(tick, 1000);
+        }
+        function stopCodeCountdown() {
+            if (codeCountdownInterval) {
+                clearInterval(codeCountdownInterval);
+                codeCountdownInterval = null;
+            }
         }
 
         let isVerifyingCode = false;
@@ -1321,9 +1359,9 @@
             let clubName = null;
             let clubRole = null;
 
-            // Hent brukerdata fra API
+            // Hent brukerdata fra API (med auth så vi får full profil inkludert epost/rolle)
             try {
-                const resp = await fetch(`/api/brukere/${phone}`);
+                const resp = await window.FuglehundAuth.authFetch(`/api/brukere/${phone}`);
                 if (resp.ok) {
                     cachedUserData = await resp.json();
                     name = `${cachedUserData.fornavn} ${cachedUserData.etternavn}`.trim();
@@ -1581,6 +1619,7 @@
         }
 
         function goBackToStep1() {
+            stopCodeCountdown();
             document.getElementById('step2').classList.add('hidden');
             document.getElementById('stepForgot').classList.add('hidden');
             document.getElementById('stepForgotVerify').classList.add('hidden');
@@ -1589,6 +1628,10 @@
             clearCodeInputs();
             clearForgotCodeInputs();
             document.getElementById('codeError').classList.add('hidden');
+            const cdEl = document.getElementById('codeCountdown');
+            const expEl = document.getElementById('codeExpired');
+            if (cdEl) cdEl.classList.add('hidden');
+            if (expEl) expEl.classList.add('hidden');
         }
 
         // ========================================

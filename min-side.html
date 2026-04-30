@@ -127,12 +127,12 @@
                     <div class="space-y-5">
                         <div>
                             <label class="block text-sm font-medium text-bark-700 mb-2">Mobilnummer</label>
-                            <div class="flex">
-                                <span class="inline-flex items-center px-4 rounded-l-xl border-2 border-r-0 border-bark-200 bg-bark-50 text-bark-500 text-lg">
+                            <div class="flex w-full">
+                                <span class="inline-flex items-center px-3 sm:px-4 rounded-l-xl border-2 border-r-0 border-bark-200 bg-bark-50 text-bark-500 text-base sm:text-lg shrink-0">
                                     +47
                                 </span>
                                 <input type="tel" id="phoneNumber" placeholder="XXX XX XXX" maxlength="11"
-                                    class="flex-1 px-4 py-3 rounded-r-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none text-lg"
+                                    class="flex-1 min-w-0 px-3 sm:px-4 py-3 rounded-r-xl border-2 border-bark-200 focus:border-warm-500 focus:ring-0 outline-none text-base sm:text-lg"
                                     oninput="formatPhoneNumber(this)">
                             </div>
                         </div>
@@ -1222,9 +1222,15 @@
                    document.getElementById('code4').value;
         }
 
+        let isVerifyingCode = false;
         async function verifyCode() {
             const code = getEnteredCode();
             if (code.length !== 4) return;
+            // Lock så raske dobbel-trigger fra handleCodeInput (når 4. siffer
+            // skrives) ikke sender to verify-kall parallelt og ender med at
+            // server marker koden som "used" og avviser den andre.
+            if (isVerifyingCode) return;
+            isVerifyingCode = true;
 
             document.getElementById('loadingOverlay').classList.remove('hidden');
             document.getElementById('loadingText').textContent = 'Verifiserer...';
@@ -1287,6 +1293,8 @@
                 document.getElementById('codeError').classList.remove('hidden');
                 clearCodeInputs();
                 document.getElementById('code1').focus();
+            } finally {
+                isVerifyingCode = false;
             }
         }
 

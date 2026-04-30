@@ -74,11 +74,11 @@
     </nav>
 
     <!-- Main Content -->
-    <main class="max-w-4xl mx-auto px-4 py-8">
+    <main class="max-w-4xl mx-auto px-3 sm:px-4 py-6 sm:py-8">
         <!-- Profile Card -->
         <div class="bg-white rounded-2xl shadow-sm border border-bark-100 overflow-hidden">
             <!-- Profile Header with Photo -->
-            <div class="bg-gradient-to-r from-bark-800 to-bark-900 px-6 py-8">
+            <div class="bg-gradient-to-r from-bark-800 to-bark-900 px-4 sm:px-6 py-6 sm:py-8">
                 <div class="flex flex-col sm:flex-row items-center gap-6">
                     <!-- Profile Photo -->
                     <div class="relative group">
@@ -103,7 +103,7 @@
             </div>
 
             <!-- Profile Details -->
-            <div class="p-6">
+            <div class="p-4 sm:p-6">
                 <div class="flex items-center justify-between mb-6">
                     <h2 class="text-lg font-semibold font-serif text-bark-800">Personopplysninger</h2>
                     <button onclick="toggleEdit()" id="editBtn" class="text-warm-500 hover:text-warm-800 text-sm font-medium flex items-center gap-1">
@@ -360,8 +360,40 @@
                 return;
             }
 
+            // Fast initial render fra localStorage så bildet/navnet vises
+            // umiddelbart uten å vente på API-respons. loadProfileFromAPI
+            // overskriver med ferske data rett etter.
+            renderInitialFromCache();
             await loadProfileFromAPI();
             await loadStats();
+        }
+
+        // Synkron render fra localStorage for instant feedback ved sidelast.
+        // Forhindrer "tom avatar/initialer i 1-2 sek mens API svarer"-problemet.
+        function renderInitialFromCache() {
+            try {
+                const cachedRaw = localStorage.getItem('userProfile') || localStorage.getItem('fuglehund_user');
+                if (!cachedRaw) return;
+                const cached = JSON.parse(cachedRaw);
+                userProfile = {
+                    firstName: cached.firstName || cached.fornavn || '',
+                    lastName: cached.lastName || cached.etternavn || '',
+                    email: cached.email || cached.epost || '',
+                    phone: cached.phone || cached.telefon || userPhone,
+                    address: cached.address || cached.adresse || '',
+                    postalCode: cached.postalCode || cached.postnummer || '',
+                    city: cached.city || cached.sted || '',
+                    memberSince: cached.memberSince || cached.medlem_siden || '',
+                    profileImage: cached.profileImage || cached.profilbilde || null,
+                    klubbAdmin: cached.klubbAdmin || null,
+                    klubbAdmins: cached.klubbAdmins || [],
+                    samtykkeGitt: cached.samtykkeGitt || cached.sms_samtykke_tidspunkt || null
+                };
+                userRoles = (cached.rolle || cached.role || '').split(',').map(r => r.trim()).filter(r => r);
+                loadProfile();
+            } catch (e) {
+                // Korrupt cache — ignorer, API-load vil gi ferske data
+            }
         }
 
         // Hent profil fra API
@@ -776,9 +808,15 @@
                     document.getElementById('profileImage').classList.remove('hidden');
                     document.getElementById('profileInitials').classList.add('hidden');
 
-                    // Save to profile locally
+                    // Save to profile locally (begge cache-nøkler så fast
+                    // initial render ved neste sidelast plukker bildet opp)
                     userProfile.profileImage = imageData;
                     localStorage.setItem('userProfile', JSON.stringify(userProfile));
+                    try {
+                        const fhUser = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
+                        fhUser.profilbilde = imageData;
+                        localStorage.setItem('fuglehund_user', JSON.stringify(fhUser));
+                    } catch {}
 
                     // Lagre til database umiddelbart
                     try {

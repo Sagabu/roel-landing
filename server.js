@@ -1767,8 +1767,44 @@ function seedData() {
   console.log("✅ Initial data seeded successfully");
 }
 
-// Kun seed i development-mode
-if (process.env.NODE_ENV !== 'production') {
+// Defensiv seed-gating med TRE lag:
+//   1) NODE_ENV må IKKE være "production"
+//   2) SEED_DEV_DATA=true må være eksplisitt satt (opt-in)
+//   3) DB må ikke se ut som prod (få ekte brukere)
+//
+// Bakgrunn: 2026-04-30 ble seedData kjørt på prod fordi prod-server hadde
+// NODE_ENV=development ved en feil. Dette inserterte 5 fake klubber, 6 fake
+// brukere, 9 fake hunder og en testprøve i prod-DB før FK-constraint
+// kollapset serveren. Restorerte fra backup, men trippel-sjekken under
+// sikrer at NODE_ENV-feilkonfig alene aldri kan re-trigge dette.
+function shouldSeedDevData() {
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+  if (process.env.SEED_DEV_DATA !== 'true') {
+    return false;
+  }
+  // Tell ekte brukere (ikke seed-numre 999999XX og ikke NKK_IMPORT-system).
+  // Hvis prod ved et uhell havner i dev-mode med opt-in satt, vil denne
+  // sjekken fortsatt nekte seed.
+  try {
+    const realUserCount = db.prepare(`
+      SELECT COUNT(*) as n FROM brukere
+      WHERE telefon NOT LIKE '999999%'
+        AND telefon != 'NKK_IMPORT'
+    `).get().n;
+    if (realUserCount > 10) {
+      console.warn(`⚠️  Nektet seed: DB inneholder ${realUserCount} ekte brukere — ser ut som prod.`);
+      return false;
+    }
+  } catch (e) {
+    console.warn('Kunne ikke verifisere DB-tilstand før seed, hopper over:', e.message);
+    return false;
+  }
+  return true;
+}
+
+if (shouldSeedDevData()) {
   seedData();
 }
 

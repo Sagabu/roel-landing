@@ -1979,7 +1979,7 @@ function harProveAdmin(payload, proveId) {
   if (!payload || !proveId) return false;
   if (hasAnyRole(payload.rolle, ["superadmin"])) return true;
   const prove = db.prepare(`
-    SELECT proveleder_telefon, nkkrep_telefon, nkkvara_telefon FROM prover WHERE id = ?
+    SELECT klubb_id, proveleder_telefon, nkkrep_telefon, nkkvara_telefon FROM prover WHERE id = ?
   `).get(proveId);
   if (!prove) return false;
   if (prove.proveleder_telefon === payload.telefon) return true;
@@ -1989,7 +1989,18 @@ function harProveAdmin(payload, proveId) {
     SELECT 1 FROM prove_team
     WHERE prove_id = ? AND telefon = ? AND rolle IN ('admin', 'sekretariat')
   `).get(proveId, payload.telefon);
-  return !!team;
+  if (team) return true;
+  // Klubb-admin (via klubb_admins-tabellen) for klubben som EIER prøven har
+  // implisitt admin-tilgang til alle prøver klubben arrangerer. Dette er
+  // forskjellig fra global 'klubbleder'-rolle: en bruker kan være Sekretær
+  // for én spesifikk klubb uten globale admin-roller.
+  if (prove.klubb_id) {
+    const klubbAdmin = db.prepare(`
+      SELECT 1 FROM klubb_admins WHERE klubb_id = ? AND telefon = ?
+    `).get(prove.klubb_id, payload.telefon);
+    if (klubbAdmin) return true;
+  }
+  return false;
 }
 
 // Sjekk om brukeren er NKK-rep eller NKK-vara på en spesifikk prøve.
@@ -6584,7 +6595,7 @@ app.get("/api/superadmin/sms-export", requireSuperadmin, (c) => {
 // ============================================
 
 // Opprett ny Vipps-forespørsel (med valgfri automatisk SMS-utsending)
-app.post("/api/prover/:id/vipps-foresporsler", async (c) => {
+app.post("/api/prover/:id/vipps-foresporsler", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const { opprettet_av, beskrivelse, belop, vipps_nummer, mottakere, send_sms } = body;
@@ -7078,7 +7089,7 @@ async function checkVippsPaymentStatus(klubb, reference) {
 }
 
 // API: Opprett Vipps ePayment forespørsel (Business API-modus)
-app.post("/api/prover/:id/vipps-epayment", async (c) => {
+app.post("/api/prover/:id/vipps-epayment", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
   const { opprettet_av, beskrivelse, belop, mottakere } = body;
@@ -8296,6 +8307,55 @@ app.get("/api/prover/:id", (c) => {
   });
 });
 
+// Innlogget brukers tilgangsnivå for en spesifikk prøve. Brukes av admin.html
+// til å bestemme om siden skal vises (full tilgang), vises i lese-modus
+// (dommer/nkkrep), eller redirecte til min-side (ingen tilgang). Returnerer
+// en flat oversikt over hvilke roller bruker har for nettopp denne prøven.
+app.get("/api/prover/:id/min-tilgang", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ erInnlogget: false, harTilgang: false }, 200);
+  }
+  const payload = verifyToken(authHeader.slice(7));
+  if (!payload) {
+    return c.json({ erInnlogget: false, harTilgang: false }, 200);
+  }
+  const proveId = c.req.param("id");
+  const prove = db.prepare(`
+    SELECT klubb_id, proveleder_telefon, nkkrep_telefon, nkkvara_telefon, dvk_telefon
+    FROM prover WHERE id = ?
+  `).get(proveId);
+  if (!prove) {
+    return c.json({ erInnlogget: true, harTilgang: false, error: "Prøve ikke funnet" }, 404);
+  }
+  const tlf = payload.telefon;
+  const erSuperadmin = hasAnyRole(payload.rolle, ["superadmin"]);
+  const erProveleder = prove.proveleder_telefon === tlf;
+  const erNkkrep = prove.nkkrep_telefon === tlf;
+  const erNkkvara = prove.nkkvara_telefon === tlf;
+  const erDvk = prove.dvk_telefon === tlf;
+  const teamRow = db.prepare(`
+    SELECT rolle FROM prove_team WHERE prove_id = ? AND telefon = ?
+  `).get(proveId, tlf);
+  const erKlubbAdmin = prove.klubb_id ? !!db.prepare(`
+    SELECT 1 FROM klubb_admins WHERE klubb_id = ? AND telefon = ?
+  `).get(prove.klubb_id, tlf) : false;
+  const harAdminTilgang = erSuperadmin || erProveleder || erKlubbAdmin ||
+    (teamRow && (teamRow.rolle === 'admin' || teamRow.rolle === 'sekretariat'));
+  return c.json({
+    erInnlogget: true,
+    harTilgang: harAdminTilgang || erNkkrep || erNkkvara || erDvk,
+    harAdminTilgang,
+    erSuperadmin,
+    erProveleder,
+    erNkkrep,
+    erNkkvara,
+    erDvk,
+    erKlubbAdmin,
+    teamRolle: teamRow?.rolle || null
+  });
+});
+
 // Opprett ny prøve
 app.post("/api/prover", requireAdmin, async (c) => {
   try {
@@ -8436,7 +8496,7 @@ app.put("/api/prover/:id", requireProveAdmin, async (c) => {
 });
 
 // Last opp logo for prøve (FormData)
-app.post("/api/prover/:id/logo", async (c) => {
+app.post("/api/prover/:id/logo", requireProveAdmin, async (c) => {
   const id = c.req.param("id");
 
   const prove = db.prepare("SELECT * FROM prover WHERE id = ?").get(id);
@@ -10238,7 +10298,7 @@ app.get("/api/prover/:proveId/erstatningskandidater", requireProveAdmin, (c) => 
   });
 });
 
-app.post("/api/prover/:proveId/ikke-mott", async (c) => {
+app.post("/api/prover/:proveId/ikke-mott", requireProveAdmin, async (c) => {
   const proveId = c.req.param("proveId");
   const body = await c.req.json().catch(() => ({}));
   const { hund_regnr, parti_navn, erstatter } = body;
@@ -10427,7 +10487,7 @@ app.post("/api/prover/:proveId/ikke-mott", async (c) => {
 // må erstatteren tilbake til ventelisten — ellers ville partiet bli større
 // enn maks. Hvis erstatter finnes, returnerer endepunktet 409 og frontend
 // må bekrefte med flytt_erstatter_til_venteliste:true før vi gjennomfører.
-app.post("/api/prover/:proveId/angre-ikke-mott", async (c) => {
+app.post("/api/prover/:proveId/angre-ikke-mott", requireProveAdmin, async (c) => {
   const proveId = c.req.param("proveId");
   const body = await c.req.json().catch(() => ({}));
   const { hund_regnr, parti_navn, flytt_erstatter_til_venteliste } = body;
@@ -14065,7 +14125,7 @@ app.get("/api/backup", requireAdmin, (c) => {
 // ============================================
 
 // Logg en generert/sendt rapport
-app.post("/api/prover/:id/rapport-logg", async (c) => {
+app.post("/api/prover/:id/rapport-logg", requireProveAdmin, async (c) => {
   const proveId = c.req.param("id");
   const body = await c.req.json();
 

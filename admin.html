@@ -20445,6 +20445,35 @@
         // hard-refresh respekterer URL-hashen (f.eks. #partilister).
         async function velgProve(proveId, options = {}) {
             const { gaTilProvedetaljer = true } = options;
+
+            // Verifiser at innlogget bruker faktisk har admin-tilgang til
+            // DENNE spesifikke prøven før vi laster data og lar dem klikke
+            // rundt. Server håndhever uavhengig på alle mutations, men
+            // klient-side sjekken hindrer at uautoriserte brukere ser tomme
+            // skjemaer og lurer på hvorfor handlinger feiler. Superadmin og
+            // klubb-admin for eier-klubben får tilgang her.
+            try {
+                const tokenForCheck = localStorage.getItem('fuglehund_token');
+                if (tokenForCheck) {
+                    const tilgangResp = await fetch(`/api/prover/${proveId}/min-tilgang`, {
+                        headers: { 'Authorization': 'Bearer ' + tokenForCheck }
+                    });
+                    if (tilgangResp.ok) {
+                        const tilgang = await tilgangResp.json();
+                        if (!tilgang.harAdminTilgang) {
+                            alert('Du har ikke admin-tilgang til denne prøven.\n\n' +
+                                  'Kun superadmin, prøveleder, eller klubb-administrator for ' +
+                                  'klubben som eier prøven kan administrere den.');
+                            window.location.href = 'min-side.html';
+                            return;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Kunne ikke verifisere prøve-tilgang:', e);
+                // Fortsett — server vil avvise mutations om ingen tilgang
+            }
+
             valgtProveId = proveId;
             localStorage.setItem('currentTrialId', proveId);
 

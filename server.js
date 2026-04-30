@@ -2196,6 +2196,42 @@ function checkOTPRate(telefon) {
   return true;
 }
 
+// Rate-limiter for passord-login. In-memory Map med {failedCount, firstFailAt}
+// per telefonnummer. Etter 5 feilforsøk innenfor 15 min blokkeres telefonen
+// i 15 min fra første feil. Blokken resettes ved første vellykket login.
+// In-memory holder mellom restarts ikke, men det er OK fordi en angriper
+// ville måtte holde restart-tempo over PM2-prosesser (sjelden i prod).
+const passwordFailMap = new Map();
+const PWFAIL_WINDOW_MS = 15 * 60 * 1000;
+const PWFAIL_MAX_ATTEMPTS = 5;
+function checkPasswordRate(telefon) {
+  const entry = passwordFailMap.get(telefon);
+  if (!entry) return { ok: true };
+  const now = Date.now();
+  // Vinduet er utløpt — nullstill
+  if (now - entry.firstFailAt > PWFAIL_WINDOW_MS) {
+    passwordFailMap.delete(telefon);
+    return { ok: true };
+  }
+  if (entry.failedCount >= PWFAIL_MAX_ATTEMPTS) {
+    const minutesLeft = Math.ceil((PWFAIL_WINDOW_MS - (now - entry.firstFailAt)) / 60000);
+    return { ok: false, minutesLeft };
+  }
+  return { ok: true };
+}
+function recordPasswordFail(telefon) {
+  const now = Date.now();
+  const entry = passwordFailMap.get(telefon);
+  if (!entry || (now - entry.firstFailAt) > PWFAIL_WINDOW_MS) {
+    passwordFailMap.set(telefon, { failedCount: 1, firstFailAt: now });
+  } else {
+    entry.failedCount += 1;
+  }
+}
+function clearPasswordFails(telefon) {
+  passwordFailMap.delete(telefon);
+}
+
 // Logg SMS til database for statistikk og prøvedokumenter
 function logSMS(retning, fra, til, type, melding, twilio_sid = null, status = 'sent', klubb_id = null, prove_id = null, mottaker_navn = null) {
   try {
@@ -3397,24 +3433,42 @@ app.post("/api/auth/login-password", async (c) => {
   const telefon = (body.telefon || "").replace(/\s/g, "");
   const passord = body.passord || "";
 
+  // Generic credential-feilmelding (ikke avslør om bruker finnes eller om
+  // det er passordet som er feil — angripere kunne ellers brute-force
+  // telefonnumre for å finne registrerte kontoer).
+  const GENERIC_CRED_ERROR = "Ugyldig telefonnummer eller passord";
+
   if (!/^\d{8}$/.test(telefon)) {
-    return c.json({ error: "Ugyldig telefonnummer" }, 400);
+    return c.json({ error: GENERIC_CRED_ERROR }, 401);
   }
   if (!passord) {
     return c.json({ error: "Passord er påkrevd" }, 400);
+  }
+
+  // Rate-limit: 5 feilforsøk per 15 min per telefon
+  const rate = checkPasswordRate(telefon);
+  if (!rate.ok) {
+    return c.json({
+      error: `For mange mislykkede forsøk. Prøv igjen om ${rate.minutesLeft} minutt${rate.minutesLeft === 1 ? '' : 'er'}.`
+    }, 429);
   }
 
   // Hent verifisert bruker
   const bruker = db.prepare("SELECT * FROM brukere WHERE telefon = ? AND verifisert = 1").get(telefon);
 
   if (!bruker) {
-    return c.json({ error: "Bruker ikke funnet eller ikke verifisert" }, 401);
+    recordPasswordFail(telefon);
+    return c.json({ error: GENERIC_CRED_ERROR }, 401);
   }
 
   // Sjekk passord
   if (!verifyPassword(passord, bruker.passord_hash)) {
-    return c.json({ error: "Feil passord" }, 401);
+    recordPasswordFail(telefon);
+    return c.json({ error: GENERIC_CRED_ERROR }, 401);
   }
+
+  // Vellykket — nullstill rate-limit-teller
+  clearPasswordFails(telefon);
 
   // Oppgrader passord-hash til bcrypt hvis det er legacy SHA256
   if (needsHashUpgrade(bruker.passord_hash)) {
@@ -4571,13 +4625,62 @@ app.get("/api/brukere/:telefon", (c) => {
   return c.json({ ...row, klubbAdmin, klubbAdmins });
 });
 
-// Opprett eller oppdater bruker
+// Opprett eller oppdater bruker.
+//
+// Auth-policy (tidligere helt åpent — hvem som helst kunne endre andres profil):
+// - OPPRETTELSE av ny bruker (telefon finnes ikke): tillatt uten auth, så
+//   registrerings-flyten i deltaker.html/opprett-bruker.html fungerer.
+//   Rollen tvinges til 'deltaker' uavhengig av body.
+// - OPPDATERING av eksisterende bruker: krever JWT, og innlogget bruker
+//   må enten oppdatere SIN EGEN profil eller være admin.
+// Privilege escalation-beskyttelsen lengre nede sørger for at vanlig bruker
+// ikke kan promote seg selv via body.rolle.
 app.put("/api/brukere/:telefon", async (c) => {
   const telefon = c.req.param("telefon");
+  const existing = db.prepare("SELECT telefon, rolle FROM brukere WHERE telefon = ?").get(telefon);
+
+  let payload = null;
+  let erAdmin = false;
+  let erSegSelv = false;
+
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    payload = verifyToken(authHeader.slice(7));
+    if (payload) {
+      erSegSelv = payload.telefon === telefon;
+      erAdmin = hasAnyRole(payload.rolle, ["admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar"]);
+    }
+  }
+
+  if (existing) {
+    // Eksisterende bruker — auth påkrevd, og innlogget bruker må være eier eller admin
+    if (!payload) {
+      return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+    }
+    if (!erSegSelv && !erAdmin) {
+      return c.json({ error: "Du kan kun endre din egen profil" }, 403);
+    }
+  }
+  // Ny bruker (existing == null) — tillatt uten auth (registrerings-flyt)
+
   const body = await c.req.json();
 
-  const existing = db.prepare("SELECT telefon, rolle FROM brukere WHERE telefon = ?").get(telefon);
-  let nyRolle = body.rolle || (existing ? existing.rolle : 'deltaker');
+  // Privilege escalation-beskyttelse: kun admin kan endre rolle vilkårlig.
+  // Ny bruker (ingen auth) tvinges til 'deltaker'. Eksisterende ikke-admin
+  // får beholde sin rolle (kan kun legge til 'dommer' hvis FKF matcher).
+  // FKF-dommer-sjekken nedenfor håndterer selvtildelt dommer-rolle.
+  let nyRolle;
+  if (erAdmin) {
+    nyRolle = body.rolle || (existing ? existing.rolle : 'deltaker');
+  } else if (existing) {
+    nyRolle = existing.rolle;
+    if (body.rolle && body.rolle.includes('dommer') && !nyRolle.includes('dommer')) {
+      nyRolle = nyRolle ? nyRolle + ',dommer' : 'deltaker,dommer';
+    }
+  } else {
+    // Ny bruker uten auth — tvunget til 'deltaker'
+    nyRolle = 'deltaker';
+  }
   const hadDommerRolle = existing && existing.rolle && existing.rolle.includes('dommer');
   const vilHaDommerRolle = nyRolle.includes('dommer');
 

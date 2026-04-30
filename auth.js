@@ -127,8 +127,22 @@ const FuglehundAuth = (function() {
 
     // Sjekk spesifikke roller
     if (rolle === 'admin') {
-      // Admin-rolle gis til admin, proveleder og klubbleder
-      return roller.includes('admin') || roller.includes('proveleder') || roller.includes('klubbleder');
+      // Admin-rolle gis til:
+      //  - global admin/superadmin/proveleder/klubbleder/sekretær via brukerens rolle-streng
+      //  - klubb-admin via klubb_admins-tabellen (lagret som userSession.isTrialAdmin
+      //    + clubId etter innlogging, eller cachedUserData.klubbAdmins). Klient-siden
+      //    sjekken her er kun for sidetilgang/UI; server-side håndhever per-klubb-
+      //    handlinger uavhengig.
+      if (roller.includes('admin') || roller.includes('superadmin') ||
+          roller.includes('proveleder') || roller.includes('klubbleder') ||
+          roller.includes('sekretær') || roller.includes('sekretar')) {
+        return true;
+      }
+      try {
+        const session = JSON.parse(localStorage.getItem('userSession') || '{}');
+        if (session.isTrialAdmin === true || session.clubId) return true;
+      } catch {}
+      return false;
     }
     if (rolle === 'dommer') {
       // Dommer-sider tillates også for alle admin-varianter, inkl. proveleder/
@@ -424,9 +438,14 @@ const FuglehundAuth = (function() {
     'dommer-hjem.html': 'dommer',  // Krever dommer-rolle
     'dommer-vk.html': 'dommer',
     'dommer-kritikk.html': 'dommer',
-    'admin.html': 'admin',         // Krever admin-rolle
+    'admin.html': 'admin',         // Krever admin-rolle (inkl. klubb-admin)
     // admin-panel.html er beskyttet med PIN via admin-lock.js, ikke rolle
-    'klubb.html': 'admin',
+    'klubb.html': null,            // Krever bare innlogging — klubb.html viser
+                                   // klubb-data offentlig; redigering er server-side
+                                   // beskyttet. Tidligere krevde 'admin' globalt,
+                                   // som låste ute brukere som var klubb-admin via
+                                   // klubb_admins-tabellen (f.eks. styremedlem) men
+                                   // ikke hadde rollen 'klubbleder' på sin profil.
     'opprett-prove.html': 'admin',
     // 'opprett-klubb.html' er IKKE beskyttet - skal være offentlig tilgjengelig for nye klubber
     'nkk-godkjenning.html': 'nkkrep'

@@ -1249,12 +1249,22 @@
                     throw new Error(loginData.error || 'Innlogging feilet');
                 }
 
-                // Lagre JWT-token
+                // Hent utvidet brukerdata FØR vi commiter token til localStorage.
+                // Hvis denne henting feiler (nettverksfeil, server hang osv.) vil
+                // bruker ellers ende opp "logget inn" uten data — de ser tomt
+                // dashboard og vet ikke hvorfor. Atomic: enten lykkes alt, eller
+                // ingenting lagres lokalt.
                 localStorage.setItem('fuglehund_token', loginData.token);
                 localStorage.setItem('fuglehund_user', JSON.stringify(loginData.bruker));
-
-                // Hent utvidet brukerdata
-                const userInfo = await getUserByPhoneAsync(phoneNumber);
+                let userInfo;
+                try {
+                    userInfo = await getUserByPhoneAsync(phoneNumber);
+                } catch (userInfoErr) {
+                    // Rull tilbake token så bruker ikke sitter i "halv-logged-in"
+                    localStorage.removeItem('fuglehund_token');
+                    localStorage.removeItem('fuglehund_user');
+                    throw new Error('Kunne ikke hente brukerdata. Sjekk nettforbindelsen og prøv igjen.');
+                }
 
                 document.getElementById('loadingOverlay').classList.add('hidden');
 

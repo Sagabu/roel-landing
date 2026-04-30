@@ -1538,8 +1538,11 @@ try {
 
 // --- Seed initial data if tables are empty ---
 function seedData() {
-  const brukerCount = db.prepare("SELECT COUNT(*) as n FROM brukere").get().n;
-  if (brukerCount > 0) return; // Already seeded
+  // Sjekker etter en av seed-brukerne (99999999) i stedet for ren count.
+  // Migrations kan ha lagt til system-brukere (f.eks. NKK_IMPORT) som ikke
+  // skal blokkere seed.
+  const seedUserExists = db.prepare("SELECT COUNT(*) as n FROM brukere WHERE telefon = '99999999'").get().n;
+  if (seedUserExists > 0) return; // Already seeded
 
   console.log("🌱 Seeding initial data...");
 
@@ -2435,10 +2438,10 @@ app.post("/api/sms/proveleder-invitasjon", async (c) => {
   let smsMessage;
   if (eksisterendeBruker) {
     // Eksisterende bruker
-    smsMessage = `Hei ${eksisterendeBruker.fornavn || navn}! Du er satt opp som prøveleder for ${proveNavn}. Logg inn på fuglehundprove.no for å administrere prøven.`;
+    smsMessage = `Hei ${eksisterendeBruker.fornavn || navn}! Du er satt opp som prøveleder for ${proveNavn}. Logg inn på fuglehundprøve.no for å administrere prøven.`;
   } else {
     // Ny bruker - send invitasjon til å registrere seg
-    smsMessage = `Hei ${navn}! Du er invitert som prøveleder for ${proveNavn}. Opprett bruker på fuglehundprove.no/opprett-bruker.html for å komme i gang.`;
+    smsMessage = `Hei ${navn}! Du er invitert som prøveleder for ${proveNavn}. Opprett bruker på fuglehundprøve.no/opprett-bruker.html for å komme i gang.`;
   }
 
   try {
@@ -2556,7 +2559,7 @@ app.post("/api/prover/:id/rolle-sms", requireProveAdmin, async (c) => {
 
   const fornavn = (navn || "").split(" ")[0] || "Hei";
   const klubbHilsen = prove.klubb_navn ? `\n\nVennlig hilsen ${prove.klubb_navn}` : '';
-  const smsMessage = `Hei ${fornavn}! Du har fått tildelt rollen som ${rolleNavn} for ${prove.navn}. Opprett bruker eller logg inn på fuglehundprove.no for å se din rolle.${klubbHilsen}`;
+  const smsMessage = `Hei ${fornavn}! Du har fått tildelt rollen som ${rolleNavn} for ${prove.navn}. Opprett bruker eller logg inn på fuglehundprøve.no for å se din rolle.${klubbHilsen}`;
 
   try {
     const smsResult = await sendSMS(cleanTelefon, smsMessage, { type: `rolle_${rolle}` });
@@ -2719,7 +2722,7 @@ app.post("/api/prover/:id/team", requireProveAdmin, async (c) => {
 
       const fornavn = (navn || "").split(" ")[0] || "Hei";
       const klubbHilsen = prove.klubb_navn ? `\n\nVennlig hilsen ${prove.klubb_navn}` : '';
-      const smsMessage = `Hei ${fornavn}! Du er lagt til som ${rolleNavn} for ${prove.navn}. ${rolle === 'admin' ? 'Du har nå admin-tilgang til prøven. ' : ''}Logg inn på fuglehundprove.no for å se din rolle.${klubbHilsen}`;
+      const smsMessage = `Hei ${fornavn}! Du er lagt til som ${rolleNavn} for ${prove.navn}. ${rolle === 'admin' ? 'Du har nå admin-tilgang til prøven. ' : ''}Logg inn på fuglehundprøve.no for å se din rolle.${klubbHilsen}`;
 
       await sendSMS(cleanTelefon, smsMessage, { type: `team_${rolle}` });
     }
@@ -5634,7 +5637,7 @@ app.post("/api/klubb-foresporsel", async (c) => {
   }[lederRolle] || lederRolle;
 
   try {
-    await sendSMS(superadminTelefon, `Ny klubbforespørsel: ${navn.trim()} (${orgnummer.replace(/\s/g, '')})\n\nSøker: ${lederNavn.trim()} (${rolleNavn})\nTlf: ${normalizedPhone}\n\nLogg inn på fuglehundprove.no/admin-panel.html for å behandle.`, { type: 'klubb_foresporsel' });
+    await sendSMS(superadminTelefon, `Ny klubbforespørsel: ${navn.trim()} (${orgnummer.replace(/\s/g, '')})\n\nSøker: ${lederNavn.trim()} (${rolleNavn})\nTlf: ${normalizedPhone}\n\nLogg inn på fuglehundprøve.no/admin-panel.html for å behandle.`, { type: 'klubb_foresporsel' });
     console.log(`📱 SMS sendt til superadmin om ny klubbforespørsel: ${navn}`);
   } catch (err) {
     console.error('Feil ved sending av SMS til superadmin:', err);
@@ -5800,7 +5803,7 @@ app.post("/api/klubb-foresporsel/:id/godkjenn", async (c) => {
   try {
     await sendSMS(
       foresporsel.leder_telefon,
-      `Gratulerer! "${foresporsel.navn}" er nå godkjent på fuglehundprove.no. Logg inn med ditt mobilnummer og passord for å administrere klubben og opprette prøver. Velkommen!`,
+      `Gratulerer! "${foresporsel.navn}" er nå godkjent på fuglehundprøve.no. Logg inn med ditt mobilnummer og passord for å administrere klubben og opprette prøver. Velkommen!`,
       { type: 'klubb_godkjent' }
     );
     console.log(`📱 SMS sendt til ${foresporsel.leder_telefon} om godkjent klubb: ${foresporsel.navn}`);
@@ -5836,7 +5839,7 @@ app.post("/api/klubb-foresporsel/:id/avslaa", async (c) => {
 
   // Send SMS til søker om avslag
   try {
-    let smsText = `Hei! Din forespørsel om å opprette "${foresporsel.navn}" på fuglehundprove.no ble dessverre ikke godkjent.`;
+    let smsText = `Hei! Din forespørsel om å opprette "${foresporsel.navn}" på fuglehundprøve.no ble dessverre ikke godkjent.`;
     if (grunn) {
       smsText += ` Begrunnelse: ${grunn}`;
     }
@@ -7670,7 +7673,7 @@ app.post("/api/prover/:id/dommer-foresporsler", requireAuth, async (c) => {
 
     // Send SMS til dommer hvis konfigurert OG bedømming er i systemet
     if (smsProvider !== 'dev' && !bedommingUtenforSystemet) {
-      const smsText = `Hei ${dommer_navn.split(' ')[0]}! Du er forespurt som dommer på ${prove.navn} (${prove.start_dato}). Logg inn på fuglehundprove.no for å svare. Mvh ${user.fornavn || 'Prøveleder'}`;
+      const smsText = `Hei ${dommer_navn.split(' ')[0]}! Du er forespurt som dommer på ${prove.navn} (${prove.start_dato}). Logg inn på fuglehundprøve.no for å svare. Mvh ${user.fornavn || 'Prøveleder'}`;
       try {
         await sendSms(dommer_telefon, smsText);
         db.prepare("INSERT INTO sms_log (retning, fra, til, type, melding) VALUES (?, ?, ?, ?, ?)").run(
@@ -12332,10 +12335,10 @@ app.post("/api/brukere/:telefon/fullmakter", async (c) => {
     let smsMessage;
     if (eksisterendeBruker) {
       // Eksisterende bruker - send enkel bekreftelse
-      smsMessage = `Hei! ${giverNavn} har gitt deg fullmakt til å stille med hunden ${body.dogName || 'deres hund'} på jaktprøver. Logg inn på fuglehundprove.no for detaljer.`;
+      smsMessage = `Hei! ${giverNavn} har gitt deg fullmakt til å stille med hunden ${body.dogName || 'deres hund'} på jaktprøver. Logg inn på fuglehundprøve.no for detaljer.`;
     } else {
       // Ny bruker - send invitasjon til å registrere seg
-      smsMessage = `Hei! ${giverNavn} har gitt deg fullmakt til å stille med hunden ${body.dogName || 'deres hund'} på jaktprøver. Opprett bruker på fuglehundprove.no/opprett-bruker.html for å se fullmakten og melde på til prøver.`;
+      smsMessage = `Hei! ${giverNavn} har gitt deg fullmakt til å stille med hunden ${body.dogName || 'deres hund'} på jaktprøver. Opprett bruker på fuglehundprøve.no/opprett-bruker.html for å se fullmakten og melde på til prøver.`;
     }
 
     // Send SMS
@@ -13842,7 +13845,7 @@ app.put("/api/kritikker/:id/returner", requireAuth, async (c) => {
   // Send SMS til dommer om returnert kritikk
   if (kritikk.dommer_telefon) {
     const kommentar = body.nkk_comment ? `\n\nKommentar: ${body.nkk_comment}` : '';
-    const melding = `Kritikken for ${kritikk.hund_navn || 'hunden'} er returnert av NKK-rep og trenger endringer.${kommentar}\n\nLogg inn på fuglehundprove.no for å oppdatere.`;
+    const melding = `Kritikken for ${kritikk.hund_navn || 'hunden'} er returnert av NKK-rep og trenger endringer.${kommentar}\n\nLogg inn på fuglehundprøve.no for å oppdatere.`;
 
     try {
       await sendSMS(kritikk.dommer_telefon, melding, { type: 'kritikk_retur' });
@@ -15142,7 +15145,7 @@ app.post("/api/meldinger/:id/svar", requireAdmin, async (c) => {
     // Send SMS-varsling til deltaker
     const smsResult = await sendSMS(
       original.fra_telefon,
-      `Du har fått svar fra prøveledelsen på din henvendelse "${original.emne}". Logg inn på fuglehundprove.no for å se svaret.`,
+      `Du har fått svar fra prøveledelsen på din henvendelse "${original.emne}". Logg inn på fuglehundprøve.no for å se svaret.`,
       { type: "melding_svar", klubb_id: null }
     );
 
@@ -15669,7 +15672,7 @@ app.post("/api/varsle-nkkrep", async (c) => {
     if (dogCount) {
       message += `${dogCount} hunder. `;
     }
-    message += `Logg inn: fuglehundprove.no/nkk-godkjenning`;
+    message += `Logg inn: fuglehundprøve.no/nkk-godkjenning`;
 
     // Legg til signatur med klubbnavn (maks 160 tegn for SMS)
     if (klubbNavn && message.length + klubbNavn.length + 10 <= 160) {
@@ -16154,7 +16157,7 @@ app.post("/api/rapport-versjoner/:prove_id/varsle-nkkrep", requireAuth, async (c
     }[rapport_type] || 'Rapport';
 
     // Send SMS
-    const melding = `Hei ${prove.nkkrep_fornavn || ''}! ${rapportNavn} for ${prove.navn} er klar for din signatur. Logg inn på fuglehundprove.no for å gjennomgå og signere.`;
+    const melding = `Hei ${prove.nkkrep_fornavn || ''}! ${rapportNavn} for ${prove.navn} er klar for din signatur. Logg inn på fuglehundprøve.no for å gjennomgå og signere.`;
 
     const smsResult = await sendSMS(prove.nkkrep_telefon, melding, { type: "rapport_signatur_varsling" });
 
@@ -16686,7 +16689,7 @@ app.post("/api/vk-bedomming/:proveId/:parti/send-inn", requireAuth, async (c) =>
       const dommerNavn = dommer ? `${dommer.fornavn} ${dommer.etternavn}` : 'Dommer';
 
       await sendSMS(prove.nkkrep_telefon,
-        `VK-bedømming fra ${dommerNavn} (parti ${parti}) er klar for godkjenning. Prøve: ${prove.navn}. Logg inn på fuglehundprove.no/nkk-godkjenning.html`,
+        `VK-bedømming fra ${dommerNavn} (parti ${parti}) er klar for godkjenning. Prøve: ${prove.navn}. Logg inn på fuglehundprøve.no/nkk-godkjenning.html`,
         { type: 'vk_godkjenning' }
       );
     }

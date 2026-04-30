@@ -36,6 +36,30 @@
         @media print {
             .no-print { display: none !important; }
         }
+        /* Tving native input-typer (date/time/number osv.) til å respektere
+           container-bredden. iOS Safari rendrer ellers disse med intrinsic
+           min-width som kan stikke utenfor seksjonen — som klippes når
+           parent har overflow-hidden. box-sizing er allerede border-box
+           globalt via Tailwind preflight, men vi setter eksplisitt for
+           sikkerhet. */
+        input, select, textarea {
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        input[type="date"],
+        input[type="time"],
+        input[type="datetime-local"] {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        /* iOS Safari rendrer native checkboxes basert på accent-color,
+           noe som kan gjøre at boksene ser ulike ut når text-{color} varierer.
+           Tvinger flex-shrink så de aldri krymper i flex-containere. */
+        input[type="checkbox"],
+        input[type="radio"] {
+            flex-shrink: 0;
+        }
         /* Partilister kolonne-template. Tailwind CDN-utility-klasser lastes
            etter denne <style>-blokken, så vi MÅ unngå å mikse Tailwind grid-
            cols-* med vår grid-template-columns — Tailwind-utility ville
@@ -52,20 +76,43 @@
             display: grid;
             gap: 0;
         }
-        /* Mobile: 5 kolonner (Rase skjult via .hidden) */
+        /* Mobile (< 768px): kort-layout per hund.
+           Bruker grid med 3 kolonner (Nr | Hund-blokk | Klasse-badge),
+           og legger Eier/Fører + Handling-knapper på rad 2 som strekker seg
+           tvers av Hund + Klasse-kolonnene.
+           - Nr (col 1, row 1, span 1)
+           - Hund (col 2, row 1)
+           - Klasse (col 3, row 1)
+           - Eier/Fører (col 2, row 2, span 2)  ← skjules på mobil hvis tom
+           - Handling (col 2, row 3, span 2)    ← knapper wrap'er fritt
+           - Rase (col 4, kun synlig md+; skjult som .hidden md:block i template)
+        */
         .partilister-row {
-            grid-template-columns: 2rem minmax(0, 14rem) minmax(0, 10rem) 2.5rem 1fr;
+            grid-template-columns: 1.75rem minmax(0, 1fr) auto;
         }
+        .partilister-row > .col-nr     { grid-column: 1; grid-row: 1; }
+        .partilister-row > .col-hund   { grid-column: 2; grid-row: 1; }
+        .partilister-row > .col-rase   { display: none; }
+        .partilister-row > .col-eier   { grid-column: 2 / -1; grid-row: 2; padding-top: 0; }
+        .partilister-row > .col-klasse { grid-column: 3; grid-row: 1; }
+        .partilister-row > .col-handl  { grid-column: 1 / -1; grid-row: 3; padding-top: 0.25rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+
         @media (min-width: 768px) {
             .partilister-row {
                 grid-template-columns:
                     2.5rem                  /* Nr */
-                    minmax(0, 18rem)        /* Hund — kappet, etter dette er det bare luft fram til Rase */
-                    3rem                    /* Rase forkortelse (ES, PB, GAR ...) */
-                    minmax(0, 14rem)        /* Eier / Fører — stacket, kappet */
-                    3rem                    /* Klasse (UK / AK / VK badge) */
-                    1fr;                    /* Handling — får resten, knapper venstrejustert */
+                    minmax(0, 18rem)        /* Hund */
+                    3rem                    /* Rase forkortelse */
+                    minmax(0, 14rem)        /* Eier / Fører */
+                    3rem                    /* Klasse */
+                    1fr;                    /* Handling */
             }
+            .partilister-row > .col-nr     { grid-column: 1; grid-row: auto; }
+            .partilister-row > .col-hund   { grid-column: 2; grid-row: auto; }
+            .partilister-row > .col-rase   { display: flex; grid-column: 3; grid-row: auto; }
+            .partilister-row > .col-eier   { grid-column: 4; grid-row: auto; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+            .partilister-row > .col-klasse { grid-column: 5; grid-row: auto; }
+            .partilister-row > .col-handl  { grid-column: 6; grid-row: auto; padding-top: 0.5rem; padding-left: 1rem; padding-right: 0.5rem; }
         }
         /* Bakgrunnsbilder for seksjoner - 80-85% opacity */
         .section-bg-landscape {
@@ -119,17 +166,18 @@
 
     <!-- Header -->
     <header class="fixed top-0 w-full bg-bark-900/60 text-white backdrop-blur-sm shadow-lg z-50">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <a href="index.html" class="flex items-center gap-2 hover:opacity-80 transition">
-                    <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-14 h-14">
-                    <span class="font-serif font-bold">Fuglehundprøver</span>
+        <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-4 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-3 min-w-0">
+                <a href="index.html" class="flex items-center gap-2 hover:opacity-80 transition min-w-0">
+                    <img src="images/logo.png" alt="Fuglehundprøve logo" class="w-10 h-10 sm:w-14 sm:h-14 shrink-0">
+                    <span class="font-serif font-bold hidden sm:inline">Fuglehundprøver</span>
                 </a>
             </div>
-            <div class="flex items-center gap-3">
-                <a href="klubb.html" class="text-bark-200 hover:text-white text-sm font-medium transition">Min klubb</a>
-                <a href="profil.html" class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
-                    Min profil
+            <div class="flex items-center gap-2 sm:gap-3">
+                <a href="klubb.html" class="text-bark-200 hover:text-white text-sm font-medium transition hidden sm:inline">Min klubb</a>
+                <a href="profil.html" class="bg-warm-500 hover:bg-warm-600 text-white px-3 sm:px-4 py-2 rounded-xl text-sm font-medium transition whitespace-nowrap">
+                    <span class="sm:hidden">Profil</span>
+                    <span class="hidden sm:inline">Min profil</span>
                 </a>
                 <a href="index.html" class="text-bark-200 hover:text-white text-sm font-medium transition">Logg ut</a>
             </div>
@@ -274,7 +322,7 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-1 lg:ml-64 p-6">
+        <main class="flex-1 lg:ml-64 p-4 sm:p-6">
             <div class="max-w-6xl mx-auto space-y-6">
 
                 <!-- Mobile Section Selector -->
@@ -309,7 +357,7 @@
                          men ikke dominerende. Send SMS er fjernet — finnes under
                          Meldinger-fanen. -->
                     <div class="flex flex-wrap gap-2">
-                        <button id="exportPdfBtn" class="border border-bark-300 hover:bg-bark-50 text-bark-700 px-3 py-1 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                        <button id="exportPdfBtn" class="border border-bark-300 hover:bg-bark-50 text-bark-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
                             </svg>
@@ -317,13 +365,13 @@
                         </button>
                         <!-- Prøve-livssyklus-knapper: synlige kun når en prøve er valgt
                              og kun for personer med per-prøve-admin (server håndhever) -->
-                        <button id="markerFullfortBtn" onclick="fullforValgtProve()" class="hidden border border-emerald-400 hover:bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                        <button id="markerFullfortBtn" onclick="fullforValgtProve()" class="hidden border border-emerald-400 hover:bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
                             Fullfør prøven
                         </button>
-                        <button id="kansellerProveBtn" onclick="kansellerValgtProve()" class="hidden border border-red-300 hover:bg-red-50 text-red-700 px-3 py-1 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
+                        <button id="kansellerProveBtn" onclick="kansellerValgtProve()" class="hidden border border-red-300 hover:bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                             </svg>
@@ -335,13 +383,13 @@
                 <!-- Oversikt / Terminliste -->
                 <section id="oversikt" class="space-y-6">
                     <!-- Terminliste -->
-                    <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-6">
-                        <div class="flex items-center justify-between mb-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-bark-100 p-4 sm:p-6">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
                             <div>
-                                <h2 class="text-xl font-bold font-serif text-bark-900">Terminliste</h2>
+                                <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900">Terminliste</h2>
                                 <p class="text-bark-500 text-sm mt-1">Klubbens planlagte og gjennomførte prøver</p>
                             </div>
-                            <button onclick="startNyProve()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
+                            <button onclick="startNyProve()" class="bg-forest-600 hover:bg-forest-700 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2 self-start sm:self-auto">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                 </svg>
@@ -349,9 +397,10 @@
                             </button>
                         </div>
 
-                        <!-- Terminliste tabell -->
+                        <!-- Terminliste tabell (desktop) / kort (mobil) -->
                         <div id="terminlisteContainer">
-                            <div class="bg-bark-50 grid grid-cols-7 gap-0 text-sm font-medium text-bark-600 rounded-t-xl">
+                            <!-- Tabell-header: kun synlig på lg+ -->
+                            <div class="hidden lg:grid bg-bark-50 grid-cols-7 gap-0 text-sm font-medium text-bark-600 rounded-t-xl">
                                 <div class="px-4 py-3">Prøve</div>
                                 <div class="px-4 py-3">Type</div>
                                 <div class="px-4 py-3">Dato</div>
@@ -361,13 +410,11 @@
                                 <div class="px-4 py-3 text-right">Handling</div>
                             </div>
                             <div id="terminlisteBody" class="divide-y divide-bark-100">
-                                <div class="grid grid-cols-7 gap-0 py-8">
-                                    <div class="col-span-7 text-center text-bark-500">
-                                        <svg class="w-12 h-12 mx-auto text-bark-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                        </svg>
-                                        Laster terminliste...
-                                    </div>
+                                <div class="text-center text-bark-500 py-8">
+                                    <svg class="w-12 h-12 mx-auto text-bark-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                    </svg>
+                                    Laster terminliste...
                                 </div>
                             </div>
                         </div>
@@ -375,110 +422,110 @@
 
                     <!-- Statistikk for valgt prøve (vises når en prøve er valgt) -->
                     <div id="valgtProveStats" class="hidden">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-semibold text-bark-800">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                            <h3 class="text-base sm:text-lg font-semibold text-bark-800">
                                 Statistikk for: <span id="valgtProveNavn" class="text-forest-700"></span>
                             </h3>
-                            <button onclick="avvalgProve()" class="text-bark-500 hover:text-bark-700 text-sm flex items-center gap-1">
+                            <button onclick="avvalgProve()" class="text-bark-500 hover:text-bark-700 text-sm flex items-center gap-1 self-start sm:self-auto">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                 </svg>
                                 Tilbake til oversikt
                             </button>
                         </div>
-                        <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div class="bg-white rounded-xl p-6 shadow-sm border border-bark-100">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-bark-500 text-sm">Totalt påmeldt</p>
-                                        <p id="statTotal" class="text-3xl font-bold text-bark-900 font-serif">0</p>
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                            <div class="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-bark-100">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="text-bark-500 text-xs sm:text-sm">Totalt påmeldt</p>
+                                        <p id="statTotal" class="text-2xl sm:text-3xl font-bold text-bark-900 font-serif">0</p>
                                     </div>
-                                    <div class="w-12 h-12 bg-warm-100 rounded-xl flex items-center justify-center">
-                                        <svg class="w-6 h-6 text-warm-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div class="w-10 h-10 sm:w-12 sm:h-12 bg-warm-100 rounded-xl flex items-center justify-center shrink-0">
+                                        <svg class="w-5 h-5 sm:w-6 sm:h-6 text-warm-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
                                         </svg>
                                     </div>
                                 </div>
-                                <p id="statTotalSub" class="text-sm text-bark-500 mt-2">Last opp deltakerliste</p>
+                                <p id="statTotalSub" class="text-xs sm:text-sm text-bark-500 mt-2">Last opp deltakerliste</p>
                             </div>
 
-                            <div class="bg-white rounded-xl p-6 shadow-sm border border-bark-100">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-bark-500 text-sm">Bekreftet</p>
-                                        <p id="statConfirmed" class="text-3xl font-bold text-green-600 font-serif">0</p>
+                            <div class="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-bark-100">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="text-bark-500 text-xs sm:text-sm">Bekreftet</p>
+                                        <p id="statConfirmed" class="text-2xl sm:text-3xl font-bold text-green-600 font-serif">0</p>
                                     </div>
-                                    <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div class="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
+                                        <svg class="w-5 h-5 sm:w-6 sm:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
                                     </div>
                                 </div>
-                                <p id="statConfirmedSub" class="text-sm text-bark-500 mt-2">–</p>
+                                <p id="statConfirmedSub" class="text-xs sm:text-sm text-bark-500 mt-2">–</p>
                             </div>
 
-                            <div class="bg-white rounded-xl p-6 shadow-sm border border-bark-100 cursor-pointer hover:border-yellow-300 transition" onclick="showSection('bekreftelser')">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-bark-500 text-sm">Venter svar</p>
-                                        <p id="statPending" class="text-3xl font-bold text-yellow-600 font-serif">0</p>
+                            <div class="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-bark-100 cursor-pointer hover:border-yellow-300 transition" onclick="showSection('bekreftelser')">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="text-bark-500 text-xs sm:text-sm">Venter svar</p>
+                                        <p id="statPending" class="text-2xl sm:text-3xl font-bold text-yellow-600 font-serif">0</p>
                                     </div>
-                                    <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                                        <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div class="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-100 rounded-xl flex items-center justify-center shrink-0">
+                                        <svg class="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
                                     </div>
                                 </div>
-                                <p class="text-sm text-bark-500 mt-2">Klikk for å se hvem</p>
+                                <p class="text-xs sm:text-sm text-bark-500 mt-2">Klikk for å se hvem</p>
                             </div>
 
-                            <div class="bg-white rounded-xl p-6 shadow-sm border border-bark-100">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-bark-500 text-sm">Venteliste</p>
-                                        <p id="statWaitlist" class="text-3xl font-bold text-earth-600 font-serif">0</p>
+                            <div class="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-bark-100">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="text-bark-500 text-xs sm:text-sm">Venteliste</p>
+                                        <p id="statWaitlist" class="text-2xl sm:text-3xl font-bold text-earth-600 font-serif">0</p>
                                     </div>
-                                    <div class="w-12 h-12 bg-earth-100 rounded-xl flex items-center justify-center">
-                                        <svg class="w-6 h-6 text-earth-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div class="w-10 h-10 sm:w-12 sm:h-12 bg-earth-100 rounded-xl flex items-center justify-center shrink-0">
+                                        <svg class="w-5 h-5 sm:w-6 sm:h-6 text-earth-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
                                         </svg>
                                     </div>
                                 </div>
-                                <p class="text-sm text-bark-500 mt-2">Klar for opprykk</p>
+                                <p class="text-xs sm:text-sm text-bark-500 mt-2">Klar for opprykk</p>
                             </div>
                         </div>
 
                         <!-- Kritikk-status (sanntid) -->
-                        <div class="mt-6 bg-gradient-to-r from-forest-50 to-warm-50 rounded-xl p-5 border border-forest-200">
-                            <div class="flex items-center justify-between mb-4">
-                                <h4 class="font-semibold text-forest-800 flex items-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div class="mt-6 bg-gradient-to-r from-forest-50 to-warm-50 rounded-xl p-4 sm:p-5 border border-forest-200">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                                <h4 class="font-semibold text-forest-800 flex items-center gap-2 text-sm sm:text-base">
+                                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                     </svg>
-                                    Kritikk-status (oppdateres automatisk)
+                                    <span>Kritikk-status <span class="hidden sm:inline">(oppdateres automatisk)</span></span>
                                 </h4>
-                                <button onclick="refreshKritikkDashboard()" class="text-sm text-forest-600 hover:text-forest-800 flex items-center gap-1">
+                                <button onclick="refreshKritikkDashboard()" class="text-sm text-forest-600 hover:text-forest-800 flex items-center gap-1 self-start sm:self-auto py-2 -my-2">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                     </svg>
                                     Oppdater
                                 </button>
                             </div>
-                            <div class="grid grid-cols-4 gap-4 text-center">
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 text-center">
                                 <div class="bg-white/80 rounded-lg p-3">
-                                    <p class="text-2xl font-bold text-bark-800" id="dashKritikkTotal">0</p>
+                                    <p class="text-xl sm:text-2xl font-bold text-bark-800" id="dashKritikkTotal">0</p>
                                     <p class="text-xs text-bark-500">Totalt</p>
                                 </div>
                                 <div class="bg-white/80 rounded-lg p-3">
-                                    <p class="text-2xl font-bold text-amber-600" id="dashKritikkVentende">0</p>
+                                    <p class="text-xl sm:text-2xl font-bold text-amber-600" id="dashKritikkVentende">0</p>
                                     <p class="text-xs text-bark-500">Venter NKK-rep</p>
                                 </div>
                                 <div class="bg-white/80 rounded-lg p-3">
-                                    <p class="text-2xl font-bold text-green-600" id="dashKritikkGodkjent">0</p>
+                                    <p class="text-xl sm:text-2xl font-bold text-green-600" id="dashKritikkGodkjent">0</p>
                                     <p class="text-xs text-bark-500">Godkjent</p>
                                 </div>
                                 <div class="bg-white/80 rounded-lg p-3">
-                                    <p class="text-2xl font-bold text-forest-600" id="dashKritikkProsent">0%</p>
+                                    <p class="text-xl sm:text-2xl font-bold text-forest-600" id="dashKritikkProsent">0%</p>
                                     <p class="text-xs text-bark-500">Fullført</p>
                                 </div>
                             </div>
@@ -492,11 +539,11 @@
 
                 <!-- File Upload Section -->
                 <section id="opplasting" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-deltakere p-6 border-b border-bark-100">
-                        <h2 class="text-xl font-bold font-serif text-bark-900 mb-2">Last opp deltakerliste</h2>
+                    <div class="section-bg-deltakere p-4 sm:p-6 border-b border-bark-100">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900 mb-2">Last opp deltakerliste</h2>
                         <p class="text-bark-600 text-sm">Last opp en fil med hundeinfo (Excel, Numbers, CSV eller tekstfil). Systemet fordeler automatisk på partier.</p>
                     </div>
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
 
                     <!-- Advarsel hvis prøvedetaljer mangler -->
                     <div id="opplastingBlockert" class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 hidden">
@@ -550,7 +597,7 @@
                         <!-- UK/AK Partier per dag - dynamisk -->
                         <div class="space-y-4 mb-4">
                             <p class="text-sm font-medium text-blue-800">UK/AK Partier per dag</p>
-                            <div id="ukakDagerContainer" class="grid grid-cols-2 gap-4">
+                            <div id="ukakDagerContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <!-- Fylles dynamisk av JavaScript -->
                             </div>
                         </div>
@@ -759,8 +806,8 @@
 
                 <!-- Confirmation Status Section -->
                 <section id="bekreftelser" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-forer px-6 py-4 border-b border-bark-100">
-                        <h2 class="text-xl font-bold font-serif text-bark-800">Bekreftelse-status</h2>
+                    <div class="section-bg-forer px-4 sm:px-6 py-4 border-b border-bark-100">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-800">Bekreftelse-status</h2>
                         <p class="text-sm text-bark-500">Oversikt over hvem som har/ikke har bekreftet deltakelse</p>
                     </div>
 
@@ -800,17 +847,17 @@
 
                     <!-- Populated state - vises etter opplasting (hidden by default) -->
                     <div id="confirmationContent" class="hidden">
-                        <div class="px-6 py-4 bg-yellow-50 border-b border-yellow-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div class="flex gap-2">
-                                <button class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-xl text-sm font-medium border border-yellow-300" id="filterAll">Alle (<span id="filterAllCount">0</span>)</button>
-                                <button class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterConfirmed">Bekreftet (<span id="filterConfirmedCount">0</span>)</button>
-                                <button class="bg-white text-bark-600 px-3 py-1 rounded-xl text-sm border border-bark-100" id="filterPending">Venter (<span id="filterPendingCount">0</span>)</button>
-                                <button class="bg-white text-red-600 px-3 py-1 rounded-xl text-sm border border-red-200" id="filterUrgent">Haster (<span id="filterUrgentCount">0</span>)</button>
+                        <div class="px-4 sm:px-6 py-4 bg-yellow-50 border-b border-yellow-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div class="flex gap-2 flex-wrap">
+                                <button class="bg-yellow-100 text-yellow-800 px-3 py-2 rounded-xl text-sm font-medium border border-yellow-300" id="filterAll">Alle (<span id="filterAllCount">0</span>)</button>
+                                <button class="bg-white text-bark-600 px-3 py-2 rounded-xl text-sm border border-bark-100" id="filterConfirmed">Bekreftet (<span id="filterConfirmedCount">0</span>)</button>
+                                <button class="bg-white text-bark-600 px-3 py-2 rounded-xl text-sm border border-bark-100" id="filterPending">Venter (<span id="filterPendingCount">0</span>)</button>
+                                <button class="bg-white text-red-600 px-3 py-2 rounded-xl text-sm border border-red-200" id="filterUrgent">Haster (<span id="filterUrgentCount">0</span>)</button>
                             </div>
                         </div>
 
                         <!-- Automatikk info box -->
-                        <div class="px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-start gap-3">
+                        <div class="px-4 sm:px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-start gap-3">
                             <svg class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
@@ -823,19 +870,20 @@
                             </div>
                         </div>
 
-                        <div class="bg-bark-100 grid grid-cols-5 md:grid-cols-7 gap-0 border-b-2 border-bark-200">
+                        <!-- Tabell-header (skjult på mobil, rendres som kort) -->
+                        <div class="bg-bark-100 hidden md:grid grid-cols-7 gap-0 border-b-2 border-bark-200">
                             <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>
-                            <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-left hidden md:block">Eier</div>
+                            <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-left">Eier</div>
                             <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-left">Fører</div>
                             <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-center">Klasse</div>
-                            <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-left hidden md:block">Parti</div>
+                            <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-left">Parti</div>
                             <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-center">Status</div>
                             <div class="px-3 py-3 text-xs font-bold text-bark-700 uppercase text-center">Handling</div>
                         </div>
                         <div id="confirmationTableBody" class="divide-y divide-bark-100">
                             <!-- Fylles dynamisk med JavaScript -->
                         </div>
-                        <div class="px-6 py-3 bg-bark-50 border-t border-bark-100 flex justify-between items-center">
+                        <div class="px-4 sm:px-6 py-3 bg-bark-50 border-t border-bark-100 flex flex-wrap gap-2 justify-between items-center">
                             <span class="text-sm text-bark-500" id="confirmationPagination">Viser 0 deltakere</span>
                             <button onclick="document.getElementById('partilister').scrollIntoView({behavior:'smooth'})" class="text-warm-800 hover:text-warm-800 text-sm font-medium">
                                 Se alle deltakere →
@@ -846,13 +894,13 @@
 
                 <!-- Vipps Betalinger -->
                 <section id="vipps" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-200">
-                        <h2 class="text-xl font-bold font-serif text-orange-800">Vipps-betaling</h2>
+                    <div class="px-4 sm:px-6 py-4 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-200">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-orange-800">Vipps-betaling</h2>
                         <p class="text-sm text-orange-600">Send betalingsforespørsler med SMS direkte til deltakere</p>
                     </div>
 
                     <!-- Vipps-modus velger -->
-                    <div class="px-6 py-4 bg-bark-50 border-b border-bark-100">
+                    <div class="px-4 sm:px-6 py-4 bg-bark-50 border-b border-bark-100">
                         <div class="flex flex-col md:flex-row md:items-center gap-4">
                             <div class="flex-1">
                                 <p class="text-sm font-medium text-bark-700 mb-2">Velg betalingsløsning:</p>
@@ -873,7 +921,7 @@
                     </div>
 
                     <!-- Vipps-nummer mangler varsel (enkel modus) -->
-                    <div id="vippsNoNumberWarning" class="hidden px-6 py-4 bg-yellow-50 border-b border-yellow-200">
+                    <div id="vippsNoNumberWarning" class="hidden px-4 sm:px-6 py-4 bg-yellow-50 border-b border-yellow-200">
                         <div class="flex items-start gap-3">
                             <svg class="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
@@ -886,7 +934,7 @@
                     </div>
 
                     <!-- Vipps API mangler varsel (api modus) -->
-                    <div id="vippsNoApiWarning" class="hidden px-6 py-4 bg-blue-50 border-b border-blue-200">
+                    <div id="vippsNoApiWarning" class="hidden px-4 sm:px-6 py-4 bg-blue-50 border-b border-blue-200">
                         <div class="flex items-start gap-3">
                             <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -904,8 +952,8 @@
                     </div>
 
                     <!-- Ny forespørsel - sammenslått flyt -->
-                    <div id="vippsNyForespørsel" class="p-6 border-b border-bark-100">
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div id="vippsNyForespørsel" class="p-4 sm:p-6 border-b border-bark-100">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <!-- Steg 1: Type og beløp -->
                             <div class="space-y-4">
                                 <h3 class="font-semibold text-bark-700 flex items-center gap-2">
@@ -1019,7 +1067,7 @@
                     </div>
 
                     <!-- Tidligere forespørsler liste -->
-                    <div id="vippsContent" class="p-6">
+                    <div id="vippsContent" class="p-4 sm:p-6">
                         <h3 class="font-semibold text-bark-700 mb-4">Sendte forespørsler</h3>
                         <div id="vippsEmptyState" class="text-center py-6">
                             <p class="text-bark-400">Ingen forespørsler sendt ennå</p>
@@ -1033,11 +1081,11 @@
 
                 <!-- Prøvedetaljer (må fylles ut først) -->
                 <section id="provedetaljer" class="hidden section-bg-setter-stand rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="px-6 py-5 border-b border-bark-100/50 flex items-center justify-between">
-                        <h2 class="text-xl font-bold font-serif text-bark-900">Prøvedetaljer</h2>
-                        <button onclick="saveTrialDetails()" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2 rounded-xl font-medium text-sm transition shadow-sm">Lagre detaljer</button>
+                    <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-bark-100/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900">Prøvedetaljer</h2>
+                        <button onclick="saveTrialDetails()" class="bg-warm-600 hover:bg-warm-700 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition shadow-sm self-start sm:self-auto">Lagre detaljer</button>
                     </div>
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
 
                     <div id="trialDetailsWarning" class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
                         <div class="flex items-start gap-3">
@@ -1162,7 +1210,7 @@
                         <h3 class="text-lg font-semibold text-bark-800 mb-4">Automatikk</h3>
                         <div class="space-y-3">
                             <label class="flex items-center gap-3 cursor-pointer p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                                <input type="checkbox" id="krevBekreftelse" onchange="oppdaterAutomatikkStatus()" class="w-5 h-5 text-blue-600 border-blue-300 rounded focus:ring-blue-500">
+                                <input type="checkbox" id="krevBekreftelse" onchange="oppdaterAutomatikkStatus()" class="w-5 h-5 text-warm-800 border-earth-300 rounded focus:ring-warm-500">
                                 <span class="text-bark-700">
                                     <strong>Deltakere må bekrefte sin påmelding</strong>
                                     <span class="text-bark-500 text-sm block">Aktiver bekreftelses-flyten. Når avslått vises ikke «Venter svar» og «Bekreftet» — påmeldinger er alltid gjeldende.</span>
@@ -1266,12 +1314,12 @@
                                     </svg>
                                     Opprop
                                 </h4>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div class="min-w-0">
                                         <label class="block text-sm font-medium text-bark-500 mb-2">Tid</label>
                                         <input type="time" id="oppropTid" value="08:00" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                     </div>
-                                    <div>
+                                    <div class="min-w-0">
                                         <label class="block text-sm font-medium text-bark-500 mb-2">Møtested</label>
                                         <input type="text" id="oppropSted" placeholder="F.eks. Lierne Fjellstue" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                     </div>
@@ -1300,12 +1348,12 @@
                                     </svg>
                                     Sekretariat
                                 </h4>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div class="min-w-0">
                                         <label class="block text-sm font-medium text-bark-500 mb-2">Åpner</label>
                                         <input type="time" id="sekretariatApner" value="07:00" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                     </div>
-                                    <div>
+                                    <div class="min-w-0">
                                         <label class="block text-sm font-medium text-bark-500 mb-2">Stenger</label>
                                         <input type="time" id="sekretariatStenger" value="19:00" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                     </div>
@@ -1577,12 +1625,12 @@
                                     </label>
                                 </div>
                                 <div id="jegermiddagFelter" class="space-y-3">
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div class="min-w-0">
                                             <label class="block text-sm font-medium text-bark-500 mb-2">Tid</label>
                                             <input type="time" id="jegermiddagTid" value="19:00" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                         </div>
-                                        <div>
+                                        <div class="min-w-0">
                                             <label class="block text-sm font-medium text-bark-500 mb-2">Pris per person</label>
                                             <input type="number" id="jegermiddagPris" value="350" placeholder="350" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                         </div>
@@ -1591,12 +1639,12 @@
                                         <label class="block text-sm font-medium text-bark-500 mb-2">Sted</label>
                                         <input type="text" id="jegermiddagSted" placeholder="F.eks. Hovedkvarteret, Setermoen" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                     </div>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div class="min-w-0">
                                             <label class="block text-sm font-medium text-bark-500 mb-2">Maks antall personer</label>
                                             <input type="number" id="jegermiddagMaks" value="100" placeholder="100" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                         </div>
-                                        <div>
+                                        <div class="min-w-0">
                                             <label class="block text-sm font-medium text-bark-500 mb-2">Påmeldingsfrist</label>
                                             <input type="date" id="jegermiddagFrist" class="w-full px-4 py-2 rounded-xl border border-bark-200 focus:ring-2 focus:ring-warm-500 focus:border-warm-500 outline-none">
                                         </div>
@@ -1651,7 +1699,7 @@
 
                     <!-- Lagre og fortsett-knapp -->
                     <div class="mt-8 pt-6 border-t border-bark-100 flex justify-end">
-                        <button onclick="saveTrialDetailsAndContinue()" class="bg-forest-600 hover:bg-forest-700 text-white px-6 py-3 rounded-xl font-medium transition flex items-center gap-2">
+                        <button onclick="saveTrialDetailsAndContinue()" class="bg-forest-600 hover:bg-forest-700 text-white w-full sm:w-auto px-6 py-3 rounded-xl font-medium transition flex items-center justify-center gap-2">
                             Lagre og fortsett
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
@@ -1664,11 +1712,11 @@
 
                 <!-- Jegermiddag Admin -->
                 <section id="jegermiddag-admin" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-5 border-b border-bark-100">
-                        <div class="flex items-center justify-between">
+                    <div class="bg-gradient-to-r from-amber-500 to-amber-600 px-4 sm:px-6 py-4 sm:py-5 border-b border-bark-100">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <div>
-                                <h2 class="text-xl font-bold font-serif text-white flex items-center gap-2">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h2 class="text-lg sm:text-xl font-bold font-serif text-white flex items-center gap-2">
+                                    <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                     </svg>
                                     Jegermiddag - Påmeldinger
@@ -1683,24 +1731,24 @@
                             </button>
                         </div>
                     </div>
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
                         <!-- Statistikk -->
-                        <div class="grid grid-cols-4 gap-4 mb-6">
-                            <div class="bg-amber-50 rounded-xl p-4 text-center">
-                                <p class="text-3xl font-bold text-amber-700" id="jegermiddagAdminAntall">0</p>
-                                <p class="text-sm text-amber-600">Påmeldinger</p>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                            <div class="bg-amber-50 rounded-xl p-3 sm:p-4 text-center">
+                                <p class="text-2xl sm:text-3xl font-bold text-amber-700" id="jegermiddagAdminAntall">0</p>
+                                <p class="text-xs sm:text-sm text-amber-600">Påmeldinger</p>
                             </div>
-                            <div class="bg-amber-50 rounded-xl p-4 text-center">
-                                <p class="text-3xl font-bold text-amber-700" id="jegermiddagAdminPersoner">0</p>
-                                <p class="text-sm text-amber-600">Personer totalt</p>
+                            <div class="bg-amber-50 rounded-xl p-3 sm:p-4 text-center">
+                                <p class="text-2xl sm:text-3xl font-bold text-amber-700" id="jegermiddagAdminPersoner">0</p>
+                                <p class="text-xs sm:text-sm text-amber-600">Personer totalt</p>
                             </div>
-                            <div class="bg-green-50 rounded-xl p-4 text-center">
-                                <p class="text-3xl font-bold text-green-600" id="jegermiddagAdminVegetar">0</p>
-                                <p class="text-sm text-green-600">Vegetar</p>
+                            <div class="bg-green-50 rounded-xl p-3 sm:p-4 text-center">
+                                <p class="text-2xl sm:text-3xl font-bold text-green-600" id="jegermiddagAdminVegetar">0</p>
+                                <p class="text-xs sm:text-sm text-green-600">Vegetar</p>
                             </div>
-                            <div class="bg-red-50 rounded-xl p-4 text-center">
-                                <p class="text-3xl font-bold text-red-600" id="jegermiddagAdminAllergi">0</p>
-                                <p class="text-sm text-red-600">Med allergi</p>
+                            <div class="bg-red-50 rounded-xl p-3 sm:p-4 text-center">
+                                <p class="text-2xl sm:text-3xl font-bold text-red-600" id="jegermiddagAdminAllergi">0</p>
+                                <p class="text-xs sm:text-sm text-red-600">Med allergi</p>
                             </div>
                         </div>
 
@@ -1714,11 +1762,11 @@
 
                 <!-- Eksporter kritikker -->
                 <section id="eksport-kritikker" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-apport px-6 py-5 border-b border-bark-100">
-                        <h2 class="text-xl font-bold font-serif text-bark-900">Eksporter kritikker</h2>
+                    <div class="section-bg-apport px-4 sm:px-6 py-4 sm:py-5 border-b border-bark-100">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900">Eksporter kritikker</h2>
                         <p class="text-bark-600 text-sm mt-1">Hent ut alle kritikker fra prøven for rapportering til FKF/NKK</p>
                     </div>
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
 
                     <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
                         <div class="flex items-start gap-3">
@@ -1884,11 +1932,11 @@
 
                 <!-- Rapporter til NKK og FKF - Prøvelederhåndbok -->
                 <section id="rapporter" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-natur px-6 py-5 border-b border-bark-100">
-                        <h2 class="text-xl font-bold font-serif text-bark-900">Rapporter til NKK og FKF</h2>
+                    <div class="section-bg-natur px-4 sm:px-6 py-4 sm:py-5 border-b border-bark-100">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900">Rapporter til NKK og FKF</h2>
                         <p class="text-bark-500 text-sm mt-1">Prøvelederhåndbok – Generer offisielle rapporter etter endt prøve</p>
                     </div>
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
 
                     <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
                         <div class="flex items-start gap-3">
@@ -1956,12 +2004,6 @@
                                 </div>
                             </div>
 
-                            <div class="flex items-center gap-3 mt-3">
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" id="provelederVaksinasjon" class="w-4 h-4 text-amber-600 rounded" checked>
-                                    <span class="text-sm text-bark-700">Vaksinasjonsattester kontrollert for alle hunder</span>
-                                </label>
-                            </div>
                         </div>
 
                         <div class="flex items-center justify-between">
@@ -2141,20 +2183,20 @@
                         <p class="text-sm text-bark-600 mb-4">
                             DVK bruker sitt eget skjema for å logge kontroller under prøven. Kontrollene blir automatisk inkludert i FKF-rapporten.
                         </p>
-                        <div class="flex gap-2">
-                            <a href="dvk-kontroll.html" class="flex-1 bg-forest-600 hover:bg-forest-700 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                        <div class="flex flex-wrap gap-2">
+                            <a href="dvk-kontroll.html" class="w-full sm:flex-1 bg-forest-600 hover:bg-forest-700 text-white px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                 </svg>
                                 Åpne DVK-skjema
                             </a>
-                            <a href="prove-arkiv.html" class="bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
+                            <a href="prove-arkiv.html" class="flex-1 sm:flex-none bg-bark-100 hover:bg-bark-200 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition flex items-center justify-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
                                 </svg>
                                 Dokumentarkiv
                             </a>
-                            <button onclick="seDVKStatus()" class="bg-white hover:bg-bark-50 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition border border-bark-200">
+                            <button onclick="seDVKStatus()" class="flex-1 sm:flex-none bg-white hover:bg-bark-50 text-bark-700 px-4 py-2.5 rounded-xl font-medium transition border border-bark-200">
                                 Se status
                             </button>
                         </div>
@@ -2311,52 +2353,43 @@
 
                     <!-- Offentlig deling — alltid øverst for enkel tilgang -->
                     <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-4">
-                        <div class="flex items-start gap-4 flex-wrap">
-                            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+                        <h3 class="font-semibold text-blue-800 mb-1">Del partilister offentlig</h3>
+                        <p class="text-sm text-blue-700 mb-3">Del denne lenken på sosiale medier for live visning av alle partier, ventelister og resultater:</p>
+                        <div class="flex gap-2 flex-wrap">
+                            <div class="w-full sm:flex-1 sm:min-w-[200px] bg-white rounded-xl border border-blue-200 px-3 py-2 text-sm text-bark-700 font-mono truncate" id="publicShareUrl">
+                                partilister.html
+                            </div>
+                            <button onclick="copyShareLink()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition flex-1 sm:flex-none justify-center">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                                 </svg>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <h3 class="font-semibold text-blue-800 mb-1">Del partilister offentlig</h3>
-                                <p class="text-sm text-blue-700 mb-3">Del denne lenken på sosiale medier for live visning av alle partier, ventelister og resultater:</p>
-                                <div class="flex gap-2 flex-wrap">
-                                    <div class="flex-1 min-w-[200px] bg-white rounded-xl border border-blue-200 px-3 py-2 text-sm text-bark-700 font-mono truncate" id="publicShareUrl">
-                                        partilister.html
-                                    </div>
-                                    <button onclick="copyShareLink()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                        </svg>
-                                        Kopier lenke
-                                    </button>
-                                    <a href="partilister.html" target="_blank" class="bg-white hover:bg-bark-50 text-bark-700 px-4 py-2 rounded-xl text-sm font-medium border border-bark-300 flex items-center gap-2 transition">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                        </svg>
-                                        Åpne
-                                    </a>
-                                </div>
-                            </div>
+                                Kopier lenke
+                            </button>
+                            <a href="partilister.html" target="_blank" class="bg-white hover:bg-bark-50 text-bark-700 px-4 py-2 rounded-xl text-sm font-medium border border-bark-300 flex items-center gap-2 transition justify-center">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                Åpne
+                            </a>
                         </div>
                     </div>
 
                     <!-- VK Deltakerliste - vises før fordeling til partier (kun innen partilister-fanen) -->
                     <div id="vkDeltakerlisteSection" class="hidden space-y-4">
                         <div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                            <div class="section-bg-hund-stand px-6 py-5 border-b border-bark-100 flex items-center justify-between flex-wrap gap-3">
+                            <div class="section-bg-hund-stand px-4 sm:px-6 py-4 sm:py-5 border-b border-bark-100 flex items-center justify-between flex-wrap gap-3">
                                 <div>
-                                    <h2 class="text-xl font-bold font-serif text-bark-900">VK Deltakerliste</h2>
+                                    <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900">VK Deltakerliste</h2>
                                     <p class="text-sm text-bark-600 mt-1">Samlet liste over VK-påmeldte. Fordeling til partier gjøres manuelt av prøveledelsen.</p>
                                 </div>
                                 <div class="flex items-center gap-3">
                                     <div class="text-right">
-                                        <div class="text-3xl font-bold text-warm-800"><span id="vkDeltakerAntall">0</span><span class="text-bark-400">/<span id="vkDeltakerMaks">0</span></span></div>
+                                        <div class="text-2xl sm:text-3xl font-bold text-warm-800"><span id="vkDeltakerAntall">0</span><span class="text-bark-400">/<span id="vkDeltakerMaks">0</span></span></div>
                                         <div class="text-xs text-bark-500">påmeldte hunder</div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="p-6 space-y-4">
+                            <div class="p-4 sm:p-6 space-y-4">
                                 <!-- Status/info-banner -->
                                 <div id="vkFordelingStatus" class="bg-amber-50 border border-amber-200 rounded-xl p-4">
                                     <div class="flex items-start gap-3">
@@ -2456,9 +2489,9 @@
                 <!-- Aversjonsbevis-oversikt -->
                 <section id="aversjonsbevis" class="hidden space-y-6">
                     <div class="bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                        <div class="section-bg-hund-stand px-6 py-4 border-b border-bark-100">
+                        <div class="section-bg-hund-stand px-4 sm:px-6 py-4 border-b border-bark-100">
                             <h3 class="font-semibold text-forest-800 font-serif flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                                 </svg>
                                 Aversjonsbevis - Deltakeroversikt
@@ -2466,24 +2499,24 @@
                             <p class="text-sm text-bark-600 mt-1">Se status på aversjonsbevis for alle deltakere. DVK bruker denne til stikkprøvekontroll.</p>
                         </div>
 
-                        <div class="p-6">
+                        <div class="p-4 sm:p-6">
                             <!-- Statistikk -->
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                                <div class="bg-bark-50 rounded-xl p-4 text-center">
-                                    <p class="text-2xl font-bold text-bark-700" id="adminAvStatTotal">-</p>
-                                    <p class="text-sm text-bark-500">Totalt deltakere</p>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                                <div class="bg-bark-50 rounded-xl p-3 sm:p-4 text-center">
+                                    <p class="text-xl sm:text-2xl font-bold text-bark-700" id="adminAvStatTotal">-</p>
+                                    <p class="text-xs sm:text-sm text-bark-500">Totalt deltakere</p>
                                 </div>
-                                <div class="bg-green-50 rounded-xl p-4 text-center">
-                                    <p class="text-2xl font-bold text-green-600" id="adminAvStatMedBevis">-</p>
-                                    <p class="text-sm text-bark-500">Med bevis</p>
+                                <div class="bg-green-50 rounded-xl p-3 sm:p-4 text-center">
+                                    <p class="text-xl sm:text-2xl font-bold text-green-600" id="adminAvStatMedBevis">-</p>
+                                    <p class="text-xs sm:text-sm text-bark-500">Med bevis</p>
                                 </div>
-                                <div class="bg-amber-50 rounded-xl p-4 text-center">
-                                    <p class="text-2xl font-bold text-amber-600" id="adminAvStatMangler">-</p>
-                                    <p class="text-sm text-bark-500">Mangler bevis</p>
+                                <div class="bg-amber-50 rounded-xl p-3 sm:p-4 text-center">
+                                    <p class="text-xl sm:text-2xl font-bold text-amber-600" id="adminAvStatMangler">-</p>
+                                    <p class="text-xs sm:text-sm text-bark-500">Mangler bevis</p>
                                 </div>
-                                <div class="bg-blue-50 rounded-xl p-4 text-center">
-                                    <p class="text-2xl font-bold text-blue-600" id="adminAvStatBekreftet">-</p>
-                                    <p class="text-sm text-bark-500">Bekreftet</p>
+                                <div class="bg-blue-50 rounded-xl p-3 sm:p-4 text-center">
+                                    <p class="text-xl sm:text-2xl font-bold text-blue-600" id="adminAvStatBekreftet">-</p>
+                                    <p class="text-xs sm:text-sm text-bark-500">Bekreftet</p>
                                 </div>
                             </div>
 
@@ -2531,7 +2564,6 @@
                                     <li>• Deltakere laster opp bevis via "Mine hunder"</li>
                                     <li>• Systemet leser automatisk av informasjon fra bildet</li>
                                     <li>• DVK kan bruke denne listen til stikkprøvekontroll</li>
-                                    <li>• Noen prøver krever bevis som er maks 2 år gammelt</li>
                                 </ul>
                             </div>
                         </div>
@@ -2540,12 +2572,12 @@
 
                 <!-- VK-trekning - sett opp semifinale/finale fra kvalifiserte hunder -->
                 <section id="vk-trekning" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-setter-stand px-6 py-4 border-b border-bark-100">
+                    <div class="section-bg-setter-stand px-4 sm:px-6 py-4 border-b border-bark-100">
                         <h3 class="font-semibold text-earth-800 font-serif">VK-trekning</h3>
                         <p class="text-sm text-bark-600">Sett opp semifinale- og finalepartier fra kvalifiserte hunder</p>
                     </div>
 
-                    <div class="p-6 space-y-6">
+                    <div class="p-4 sm:p-6 space-y-6">
                         <!-- Melding for 1-dags VK -->
                         <div id="vkTrekningIkkeAktuelt" class="hidden text-center py-8">
                             <svg class="w-12 h-12 text-vk-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2571,18 +2603,18 @@
 
                             <!-- Velg parti og kryss av -->
                             <div class="bg-white rounded-xl border border-bark-200 overflow-hidden">
-                                <div class="px-4 py-3 bg-bark-50 border-b border-bark-200 flex items-center justify-between">
+                                <div class="px-4 py-3 bg-bark-50 border-b border-bark-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <h4 class="font-semibold text-bark-800">Marker kvalifiserte hunder</h4>
-                                    <select id="manuellKvalPartiValg" onchange="loadManuellKvalParti()" class="text-sm border border-bark-200 rounded-lg px-3 py-1.5">
+                                    <select id="manuellKvalPartiValg" onchange="loadManuellKvalParti()" class="text-sm border border-bark-200 rounded-lg px-3 py-2 w-full sm:w-auto">
                                         <option value="">-- Velg parti --</option>
                                     </select>
                                 </div>
                                 <div id="manuellKvalHundeListe" class="p-4">
                                     <p class="text-center text-bark-400 py-6">Velg et parti fra listen ovenfor</p>
                                 </div>
-                                <div id="manuellKvalActions" class="hidden px-4 py-3 bg-bark-50 border-t border-bark-200 flex items-center justify-between">
+                                <div id="manuellKvalActions" class="hidden px-4 py-3 bg-bark-50 border-t border-bark-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                     <span id="manuellKvalCount" class="text-sm text-bark-600">0 av 0 valgt</span>
-                                    <button onclick="lagreManuellKvalifisering()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                                    <button onclick="lagreManuellKvalifisering()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition w-full sm:w-auto">
                                         Lagre kvalifiserte
                                     </button>
                                 </div>
@@ -2895,12 +2927,12 @@
 
                 <!-- Meldinger - kombinert send og innboks -->
                 <section id="meldinger" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-arrangor px-6 py-4 border-b border-bark-100">
-                        <h2 class="text-xl font-bold font-serif text-bark-800">Meldinger</h2>
+                    <div class="section-bg-arrangor px-4 sm:px-6 py-4 border-b border-bark-100">
+                        <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-800">Meldinger</h2>
                         <p class="text-sm text-bark-600">Send SMS til deltakere og se innkommende meldinger</p>
                     </div>
 
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
                         <!-- Send SMS seksjon -->
                         <div class="mb-8">
                             <h3 class="font-semibold text-bark-800 mb-4 flex items-center gap-2">
@@ -2957,7 +2989,7 @@
                                 <div class="mt-3 space-y-2">
                                     <button onclick="brukSmsMal('partilister')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 hover:border-warm-300 transition group">
                                         <p class="font-medium text-bark-800 text-sm group-hover:text-warm-700">📋 Partilister er klare</p>
-                                        <p class="text-xs text-bark-500 mt-1">Hei! Partilistene for {prøvenavn} er nå klare. Se hvilken plass du har fått på fuglehundprove.no. Mvh {arrangør}</p>
+                                        <p class="text-xs text-bark-500 mt-1">Hei! Partilistene for {prøvenavn} er nå klare. Se hvilken plass du har fått på fuglehundprøve.no. Mvh {arrangør}</p>
                                     </button>
                                     <button onclick="brukSmsMal('paaminnelse')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 hover:border-warm-300 transition group">
                                         <p class="font-medium text-bark-800 text-sm group-hover:text-warm-700">⏰ Påminnelse (48 timer)</p>
@@ -2965,7 +2997,7 @@
                                     </button>
                                     <button onclick="brukSmsMal('venteliste')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-warm-50 hover:border-warm-300 transition group">
                                         <p class="font-medium text-bark-800 text-sm group-hover:text-warm-700">🎉 Plass ledig fra venteliste</p>
-                                        <p class="text-xs text-bark-500 mt-1">Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprove.no. Mvh {arrangør}</p>
+                                        <p class="text-xs text-bark-500 mt-1">Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprøve.no. Mvh {arrangør}</p>
                                     </button>
                                     <button onclick="brukSmsMal('avlysning')" class="w-full text-left px-4 py-3 rounded-xl border border-bark-100 hover:bg-red-50 hover:border-red-300 transition group">
                                         <p class="font-medium text-bark-800 text-sm group-hover:text-red-700">❌ Avlysning/endring</p>
@@ -3022,13 +3054,13 @@
 
                 <!-- Budsjett/Økonomi Section -->
                 <section id="okonomi" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 border-b border-bark-100">
-                        <div class="flex items-center justify-between">
+                    <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 sm:px-6 py-4 border-b border-bark-100">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <div>
-                                <h2 class="text-xl font-bold font-serif text-white">Budsjett og Økonomi</h2>
+                                <h2 class="text-lg sm:text-xl font-bold font-serif text-white">Budsjett og Økonomi</h2>
                                 <p class="text-sm text-emerald-100">Planlegg og spor inntekter og utgifter for prøven</p>
                             </div>
-                            <div class="flex gap-2">
+                            <div class="flex gap-2 flex-wrap">
                                 <button onclick="saveOkonomiBudsjett()" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
@@ -3045,28 +3077,28 @@
                         </div>
                     </div>
 
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
                         <!-- Sammendrag -->
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                            <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+                            <div class="bg-emerald-50 rounded-xl p-3 sm:p-4 border border-emerald-200">
                                 <p class="text-xs text-emerald-600 font-medium uppercase">Budsjetterte inntekter</p>
-                                <p class="text-2xl font-bold text-emerald-700" id="okonomi_budsjettInntekter">kr 0,-</p>
+                                <p class="text-xl sm:text-2xl font-bold text-emerald-700" id="okonomi_budsjettInntekter">kr 0,-</p>
                             </div>
-                            <div class="bg-red-50 rounded-xl p-4 border border-red-200">
+                            <div class="bg-red-50 rounded-xl p-3 sm:p-4 border border-red-200">
                                 <p class="text-xs text-red-600 font-medium uppercase">Budsjetterte utgifter</p>
-                                <p class="text-2xl font-bold text-red-700" id="okonomi_budsjettUtgifter">kr 0,-</p>
+                                <p class="text-xl sm:text-2xl font-bold text-red-700" id="okonomi_budsjettUtgifter">kr 0,-</p>
                             </div>
-                            <div class="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                            <div class="bg-blue-50 rounded-xl p-3 sm:p-4 border border-blue-200">
                                 <p class="text-xs text-blue-600 font-medium uppercase">Budsjettert resultat</p>
-                                <p class="text-2xl font-bold text-blue-700" id="okonomi_budsjettResultat">kr 0,-</p>
+                                <p class="text-xl sm:text-2xl font-bold text-blue-700" id="okonomi_budsjettResultat">kr 0,-</p>
                             </div>
-                            <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                            <div class="bg-amber-50 rounded-xl p-3 sm:p-4 border border-amber-200">
                                 <p class="text-xs text-amber-600 font-medium uppercase">Faktisk resultat</p>
-                                <p class="text-2xl font-bold text-amber-700" id="okonomi_faktiskResultat">kr 0,-</p>
+                                <p class="text-xl sm:text-2xl font-bold text-amber-700" id="okonomi_faktiskResultat">kr 0,-</p>
                             </div>
                         </div>
 
-                        <div class="grid md:grid-cols-2 gap-8">
+                        <div class="grid md:grid-cols-2 gap-6 sm:gap-8">
                             <!-- INNTEKTER -->
                             <div>
                                 <h3 class="text-lg font-bold text-emerald-800 mb-4 flex items-center gap-2">
@@ -3081,19 +3113,19 @@
                                     <h4 class="font-semibold text-emerald-800 mb-3">Påmeldingsavgifter (via NKK)</h4>
                                     <p class="text-xs text-emerald-600 mb-3">Høyfjellsprøver: UK/AK kr 500, VK kr 550</p>
                                     <div class="space-y-3">
-                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                             <span class="text-sm text-bark-600">UK</span>
                                             <input type="number" id="okonomi_ukAntall" value="0" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-center" onchange="beregnOkonomi()">
                                             <span class="text-sm text-bark-500">x kr</span>
                                             <input type="number" id="okonomi_ukPris" value="500" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-right" onchange="beregnOkonomi()">
                                         </div>
-                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                             <span class="text-sm text-bark-600">AK</span>
                                             <input type="number" id="okonomi_akAntall" value="0" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-center" onchange="beregnOkonomi()">
                                             <span class="text-sm text-bark-500">x kr</span>
                                             <input type="number" id="okonomi_akPris" value="500" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-right" onchange="beregnOkonomi()">
                                         </div>
-                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                             <span class="text-sm text-bark-600">VK</span>
                                             <input type="number" id="okonomi_vkAntall" value="0" min="0" class="px-2 py-1 rounded border border-emerald-200 text-sm text-center" onchange="beregnOkonomi()">
                                             <span class="text-sm text-bark-500">x kr</span>
@@ -3112,13 +3144,13 @@
                                     <h4 class="font-semibold text-purple-800 mb-3">Semifinale/Finale (via Vipps)</h4>
                                     <p class="text-xs text-purple-600 mb-3">Betales direkte til arrangør, ikke via NKK</p>
                                     <div class="space-y-3">
-                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                             <span class="text-sm text-bark-600">Semifinale</span>
                                             <input type="number" id="okonomi_semifinaleAntall" value="0" min="0" class="px-2 py-1 rounded border border-purple-200 text-sm text-center" onchange="beregnOkonomi()">
                                             <span class="text-sm text-bark-500">x kr</span>
                                             <input type="number" id="okonomi_semifinalePris" value="300" min="0" class="px-2 py-1 rounded border border-purple-200 text-sm text-right" onchange="beregnOkonomi()">
                                         </div>
-                                        <div class="grid grid-cols-4 gap-2 items-center">
+                                        <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                             <span class="text-sm text-bark-600">Finale</span>
                                             <input type="number" id="okonomi_finaleAntall" value="0" min="0" class="px-2 py-1 rounded border border-purple-200 text-sm text-center" onchange="beregnOkonomi()">
                                             <span class="text-sm text-bark-500">x kr</span>
@@ -3134,7 +3166,7 @@
                                 <!-- Jegermiddag -->
                                 <div class="bg-amber-50 rounded-xl p-4 mb-4 border border-amber-100">
                                     <h4 class="font-semibold text-amber-800 mb-3">Jegermiddag</h4>
-                                    <div class="grid grid-cols-4 gap-2 items-center">
+                                    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                         <span class="text-sm text-bark-600">Antall</span>
                                         <input type="number" id="okonomi_jmAntall" value="0" min="0" class="px-2 py-1 rounded border border-amber-200 text-sm text-center" onchange="beregnOkonomi()">
                                         <span class="text-sm text-bark-500">x kr</span>
@@ -3154,7 +3186,7 @@
                                 <!-- Loddsalg (via Vipps) -->
                                 <div class="bg-pink-50 rounded-xl p-4 mb-4 border border-pink-100">
                                     <h4 class="font-semibold text-pink-800 mb-3">Loddsalg (via Vipps)</h4>
-                                    <div class="grid grid-cols-4 gap-2 items-center">
+                                    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                         <span class="text-sm text-bark-600">Antall lodd</span>
                                         <input type="number" id="okonomi_loddAntall" value="0" min="0" class="px-2 py-1 rounded border border-pink-200 text-sm text-center" onchange="beregnOkonomi()">
                                         <span class="text-sm text-bark-500">x kr</span>
@@ -3173,7 +3205,7 @@
                                 <!-- Parkering (via Vipps) -->
                                 <div class="bg-sky-50 rounded-xl p-4 mb-4 border border-sky-100">
                                     <h4 class="font-semibold text-sky-800 mb-3">Parkering (via Vipps)</h4>
-                                    <div class="grid grid-cols-4 gap-2 items-center">
+                                    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 items-center">
                                         <span class="text-sm text-bark-600">Antall</span>
                                         <input type="number" id="okonomi_parkeringAntall" value="0" min="0" class="px-2 py-1 rounded border border-sky-200 text-sm text-center" onchange="beregnOkonomi()">
                                         <span class="text-sm text-bark-500">x kr</span>
@@ -3341,7 +3373,7 @@
                                 </button>
                             </div>
 
-                            <div class="grid md:grid-cols-4 gap-4 mb-4">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-4">
                                 <!-- Påmeldingsavgifter fra NKK (manuell registrering) -->
                                 <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
                                     <p class="text-xs text-blue-600 font-medium">Påmeldingsavgifter fra NKK</p>
@@ -3423,12 +3455,12 @@
 
                 <!-- Team Section -->
                 <section id="team" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-dommere px-6 py-4 border-b border-bark-100 flex items-center justify-between">
+                    <div class="section-bg-dommere px-4 sm:px-6 py-4 border-b border-bark-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                            <h2 class="text-xl font-bold font-serif text-bark-900">Team og rettigheter</h2>
+                            <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-900">Team og rettigheter</h2>
                             <p class="text-sm text-bark-500">Administrer hvem som har tilgang til denne prøven</p>
                         </div>
-                        <button class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2" onclick="openAddTeamMemberModal()">
+                        <button class="bg-warm-500 hover:bg-warm-600 text-white px-4 py-2 rounded-xl font-medium transition flex items-center gap-2 self-start sm:self-auto" onclick="openAddTeamMemberModal()">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
                             </svg>
@@ -3437,7 +3469,7 @@
                     </div>
 
                     <!-- Roles explanation -->
-                    <div class="px-6 py-3 bg-blue-50 border-b border-blue-200">
+                    <div class="px-4 sm:px-6 py-3 bg-blue-50 border-b border-blue-200">
                         <div class="flex items-start gap-3">
                             <svg class="w-5 h-5 text-blue-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -3455,8 +3487,8 @@
                         </div>
                     </div>
 
-                    <!-- Tabell-header som div for full bredde -->
-                    <div class="bg-bark-50 border-b border-bark-100 grid grid-cols-6 gap-0">
+                    <!-- Tabell-header som div for full bredde (kun synlig md+, mobil bruker kort) -->
+                    <div class="bg-bark-50 border-b border-bark-100 hidden md:grid grid-cols-6 gap-0">
                         <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Navn</div>
                         <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">E-post</div>
                         <div class="py-3 px-4 text-xs font-medium text-bark-500 uppercase">Telefon</div>
@@ -3471,20 +3503,20 @@
 
                 <!-- Activity Log Section -->
                 <section id="aktivitetslogg" class="hidden bg-white rounded-xl shadow-sm border border-bark-100 overflow-hidden">
-                    <div class="section-bg-landscape px-6 py-4 border-b border-bark-100 flex items-center justify-between">
+                    <div class="section-bg-landscape px-4 sm:px-6 py-4 border-b border-bark-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                            <h2 class="text-xl font-bold font-serif text-bark-800">Aktivitetslogg</h2>
+                            <h2 class="text-lg sm:text-xl font-bold font-serif text-bark-800">Aktivitetslogg</h2>
                             <p class="text-sm text-bark-600">Alle endringer utført av teammedlemmer</p>
                         </div>
-                        <div class="flex gap-2">
-                            <select id="activityFilterType" class="px-3 py-1 rounded-xl border border-earth-300 text-sm bg-white">
+                        <div class="flex gap-2 flex-wrap">
+                            <select id="activityFilterType" class="px-3 py-2 rounded-xl border border-earth-300 text-sm bg-white flex-1 sm:flex-none">
                                 <option value="all">Alle handlinger</option>
                                 <option value="participant">Deltakere</option>
                                 <option value="party">Partilister</option>
                                 <option value="settings">Innstillinger</option>
                                 <option value="message">Meldinger</option>
                             </select>
-                            <select id="activityFilterUser" class="px-3 py-1 rounded-xl border border-earth-300 text-sm bg-white">
+                            <select id="activityFilterUser" class="px-3 py-2 rounded-xl border border-earth-300 text-sm bg-white flex-1 sm:flex-none">
                                 <option value="all">Alle brukere</option>
                                 <option value="system">System (auto)</option>
                                 <!-- Fylles dynamisk med teammedlemmer -->
@@ -7623,14 +7655,34 @@
                     actionBtn = '<button onclick="toggleConfirmation(\'' + regnrEsc + '\', true)" class="px-2 py-1 rounded-lg bg-white hover:bg-green-50 text-green-700 border border-green-300 text-xs font-medium transition shadow-sm">Bekreft</button>';
                 }
 
-                return '<div class="grid grid-cols-5 md:grid-cols-7 gap-0 ' + bgClass + ' hover:bg-warm-50 transition items-center">' +
-                    '<div class="px-3 py-3"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '-') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
-                    '<div class="px-3 py-3 text-sm text-bark-700 hidden md:block truncate">' + (dog.eier || '-') + '</div>' +
-                    '<div class="px-3 py-3 text-sm text-bark-700 truncate">' + (dog.forer || dog.eier || '-') + '</div>' +
-                    '<div class="px-3 py-3 text-center"><span class="px-2 py-0.5 rounded text-xs font-semibold border ' + klasseBadge + '">' + (dog.klasse || '-') + '</span></div>' +
-                    '<div class="px-3 py-3 text-sm text-bark-600 hidden md:block truncate">' + (dog.partyName || '-') + '</div>' +
-                    '<div class="px-3 py-3 text-center">' + statusBadge + '</div>' +
-                    '<div class="px-3 py-3 text-center">' + actionBtn + '</div>' +
+                return '<div class="' + bgClass + ' hover:bg-warm-50 transition md:grid md:grid-cols-7 md:gap-0 md:items-center p-3 md:p-0">' +
+                    // MOBIL (kort): Hund + badges på rad 1, Eier/Fører/Parti på rad 2, knapp på rad 3
+                    '<div class="md:hidden">' +
+                        '<div class="flex items-start justify-between gap-2 mb-2">' +
+                            '<div class="min-w-0 flex-1">' +
+                                '<div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '-') + '</div>' +
+                                '<div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div>' +
+                            '</div>' +
+                            '<div class="flex items-center gap-2 shrink-0">' +
+                                '<span class="px-2 py-0.5 rounded text-xs font-semibold border ' + klasseBadge + '">' + (dog.klasse || '-') + '</span>' +
+                                statusBadge +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="text-xs text-bark-600 space-y-0.5 mb-2">' +
+                            ((dog.eier && dog.eier !== '-') ? '<div class="truncate"><span class="text-bark-400">Eier:</span> ' + dog.eier + '</div>' : '') +
+                            ((dog.forer || dog.eier) ? '<div class="truncate"><span class="text-bark-400">Fører:</span> ' + (dog.forer || dog.eier || '-') + '</div>' : '') +
+                            ((dog.partyName && dog.partyName !== '-') ? '<div class="truncate"><span class="text-bark-400">Parti:</span> ' + dog.partyName + '</div>' : '') +
+                        '</div>' +
+                        '<div class="flex justify-end">' + actionBtn + '</div>' +
+                    '</div>' +
+                    // DESKTOP (md+): tabellrad-layout
+                    '<div class="hidden md:block px-3 py-3"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '-') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
+                    '<div class="hidden md:block px-3 py-3 text-sm text-bark-700 truncate">' + (dog.eier || '-') + '</div>' +
+                    '<div class="hidden md:block px-3 py-3 text-sm text-bark-700 truncate">' + (dog.forer || dog.eier || '-') + '</div>' +
+                    '<div class="hidden md:block px-3 py-3 text-center"><span class="px-2 py-0.5 rounded text-xs font-semibold border ' + klasseBadge + '">' + (dog.klasse || '-') + '</span></div>' +
+                    '<div class="hidden md:block px-3 py-3 text-sm text-bark-600 truncate">' + (dog.partyName || '-') + '</div>' +
+                    '<div class="hidden md:block px-3 py-3 text-center">' + statusBadge + '</div>' +
+                    '<div class="hidden md:block px-3 py-3 text-center">' + actionBtn + '</div>' +
                 '</div>';
             }).join('');
         }
@@ -8306,9 +8358,11 @@
             // mindre enn rad-høyden (items-stretch på raden gjør at hver celle
             // strekkes til full radhøyde).
             var eierForerCelle =
-                '<div class="px-2 py-2 min-w-0 flex flex-col justify-center">' +
-                    '<div class="text-xs text-bark-700 truncate" title="Eier: ' + (dog.eier || '').replace(/"/g, '&quot;') + '">' + (dog.eier || '–') + '</div>' +
-                    '<div class="text-xs text-bark-500 truncate" title="Fører: ' + (dog.forer || '').replace(/"/g, '&quot;') + '">' + (dog.forer || '–') + '</div>' +
+                '<div class="col-eier px-2 py-2 min-w-0 flex flex-col justify-center">' +
+                    '<div class="text-xs text-bark-700 truncate" title="Eier: ' + (dog.eier || '').replace(/"/g, '&quot;') + '">' +
+                        '<span class="md:hidden text-bark-400">Eier:</span> ' + (dog.eier || '–') + '</div>' +
+                    '<div class="text-xs text-bark-500 truncate" title="Fører: ' + (dog.forer || '').replace(/"/g, '&quot;') + '">' +
+                        '<span class="md:hidden text-bark-400">Fører:</span> ' + (dog.forer || '–') + '</div>' +
                 '</div>';
 
             // Knappene i Handling-cellen får relative+z-index så de ALDRI
@@ -8317,12 +8371,12 @@
             // dekker hele radhøyden (slik at admin treffer knappen visuelt
             // der den faktisk er).
             return '<div class="partilister-row ' + bgClass + ' hover:bg-warm-50 transition border-b border-bark-100 items-stretch" data-regnr="' + (dog.regnr || '') + '">' +
-                '<div class="py-2 text-center flex items-center justify-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
-                '<div class="pl-1 pr-2 py-2 min-w-0 flex flex-col justify-center"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
-                '<div class="py-2 text-sm text-bark-700 hidden md:flex md:items-center md:justify-center font-medium" title="' + raseFull + '">' + raseForkort + '</div>' +
+                '<div class="col-nr py-2 text-center flex items-center justify-center"><span class="inline-flex w-7 h-7 rounded-full bg-bark-100 items-center justify-center text-xs font-bold text-bark-700">' + (i + 1) + '</span></div>' +
+                '<div class="col-hund pl-1 pr-2 py-2 min-w-0 flex flex-col justify-center"><div class="font-semibold text-bark-900 text-sm truncate">' + (dog.hundenavn || '') + '</div><div class="text-xs text-bark-500 truncate">' + (dog.regnr || '') + '</div></div>' +
+                '<div class="col-rase py-2 text-sm text-bark-700 items-center justify-center font-medium" title="' + raseFull + '">' + raseForkort + '</div>' +
                 eierForerCelle +
-                '<div class="py-2 text-center flex items-center justify-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
-                '<div class="pl-4 pr-2 py-2 flex items-center justify-start gap-2 flex-wrap relative z-10">' +
+                '<div class="col-klasse py-2 text-center flex items-center justify-center"><span class="px-2 py-0.5 rounded text-xs font-bold ' + klasseClass + '">' + (dog.klasseRaw || dog.klasse || '') + '</span></div>' +
+                '<div class="col-handl py-2 flex items-center justify-start gap-2 flex-wrap relative z-10">' +
                     upBtn + downBtn +
                     '<button type="button" onclick="openMoveDialog(\'' + regnrEsc + '\', \'' + partyNameEsc + '\')" class="px-2 py-1 rounded-lg bg-white hover:bg-warm-100 text-warm-700 border border-warm-300 text-xs font-medium transition shadow-sm cursor-pointer">Flytt</button>' +
                     ikkeMottBtn +
@@ -8494,14 +8548,14 @@
                         '</div>'
                         : '') +
                 '</div>' +
-                // GRID-BASERT TABELL (strekker seg alltid 100%)
-                '<div class="bg-bark-100 partilister-row border-b-2 border-bark-200">' +
-                    '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>' +
-                    '<div class="pl-1 pr-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>' +
-                    '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center hidden md:block">Rase</div>' +
-                    '<div class="px-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Eier / Fører</div>' +
-                    '<div class="py-3 text-xs font-bold text-bark-700 uppercase text-center">Klasse</div>' +
-                    '<div class="pl-4 pr-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Handling</div>' +
+                // GRID-BASERT TABELL (strekker seg alltid 100%) — header skjules på mobil (kort-layout per hund)
+                '<div class="bg-bark-100 partilister-row border-b-2 border-bark-200 hidden md:grid">' +
+                    '<div class="col-nr py-3 text-xs font-bold text-bark-700 uppercase text-center">Nr</div>' +
+                    '<div class="col-hund pl-1 pr-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Hund</div>' +
+                    '<div class="col-rase py-3 text-xs font-bold text-bark-700 uppercase text-center">Rase</div>' +
+                    '<div class="col-eier px-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Eier / Fører</div>' +
+                    '<div class="col-klasse py-3 text-xs font-bold text-bark-700 uppercase text-center">Klasse</div>' +
+                    '<div class="col-handl pl-4 pr-2 py-3 text-xs font-bold text-bark-700 uppercase text-left">Handling</div>' +
                 '</div>' +
                 '<div>' + dogRows + '</div>' +
             '</div>';
@@ -14848,7 +14902,7 @@
             // Footer
             doc.setFontSize(8);
             doc.setTextColor(128);
-            doc.text(`Generert: ${new Date().toLocaleString('nb-NO')} | fuglehundprove.no`, 105, 285, { align: 'center' });
+            doc.text(`Generert: ${new Date().toLocaleString('nb-NO')} | fuglehundprøve.no`, 105, 285, { align: 'center' });
 
             return doc.output('arraybuffer');
         }
@@ -14926,7 +14980,7 @@
             // Footer
             doc.setFontSize(8);
             doc.setTextColor(128);
-            doc.text(`Generert: ${new Date().toLocaleString('nb-NO')} | fuglehundprove.no`, 105, 285, { align: 'center' });
+            doc.text(`Generert: ${new Date().toLocaleString('nb-NO')} | fuglehundprøve.no`, 105, 285, { align: 'center' });
 
             return doc.output('arraybuffer');
         }
@@ -16209,9 +16263,8 @@
                         document.getElementById('provelederVaer').value = referat.vaer || '';
                         document.getElementById('provelederFugl').value = referat.fugl || '';
 
-                        if (referat.vaksinasjon !== undefined) {
-                            document.getElementById('provelederVaksinasjon').checked = referat.vaksinasjon;
-                        }
+                        // provelederVaksinasjon-checkbox er fjernet — DVK håndterer
+                        // vaksinasjonskontroll på sine stikkprøver, ikke prøveleder.
 
                         if (referat.sistLagret) {
                             document.getElementById('provelederReferatLagret').textContent =
@@ -16249,7 +16302,6 @@
                 tekst: document.getElementById('provelederReferat').value,
                 vaer: document.getElementById('provelederVaer').value,
                 fugl: document.getElementById('provelederFugl').value,
-                vaksinasjon: document.getElementById('provelederVaksinasjon').checked,
                 sistLagret: new Date().toISOString(),
                 signert: false
             };
@@ -18403,7 +18455,7 @@
         }
 
         // Legg til manuell mottaker
-        // Slå opp navn fra telefonnummer (fylles automatisk hvis bruker finnes på fuglehundprove.no)
+        // Slå opp navn fra telefonnummer (fylles automatisk hvis bruker finnes på fuglehundprøve.no)
         let _vippsLookupTimer = null;
         async function vippsLookupNavn(raw) {
             const telefon = (raw || '').trim().replace(/\s/g, '');
@@ -19110,7 +19162,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         to: formatertTelefon,
-                        message: `Hei ${navn.split(' ')[0]}! Du er invitert til fuglehundprove.no. Opprett din bruker her: ${window.location.origin}/registrer.html?telefon=${encodeURIComponent(formatertTelefon)}&navn=${encodeURIComponent(navn)}`
+                        message: `Hei ${navn.split(' ')[0]}! Du er invitert til fuglehundprøve.no. Opprett din bruker her: ${window.location.origin}/registrer.html?telefon=${encodeURIComponent(formatertTelefon)}&navn=${encodeURIComponent(navn)}`
                     })
                 });
 
@@ -20218,20 +20270,16 @@
                     visTerminliste();
                 } else if (resp.status === 401) {
                     document.getElementById('terminlisteBody').innerHTML = `
-                        <div class="grid grid-cols-7 gap-0 py-8">
-                            <div class="col-span-7 text-center text-bark-500">
-                                Du må være innlogget for å se terminlisten
-                            </div>
+                        <div class="text-center text-bark-500 py-8">
+                            Du må være innlogget for å se terminlisten
                         </div>
                     `;
                 }
             } catch (err) {
                 console.error('Kunne ikke laste terminliste:', err);
                 document.getElementById('terminlisteBody').innerHTML = `
-                    <div class="grid grid-cols-7 gap-0 py-8">
-                        <div class="col-span-7 text-center text-red-500">
-                            Kunne ikke laste terminliste
-                        </div>
+                    <div class="text-center text-red-500 py-8">
+                        Kunne ikke laste terminliste
                     </div>
                 `;
             }
@@ -20243,14 +20291,12 @@
 
             if (alleProver.length === 0) {
                 container.innerHTML = `
-                    <div class="grid grid-cols-7 gap-0 py-12">
-                        <div class="col-span-7 text-center text-bark-500">
-                            <svg class="w-16 h-16 mx-auto text-bark-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                            </svg>
-                            <p class="text-lg font-medium mb-2">Ingen prøver ennå</p>
-                            <p class="text-sm text-bark-400">Klikk på "Ny prøve" for å komme i gang</p>
-                        </div>
+                    <div class="text-center text-bark-500 py-12 px-4">
+                        <svg class="w-16 h-16 mx-auto text-bark-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="text-lg font-medium mb-2">Ingen prøver ennå</p>
+                        <p class="text-sm text-bark-400">Klikk på "Ny prøve" for å komme i gang</p>
                     </div>
                 `;
                 return;
@@ -20270,19 +20316,56 @@
                 const status = getProveStatus(prove);
                 const statusBadge = getStatusBadge(status);
                 const proveTypeDisplay = getProveTypeDisplay(prove.prove_type);
+                const fullfortBadge = prove.status === 'fullfort'
+                    ? `<span class="text-emerald-700 text-xs font-medium" title="Prøven er fullført">✓ Fullført</span>`
+                    : '';
 
                 return `
-                    <div class="grid grid-cols-7 gap-0 hover:bg-bark-50 transition cursor-pointer" onclick="velgProve('${prove.id}')">
-                        <div class="px-4 py-4">
+                    <div class="lg:grid lg:grid-cols-7 lg:gap-0 hover:bg-bark-50 transition cursor-pointer p-4 lg:p-0" onclick="velgProve('${prove.id}')">
+                        <!-- Mobil: kort-layout med stablet info -->
+                        <div class="lg:hidden space-y-2">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0 flex-1">
+                                    <p class="font-semibold text-bark-900 text-base">${prove.navn || prove.name || 'Uten navn'}</p>
+                                    ${prove.klubb_navn ? `<p class="text-xs text-bark-500 mt-0.5">${prove.klubb_navn}</p>` : ''}
+                                </div>
+                                <div class="shrink-0">${statusBadge}</div>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-bark-600">
+                                <span class="inline-flex items-center gap-1">
+                                    <svg class="w-4 h-4 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                    ${datoStr}
+                                </span>
+                                ${(prove.sted || prove.location) ? `<span class="inline-flex items-center gap-1">
+                                    <svg class="w-4 h-4 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    ${prove.sted || prove.location}
+                                </span>` : ''}
+                                <span class="inline-flex items-center gap-1">
+                                    <svg class="w-4 h-4 text-bark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    ${prove.antall_pameldte || 0} påmeldt
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-between pt-1">
+                                <span class="text-xs text-bark-500">${proveTypeDisplay}</span>
+                                <div class="flex items-center gap-3">
+                                    ${fullfortBadge}
+                                    <button onclick="event.stopPropagation(); velgProve('${prove.id}')" class="text-forest-600 hover:text-forest-800 font-medium text-sm py-2 px-3 -my-2 -mr-3">
+                                        Administrer →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Desktop: tabell-layout (lg+) -->
+                        <div class="hidden lg:block px-4 py-4">
                             <p class="font-medium text-bark-900">${prove.navn || prove.name || 'Uten navn'}</p>
                             <p class="text-xs text-bark-500">${prove.klubb_navn || ''}</p>
                         </div>
-                        <div class="px-4 py-4 text-bark-700 text-sm">${proveTypeDisplay}</div>
-                        <div class="px-4 py-4 text-bark-700">${datoStr}</div>
-                        <div class="px-4 py-4 text-bark-700">${prove.sted || prove.location || '-'}</div>
-                        <div class="px-4 py-4">${statusBadge}</div>
-                        <div class="px-4 py-4 text-center text-bark-700">${prove.antall_pameldte || 0}</div>
-                        <div class="px-4 py-4 text-right">
+                        <div class="hidden lg:block px-4 py-4 text-bark-700 text-sm">${proveTypeDisplay}</div>
+                        <div class="hidden lg:block px-4 py-4 text-bark-700">${datoStr}</div>
+                        <div class="hidden lg:block px-4 py-4 text-bark-700">${prove.sted || prove.location || '-'}</div>
+                        <div class="hidden lg:block px-4 py-4">${statusBadge}</div>
+                        <div class="hidden lg:block px-4 py-4 text-center text-bark-700">${prove.antall_pameldte || 0}</div>
+                        <div class="hidden lg:block px-4 py-4 text-right">
                             <button onclick="event.stopPropagation(); velgProve('${prove.id}')" class="text-forest-600 hover:text-forest-800 font-medium text-sm">
                                 Administrer
                             </button>
@@ -21469,7 +21552,7 @@
         // SMS-maler med plassholdere
         const smsMaler = {
             partilister: {
-                tekst: 'Hei! Partilistene for {prøvenavn} er nå klare. Se hvilken plass du har fått på fuglehundprove.no. Mvh {arrangør}',
+                tekst: 'Hei! Partilistene for {prøvenavn} er nå klare. Se hvilken plass du har fått på fuglehundprøve.no. Mvh {arrangør}',
                 mottakere: 'all'
             },
             paaminnelse: {
@@ -21477,7 +21560,7 @@
                 mottakere: 'all'
             },
             venteliste: {
-                tekst: 'Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprove.no. Mvh {arrangør}',
+                tekst: 'Gratulerer! Du har fått plass på {prøvenavn}. Bekreft deltakelse snarest på fuglehundprøve.no. Mvh {arrangør}',
                 mottakere: 'waitlist'
             },
             avlysning: {

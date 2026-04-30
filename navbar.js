@@ -11,6 +11,7 @@
 
     // Sider som har egen navigasjon og ikke skal ha shared navbar
     const EXCLUDED_PAGES = [
+        'preview-mobil.html',
         'min-side.html',
         'dommer-undersokelse.html',
         'avlssok.html',

@@ -2281,12 +2281,18 @@
             const dog2TotalTime = dog2PreviousTime + tid2;
 
             const shortDogs = [];
-            // Kun advar hvis TOTAL slipptid er kort OG hunden ikke har TTG eller Avslutt
-            if (dog1TotalTime < 15 && !dog1HasTTG && !dog1IsAvslutt) {
-                shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${dog1TotalTime} min totalt`);
-            }
-            if (dog2TotalTime < 15 && !dog2HasTTG && !dog2IsAvslutt) {
-                shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${dog2TotalTime} min totalt`);
+            // Kun advar hvis TOTAL slipptid er kort OG hunden ikke har TTG eller Avslutt.
+            // Skip varselet hvis vi er i aktiv trekant-rotasjon — der er 7,5 min
+            // per slipp forventet, og kort total etter slipp 1/2 av 3 er normalt.
+            // Trekanten sikrer 15 min totalt etter alle 3 slipp er ferdig.
+            const erITrekant = _trekantState?.accepted && _trekantState?.sequence?.length > 0;
+            if (!erITrekant) {
+                if (dog1TotalTime < 15 && !dog1HasTTG && !dog1IsAvslutt) {
+                    shortDogs.push(`${dog1?.race || ''} ${dog1?.name || 'Hund 1'}: ${dog1TotalTime} min totalt`);
+                }
+                if (dog2TotalTime < 15 && !dog2HasTTG && !dog2IsAvslutt) {
+                    shortDogs.push(`${dog2?.race || ''} ${dog2?.name || 'Hund 2'}: ${dog2TotalTime} min totalt`);
+                }
             }
 
             if (shortDogs.length > 0) {

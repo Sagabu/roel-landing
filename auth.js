@@ -46,28 +46,51 @@ const FuglehundAuth = (function() {
     return (Date.now() - lastActivity) > INACTIVITY_TIMEOUT_MS;
   }
 
-  // Hent lagret brukerinfo
+  // Hent lagret brukerinfo. Verifiserer at fuglehund_user faktisk matcher
+  // telefonen i JWT-token — ellers returnerer null (forhindrer at en
+  // bruker ser en annen brukers identitet hvis localStorage er drift'et
+  // bort fra token).
   function getUser() {
+    const token = getToken();
+    if (!token) return null;
+    let tokenPhone = null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      tokenPhone = String(payload.telefon || payload.phone || payload.sub || '').replace(/\D/g, '');
+    } catch {
+      return null;
+    }
+    if (!tokenPhone) return null;
     const data = localStorage.getItem(USER_KEY);
-    return data ? JSON.parse(data) : null;
+    if (!data) return null;
+    try {
+      const user = JSON.parse(data);
+      const userPhone = String(user.telefon || user.phone || '').replace(/\D/g, '');
+      if (userPhone !== tokenPhone) {
+        // Mismatch — slett stale user-data, returner null så caller kan re-fetche
+        try { localStorage.removeItem(USER_KEY); } catch {}
+        return null;
+      }
+      return user;
+    } catch {
+      return null;
+    }
   }
 
-  // Hent telefonnummer fra alle mulige session-kilder
+  // Hent telefonnummer KUN fra JWT-token. localStorage-kilder
+  // (userSession/judgeSession/userProfile) kan ha stale data fra forrige
+  // bruker — hvis vi leser derfra kan en innlogget bruker se en annen
+  // brukers identitet. JWT er den eneste sannheten.
   function getSessionPhone() {
-    const sources = ['userSession', 'judgeSession', 'userProfile', USER_KEY];
-
-    for (const key of sources) {
-      const data = localStorage.getItem(key);
-      if (data) {
-        try {
-          const parsed = JSON.parse(data);
-          const phone = parsed.phone || parsed.telefon;
-          if (phone) {
-            return phone.replace(/\D/g, '');
-          }
-        } catch {}
-      }
-    }
+    const token = getToken();
+    if (!token) return null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      // Verifiser at token ikke er utløpt
+      if (payload.exp && Date.now() >= payload.exp * 1000) return null;
+      const phone = payload.telefon || payload.phone || payload.sub;
+      if (phone) return String(phone).replace(/\D/g, '');
+    } catch {}
     return null;
   }
 
@@ -138,9 +161,17 @@ const FuglehundAuth = (function() {
           roller.includes('sekretær') || roller.includes('sekretar')) {
         return true;
       }
+      // Sjekk klubb-admin via userSession — KUN hvis sessionens telefon
+      // matcher token-telefonen (forhindrer at stale data fra forrige bruker
+      // gir feil tilgang til ny innlogget bruker).
       try {
+        const tokenPhone = String(user.telefon || user.phone || '').replace(/\D/g, '');
         const session = JSON.parse(localStorage.getItem('userSession') || '{}');
-        if (session.isTrialAdmin === true || session.clubId) return true;
+        const sessionPhone = String(session.phone || session.telefon || '').replace(/\D/g, '');
+        if (tokenPhone && sessionPhone === tokenPhone &&
+            (session.isTrialAdmin === true || session.clubId)) {
+          return true;
+        }
       } catch {}
       return false;
     }
@@ -695,10 +726,13 @@ window.handleApiError = function(error, customMessage) {
 (function() {
   function injectAdminButton() {
     try {
-      // Sjekk om bruker har superadmin-rolle
-      const userData = JSON.parse(localStorage.getItem('fuglehund_user') || '{}');
-      const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-      const rolle = userProfile.rolle || userData.rolle || '';
+      // Sjekk om bruker har superadmin-rolle. Bruker FuglehundAuth.getUser()
+      // som verifiserer at fuglehund_user matcher JWT-tokenets telefon —
+      // forhindrer at superadmin-knapp vises basert på stale userProfile
+      // fra en forrige bruker.
+      const verifiedUser = (typeof FuglehundAuth !== 'undefined' && FuglehundAuth.getUser)
+        ? FuglehundAuth.getUser() : null;
+      const rolle = verifiedUser?.rolle || '';
       const isSuperadmin = rolle.includes('superadmin');
 
       if (!isSuperadmin) return;

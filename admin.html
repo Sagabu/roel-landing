@@ -180,33 +180,12 @@
         }
     </style>
     <script>
-        // KRITISK: monter et full-screen overlay synkront i <head> ALLTID når
-        // admin.html lastes. Overlayen ligger på topp av alt og hindrer at
-        // admin-panelets innhold vises før server-side har bekreftet tilgang.
-        // Vi stoler ikke på klient-side hasRole/localStorage som kan ha stale
-        // data eller manipuleres av brukeren. Server er sannheten.
-        (function setupAccessGate() {
-            try {
-                const overlay = document.createElement('div');
-                overlay.id = 'access-gate-overlay';
-                overlay.textContent = 'Verifiserer tilgang…';
-                if (document.body) {
-                    document.body.insertBefore(overlay, document.body.firstChild);
-                } else {
-                    new MutationObserver((_, obs) => {
-                        if (document.body) {
-                            document.body.insertBefore(overlay, document.body.firstChild);
-                            obs.disconnect();
-                        }
-                    }).observe(document.documentElement, { childList: true });
-                }
-            } catch {}
-        })();
-
         // Server-side tilgangs-sjekk: kjøres så snart vi har en gyldig token.
         // Hvis ingen tilgang → redirect uten å vise admin-innhold.
         // Hvis tilgang OK → overlayen blir liggende inntil per-prøve-IIFE
         // (eller terminliste-init) fjerner den.
+        // OBS: overlayen er nå STATISK HTML i body (linje rett under <body>),
+        // så den vises fra første frame uten race mot Tailwind-lasting.
         (async function gateAdminPage() {
             try {
                 const token = localStorage.getItem('fuglehund_token');
@@ -253,6 +232,13 @@
     </script>
 </head>
 <body class="bg-cream antialiased min-h-screen font-sans">
+    <!-- Tilgangs-gate-overlay. KRITISK: dekker hele viewport fra første
+         frame så admin-innhold ikke kan vises før server-side har bekreftet
+         tilgang. Inline styles brukes så overlayen er korrekt stylet selv
+         om Tailwind CDN ennå ikke er lastet. Fjernes via JS når server-
+         sjekken (i head) returnerer harTilgang og per-prøve-sjekken (om
+         ?trial= er satt) bekrefter spesifikk admin-tilgang. -->
+    <div id="access-gate-overlay" style="position:fixed;inset:0;background:#f7f3ee;z-index:2147483647;display:flex;align-items:center;justify-content:center;color:#6b5340;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:0.9rem;">Verifiserer tilgang…</div>
 
     <!-- Header -->
     <header class="fixed top-0 w-full bg-bark-900/60 text-white backdrop-blur-sm shadow-lg z-50">

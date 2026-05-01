@@ -36,12 +36,24 @@
         @media print {
             .no-print { display: none !important; }
         }
-        /* Skjul siden mens vi verifiserer per-prøve-tilgang. Brukere uten
-           tilgang skal ALDRI se admin-paneles innhold, selv ikke som et
-           kort glimt. Klassen settes synkront i <head>-skript nedenfor og
-           fjernes først når tilgangs-sjekken har validert (eller når det
-           ikke er noen ?trial=X-parameter i URL og siden bare viser terminliste). */
-        body.gate-pending { visibility: hidden; }
+        /* Tilgangs-gate-overlay. Dekker hele viewport mens vi verifiserer
+           per-prøve-tilgang. Brukere uten tilgang skal ALDRI se admin-paneles
+           innhold, ikke engang som et glimt mellom alert-lukking og redirect.
+           Settes synkront via inline <script> i <head> så browser maler
+           overlayen før noe annet rendres. Fjernes kun når tilgangs-sjekken
+           har validert OK. */
+        #access-gate-overlay {
+            position: fixed;
+            inset: 0;
+            background: #f7f3ee;
+            z-index: 2147483647;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6b5340;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 0.9rem;
+        }
         /* Tving native input-typer (date/time/number osv.) til å respektere
            container-bredden. iOS Safari rendrer ellers disse med intrinsic
            min-width som kan stikke utenfor seksjonen — som klippes når
@@ -168,18 +180,34 @@
         }
     </style>
     <script>
-        // KRITISK: skjul siden synkront mens vi verifiserer per-prøve-tilgang.
-        // Brukere uten tilgang skal ALDRI se admin-panelets innhold, ikke
-        // engang som et glimt mellom alert-lukking og redirect. Vi skjuler
-        // selve <html>-elementet med inline style så browser ikke rekker å
-        // male noe innhold. loadTrialData-IIFE'en fjerner stilen når enten
-        // (a) tilgang er verifisert OK, eller (b) det ikke er noen ?trial=
-        // parameter (siden viser bare terminliste — ingen sensitive data).
-        try {
-            if (new URLSearchParams(window.location.search).get('trial')) {
-                document.documentElement.style.visibility = 'hidden';
-            }
-        } catch {}
+        // KRITISK: monter et full-screen overlay synkront i <head> hvis URL
+        // har ?trial=. Overlayen ligger på topp av alt og hindrer at admin-
+        // panelets innhold vises før tilgangs-sjekken er fullført. Dette er
+        // mer robust enn visibility:hidden fordi den dekker selv hvis browser
+        // begynner å male body-innhold før IIFE'en rekker å skjule.
+        // loadTrialData-IIFE'en fjerner overlayen når tilgang er bekreftet OK.
+        (function setupAccessGate() {
+            try {
+                if (!new URLSearchParams(window.location.search).get('trial')) return;
+                // documentElement er <html> — vi kan ikke trygt gjøre body.appendChild
+                // før body finnes, men vi kan opprette elementet og sette styles.
+                // En MutationObserver venter på body og setter overlayen som
+                // første barn så snart body finnes (samme tick som body parses).
+                const overlay = document.createElement('div');
+                overlay.id = 'access-gate-overlay';
+                overlay.textContent = 'Verifiserer tilgang…';
+                if (document.body) {
+                    document.body.insertBefore(overlay, document.body.firstChild);
+                } else {
+                    new MutationObserver((_, obs) => {
+                        if (document.body) {
+                            document.body.insertBefore(overlay, document.body.firstChild);
+                            obs.disconnect();
+                        }
+                    }).observe(document.documentElement, { childList: true });
+                }
+            } catch {}
+        })();
     </script>
 </head>
 <body class="bg-cream antialiased min-h-screen font-sans">
@@ -6547,8 +6575,8 @@
                     window.location.replace('min-side.html');
                     return;
                 }
-                // Tilgang bekreftet — fjern visibility-blokken så siden vises
-                document.documentElement.style.visibility = '';
+                // Tilgang bekreftet — fjern access-gate-overlay så siden vises
+                document.getElementById('access-gate-overlay')?.remove();
 
                 // Først, prøv å hente fra localStorage
                 const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
@@ -6669,8 +6697,8 @@
             }
             // Sikkerhets-cleanup: hvis vi kom hit (ingen redirect underveis),
             // har bruker enten gyldig tilgang eller åpner siden uten trial-
-            // param. Fjern visibility-blokken så siden vises.
-            document.documentElement.style.visibility = '';
+            // param. Fjern overlay så siden vises.
+            document.getElementById('access-gate-overlay')?.remove();
         })();
 
         // ========================================

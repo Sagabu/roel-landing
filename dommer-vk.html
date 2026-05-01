@@ -3987,13 +3987,23 @@
             // gjenværende aktive hunden visuelt i stedet for å skrive et tall.
             // I aktiv trekant: hund som ikke har nådd 15 min total slipptid
             // skal IKKE rangeres ennå (vent til siste trekant-slipp).
+            // OBS: openDualPlacementModal kalles FØR saveDogData lagrer current
+            // slipp, så vi må addere input-verdien til getTotalSlipptid for
+            // riktig sum (ellers blir hund som NÅR 15 i dette slippet feilaktig
+            // filtrert ut og modalen viser bare eksisterende rangering uten
+            // plasserings-knapper).
             const erITrekantInit = _trekantState?.accepted && _trekantState?.sequence?.length > 0;
+            const dog1CurrentInit = parseFloat(document.getElementById('dog1_slipptid')?.value) || 0;
+            const dog2CurrentInit = parseFloat(document.getElementById('dog2_slipptid')?.value) || 0;
             dogsToPlaceInModal = [dog1Nr, dog2Nr].filter(nr => {
                 const plass = state.plasseringer[nr];
                 if (plass === 'avsluttet') return false;
                 if (state.tidTilGode[nr]) return false;
                 if (plass && plass !== 'avsluttet') return false; // allerede plassert
-                if (erITrekantInit && getTotalSlipptid(nr) < 15) return false;
+                if (erITrekantInit) {
+                    const currentSlipptid = nr === dog1Nr ? dog1CurrentInit : dog2CurrentInit;
+                    if ((getTotalSlipptid(nr) + currentSlipptid) < 15) return false;
+                }
                 return true;
             });
 

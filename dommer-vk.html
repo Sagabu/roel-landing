@@ -2822,6 +2822,198 @@
             return [null, null];
         }
 
+        // ⚠️ TREKANT-DETEKTOR — KRITISK FOR SLIPPTID-BALANSE
+        // Returnerer alle hunder som ennå ikke er bedømt i nåværende runde
+        // (ikke avsluttet, ikke TTG, ikke currently selected). Brukes til å
+        // fange opp situasjoner hvor dommer ellers ville ende med 1 hund
+        // alene igjen (umulig — krever 2 hunder per slipp).
+        // Når denne returnerer 3 hunder skal trekant-modal trigges.
+        // Se memory/feedback_vk_sync_flyt.md før endring.
+        function getRemainingDogsInRound() {
+            const judgedThisRound = state.judgedThisRound[state.currentRound] || [];
+            return partyList.filter(dog => {
+                const plass = state.plasseringer[dog.nr];
+                if (plass === 'avsluttet') return false;
+                if (state.tidTilGode[dog.nr]) return false;
+                if (dog.nr === state.selectedDogs[1] || dog.nr === state.selectedDogs[2]) return false;
+                if (judgedThisRound.includes(dog.nr)) return false;
+                return true;
+            });
+        }
+
+        // Trekant-state: holder rede på om dommer har akseptert eller dismisset
+        // trekant-forslaget for nåværende runde, så vi ikke spammer modal
+        // hvert eneste slipp. Når accepted=true, sequence holder rede på de
+        // 3 slippene (a vs b → a vs c → b vs c) og currentStep er hvilke
+        // som er fullført. proceedToNextPair plukker fra sekvensen.
+        let _trekantState = {
+            shownForRound: null,    // hvilken runde modal sist ble vist for
+            accepted: false,        // om dommer trykket "Bruk forslaget"
+            dismissed: false,       // om dommer trykket "Lukk" (badge vises da)
+            dogs: [],               // de 3 hundenrene i trekant-rotasjon
+            sequence: [],           // [[a,b], [a,c], [b,c]] — slipp-rekkefølge
+            currentStep: -1         // -1 = ikke startet, 0,1,2 = aktivt slipp-indeks
+        };
+
+        // Sjekk om vi skal vise trekant-modal. Kalles fra proceedToNextPair
+        // ETTER at registerSlippData har kjørt (slik at judgedThisRound er
+        // oppdatert) men FØR getNextAvailablePair plukker nytt par.
+        // Returnerer true hvis modal ble vist (caller skal stoppe normal flyt).
+        function maybeShowTrekantModal() {
+            const remaining = getRemainingDogsInRound();
+            // Sjekk også gjenværende-i-current-pair: hvis den ene hunden
+            // i nåværende slipp er ferdig-rangert og den andre ikke, må
+            // begge "selected" telles som ubedømte i den prospektive
+            // runde-resten. Forenklet: bruk getRemainingDogsInRound +
+            // any selected-but-not-judged. For trekant-trigger ved 3
+            // ubedømte (eksklusiv currently selected) er dette riktig.
+
+            // Ikke vis hvis vi allerede har vist for denne runden og dommer
+            // har valgt (akseptert eller dismisset)
+            if (_trekantState.shownForRound === state.currentRound &&
+                (_trekantState.accepted || _trekantState.dismissed)) {
+                return false;
+            }
+            // Trigger: nøyaktig 3 hunder igjen i runden
+            if (remaining.length !== 3) return false;
+
+            _trekantState.shownForRound = state.currentRound;
+            _trekantState.accepted = false;
+            _trekantState.dismissed = false;
+            _trekantState.dogs = remaining.map(d => d.nr);
+
+            renderTrekantModal();
+            document.getElementById('trekantModal')?.classList.remove('hidden');
+            return true;
+        }
+
+        function renderTrekantModal() {
+            const dogs = _trekantState.dogs.map(nr => partyList.find(d => d.nr === nr)).filter(Boolean);
+            if (dogs.length !== 3) return;
+
+            const titleEl = document.getElementById('trekantTitle');
+            if (titleEl) titleEl.textContent = `Runde ${state.currentRound}: 3 hunder igjen`;
+
+            // Beskrivelse av rotasjonen
+            const [a, b, c] = dogs;
+            const slippText = (d1, d2, idx) =>
+                `<div class="flex items-center gap-2 p-2 bg-vk-50 rounded-lg">
+                    <div class="text-xs font-bold text-vk-700 w-12">Slipp ${idx}</div>
+                    <div class="flex-1 text-sm">
+                        <span class="font-medium">${d1.nr}. ${d1.race} ${d1.name}</span>
+                        <span class="text-vk-400 mx-2">vs</span>
+                        <span class="font-medium">${d2.nr}. ${d2.race} ${d2.name}</span>
+                    </div>
+                    <div class="text-xs font-mono text-vk-600">7,5 min</div>
+                </div>`;
+
+            const listEl = document.getElementById('trekantList');
+            if (listEl) {
+                listEl.innerHTML =
+                    slippText(a, b, 1) +
+                    slippText(a, c, 2) +
+                    slippText(b, c, 3);
+            }
+        }
+
+        function trekantAccept() {
+            _trekantState.accepted = true;
+            _trekantState.dismissed = false;
+            document.getElementById('trekantModal')?.classList.add('hidden');
+            // Bygg slipp-sekvens: a vs b, a vs c, b vs c (alle får 7,5×2 = 15 min)
+            const [a, b, c] = _trekantState.dogs;
+            _trekantState.sequence = [[a, b], [a, c], [b, c]];
+            _trekantState.currentStep = 0;
+            _configureTrekantSlipp(0);
+            showTrekantBadge();
+            saveToStorage();
+        }
+
+        // Konfigurer UI for et bestemt slipp i trekant-sekvensen.
+        // Inkrementerer state.currentSlipp, setter selectedDogs, foreslår
+        // 7,5 min slipptid, tømmer øvrige input-felter, refresher UI.
+        function _configureTrekantSlipp(stepIdx) {
+            if (stepIdx < 0 || stepIdx >= _trekantState.sequence.length) return;
+            const [d1, d2] = _trekantState.sequence[stepIdx];
+            state.currentSlipp++;
+            updateSlippLabels();
+            state.selectedDogs[1] = d1;
+            state.selectedDogs[2] = d2;
+            const sel1 = document.getElementById('dog1Select');
+            const sel2 = document.getElementById('dog2Select');
+            if (sel1) sel1.value = d1;
+            if (sel2) sel2.value = d2;
+            updateDogDisplays();
+            loadSlippComment();
+            loadDogData(1);
+            loadDogData(2);
+            updatePlacementDropdowns();
+            renderPartyLists();
+            renderRankings();
+            // Tøm input-felter for nytt slipp + foreslå 7,5 min slipptid
+            [1, 2].forEach(pos => {
+                const dogNr = state.selectedDogs[pos];
+                const data = state.dogData[dogNr];
+                const slippData = data?.slipps?.[state.currentSlipp];
+                if (!slippData) {
+                    document.getElementById(`dog${pos}_fmr`).value = '';
+                    document.getElementById(`dog${pos}_fur`).value = '';
+                    document.getElementById(`dog${pos}_slat`).value = '';
+                    document.getElementById(`dog${pos}_sjanse`).value = '';
+                    document.getElementById(`dog${pos}_ts`).value = '';
+                    const harApport = hasApportGodkjent(dogNr);
+                    document.getElementById(`dog${pos}_apport`).checked = harApport;
+                    document.getElementById(`dog${pos}_slipptid`).value = '7.5';
+                }
+                updateSlipptidDisplay(pos);
+            });
+        }
+
+        // Plukk neste slipp i trekant-sekvensen. Kalles fra proceedToNextPair
+        // hvis trekant er aktiv. Returnerer true hvis det var et neste slipp
+        // (caller skal stoppe vanlig flyt).
+        function _advanceTrekantSequence() {
+            if (!_trekantState.accepted || _trekantState.sequence.length === 0) return false;
+            _trekantState.currentStep++;
+            if (_trekantState.currentStep >= _trekantState.sequence.length) {
+                // Trekant ferdig — fortsett med vanlig flyt
+                _trekantState.accepted = false;
+                _trekantState.sequence = [];
+                _trekantState.currentStep = -1;
+                removeTrekantBadge();
+                return false;
+            }
+            _configureTrekantSlipp(_trekantState.currentStep);
+            saveToStorage();
+            return true;
+        }
+
+        function trekantDismiss() {
+            _trekantState.dismissed = true;
+            _trekantState.accepted = false;
+            document.getElementById('trekantModal')?.classList.add('hidden');
+            // Vis badge så dommer ikke glemmer at det fortsatt er trekant-situasjon
+            showTrekantBadge();
+        }
+
+        function showTrekantBadge() {
+            removeTrekantBadge();
+            const remaining = getRemainingDogsInRound();
+            if (remaining.length < 1) return;
+            const banner = document.createElement('div');
+            banner.id = 'trekantBadge';
+            banner.style.cssText = 'position:fixed;top:50px;right:8px;z-index:9998;background:#7c2d12;color:white;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;max-width:240px;';
+            banner.innerHTML = '⚠️ Trekant-rotasjon aktiv<br><span style="font-weight:400;font-size:11px;opacity:0.9;">Trykk for å se forslag</span>';
+            banner.onclick = () => {
+                document.getElementById('trekantModal')?.classList.remove('hidden');
+            };
+            document.body.appendChild(banner);
+        }
+
+        function removeTrekantBadge() {
+            document.getElementById('trekantBadge')?.remove();
+        }
+
         // Gammel funksjon - nå brukes bare av saveLiveRanking for bakoverkompatibilitet
         function goToNextPair() {
             // Registrer slipp-data hvis ikke allerede gjort
@@ -2839,6 +3031,18 @@
 
         // Fortsett til neste par (kalles fra redegjørelses-modal)
         function proceedToNextPair() {
+            // ⚠️ TREKANT-SJEKK FØR vanlig par-utvalg. Tre tilfeller:
+            // 1. Vi er midt i en aktiv trekant-sekvens (slipp 2 eller 3) →
+            //    plukk neste slipp fra _trekantState.sequence
+            // 2. Tre ubedømte hunder igjen → vis trekant-modal
+            // 3. Vanlig flyt (par-utvalg) hvis ingen av disse
+            // Se memory/feedback_vk_trekant_rotasjon.md før endring.
+            if (_advanceTrekantSequence()) {
+                return; // Trekant slipp 2 eller 3 satt opp
+            }
+            if (maybeShowTrekantModal()) {
+                return; // Trekant-modal vises
+            }
             const [nextDog1, nextDog2] = getNextAvailablePair();
 
             if (nextDog1 === null && nextDog2 === null) {
@@ -5767,6 +5971,10 @@ Antall slipp: ${state.currentSlipp}
             // Øk runde-nummer
             state.currentRound++;
 
+            // Nullstill trekant-state så modal kan trigge på nytt for ny runde
+            _trekantState = { shownForRound: null, accepted: false, dismissed: false, dogs: [] };
+            removeTrekantBadge();
+
             // Nullstill tid til gode for ny runde
             state.tidTilGode = {};
 
@@ -5826,6 +6034,44 @@ Antall slipp: ${state.currentSlipp}
             saveToStorage();
         }
     </script>
+
+    <!-- ⚠️ Trekant-rotasjon Modal — vises når 3 hunder igjen i runden.
+         Forhindrer at dommer havner med 1 alene-hund (umulig å slippe alene).
+         Foreslår 7,5 min × 3 slipp så alle får 15 min i runden.
+         Se memory/feedback_vk_sync_flyt.md før endring. -->
+    <div id="trekantModal" class="hidden fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-4 border-b border-vk-300 bg-vk-700 text-white rounded-t-2xl">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <h2 id="trekantTitle" class="text-lg font-bold font-serif">3 hunder igjen i runden</h2>
+                </div>
+            </div>
+            <div class="p-4">
+                <p class="text-sm text-bark-700 mb-3">
+                    Hvis du fortsetter med par to-og-to, vil <strong>én hund stå alene</strong> til slutt
+                    (umulig å slippe alene). Foreslått trekant-rotasjon — hver hund får 15 min slipptid:
+                </p>
+                <div id="trekantList" class="space-y-2 mb-4"></div>
+                <p class="text-xs text-bark-500 mb-4">
+                    Trykk «Bruk forslaget» så starter første slipp automatisk med foreslåtte hunder
+                    og 7,5 min slipptid. Du kan justere underveis.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <button onclick="trekantAccept()"
+                        class="flex-1 bg-vk-600 hover:bg-vk-700 text-white font-semibold py-3 rounded-xl transition">
+                        Bruk forslaget
+                    </button>
+                    <button onclick="trekantDismiss()"
+                        class="bg-bark-100 hover:bg-bark-200 text-bark-700 font-medium py-3 px-4 rounded-xl transition">
+                        Lukk
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Tid til Gode Valg Modal -->
     <div id="tidTilGodeChoiceModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

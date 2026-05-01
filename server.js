@@ -16702,10 +16702,33 @@ app.delete("/api/klubber/:klubb_id/dokumenter/:id", (c) => {
 // VK-BEDØMMING API (Vinnerklasse kritikkskjema)
 // ============================================
 
-// Hent VK-bedømming for et parti
+// Hent VK-bedømming for et parti — KREVER AUTH + parti-tilknytning.
+// Inneholder dommer-notater, slipp-kommentarer og preliminære plasseringer
+// som ikke skal eksponeres offentlig. For offentlig live-rangering, bruk
+// /api/vk-rangering/:proveId/:parti (som returnerer kun selve rangerings-
+// listen, ikke bedømmings-detaljer).
 app.get("/api/vk-bedomming/:proveId/:parti", (c) => {
   try {
     const { proveId, parti } = c.req.param();
+
+    // Auth-sjekk: krever JWT, og bruker må enten være tildelt partiet
+    // (dommer/live-admin) ELLER ha admin-tilgang til prøven (proveleder,
+    // klubb-admin for eier-klubb, superadmin osv.).
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return c.json({ error: "Ingen tilgang - mangler token" }, 401);
+    }
+    const payload = verifyToken(authHeader.slice(7));
+    if (!payload) {
+      return c.json({ error: "Ugyldig eller utløpt token" }, 401);
+    }
+    const erTildelt = !!db.prepare(`
+      SELECT 1 FROM dommer_tildelinger
+      WHERE prove_id = ? AND parti = ? AND dommer_telefon = ?
+    `).get(proveId, parti, payload.telefon);
+    if (!erTildelt && !harProveAdmin(payload, proveId)) {
+      return c.json({ error: "Du har ikke tilgang til denne bedømmingen" }, 403);
+    }
 
     const bedomming = db.prepare(`
       SELECT * FROM vk_bedomming WHERE prove_id = ? AND parti = ?

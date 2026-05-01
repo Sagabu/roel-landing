@@ -1279,7 +1279,9 @@
 
             let serverData = null;
             try {
-                const response = await fetch(`/api/vk-bedomming/${proveId}/${parti}`);
+                // authFetch legger til Authorization-header automatisk —
+                // GET-endepunktet krever auth + parti-tilknytning.
+                const response = await (window.FuglehundAuth?.authFetch || fetch)(`/api/vk-bedomming/${proveId}/${parti}`);
                 if (response.ok) {
                     const result = await response.json();
                     if (result.exists && result.data) serverData = result.data;
@@ -1478,9 +1480,13 @@
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             try {
+                const _token = localStorage.getItem('fuglehund_token');
                 const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(_token ? { 'Authorization': `Bearer ${_token}` } : {})
+                    },
                     body: JSON.stringify(liveData),
                     signal: controller.signal
                 });
@@ -1643,9 +1649,13 @@
                 const ctrl = new AbortController();
                 const tid = setTimeout(() => ctrl.abort(), 10000);
                 try {
+                    const _t = localStorage.getItem('fuglehund_token');
                     const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(_t ? { 'Authorization': `Bearer ${_t}` } : {})
+                        },
                         body: JSON.stringify(liveData),
                         signal: ctrl.signal
                     });

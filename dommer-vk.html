@@ -2512,11 +2512,18 @@
                 }
             }
 
-            // Re-evaluer status etter evt. TTG-tilføyelse over
+            // Re-evaluer status etter evt. TTG-tilføyelse over.
+            // I aktiv trekant-rotasjon: kun hunder som har nådd 15 min total
+            // slipptid kan rangeres. Etter slipp 1 (7,5 min) skal ingen
+            // rangeres. Etter slipp 2 har én av hundene nådd 15 min — den
+            // kan rangeres, ikke den andre. Etter slipp 3 har alle nådd 15.
             const dog1HasTTGNow = !!state.tidTilGode[dog1Nr];
             const dog2HasTTGNow = !!state.tidTilGode[dog2Nr];
-            const dog1NeedsPlacement = !dog1Avsluttet && !dog1HasTTGNow && !dog1HasPlassering;
-            const dog2NeedsPlacement = !dog2Avsluttet && !dog2HasTTGNow && !dog2HasPlassering;
+            const erITrekantPlacement = _trekantState?.accepted && _trekantState?.sequence?.length > 0;
+            const dog1NeedsPlacement = !dog1Avsluttet && !dog1HasTTGNow && !dog1HasPlassering
+                && (!erITrekantPlacement || dog1TotalTime >= 15);
+            const dog2NeedsPlacement = !dog2Avsluttet && !dog2HasTTGNow && !dog2HasPlassering
+                && (!erITrekantPlacement || dog2TotalTime >= 15);
 
             // Vis plasserings-modal hvis MINST ÉN aktiv hund mangler plassering.
             // Modalen filtrerer selv ut avsluttede/TTG-hunder fra listen så
@@ -3969,11 +3976,15 @@
             // (de kommer tilbake med ny makker senere). Slik kan modalen åpnes
             // også når én hund er avsluttet, og brukeren plasserer kun den
             // gjenværende aktive hunden visuelt i stedet for å skrive et tall.
+            // I aktiv trekant: hund som ikke har nådd 15 min total slipptid
+            // skal IKKE rangeres ennå (vent til siste trekant-slipp).
+            const erITrekantInit = _trekantState?.accepted && _trekantState?.sequence?.length > 0;
             dogsToPlaceInModal = [dog1Nr, dog2Nr].filter(nr => {
                 const plass = state.plasseringer[nr];
                 if (plass === 'avsluttet') return false;
                 if (state.tidTilGode[nr]) return false;
                 if (plass && plass !== 'avsluttet') return false; // allerede plassert
+                if (erITrekantInit && getTotalSlipptid(nr) < 15) return false;
                 return true;
             });
 

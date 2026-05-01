@@ -1501,10 +1501,31 @@
                     }
                 } else {
                     console.warn('[dommer-vk] Sync HTTP-feil:', resp.status);
+                    _showSyncErrorBanner(resp.status);
                 }
             } catch (err) {
                 clearTimeout(timeoutId);
                 console.warn('[dommer-vk] Sync feilet:', err.message);
+            }
+        }
+
+        // Tydelig synlig feilmelding når server avviser PUT (401/403). Uten
+        // dette ser brukeren OK lokal-rangering og oppdager først at
+        // partilisten ikke er oppdatert lenge etterpå.
+        function _showSyncErrorBanner(status) {
+            let banner = document.getElementById('vkSyncErrorBanner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'vkSyncErrorBanner';
+                banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;padding:12px 16px;background:#dc2626;color:white;text-align:center;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+                document.body.insertBefore(banner, document.body.firstChild);
+            }
+            if (status === 401) {
+                banner.innerHTML = '⚠️ Du er logget ut. Endringer lagres ikke til server. <a href="min-side.html" style="color:white;text-decoration:underline;">Logg inn på nytt</a> og last siden på nytt.';
+            } else if (status === 403) {
+                banner.innerHTML = '⚠️ Du har ikke tilgang til å rangere på dette partiet. Endringer lagres ikke til server.';
+            } else {
+                banner.innerHTML = `⚠️ Sync til server feilet (HTTP ${status}). Last siden på nytt — endringer er beholdt lokalt.`;
             }
         }
 
@@ -1663,6 +1684,7 @@
                     serverSyncSuccess = resp.ok;
                     if (!resp.ok) {
                         console.warn('[dommer-vk] Server svarte ikke OK på sync:', resp.status);
+                        _showSyncErrorBanner(resp.status);
                     }
                 } catch (err) {
                     clearTimeout(tid);

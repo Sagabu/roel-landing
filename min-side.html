@@ -1095,14 +1095,24 @@
                     return;
                 }
 
-                // Vellykket innlogging - lagre JWT token
+                // Vellykket innlogging - lagre JWT token (atomisk: rull tilbake
+                // hvis brukerdata-henting feiler, så vi ikke ender med token
+                // uten matchende user-objekt)
                 localStorage.setItem('fuglehund_token', data.token);
                 localStorage.setItem('fuglehund_user', JSON.stringify(data.bruker));
                 localStorage.setItem('userProfile', JSON.stringify(data.bruker));
                 localStorage.setItem('isLoggedIn', 'true');
 
-                // Hent brukerinfo og vis dashboard
-                const userInfo = await getUserByPhoneAsync(rawPhone);
+                let userInfo;
+                try {
+                    userInfo = await getUserByPhoneAsync(rawPhone);
+                } catch (userInfoErr) {
+                    localStorage.removeItem('fuglehund_token');
+                    localStorage.removeItem('fuglehund_user');
+                    localStorage.removeItem('userProfile');
+                    localStorage.removeItem('isLoggedIn');
+                    throw new Error('Kunne ikke hente brukerdata. Sjekk nettforbindelsen og prøv igjen.');
+                }
                 currentUser = {
                     phone: rawPhone,
                     name: userInfo.name || data.bruker.fornavn + ' ' + data.bruker.etternavn,
@@ -1160,14 +1170,24 @@
                     throw new Error(data.error || 'Verifisering feilet');
                 }
 
-                // Vellykket - lagre JWT token + stopp countdown
+                // Vellykket - lagre JWT token + stopp countdown (atomisk:
+                // rull tilbake hvis brukerdata-henting feiler)
                 stopCodeCountdown();
                 localStorage.setItem('fuglehund_token', data.token);
                 localStorage.setItem('fuglehund_user', JSON.stringify(data.bruker));
                 localStorage.setItem('userProfile', JSON.stringify(data.bruker));
                 localStorage.setItem('isLoggedIn', 'true');
 
-                const userInfo = await getUserByPhoneAsync(phoneNumber);
+                let userInfo;
+                try {
+                    userInfo = await getUserByPhoneAsync(phoneNumber);
+                } catch (userInfoErr) {
+                    localStorage.removeItem('fuglehund_token');
+                    localStorage.removeItem('fuglehund_user');
+                    localStorage.removeItem('userProfile');
+                    localStorage.removeItem('isLoggedIn');
+                    throw new Error('Kunne ikke hente brukerdata. Sjekk nettforbindelsen og prøv igjen.');
+                }
                 currentUser = {
                     phone: phoneNumber,
                     name: userInfo.name || data.bruker.fornavn + ' ' + data.bruker.etternavn,

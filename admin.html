@@ -36,6 +36,12 @@
         @media print {
             .no-print { display: none !important; }
         }
+        /* Skjul siden mens vi verifiserer per-prøve-tilgang. Brukere uten
+           tilgang skal ALDRI se admin-paneles innhold, selv ikke som et
+           kort glimt. Klassen settes synkront i <head>-skript nedenfor og
+           fjernes først når tilgangs-sjekken har validert (eller når det
+           ikke er noen ?trial=X-parameter i URL og siden bare viser terminliste). */
+        body.gate-pending { visibility: hidden; }
         /* Tving native input-typer (date/time/number osv.) til å respektere
            container-bredden. iOS Safari rendrer ellers disse med intrinsic
            min-width som kan stikke utenfor seksjonen — som klippes når
@@ -161,6 +167,20 @@
             background-position: center 25%;
         }
     </style>
+    <script>
+        // KRITISK: skjul siden synkront mens vi verifiserer per-prøve-tilgang.
+        // Brukere uten tilgang skal ALDRI se admin-panelets innhold, ikke
+        // engang som et glimt mellom alert-lukking og redirect. Vi skjuler
+        // selve <html>-elementet med inline style så browser ikke rekker å
+        // male noe innhold. loadTrialData-IIFE'en fjerner stilen når enten
+        // (a) tilgang er verifisert OK, eller (b) det ikke er noen ?trial=
+        // parameter (siden viser bare terminliste — ingen sensitive data).
+        try {
+            if (new URLSearchParams(window.location.search).get('trial')) {
+                document.documentElement.style.visibility = 'hidden';
+            }
+        } catch {}
+    </script>
 </head>
 <body class="bg-cream antialiased min-h-screen font-sans">
 
@@ -6481,6 +6501,10 @@
                 // tilgang FØR vi laster prøve-data og fyller skjemaer — ellers kan
                 // brukeren se data og UI som ser ut som det fungerer (selv om
                 // server-side avviser alle mutations med 403).
+                //
+                // Body er skjult via inline visibility:hidden satt i <head>-
+                // skript over. Vi fjerner KUN hvis tilgang er bekreftet OK,
+                // ellers forblir siden skjult under alert + redirect.
                 try {
                     const tokenForGate = localStorage.getItem('fuglehund_token');
                     if (tokenForGate) {
@@ -6490,33 +6514,41 @@
                         if (tilgangResp.ok) {
                             const tilgang = await tilgangResp.json();
                             if (!tilgang.harAdminTilgang) {
+                                // Behold visibility:hidden — siden vises ALDRI
+                                // for uautoriserte brukere
+                                localStorage.removeItem('currentTrialId');
                                 alert('Du har ikke admin-tilgang til denne prøven.\n\n' +
                                       'Kun superadmin, prøveleder, eller klubb-administrator for ' +
                                       'klubben som eier prøven kan administrere den.');
-                                // Rydd lokal cache så et neste forsøk ikke gjenbruker trial-id
-                                localStorage.removeItem('currentTrialId');
-                                window.location.href = 'min-side.html';
+                                window.location.replace('min-side.html');
                                 return;
                             }
                         } else if (tilgangResp.status === 404) {
-                            alert('Prøven finnes ikke.');
                             localStorage.removeItem('currentTrialId');
-                            window.location.href = 'min-side.html';
+                            alert('Prøven finnes ikke.');
+                            window.location.replace('min-side.html');
+                            return;
+                        } else {
+                            // Annen feilstatus — vær forsiktig, redirect
+                            localStorage.removeItem('currentTrialId');
+                            alert('Kunne ikke verifisere tilgang (status ' + tilgangResp.status + ').');
+                            window.location.replace('min-side.html');
                             return;
                         }
                     } else {
-                        // Ikke innlogget — auth.js redirecter til min-side, men
-                        // som ekstra sikring rydd opp her også.
+                        // Ikke innlogget — redirect til login uten å vise siden
                         localStorage.removeItem('currentTrialId');
-                        window.location.href = 'min-side.html';
+                        window.location.replace('min-side.html');
                         return;
                     }
                 } catch (gateErr) {
                     console.error('Kunne ikke verifisere prøve-tilgang:', gateErr);
                     alert('Kunne ikke verifisere tilgang. Prøv igjen.');
-                    window.location.href = 'min-side.html';
+                    window.location.replace('min-side.html');
                     return;
                 }
+                // Tilgang bekreftet — fjern visibility-blokken så siden vises
+                document.documentElement.style.visibility = '';
 
                 // Først, prøv å hente fra localStorage
                 const trials = JSON.parse(localStorage.getItem('clubTrials') || '[]');
@@ -6635,6 +6667,10 @@
                     localStorage.setItem('currentTrialId', trialId);
                 }
             }
+            // Sikkerhets-cleanup: hvis vi kom hit (ingen redirect underveis),
+            // har bruker enten gyldig tilgang eller åpner siden uten trial-
+            // param. Fjern visibility-blokken så siden vises.
+            document.documentElement.style.visibility = '';
         })();
 
         // ========================================

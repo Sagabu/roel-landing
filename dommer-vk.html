@@ -1279,8 +1279,11 @@
 
             let serverData = null;
             try {
-                // authFetch legger til Authorization-header automatisk —
-                // GET-endepunktet krever auth + parti-tilknytning.
+                // ⚠️ MÅ ha Authorization-header. /api/vk-bedomming krever auth +
+                // parti-tilknytning (siden 2026-05-01). Hvis du fjerner authFetch
+                // her vil dommere få stille 401 og loadFromServer faller til
+                // localStorage — partilisten oppdateres aldri. Se
+                // memory/feedback_vk_sync_flyt.md før du endrer.
                 const response = await (window.FuglehundAuth?.authFetch || fetch)(`/api/vk-bedomming/${proveId}/${parti}`);
                 if (response.ok) {
                     const result = await response.json();
@@ -1480,6 +1483,11 @@
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             try {
+                // ⚠️ MÅ ha Authorization-header. PUT-en krever requireAuth på
+                // server (siden alltid). Uten denne returneres 401 og dommerens
+                // rangering lagres ikke til server — partilisten oppdateres
+                // aldri. Bruker ser OK lokal state, oppdager ikke før mye
+                // senere. Se memory/feedback_vk_sync_flyt.md før du endrer.
                 const _token = localStorage.getItem('fuglehund_token');
                 const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                     method: 'PUT',

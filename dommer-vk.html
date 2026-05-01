@@ -3554,9 +3554,8 @@
                     .filter(([nr, p]) => p !== 'avsluttet' && parseInt(nr) !== dogNr)
                     .map(([nr, p]) => ({ nr: parseInt(nr), plassNum: parseInt(p) }));
                 const valRes = validateFuglearbeidPlacement(dogNr, newPlass, otherPlacements);
-                if (!valRes.valid) {
-                    _alertFuglearbeidBrudd(dogNr, valRes.violations);
-                    // Tilbakestill dropdown til forrige verdi
+                if (!valRes.valid && !_warnFuglearbeidBrudd(dogNr, valRes.violations)) {
+                    // Dommer avbrøt — tilbakestill dropdown
                     select.value = state.plasseringer[dogNr] || '';
                     return;
                 }
@@ -4253,9 +4252,8 @@
                         .filter(([nr, p]) => p !== 'avsluttet' && parseInt(nr) !== dogNr)
                         .map(([nr, p]) => ({ nr: parseInt(nr), plassNum: parseInt(p) }));
                     const valRes = validateFuglearbeidPlacement(dogNr, newPlass, otherPlacements);
-                    if (!valRes.valid) {
-                        _alertFuglearbeidBrudd(dogNr, valRes.violations);
-                        return false; // dommer må prøve igjen
+                    if (!valRes.valid && !_warnFuglearbeidBrudd(dogNr, valRes.violations)) {
+                        return false; // dommer avbrøt — prøv igjen
                     }
                     // Skyv ned andre
                     const toShift = Object.entries(state.plasseringer)
@@ -4604,23 +4602,23 @@
         //  1) Hund uten fuglearbeid settes over eksisterende hund med fuglearbeid
         //  2) Hund uten fuglearbeid settes inn FØR pending hund med fuglearbeid
         //     (som så ville endt enda lavere på listen)
+        // Returnerer true hvis OK eller dommer bekrefter å fortsette likevel.
         function _validateLiveRankingInsert(dogNr, position) {
             const otherPlacements = liveRanking.map((nr, idx) => ({ nr, plassNum: idx + 1 }));
             const valRes = validateFuglearbeidPlacement(dogNr, position, otherPlacements);
             if (!valRes.valid) {
-                _alertFuglearbeidBrudd(dogNr, valRes.violations);
-                return false;
+                if (!_warnFuglearbeidBrudd(dogNr, valRes.violations)) return false;
+                // Dommer fortsatte — hopp over scenario 2-sjekken siden h*n
+                // allerede har akseptert konflikt-prinsippet
+                return true;
             }
-            // Scenario 2: hvis hunden vi setter inn IKKE har fuglearbeid, og
-            // det er andre pending hunder med fuglearbeid igjen, blir de
-            // tvunget under — også et brudd.
+            // Scenario 2: pending hunder med fuglearbeid
             if (!hasFuglearbeid(dogNr)) {
                 const pendingFugl = dogsToPlaceInModal.filter(nr =>
                     nr !== dogNr && hasFuglearbeid(nr)
                 );
                 if (pendingFugl.length > 0) {
-                    _alertFuglearbeidBrudd(dogNr, pendingFugl);
-                    return false;
+                    if (!_warnFuglearbeidBrudd(dogNr, pendingFugl)) return false;
                 }
             }
             return true;
@@ -5540,15 +5538,19 @@
             return { valid: false, violations: violations.map(v => v.nr) };
         }
 
-        // Vis brukervennlig alert ved fuglearbeid-violation
-        function _alertFuglearbeidBrudd(dogNr, violationNrs) {
+        // Vis varsel ved fuglearbeid-konflikt. Returnerer true hvis dommer
+        // bekrefter å fortsette likevel, false hvis hen avbryter.
+        function _warnFuglearbeidBrudd(dogNr, violationNrs) {
             const dog = partyList.find(d => d.nr === dogNr);
             const dogNavn = dog ? `${dog.race} ${dog.name}` : `Hund ${dogNr}`;
             const violationNavn = violationNrs.map(nr => {
                 const v = partyList.find(d => d.nr === nr);
                 return v ? `${v.race} ${v.name}` : `Hund ${nr}`;
             }).join(', ');
-            alert(`${dogNavn} har ikke fuglearbeid og kan ikke rangeres over ${violationNavn} (som har fuglearbeid).\n\nVelg en plassering nedenfor disse hundene.`);
+            return confirm(
+                `⚠️ ${dogNavn} har ikke fuglearbeid og rangeres over ${violationNavn} (som har fuglearbeid).\n\n` +
+                `Vil du fortsette likevel?`
+            );
         }
 
         // Sjekk om hund kvalifiserer for premie (fuglearbeid + apport)

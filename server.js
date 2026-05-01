@@ -8307,6 +8307,52 @@ app.get("/api/prover/:id", (c) => {
   });
 });
 
+// Sjekker om innlogget bruker overhodet skal kunne åpne admin.html.
+// Brukes av admin.html ved sidelast (uten ?trial=) for å vite om siden
+// skal vises eller om brukeren skal redirectes til min-side. Server er
+// sannheten — klient-side hasRole kan basere seg på stale localStorage.
+//
+// Tilgang gis hvis brukeren har:
+//   - Globalt admin/superadmin/proveleder/klubbleder/sekretær-rolle, ELLER
+//   - Minst én klubb-admin-relasjon (rad i klubb_admins-tabellen), ELLER
+//   - Er proveleder/nkkrep/nkkvara/dvk for minst én prøve (kan administrere
+//     den, så de skal kunne åpne admin.html for å nå "sine" prøver)
+app.get("/api/admin/check-access", (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ erInnlogget: false, harTilgang: false }, 200);
+  }
+  const payload = verifyToken(authHeader.slice(7));
+  if (!payload) {
+    return c.json({ erInnlogget: false, harTilgang: false }, 200);
+  }
+  const tlf = payload.telefon;
+  const erSuperadmin = hasAnyRole(payload.rolle, ["superadmin"]);
+  const harGlobalAdminRolle = hasAnyRole(payload.rolle, [
+    "admin", "superadmin", "klubbleder", "proveleder", "sekretær", "sekretar"
+  ]);
+  const klubbCount = db.prepare(`
+    SELECT COUNT(*) as n FROM klubb_admins WHERE telefon = ?
+  `).get(tlf).n;
+  const proveCount = db.prepare(`
+    SELECT COUNT(*) as n FROM prover
+    WHERE proveleder_telefon = ? OR nkkrep_telefon = ? OR nkkvara_telefon = ? OR dvk_telefon = ?
+  `).get(tlf, tlf, tlf, tlf).n;
+  const teamCount = db.prepare(`
+    SELECT COUNT(*) as n FROM prove_team WHERE telefon = ? AND rolle IN ('admin', 'sekretariat')
+  `).get(tlf).n;
+  const harTilgang = harGlobalAdminRolle || klubbCount > 0 || proveCount > 0 || teamCount > 0;
+  return c.json({
+    erInnlogget: true,
+    harTilgang,
+    erSuperadmin,
+    harGlobalAdminRolle,
+    klubbCount,
+    proveCount,
+    teamCount
+  });
+});
+
 // Innlogget brukers tilgangsnivå for en spesifikk prøve. Brukes av admin.html
 // til å bestemme om siden skal vises (full tilgang), vises i lese-modus
 // (dommer/nkkrep), eller redirecte til min-side (ingen tilgang). Returnerer

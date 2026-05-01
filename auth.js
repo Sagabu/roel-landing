@@ -469,7 +469,11 @@ const FuglehundAuth = (function() {
     'dommer-hjem.html': 'dommer',  // Krever dommer-rolle
     'dommer-vk.html': 'dommer',
     'dommer-kritikk.html': 'dommer',
-    'admin.html': 'admin',         // Krever admin-rolle (inkl. klubb-admin)
+    'admin.html': null,            // Krever bare innlogging — admin.html har
+                                   // egen server-side gate (/api/admin/check-access)
+                                   // som er sannheten. Tidligere brukte vi klient-
+                                   // side hasRole('admin') her, men det kunne gi
+                                   // inkonsistent tilgang basert på stale localStorage.
     // admin-panel.html er beskyttet med PIN via admin-lock.js, ikke rolle
     'klubb.html': null,            // Krever bare innlogging — klubb.html viser
                                    // klubb-data offentlig; redigering er server-side

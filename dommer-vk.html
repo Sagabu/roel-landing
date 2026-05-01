@@ -1319,6 +1319,9 @@
                 state.slippRankings = serverData.slipp_rankings || {};
                 state.vkType = serverData.vk_type || '1dag';
                 state.premietildelinger = serverData.premietildelinger || {};
+                // Plan-state (_trekantState) er dommer-privat og ligger ikke på
+                // server — restore fra localStorage så plan overlever refresh.
+                _restoreTrekantStateFromLocalStorage();
                 // Oppdater localStorage med ferske server-data så reload uten
                 // dekning også viser dem.
                 _saveLocalState(true);
@@ -1331,6 +1334,39 @@
 
             _updateOfflineBanner();
             document.getElementById('currentSlipp').textContent = state.currentSlipp;
+        }
+
+        // Restorer plan-state fra parsed localStorage-objekt.
+        // Avviser hvis lagret state tilhører annet prove/parti — beskytter mot
+        // cross-parti-leak siden localStorage-key er delt.
+        function _restoreTrekantStateFromParsed(parsed) {
+            const ts = parsed?._trekantState;
+            if (!ts) return;
+            if (ts._proveId && ts._proveId !== proveId) return;
+            if (ts._parti && ts._parti !== parti) return;
+            _trekantState = {
+                shownForRound: ts.shownForRound ?? null,
+                accepted: !!ts.accepted,
+                dismissed: !!ts.dismissed,
+                sequence: Array.isArray(ts.sequence) ? ts.sequence : [],
+                currentStep: ts.currentStep ?? -1,
+                planType: ts.planType ?? null,
+                aleneNr: ts.aleneNr ?? null
+            };
+            // Re-vis badge hvis plan er aktiv eller ligger og venter
+            if (_trekantState.sequence.length > 0 && (_trekantState.accepted || _trekantState.dismissed)) {
+                setTimeout(() => showTrekantBadge(), 0);
+            }
+        }
+
+        // Hjelper for loadFromServer-stien (server overstyrer state, men plan-
+        // state er per-dommer og må hentes fra localStorage)
+        function _restoreTrekantStateFromLocalStorage() {
+            try {
+                const raw = localStorage.getItem('dommertest_vk_dual');
+                if (!raw) return;
+                _restoreTrekantStateFromParsed(JSON.parse(raw));
+            } catch (e) { /* ignore */ }
         }
 
         // Fallback til localStorage for demo-modus
@@ -1356,6 +1392,7 @@
                     state.premietildelinger = parsed.premietildelinger || {};
                     state.kvalifisertTilFinale = parsed.kvalifisertTilFinale || {};
                     state.judgingFinished = parsed.judgingFinished || false;
+                    _restoreTrekantStateFromParsed(parsed);
                 } catch (e) {
                     console.error('Failed to load:', e);
                 }
@@ -1397,6 +1434,12 @@
                 premietildelinger: state.premietildelinger,
                 kvalifisertTilFinale: state.kvalifisertTilFinale,
                 judgingFinished: state.judgingFinished,
+                // Persistere plan-state så trekant/blandet/frivillig-sekvens
+                // overlever hard refresh midt i rotasjon. Uten dette mister
+                // dommer "Kort slipptid"-skip og kan ende med hund alene.
+                // Tagg med proveId+parti så restore ikke lekker mellom partier
+                // (localStorage-key er delt — pre-eksisterende design).
+                _trekantState: { ..._trekantState, _proveId: proveId, _parti: parti },
                 _pendingSync: syncSuccess === false,
                 _savedAt: Date.now()
             };
@@ -1872,7 +1915,7 @@
             if (proveId && proveId !== 'demo') {
                 try {
                     const token = localStorage.getItem('fuglehund_token');
-                    await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
+                    const resp = await fetch(`/api/vk-bedomming/${proveId}/${parti}`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1901,8 +1944,16 @@
                             live_modus: liveModus ? 1 : 0
                         })
                     });
+                    if (!resp.ok) {
+                        // Reset er destruktiv — hvis PUT feiler ser dommer en
+                        // tom skjerm lokalt mens server fortsatt har gammel
+                        // data. Vis sync-feil-banner så det ikke går silent.
+                        console.warn('Reset: server-PUT svarte ikke OK', resp.status);
+                        _showSyncErrorBanner(resp.status);
+                    }
                 } catch (e) {
                     console.warn('Reset: eksplisitt server-PUT feilet', e);
+                    _showSyncErrorBanner(0);
                 }
             }
         }
@@ -1967,6 +2018,10 @@
         function loadDogData(position) {
             const dogNr = state.selectedDogs[position];
             const data = state.dogData[dogNr];
+            // erFreshSlipp: dette slippet er aldri lagret (saveDogData har ikke
+            // kjørt). Brukes så fuglebehandlings-fallback ikke maskerer en
+            // bevisst tom verdi som dommer har slettet i et lagret slipp.
+            const erFreshSlipp = !data?.slipps?.[state.currentSlipp];
             const slippData = data?.slipps?.[state.currentSlipp] || {};
 
             document.getElementById(`dog${position}_fmr`).value = slippData.fmr ?? '';
@@ -1997,10 +2052,17 @@
                 reisCheckbox.checked = slippData.godkjentReis || harReisFraTidligere;
             }
 
-            // Reising karakter (per slipp)
+            // Reising karakter (per slipp, men faller tilbake på nyeste verdi
+            // fra tidligere slipp så fuglebehandlingen "henger med hunden").
+            // Fallback brukes KUN for fresh slipp — i lagrede slipp respekterer
+            // vi dommer-valgt null (eksplisitt nullstilling).
             const reisingInput = document.getElementById(`dog${position}_reising`);
             if (reisingInput) {
-                reisingInput.value = slippData.reising ?? '';
+                reisingInput.value = (erFreshSlipp ? getNyesteSlippVerdi(dogNr, 'reising') : slippData.reising) ?? '';
+            }
+            const presisjonInput = document.getElementById(`dog${position}_presisjon`);
+            if (presisjonInput) {
+                presisjonInput.value = (erFreshSlipp ? getNyesteSlippVerdi(dogNr, 'presisjon') : slippData.presisjon) ?? '';
             }
 
             // Stand med/uten makker (per slipp)
@@ -2039,6 +2101,23 @@
             return Object.values(data.slipps).some(slipp => slipp.godkjentReis === true);
         }
 
+        // Hent nyeste ikke-tomme verdi for et felt på tvers av tidligere slipp.
+        // Brukes for fuglebehandlings-felter (presisjon, reising) så de henger
+        // med hunden inn i nye slipp/runder uten å maskere data fra current slipp.
+        function getNyesteSlippVerdi(dogNr, felt) {
+            const data = state.dogData[dogNr];
+            if (!data || !data.slipps) return null;
+            const slippNumre = Object.keys(data.slipps)
+                .map(n => parseInt(n))
+                .filter(n => n < state.currentSlipp)
+                .sort((a, b) => b - a); // nyeste først
+            for (const n of slippNumre) {
+                const v = data.slipps[n]?.[felt];
+                if (v !== null && v !== undefined && v !== '') return v;
+            }
+            return null;
+        }
+
         function saveDogData(position) {
             const dogNr = state.selectedDogs[position];
             if (!state.dogData[dogNr]) {
@@ -2051,6 +2130,7 @@
             const apportChecked = document.getElementById(`dog${position}_apport`).checked;
             const godkjentReisChecked = document.getElementById(`dog${position}_godkjent_reis`)?.checked || false;
             const reisingValue = document.getElementById(`dog${position}_reising`)?.value;
+            const presisjonValue = document.getElementById(`dog${position}_presisjon`)?.value;
 
             state.dogData[dogNr].slipps[state.currentSlipp] = {
                 fmr: document.getElementById(`dog${position}_fmr`).value ? parseInt(document.getElementById(`dog${position}_fmr`).value) : null,
@@ -2062,6 +2142,7 @@
                 apport: apportChecked || null,
                 godkjentReis: godkjentReisChecked || null,
                 reising: reisingValue ? parseInt(reisingValue) : null,
+                presisjon: presisjonValue ? parseInt(presisjonValue) : null,
                 ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
                 // parseFloat (ikke parseInt) så halvminutter bevares — trekant-rotasjon
                 // bruker 7,5 min per slipp og må ikke trunkeres til 7.
@@ -2866,46 +2947,247 @@
             });
         }
 
-        // Trekant-state: holder rede på om dommer har akseptert eller dismisset
-        // trekant-forslaget for nåværende runde, så vi ikke spammer modal
-        // hvert eneste slipp. Når accepted=true, sequence holder rede på de
-        // 3 slippene (a vs b → a vs c → b vs c) og currentStep er hvilke
-        // som er fullført. proceedToNextPair plukker fra sekvensen.
+        // Plan-state: holder rede på om dommer har akseptert eller dismisset
+        // foreslått plan for resterende slipp i runden. Plan kan være:
+        // - Klassisk trekant (3 ubedømte, 7,5 × 3)
+        // - Frivillig-makker (1 hund med behov + 1 frivillig)
+        // - Blandet (TTG-hund + ubedømt + frivillig osv.)
+        // sequence er [[dog1Nr, dog2Nr, slipptid], ...] — kan ha vilkårlig
+        // antall slipp med variabel lengde.
         let _trekantState = {
             shownForRound: null,    // hvilken runde modal sist ble vist for
             accepted: false,        // om dommer trykket "Bruk forslaget"
-            dismissed: false,       // om dommer trykket "Lukk" (badge vises da)
-            dogs: [],               // de 3 hundenrene i trekant-rotasjon
-            sequence: [],           // [[a,b], [a,c], [b,c]] — slipp-rekkefølge
-            currentStep: -1         // -1 = ikke startet, 0,1,2 = aktivt slipp-indeks
+            dismissed: false,       // om dommer trykket "Lukk" (banner vises da)
+            sequence: [],           // [[dog1Nr, dog2Nr, slipptid], ...]
+            currentStep: -1,        // -1 = ikke startet, 0..n = aktivt slipp-indeks
+            planType: null          // 'trekant'|'frivillig'|'blandet'|'umulig'
         };
 
-        // Sjekk om vi skal vise trekant-modal. Kalles fra proceedToNextPair
+        // Beregn hver hunds behov for slipptid i nåværende runde.
+        // Returnerer { dogNr: { oppnaad, behov, status } } for alle ikke-avsluttede.
+        // Avsluttede hunder utelates helt (ute av regnskapet).
+        function getRundeBehov() {
+            const result = {};
+            const round = state.currentRound || 1;
+            partyList.forEach(dog => {
+                if (state.plasseringer[dog.nr] === 'avsluttet') return;
+                const oppnaad = getRoundSlipptid(dog.nr, round);
+                const hasTTG = !!state.tidTilGode[dog.nr];
+                const hasPlassering = state.plasseringer[dog.nr] && state.plasseringer[dog.nr] !== 'avsluttet';
+                // Hund "trenger mer slipp" hvis under 15 min OG (ikke plassert ELLER har TTG)
+                const trengerMer = oppnaad < 15;
+                const behov = trengerMer ? (15 - oppnaad) : 0;
+                let status = 'ukjent';
+                if (hasPlassering && !trengerMer) status = 'ferdig_rangert';
+                else if (hasPlassering && trengerMer) status = 'rangert_men_under_15'; // sjeldent
+                else if (hasTTG) status = 'tid_til_gode';
+                else if (oppnaad === 0) status = 'ikke_startet';
+                else status = 'delvis_bedømt';
+                result[dog.nr] = { oppnaad, behov, status, hasTTG, hasPlassering };
+            });
+            return result;
+        }
+
+        // Planlegg resterende slipp i runden.
+        // Returnerer { sequence: [[dog1Nr, dog2Nr, slipptid], ...], type, ok }
+        // type: 'trivial' (kun vanlige par, ingen modal nødvendig)
+        //       'trekant' (3 ubedømte med samme behov)
+        //       'frivillig' (1 hund alene trenger frivillig makker)
+        //       'blandet' (TTG-hund involvert eller asymmetrisk plan)
+        //       'umulig' (ingen frivillig tilgjengelig — TTG må settes)
+        function planleggResterendeRunden() {
+            const behov = getRundeBehov();
+            // Kandidater for slipp: hunder med behov > 0 (ekskl. selectedDogs hvis aktive)
+            const dogsWithBehov = Object.entries(behov)
+                .filter(([nr, info]) => info.behov > 0)
+                .map(([nr, info]) => ({ nr: parseInt(nr), behov: info.behov, hasTTG: info.hasTTG }))
+                .sort((a, b) => b.behov - a.behov); // synkende behov
+
+            // Frivillige (initielle): oppnådd >= 15, ikke avsluttet, ikke TTG, ikke har behov.
+            // Disse er tilgjengelige fra start. Hunder som blir ferdige (behov→0)
+            // underveis legges til dynamisk så de kan brukes i senere slipp.
+            const frivilligeInit = Object.entries(behov)
+                .filter(([nr, info]) => info.behov === 0 && !info.hasTTG)
+                .map(([nr]) => parseInt(nr));
+            const frivillige = [...frivilligeInit];
+            // Hunder som var planlagt og kan brukes som frivillig hvis ferdig (ikke TTG):
+            const dogsBecomesFrivilligWhenDone = new Set(
+                dogsWithBehov.filter(d => !d.hasTTG).map(d => d.nr)
+            );
+
+            const sequence = [];
+            // Mutable kopi av behov så vi kan dekrementere underveis
+            const remaining = dogsWithBehov.map(d => ({ ...d }));
+
+            const N_INITIAL = remaining.length;
+
+            // Hjelpefunksjon: når en hund er ferdig i planen, marker som frivillig
+            // hvis den ikke har TTG og ikke allerede er i frivillige.
+            const markerFerdig = (nr) => {
+                if (dogsBecomesFrivilligWhenDone.has(nr) && !frivillige.includes(nr)) {
+                    frivillige.push(nr);
+                }
+            };
+
+            while (remaining.length > 0) {
+                if (remaining.length === 1) {
+                    // 1 hund alene — trenger frivillig makker
+                    const h = remaining[0];
+                    if (frivillige.length === 0) {
+                        // Ingen frivillig tilgjengelig — kan ikke fullføre.
+                        // Marker som umulig, dommer må sette TTG.
+                        return { sequence: [], type: 'umulig', alene: h.nr };
+                    }
+                    // 1 frivillig: ett asymmetrisk slipp dekker behovet
+                    const friv = _pickFrivillig(frivillige, sequence, h.nr);
+                    sequence.push([h.nr, friv, h.behov]);
+                    markerFerdig(h.nr);
+                    remaining.length = 0;
+                } else if (remaining.length === 2) {
+                    // 2 med behov: par dem. Hvis tid = min(behov) etterlater
+                    // alene-hund, må vi heller bruke frivillig.
+                    const [h1, h2] = remaining;
+                    const tid = Math.min(h1.behov, h2.behov);
+                    if (h1.behov === h2.behov) {
+                        // Perfekt match
+                        sequence.push([h1.nr, h2.nr, tid]);
+                        markerFerdig(h1.nr);
+                        markerFerdig(h2.nr);
+                        remaining.length = 0;
+                    } else {
+                        // Asymmetrisk: én blir ferdig, andre alene etterpå
+                        // Lag ett slipp + behold den med rest-behov
+                        sequence.push([h1.nr, h2.nr, tid]);
+                        const stor = h1.behov > h2.behov ? h1 : h2;
+                        const liten = h1.behov < h2.behov ? h1 : h2;
+                        const restBehov = Math.abs(h1.behov - h2.behov);
+                        markerFerdig(liten.nr);
+                        // Resterende blir alene → trenger frivillig neste iter
+                        remaining.length = 0;
+                        remaining.push({ nr: stor.nr, behov: restBehov, hasTTG: stor.hasTTG });
+                    }
+                } else if (remaining.length === 3) {
+                    // 3 med behov — sjekk om alle har samme behov (klassisk trekant)
+                    const [a, b, c] = remaining;
+                    if (a.behov === b.behov && b.behov === c.behov) {
+                        const halv = a.behov / 2;
+                        sequence.push([a.nr, b.nr, halv]);
+                        sequence.push([a.nr, c.nr, halv]);
+                        sequence.push([b.nr, c.nr, halv]);
+                        markerFerdig(a.nr);
+                        markerFerdig(b.nr);
+                        markerFerdig(c.nr);
+                        remaining.length = 0;
+                    } else {
+                        // Ulike behov — par de to høyest, fortsett
+                        const tid = Math.min(a.behov, b.behov);
+                        sequence.push([a.nr, b.nr, tid]);
+                        a.behov -= tid;
+                        b.behov -= tid;
+                        if (a.behov === 0) markerFerdig(a.nr);
+                        if (b.behov === 0) markerFerdig(b.nr);
+                        const next = [a, b, c].filter(d => d.behov > 0);
+                        next.sort((x, y) => y.behov - x.behov);
+                        remaining.length = 0;
+                        remaining.push(...next);
+                    }
+                } else {
+                    // 4+ med behov — par de to høyest, fortsett
+                    const h1 = remaining[0];
+                    const h2 = remaining[1];
+                    const tid = Math.min(h1.behov, h2.behov);
+                    sequence.push([h1.nr, h2.nr, tid]);
+                    h1.behov -= tid;
+                    h2.behov -= tid;
+                    if (h1.behov === 0) markerFerdig(h1.nr);
+                    if (h2.behov === 0) markerFerdig(h2.nr);
+                    remaining.sort((x, y) => y.behov - x.behov);
+                    while (remaining.length > 0 && remaining[remaining.length - 1].behov === 0) {
+                        remaining.pop();
+                    }
+                }
+            }
+
+            // Bestem type
+            let type = 'trivial';
+            const harTTG = dogsWithBehov.some(d => d.hasTTG);
+            // 'frivillig' = bruker en hund som ALLEREDE var ferdig før planen startet
+            const harFrivilligInitIPlan = sequence.some(([d1, d2]) => frivilligeInit.includes(d1) || frivilligeInit.includes(d2));
+            // Sjekk om planen er trivell: alle slipp er 15 min og ingen hund
+            // brukes i mer enn ett slipp og ingen frivillig involvert
+            const dogCountInSeq = {};
+            sequence.forEach(([d1, d2]) => {
+                dogCountInSeq[d1] = (dogCountInSeq[d1] || 0) + 1;
+                dogCountInSeq[d2] = (dogCountInSeq[d2] || 0) + 1;
+            });
+            const erTrivielt = !harTTG && !harFrivilligInitIPlan
+                && sequence.every(([_, __, tid]) => tid === 15)
+                && Object.values(dogCountInSeq).every(n => n === 1);
+
+            if (sequence.length === 3 && N_INITIAL === 3 && !harTTG && !harFrivilligInitIPlan
+                && sequence.every(([_, __, tid]) => tid === 7.5)) {
+                type = 'trekant';
+            } else if (erTrivielt) {
+                type = 'trivial';
+            } else if (harTTG) {
+                type = 'blandet';
+            } else if (harFrivilligInitIPlan) {
+                type = 'frivillig';
+            } else {
+                type = 'blandet';
+            }
+            return { sequence, type, ok: true };
+        }
+
+        // Velg en frivillig-makker. Helst en som ikke har vært makker for
+        // denne hunden tidligere, og ikke allerede brukt i planlagte slipp.
+        function _pickFrivillig(frivilligeListe, planSoFar, dogNr) {
+            const tidligereMakkere = state.opponents?.[dogNr] || [];
+            // Plukk kun hund-numrene (indeks 0+1) — slipptid (indeks 2) skal
+            // ikke matches mot hunde-nummer
+            const planlagteMakkere = planSoFar
+                .flatMap(s => [s[0], s[1]])
+                .filter(n => n !== dogNr);
+            // Sortér: foretrekk de som IKKE har vært makker
+            const sorted = frivilligeListe.slice().sort((a, b) => {
+                const aTidligere = tidligereMakkere.includes(a) ? 1 : 0;
+                const bTidligere = tidligereMakkere.includes(b) ? 1 : 0;
+                if (aTidligere !== bTidligere) return aTidligere - bTidligere;
+                const aPlanlagt = planlagteMakkere.includes(a) ? 1 : 0;
+                const bPlanlagt = planlagteMakkere.includes(b) ? 1 : 0;
+                return aPlanlagt - bPlanlagt;
+            });
+            return sorted[0];
+        }
+
+        // Sjekk om vi skal vise plan-modal. Kalles fra proceedToNextPair
         // ETTER at registerSlippData har kjørt (slik at judgedThisRound er
         // oppdatert) men FØR getNextAvailablePair plukker nytt par.
         // Returnerer true hvis modal ble vist (caller skal stoppe normal flyt).
+        // Bruker planleggResterendeRunden — viser modal hvis planen er
+        // 'trekant', 'frivillig', 'blandet' eller 'umulig'. For 'trivial'
+        // (vanlig 1-2 par igjen) lar vi default-flyten ta seg av det.
         function maybeShowTrekantModal() {
-            const remaining = getRemainingDogsInRound();
-            // Sjekk også gjenværende-i-current-pair: hvis den ene hunden
-            // i nåværende slipp er ferdig-rangert og den andre ikke, må
-            // begge "selected" telles som ubedømte i den prospektive
-            // runde-resten. Forenklet: bruk getRemainingDogsInRound +
-            // any selected-but-not-judged. For trekant-trigger ved 3
-            // ubedømte (eksklusiv currently selected) er dette riktig.
-
             // Ikke vis hvis vi allerede har vist for denne runden og dommer
             // har valgt (akseptert eller dismisset)
             if (_trekantState.shownForRound === state.currentRound &&
                 (_trekantState.accepted || _trekantState.dismissed)) {
                 return false;
             }
-            // Trigger: nøyaktig 3 hunder igjen i runden
-            if (remaining.length !== 3) return false;
+
+            const plan = planleggResterendeRunden();
+            // Vis kun hvis planen er ikke-triviell
+            if (plan.type === 'trivial' || (plan.type !== 'umulig' && plan.sequence.length === 0)) {
+                return false;
+            }
 
             _trekantState.shownForRound = state.currentRound;
             _trekantState.accepted = false;
             _trekantState.dismissed = false;
-            _trekantState.dogs = remaining.map(d => d.nr);
+            _trekantState.sequence = plan.sequence;
+            _trekantState.planType = plan.type;
+            _trekantState.aleneNr = plan.alene || null;
+            _trekantState.currentStep = -1;
 
             renderTrekantModal();
             document.getElementById('trekantModal')?.classList.remove('hidden');
@@ -2913,53 +3195,90 @@
         }
 
         function renderTrekantModal() {
-            const dogs = _trekantState.dogs.map(nr => partyList.find(d => d.nr === nr)).filter(Boolean);
-            if (dogs.length !== 3) return;
-
             const titleEl = document.getElementById('trekantTitle');
-            if (titleEl) titleEl.textContent = `Runde ${state.currentRound}: 3 hunder igjen`;
-
-            // Beskrivelse av rotasjonen
-            const [a, b, c] = dogs;
-            const slippText = (d1, d2, idx) =>
-                `<div class="flex items-center gap-2 p-2 bg-vk-50 rounded-lg">
-                    <div class="text-xs font-bold text-vk-700 w-12">Slipp ${idx}</div>
-                    <div class="flex-1 text-sm">
-                        <span class="font-medium">${d1.nr}. ${d1.race} ${d1.name}</span>
-                        <span class="text-vk-400 mx-2">vs</span>
-                        <span class="font-medium">${d2.nr}. ${d2.race} ${d2.name}</span>
-                    </div>
-                    <div class="text-xs font-mono text-vk-600">7,5 min</div>
-                </div>`;
-
+            const descEl = document.getElementById('trekantDesc');
             const listEl = document.getElementById('trekantList');
-            if (listEl) {
-                listEl.innerHTML =
-                    slippText(a, b, 1) +
-                    slippText(a, c, 2) +
-                    slippText(b, c, 3);
+            const acceptBtn = document.getElementById('trekantAcceptBtn');
+            const hintEl = document.getElementById('trekantHint');
+            const type = _trekantState.planType;
+
+            // Tittel + beskrivelse per plan-type
+            const titles = {
+                trekant: `Runde ${state.currentRound}: Trekant-rotasjon foreslått`,
+                frivillig: `Runde ${state.currentRound}: Frivillig-makker foreslått`,
+                blandet: `Runde ${state.currentRound}: Plan for resterende slipp`,
+                umulig: `Runde ${state.currentRound}: Kan ikke fullføre uten frivillig`
+            };
+            const descs = {
+                trekant: 'Tre hunder igjen — hvis du parer to-og-to, vil én stå alene. Foreslått trekant-rotasjon (hver hund får 15 min totalt):',
+                frivillig: 'Foreslått plan bruker en hund som har nådd 15 min som frivillig makker, så ingen hund står alene:',
+                blandet: 'Foreslått plan for resten av runden basert på behov per hund:',
+                umulig: 'Det er ingen frivillig hund tilgjengelig som makker. Sett "Tid til gode" på den alenestående hunden, eller la den avslutte runden, før du fortsetter.'
+            };
+            if (titleEl) titleEl.textContent = titles[type] || titles.blandet;
+            if (descEl) descEl.textContent = descs[type] || descs.blandet;
+
+            // Liste over slipp i sekvensen
+            if (type === 'umulig') {
+                const aleneDog = partyList.find(d => d.nr === _trekantState.aleneNr);
+                const navn = aleneDog ? `${aleneDog.nr}. ${aleneDog.race} ${aleneDog.name}` : `Hund ${_trekantState.aleneNr}`;
+                if (listEl) {
+                    listEl.innerHTML = `
+                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                            <strong>Alene:</strong> ${navn}<br>
+                            <span class="text-xs">Trenger makker for å kunne fortsette runden.</span>
+                        </div>`;
+                }
+                if (acceptBtn) acceptBtn.style.display = 'none';
+                if (hintEl) hintEl.textContent = 'Lukk modalen og sett TTG eller avslutt hunden i hovedvisningen.';
+            } else {
+                if (acceptBtn) acceptBtn.style.display = '';
+                if (listEl) {
+                    listEl.innerHTML = _trekantState.sequence.map((slipp, idx) => {
+                        const [n1, n2, tid] = slipp;
+                        const d1 = partyList.find(d => d.nr === n1);
+                        const d2 = partyList.find(d => d.nr === n2);
+                        if (!d1 || !d2) return '';
+                        const tidTxt = (Math.round(tid * 10) / 10).toString().replace('.', ',');
+                        return `
+                            <div class="flex items-center gap-2 p-2 bg-vk-50 rounded-lg">
+                                <div class="text-xs font-bold text-vk-700 w-12">Slipp ${idx + 1}</div>
+                                <div class="flex-1 text-sm">
+                                    <span class="font-medium">${d1.nr}. ${d1.race} ${d1.name}</span>
+                                    <span class="text-vk-400 mx-2">vs</span>
+                                    <span class="font-medium">${d2.nr}. ${d2.race} ${d2.name}</span>
+                                </div>
+                                <div class="text-xs font-mono text-vk-600">${tidTxt} min</div>
+                            </div>`;
+                    }).join('');
+                }
+                if (hintEl) hintEl.textContent = 'Trykk «Bruk forslaget» så starter første slipp automatisk med foreslått slipptid. Du kan justere underveis.';
             }
         }
 
         function trekantAccept() {
+            // Krever at sequence er satt av planleggResterendeRunden via maybeShowTrekantModal
+            if (!_trekantState.sequence || _trekantState.sequence.length === 0) {
+                document.getElementById('trekantModal')?.classList.add('hidden');
+                return;
+            }
             _trekantState.accepted = true;
             _trekantState.dismissed = false;
             document.getElementById('trekantModal')?.classList.add('hidden');
-            // Bygg slipp-sekvens: a vs b, a vs c, b vs c (alle får 7,5×2 = 15 min)
-            const [a, b, c] = _trekantState.dogs;
-            _trekantState.sequence = [[a, b], [a, c], [b, c]];
             _trekantState.currentStep = 0;
             _configureTrekantSlipp(0);
             showTrekantBadge();
             saveToStorage();
         }
 
-        // Konfigurer UI for et bestemt slipp i trekant-sekvensen.
+        // Konfigurer UI for et bestemt slipp i plan-sekvensen.
         // Inkrementerer state.currentSlipp, setter selectedDogs, foreslår
-        // 7,5 min slipptid, tømmer øvrige input-felter, refresher UI.
+        // slipptid fra sekvensen, tømmer øvrige input-felter, refresher UI.
         function _configureTrekantSlipp(stepIdx) {
             if (stepIdx < 0 || stepIdx >= _trekantState.sequence.length) return;
-            const [d1, d2] = _trekantState.sequence[stepIdx];
+            const slipp = _trekantState.sequence[stepIdx];
+            const [d1, d2, slipptid] = slipp;
+            const slipptidStr = (typeof slipptid === 'number' ? slipptid : 7.5).toString();
             state.currentSlipp++;
             updateSlippLabels();
             state.selectedDogs[1] = d1;
@@ -2975,7 +3294,7 @@
             updatePlacementDropdowns();
             renderPartyLists();
             renderRankings();
-            // Tøm input-felter for nytt slipp + foreslå 7,5 min slipptid
+            // Tøm input-felter for nytt slipp + foreslå slipptid fra plan
             [1, 2].forEach(pos => {
                 const dogNr = state.selectedDogs[pos];
                 const data = state.dogData[dogNr];
@@ -2988,7 +3307,7 @@
                     document.getElementById(`dog${pos}_ts`).value = '';
                     const harApport = hasApportGodkjent(dogNr);
                     document.getElementById(`dog${pos}_apport`).checked = harApport;
-                    document.getElementById(`dog${pos}_slipptid`).value = '7.5';
+                    document.getElementById(`dog${pos}_slipptid`).value = slipptidStr;
                 }
                 updateSlipptidDisplay(pos);
             });
@@ -3001,10 +3320,11 @@
             if (!_trekantState.accepted || _trekantState.sequence.length === 0) return false;
             _trekantState.currentStep++;
             if (_trekantState.currentStep >= _trekantState.sequence.length) {
-                // Trekant ferdig — fortsett med vanlig flyt
+                // Plan ferdig — fortsett med vanlig flyt
                 _trekantState.accepted = false;
                 _trekantState.sequence = [];
                 _trekantState.currentStep = -1;
+                _trekantState.planType = null;
                 removeTrekantBadge();
                 return false;
             }
@@ -3017,18 +3337,29 @@
             _trekantState.dismissed = true;
             _trekantState.accepted = false;
             document.getElementById('trekantModal')?.classList.add('hidden');
-            // Vis badge så dommer ikke glemmer at det fortsatt er trekant-situasjon
+            // Vis badge så dommer ikke glemmer at planen finnes
             showTrekantBadge();
         }
 
         function showTrekantBadge() {
             removeTrekantBadge();
-            const remaining = getRemainingDogsInRound();
-            if (remaining.length < 1) return;
+            // Hold badgen synlig så lenge planen ikke er ferdig
+            const planAktiv = _trekantState.accepted && _trekantState.sequence.length > 0;
+            const planTilgjengelig = _trekantState.dismissed && _trekantState.sequence.length > 0;
+            const planUmulig = _trekantState.planType === 'umulig';
+            if (!planAktiv && !planTilgjengelig && !planUmulig) return;
             const banner = document.createElement('div');
             banner.id = 'trekantBadge';
-            banner.style.cssText = 'position:fixed;top:50px;right:8px;z-index:9998;background:#7c2d12;color:white;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;max-width:240px;';
-            banner.innerHTML = '⚠️ Trekant-rotasjon aktiv<br><span style="font-weight:400;font-size:11px;opacity:0.9;">Trykk for å se forslag</span>';
+            const farge = planUmulig ? '#b45309' : '#7c2d12';
+            banner.style.cssText = `position:fixed;top:50px;right:8px;z-index:9998;background:${farge};color:white;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2);cursor:pointer;max-width:240px;`;
+            const labels = {
+                trekant: 'Trekant-rotasjon aktiv',
+                frivillig: 'Plan med frivillig-makker aktiv',
+                blandet: 'Plan for resterende slipp aktiv',
+                umulig: 'Hund alene — sett TTG eller avslutt'
+            };
+            const label = labels[_trekantState.planType] || 'Plan for runden aktiv';
+            banner.innerHTML = `⚠️ ${label}<br><span style="font-weight:400;font-size:11px;opacity:0.9;">Trykk for å se forslag</span>`;
             banner.onclick = () => {
                 document.getElementById('trekantModal')?.classList.remove('hidden');
             };
@@ -6003,7 +6334,7 @@ Antall slipp: ${state.currentSlipp}
             state.currentRound++;
 
             // Nullstill trekant-state så modal kan trigge på nytt for ny runde
-            _trekantState = { shownForRound: null, accepted: false, dismissed: false, dogs: [] };
+            _trekantState = { shownForRound: null, accepted: false, dismissed: false, sequence: [], currentStep: -1, planType: null, aleneNr: null };
             removeTrekantBadge();
 
             // Nullstill tid til gode for ny runde
@@ -6066,10 +6397,11 @@ Antall slipp: ${state.currentSlipp}
         }
     </script>
 
-    <!-- ⚠️ Trekant-rotasjon Modal — vises når 3 hunder igjen i runden.
+    <!-- ⚠️ Plan-modal for resterende slipp — vises når planlegger gir
+         ikke-trivielle plan (trekant, frivillig, blandet, umulig).
          Forhindrer at dommer havner med 1 alene-hund (umulig å slippe alene).
-         Foreslår 7,5 min × 3 slipp så alle får 15 min i runden.
-         Se memory/feedback_vk_sync_flyt.md før endring. -->
+         Se memory/feedback_vk_sync_flyt.md og feedback_vk_trekant_rotasjon.md
+         før endring. -->
     <div id="trekantModal" class="hidden fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div class="p-4 border-b border-vk-300 bg-vk-700 text-white rounded-t-2xl">
@@ -6077,21 +6409,15 @@ Antall slipp: ${state.currentSlipp}
                     <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                     </svg>
-                    <h2 id="trekantTitle" class="text-lg font-bold font-serif">3 hunder igjen i runden</h2>
+                    <h2 id="trekantTitle" class="text-lg font-bold font-serif">Plan for resterende slipp</h2>
                 </div>
             </div>
             <div class="p-4">
-                <p class="text-sm text-bark-700 mb-3">
-                    Hvis du fortsetter med par to-og-to, vil <strong>én hund stå alene</strong> til slutt
-                    (umulig å slippe alene). Foreslått trekant-rotasjon — hver hund får 15 min slipptid:
-                </p>
+                <p id="trekantDesc" class="text-sm text-bark-700 mb-3"></p>
                 <div id="trekantList" class="space-y-2 mb-4"></div>
-                <p class="text-xs text-bark-500 mb-4">
-                    Trykk «Bruk forslaget» så starter første slipp automatisk med foreslåtte hunder
-                    og 7,5 min slipptid. Du kan justere underveis.
-                </p>
+                <p id="trekantHint" class="text-xs text-bark-500 mb-4"></p>
                 <div class="flex flex-col sm:flex-row gap-2">
-                    <button onclick="trekantAccept()"
+                    <button id="trekantAcceptBtn" onclick="trekantAccept()"
                         class="flex-1 bg-vk-600 hover:bg-vk-700 text-white font-semibold py-3 rounded-xl transition">
                         Bruk forslaget
                     </button>

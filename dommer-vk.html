@@ -2063,7 +2063,9 @@
                 godkjentReis: godkjentReisChecked || null,
                 reising: reisingValue ? parseInt(reisingValue) : null,
                 ts: document.getElementById(`dog${position}_ts`).value ? parseInt(document.getElementById(`dog${position}_ts`).value) : null,
-                slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseInt(document.getElementById(`dog${position}_slipptid`).value) : null,
+                // parseFloat (ikke parseInt) så halvminutter bevares — trekant-rotasjon
+                // bruker 7,5 min per slipp og må ikke trunkeres til 7.
+                slipptid: document.getElementById(`dog${position}_slipptid`).value ? parseFloat(document.getElementById(`dog${position}_slipptid`).value) : null,
                 // Jaktegenskaper
                 jaktlyst: document.getElementById(`dog${position}_jaktlyst`).value ? parseInt(document.getElementById(`dog${position}_jaktlyst`).value) : null,
                 fart: document.getElementById(`dog${position}_fart`).value ? parseInt(document.getElementById(`dog${position}_fart`).value) : null,
@@ -2514,16 +2516,23 @@
 
             // Re-evaluer status etter evt. TTG-tilføyelse over.
             // I aktiv trekant-rotasjon: kun hunder som har nådd 15 min total
-            // slipptid kan rangeres. Etter slipp 1 (7,5 min) skal ingen
-            // rangeres. Etter slipp 2 har én av hundene nådd 15 min — den
-            // kan rangeres, ikke den andre. Etter slipp 3 har alle nådd 15.
+            // slipptid kan rangeres. OBS:
+            // 1. Nåværende slipp er IKKE lagret i state.dogData ennå (det
+            //    skjer i saveDogData lenger ned), så vi må addere input-
+            //    verdien til getTotalSlipptid for å få riktig sum.
+            // 2. parseFloat (ikke parseInt) brukes så 7.5 ikke trunkeres til 7
+            //    — det ville hindret hund å nå 15 i trekant.
             const dog1HasTTGNow = !!state.tidTilGode[dog1Nr];
             const dog2HasTTGNow = !!state.tidTilGode[dog2Nr];
             const erITrekantPlacement = _trekantState?.accepted && _trekantState?.sequence?.length > 0;
+            const dog1CurrentSlipptid = parseFloat(document.getElementById('dog1_slipptid')?.value) || 0;
+            const dog2CurrentSlipptid = parseFloat(document.getElementById('dog2_slipptid')?.value) || 0;
+            const dog1TotalForPlacement = getTotalSlipptid(dog1Nr) + dog1CurrentSlipptid;
+            const dog2TotalForPlacement = getTotalSlipptid(dog2Nr) + dog2CurrentSlipptid;
             const dog1NeedsPlacement = !dog1Avsluttet && !dog1HasTTGNow && !dog1HasPlassering
-                && (!erITrekantPlacement || dog1TotalTime >= 15);
+                && (!erITrekantPlacement || dog1TotalForPlacement >= 15);
             const dog2NeedsPlacement = !dog2Avsluttet && !dog2HasTTGNow && !dog2HasPlassering
-                && (!erITrekantPlacement || dog2TotalTime >= 15);
+                && (!erITrekantPlacement || dog2TotalForPlacement >= 15);
 
             // Vis plasserings-modal hvis MINST ÉN aktiv hund mangler plassering.
             // Modalen filtrerer selv ut avsluttede/TTG-hunder fra listen så
